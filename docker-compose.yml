@@ -40,6 +40,9 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/0
     ports:
       - "8001:8001"
+    volumes:
+      - ./xellabs-backend:/app
+      - django_packages:/usr/local/lib/python3.12/site-packages
     depends_on:
       postgres:
         condition: service_healthy
@@ -60,6 +63,9 @@ services:
       DB_PORT: "5432"
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - ./xellabs-backend:/app
+      - celery_packages:/usr/local/lib/python3.12/site-packages
     depends_on:
       postgres:
         condition: service_healthy
@@ -84,3 +90,5 @@ services:
 volumes:
   postgres_data:
   senaite_data:
+  django_packages:
+  celery_packages:

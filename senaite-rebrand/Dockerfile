@@ -15,4 +15,13 @@ COPY frontpage.pt     ${BASE}/frontpage/templates/frontpage.pt
 COPY xellabs_overrides.css /tmp/xellabs_overrides.css
 RUN cat /tmp/xellabs_overrides.css >> ${BASE}/static/bundles/senaite.core.css
 
+# Fix ownership so the base entrypoint chown does not fail
+RUN chown senaite:senaite \
+    ${BASE}/viewlets/templates/logo.pt \
+    ${BASE}/viewlets/templates/toolbar.pt \
+    ${BASE}/viewlets/templates/footer.pt \
+    ${BASE}/viewlets/templates/colophon.pt \
+    ${BASE}/frontpage/templates/frontpage.pt \
+    ${BASE}/static/bundles/senaite.core.css
+
 USER senaite
