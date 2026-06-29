@@ -15,7 +15,7 @@ COPY frontpage.pt     ${BASE}/frontpage/templates/frontpage.pt
 COPY xellabs_overrides.css /tmp/xellabs_overrides.css
 RUN cat /tmp/xellabs_overrides.css >> ${BASE}/static/bundles/senaite.core.css
 
-# Fix ownership so the base entrypoint chown does not fail
+# Ensure all branded files are owned by the senaite user
 RUN chown senaite:senaite \
     ${BASE}/viewlets/templates/logo.pt \
     ${BASE}/viewlets/templates/toolbar.pt \
@@ -24,4 +24,4 @@ RUN chown senaite:senaite \
     ${BASE}/frontpage/templates/frontpage.pt \
     ${BASE}/static/bundles/senaite.core.css
 
-USER senaite
+# Stay as root — base entrypoint calls gosu/su to drop to senaite at runtime
