@@ -1,0 +1,20 @@
+<div id="senaite-colophon"
+     i18n:domain="senaite.core">
+
+  <div class="container-fluid">
+    <div class="row">
+      <div class="col-md-12">
+
+        <div class="text-center text-muted">
+          <ul class="list-inline">
+            <li>
+              <span>XelLabs LIMS is powered by Hephzibah Technologies</span>
+            </li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div>

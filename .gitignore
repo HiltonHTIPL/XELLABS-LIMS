@@ -1,0 +1,70 @@
+# Claude Code
+CLAUDE.md
+.claude/
+
+# Startup / reference docs
+start-commands.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+
+# Virtual environment
+xellabs-backend/venv/
+venv/
+env/
+.env/
+
+# Django secrets
+xellabs-backend/.env
+*.env
+
+# Django generated
+xellabs-backend/db.sqlite3
+xellabs-backend/media/
+xellabs-backend/staticfiles/
+
+# Requirements (managed separately per environment)
+xellabs-backend/requirements.txt
+
+# Logs
+*.log
+logs/
+
+# Docker
+.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Senaite reference source (read-only reference, not our code)
+senaite-reference/
+
+# Senaite rebrand backups
+senaite-rebrand/*.bak
+
+# Temp scripts
+xellabs-backend/reset_inventory.py

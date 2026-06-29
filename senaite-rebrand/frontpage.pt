@@ -1,0 +1,69 @@
+<html xmlns="http://www.w3.org/1999/xhtml"
+      metal:use-macro="here/main_template/macros/master"
+      i18n:domain="senaite.core">
+
+  <metal:content-title fill-slot="content-title">
+    <a href=""
+       style="float:right;"
+       tal:condition="python: not view.is_anonymous_user() and view.is_dashboard_enabled()"
+       i18n:translate=""
+       tal:attributes="href string:${portal_url}?redirect_to=dashboard">
+      Switch to dashboard
+    </a>
+
+    <h1 class="documentFirstHeading">
+      <span>Welcome to</span>
+      <span class="xellabs-brand-text" style="font-size:40px;letter-spacing:3px;">XelLabs</span>
+    </h1>
+
+  </metal:content-title>
+
+  <metal:content-description fill-slot="content-description">
+    <div class="documentDescription">
+    </div>
+  </metal:content-description>
+
+  <metal:content-core fill-slot="content-core">
+
+    <div class="row">
+      <div class="col-sm-12">
+        <h2>
+          XelLabs LIMS
+        </h2>
+        <p>XelLabs is a Laboratory Information Management System (LIMS)
+          designed for enterprise environments, focused on high speed,
+          excellent performance and good stability.
+        </p>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-sm-12">
+        <h2>Features</h2>
+      </div>
+      <div class="col-md-4">
+        <ul>
+          <li>Centralized System</li>
+          <li>Reliable Architecture</li>
+          <li>Industrial Strength Security</li>
+        </ul>
+      </div>
+      <div class="col-md-4">
+        <ul>
+          <li>Equipment Integration</li>
+          <li>Audit and Traceability</li>
+          <li>Integrated JSON API</li>
+        </ul>
+      </div>
+      <div class="col-md-4">
+        <ul>
+          <li>Powered by Python</li>
+          <li>Built on Plone CMS</li>
+          <li>Fully Open Source</li>
+        </ul>
+      </div>
+    </div>
+
+  </metal:content-core>
+
+</html>

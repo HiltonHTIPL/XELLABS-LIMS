@@ -1,0 +1,84 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: xellabs_lims
+      POSTGRES_USER: xellabs_user
+      POSTGRES_PASSWORD: "3333"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xellabs_user -d xellabs_lims"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  django:
+    build:
+      context: ./xellabs-backend
+    restart: unless-stopped
+    env_file:
+      - ./xellabs-backend/.env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      sh -c "python manage.py migrate --no-input &&
+             python manage.py runserver 0.0.0.0:8001"
+
+  celery:
+    build:
+      context: ./xellabs-backend
+    restart: unless-stopped
+    env_file:
+      - ./xellabs-backend/.env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A config worker --loglevel=info
+
+  senaite:
+    image: senaite/senaite:v2.6.0
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - SITE=senaite
+      - ADMIN_USER=admin
+      - ADMIN_PASSWORD=admin
+    volumes:
+      - senaite_data:/data
+
+volumes:
+  postgres_data:
+  senaite_data:
