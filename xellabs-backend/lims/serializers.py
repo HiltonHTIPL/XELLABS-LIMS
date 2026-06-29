@@ -5,6 +5,20 @@ from .models import (
     Result, QCSample, ChainOfCustody,
 )
 
+UNLOCK_ROLES = ("admin", "lab_manager")
+
+
+class RecordLockMixin:
+    """Blocks updates to locked records unless the user is admin or lab_manager."""
+    def validate(self, attrs):
+        if self.instance and getattr(self.instance, "is_locked", False):
+            user = self.context["request"].user
+            if getattr(user, "role", None) not in UNLOCK_ROLES:
+                raise serializers.ValidationError(
+                    "This record is locked. Contact a lab manager to make changes."
+                )
+        return super().validate(attrs)
+
 
 class SampleTypeSerializer(serializers.ModelSerializer):
     class Meta:
@@ -32,18 +46,31 @@ class SpecificationSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
-class SampleSerializer(serializers.ModelSerializer):
+class SampleSerializer(RecordLockMixin, serializers.ModelSerializer):
     sample_type_name = serializers.CharField(source="sample_type.name", read_only=True)
     client_name = serializers.CharField(source="client.name", read_only=True)
+    reason_for_change = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
         model = Sample
         fields = "__all__"
-        read_only_fields = ("created_by", "created_at", "updated_at")
+        read_only_fields = ("created_by", "locked_by", "locked_at", "created_at", "updated_at")
 
     def create(self, validated_data):
+        validated_data.pop("reason_for_change", None)
         validated_data["created_by"] = self.context["request"].user
         return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        validated_data.pop("reason_for_change", None)
+        # Auto-lock when published
+        if validated_data.get("status") == "published" and not instance.is_locked:
+            from django.utils import timezone
+            validated_data["is_locked"] = True
+            validated_data["locked_by"] = self.context["request"].user
+            validated_data["locked_at"] = timezone.now()
+            validated_data["locked_reason"] = "Auto-locked on publication"
+        return super().update(instance, validated_data)
 
 
 class AnalysisRequestSerializer(serializers.ModelSerializer):
@@ -76,11 +103,24 @@ class WorksheetSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 
-class ResultSerializer(serializers.ModelSerializer):
+class ResultSerializer(RecordLockMixin, serializers.ModelSerializer):
+    reason_for_change = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
     class Meta:
         model = Result
         fields = "__all__"
         read_only_fields = ("submitted_by", "verified_by", "submitted_at", "verified_at")
+
+    def update(self, instance, validated_data):
+        validated_data.pop("reason_for_change", None)
+        # Auto-lock when verified
+        if validated_data.get("status") == "verified":
+            validated_data["is_locked"] = True
+        return super().update(instance, validated_data)
+
+    def create(self, validated_data):
+        validated_data.pop("reason_for_change", None)
+        return super().create(validated_data)
 
 
 class QCSampleSerializer(serializers.ModelSerializer):

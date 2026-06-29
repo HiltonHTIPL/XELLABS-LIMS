@@ -11,4 +11,6 @@ urlpatterns = [
     path("api/inventory/", include("inventory.urls")),
     path("api/instruments/", include("instruments.urls")),
     path("api/reports/", include("reporting.urls")),
+    path("api/compliance/audit/", include("audittrail.urls")),
+    path("api/compliance/workflow/", include("workflow.urls")),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

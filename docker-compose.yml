@@ -68,7 +68,9 @@ services:
     command: celery -A config worker --loglevel=info
 
   senaite:
-    image: senaite/senaite:v2.6.0
+    build:
+      context: ./senaite-rebrand
+      dockerfile: Dockerfile
     restart: unless-stopped
     ports:
       - "8080:8080"
