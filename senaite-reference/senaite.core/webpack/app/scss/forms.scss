@@ -1,0 +1,195 @@
+/* Plone form style overrides */
+
+.documentDescription {
+    @extend .text-secondary;
+    @extend .small;
+}
+.formQuestion {
+    @extend .font-weight-bold;
+    margin-bottom: 0;
+}
+.formHelp {
+    @extend .form-text;
+    @extend .text-secondary;
+    @extend .d-block;
+    @extend .small;
+}
+.formControls {
+    input[name*='form.button'] {
+        @extend .btn;
+        @extend .btn-sm;
+        @extend .btn-secondary;
+        &[name='form.button.save'],
+        &[name='form.buttons.save'] {
+            @extend .btn-primary;
+        }
+    }
+}
+
+form[name='edit_form'] div.listing-container {
+    input, select {
+        @extend .form-control;
+        width: 100%!important;
+    }
+}
+
+/* Default widths for form inputs.
+   Overridable per-form by redefining the CSS variables on a wrapping
+   selector (see analysisrequest_add_form below for an example). */
+:root {
+    --senaite-input-width: 20rem;        /* ~320px (text, select, etc.) */
+    --senaite-input-width-date: 10rem;   /* ~160px */
+    --senaite-input-width-time: 6rem;    /* ~96px */
+    --senaite-input-width-narrow: 6rem;  /* ~96px (small numeric inputs) */
+}
+
+article#content>form,
+article#content>#content-core>form,
+ul.configlets>li>form,
+form.rowlike,
+form.loginform,
+form.senaite-form,
+form[name='analysisrequest_add_form'],
+form[action*='-controlpanel'],
+form[name='sampleheader_form'],
+form[name='edit_form'] {
+    input, select {
+        width: auto;
+    }
+    input:not(
+        [type='button'],
+        [type='submit'],
+        [type='checkbox'],
+        [type='radio'],
+        [name*='__ac']
+    ), select {
+        width: var(--senaite-input-width);
+        max-width: 100%;
+    }
+    input[type=date] {
+        width: var(--senaite-input-width-date);
+        max-width: 100%;
+    }
+    input[type=time] {
+        width: var(--senaite-input-width-time);
+        max-width: 100%;
+    }
+    /* Datetime widget: stretch the date+time pair to the same width as
+       other inputs so date/reference/text fields line up. !important
+       beats the .w-auto baked into the widget template. */
+    .datetimewidget {
+        width: var(--senaite-input-width) !important;
+        max-width: 100%;
+        display: flex !important;
+    }
+    .datetimewidget > input[type=date] {
+        flex: 2 1 0;
+        width: auto;
+        min-width: 0;
+    }
+    .datetimewidget > input[type=time] {
+        flex: 1 1 0;
+        width: auto;
+        min-width: 0;
+    }
+    input[type='text'],
+    input[type='number'],
+    input[type='password'],
+    select {
+        @extend .form-control;
+        @extend .form-control-sm;
+    }
+    .fieldRequired {
+        &:after {
+            color: $red;
+            content: "·";
+        }
+    }
+    span.required {
+        &:before {
+            color: $red;
+            content: "·";
+            padding-right: 0.25em;
+        }
+    }
+    .fieldErrorBox {
+        @extend .text-danger;
+        @extend .small;
+    }
+    .field.error input,
+    .field.error textarea,
+    .field.error select {
+        @extend .is-invalid;
+    }
+    .field {
+        @extend .form-group;
+    }
+    span.option,
+    .field.ArchetypesBooleanWidget,
+    .field.RejectionSetupWidget {
+        @extend .form-check;
+        input[type='checkbox'] {
+            @extend .form-check-input;
+        }
+    }
+    input[type='button'] {
+        @extend .btn;
+        @extend .btn-sm;
+        @extend .btn-outline-secondary;
+    }
+    textarea {
+        @extend .form-control;
+    }
+}
+
+/* Sample's header form */
+.portaltype-analysisrequest form[name='header_form'] {
+  td.label {
+    background-color: #f8f9fa;
+  }
+  .field {
+    margin-bottom: 0;
+  }
+}
+
+form[name=analysisrequest_add_form] {
+  .field {
+    margin-bottom: 0;
+  }
+}
+
+input.num-positions {
+  max-width: var(--senaite-input-width-narrow);
+  margin-right: 0.5rem;
+  border-radius: 0.2rem!important;
+}
+
+input.button-num-positions {
+  border:none;
+  padding: .25rem .5rem;
+  font-size: .875rem;
+  line-height: 1.5;
+  border-radius: .2rem;
+}
+
+input.hide-title {
+    + label {
+        display: none;
+    }
+}
+
+span.options:has(> input.hide-title) {
+    display: flex;
+    justify-content: center;
+}
+
+/* TinyMCE editor content padding to prevent cursor from being hidden
+   by focus border */
+.mce-content-body {
+  padding: 8px !important;
+}
+
+/* For inline TinyMCE editors */
+.mce-edit-focus {
+  padding: 8px !important;
+}

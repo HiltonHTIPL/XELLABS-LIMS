@@ -60,9 +60,6 @@ desktop.ini
 *.swp
 *.swo
 
-# Senaite reference source (read-only reference, not our code)
-senaite-reference/
-
 # Senaite rebrand backups
 senaite-rebrand/*.bak
 

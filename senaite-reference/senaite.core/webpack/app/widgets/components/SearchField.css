@@ -1,0 +1,9 @@
+/* CSS rules for the search field
+ */
+
+div.searchfield {
+    width: var(--senaite-input-width, 20rem);
+    max-width: 100%;
+    flex-wrap: nowrap;
+}
+div.searchfield input { width: auto!important; }
