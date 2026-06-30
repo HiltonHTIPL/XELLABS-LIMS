@@ -32,8 +32,14 @@ services:
       context: ./xellabs-backend
     restart: unless-stopped
     env_file:
-      - ./xellabs-backend/.env
+      - path: ./xellabs-backend/.env
+        required: false
     environment:
+      DEBUG: "True"
+      SECRET_KEY: "dev-secret-key-change-in-production"
+      DB_NAME: xellabs_lims
+      DB_USER: xellabs_user
+      DB_PASSWORD: "3333"
       DB_HOST: postgres
       DB_PORT: "5432"
       CELERY_BROKER_URL: redis://redis:6379/0
@@ -57,8 +63,14 @@ services:
       context: ./xellabs-backend
     restart: unless-stopped
     env_file:
-      - ./xellabs-backend/.env
+      - path: ./xellabs-backend/.env
+        required: false
     environment:
+      DEBUG: "True"
+      SECRET_KEY: "dev-secret-key-change-in-production"
+      DB_NAME: xellabs_lims
+      DB_USER: xellabs_user
+      DB_PASSWORD: "3333"
       DB_HOST: postgres
       DB_PORT: "5432"
       CELERY_BROKER_URL: redis://redis:6379/0
@@ -78,8 +90,14 @@ services:
       context: ./xellabs-backend
     restart: unless-stopped
     env_file:
-      - ./xellabs-backend/.env
+      - path: ./xellabs-backend/.env
+        required: false
     environment:
+      DEBUG: "True"
+      SECRET_KEY: "dev-secret-key-change-in-production"
+      DB_NAME: xellabs_lims
+      DB_USER: xellabs_user
+      DB_PASSWORD: "3333"
       DB_HOST: postgres
       DB_PORT: "5432"
       CELERY_BROKER_URL: redis://redis:6379/0

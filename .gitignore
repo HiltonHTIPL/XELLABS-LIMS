@@ -39,9 +39,6 @@ xellabs-backend/db.sqlite3
 xellabs-backend/media/
 xellabs-backend/staticfiles/
 
-# Requirements (managed separately per environment)
-xellabs-backend/requirements.txt
-
 # Logs
 *.log
 logs/
