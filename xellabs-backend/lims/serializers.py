@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from rest_framework.validators import UniqueValidator
 from .models import (
     SampleType, Method, Test, Specification,
     Sample, AnalysisRequest, Worksheet, WorksheetAssignment,
@@ -50,6 +51,10 @@ class SampleSerializer(RecordLockMixin, serializers.ModelSerializer):
     sample_type_name = serializers.CharField(source="sample_type.name", read_only=True)
     client_name = serializers.CharField(source="client.name", read_only=True)
     reason_for_change = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    sample_id = serializers.CharField(
+        required=False, allow_blank=True,
+        validators=[UniqueValidator(queryset=Sample.objects.all())],
+    )
 
     class Meta:
         model = Sample
@@ -77,6 +82,11 @@ class SampleSerializer(RecordLockMixin, serializers.ModelSerializer):
 
 
 class AnalysisRequestSerializer(serializers.ModelSerializer):
+    ar_id = serializers.CharField(
+        required=False, allow_blank=True,
+        validators=[UniqueValidator(queryset=AnalysisRequest.objects.all())],
+    )
+
     class Meta:
         model = AnalysisRequest
         fields = "__all__"
@@ -98,6 +108,10 @@ class WorksheetAssignmentSerializer(serializers.ModelSerializer):
 
 class WorksheetSerializer(serializers.ModelSerializer):
     assignments = WorksheetAssignmentSerializer(many=True, read_only=True)
+    ws_id = serializers.CharField(
+        required=False, allow_blank=True,
+        validators=[UniqueValidator(queryset=Worksheet.objects.all())],
+    )
 
     class Meta:
         model = Worksheet
