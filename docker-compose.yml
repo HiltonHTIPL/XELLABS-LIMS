@@ -44,6 +44,9 @@ services:
       DB_PORT: "5432"
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+      SENAITE_URL: http://senaite:8080/senaite
+      SENAITE_USER: admin
+      SENAITE_PASSWORD: admin
     ports:
       - "8001:8001"
     volumes:

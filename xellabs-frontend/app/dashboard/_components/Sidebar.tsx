@@ -8,24 +8,26 @@ function MI({ name, size = 16 }: { name: string; size?: number }) {
 }
 
 const NAV = [
-  { label: 'Dashboard',        href: '/dashboard',                 icon: 'dashboard'               },
-  { label: 'Samples',          href: '/dashboard/samples',         icon: 'science'                 },
-  { label: 'Clients',          href: '/dashboard/clients',         icon: 'business'                },
-  { label: 'Sample Receipt',   href: '/dashboard/sample-receipts', icon: 'receipt_long'            },
-  { label: 'Storage',          href: '/dashboard/storage',         icon: 'inventory_2'             },
-  { label: 'Chain of Custody', href: '/dashboard/chain-of-custody',icon: 'link'                   },
-  { label: 'Instruments',      href: '/dashboard/instruments',     icon: 'precision_manufacturing' },
-  { label: 'Quality',          href: '/dashboard/quality',         icon: 'verified'                },
-  { label: 'Reports',          href: '/dashboard/reports',         icon: 'bar_chart'               },
-  { label: 'Administration',   href: '/dashboard/admin',           icon: 'admin_panel_settings'    },
+  { label: 'Dashboard',        href: '/dashboard',                 icon: 'dashboard',               roles: null },
+  { label: 'Samples',          href: '/dashboard/samples',         icon: 'science',                 roles: null },
+  { label: 'Clients',          href: '/dashboard/clients',         icon: 'business',                roles: ['admin', 'lab_manager', 'receptionist'] },
+  { label: 'Sample Receipt',   href: '/dashboard/sample-receipts', icon: 'receipt_long',            roles: null },
+  { label: 'Storage',          href: '/dashboard/storage',         icon: 'inventory_2',             roles: ['admin', 'lab_manager', 'analyst', 'client'] },
+  { label: 'Chain of Custody', href: '/dashboard/chain-of-custody',icon: 'link',                   roles: ['admin', 'lab_manager', 'analyst', 'reviewer', 'client'] },
+  { label: 'Instruments',      href: '/dashboard/instruments',     icon: 'precision_manufacturing', roles: ['admin', 'lab_manager', 'analyst', 'client'] },
+  { label: 'Quality',          href: '/dashboard/quality',         icon: 'verified',                roles: ['admin', 'lab_manager', 'analyst', 'reviewer', 'client'] },
+  { label: 'Reports',          href: '/dashboard/reports',         icon: 'bar_chart',               roles: null },
+  { label: 'Administration',   href: '/dashboard/admin',           icon: 'admin_panel_settings',    roles: ['admin'] },
 ]
 
 interface Props {
   onToggle?: () => void
+  role?: string
 }
 
-export default function Sidebar({ onToggle }: Props) {
+export default function Sidebar({ onToggle, role }: Props) {
   const pathname = usePathname()
+  const visibleNav = NAV.filter(item => !item.roles || (role && item.roles.includes(role)))
 
   return (
     <div className="flex flex-col h-full" style={{ width: 210, backgroundColor: '#0B1E47', borderRight: '1px solid #E5E7EB' }}>
@@ -51,7 +53,7 @@ export default function Sidebar({ onToggle }: Props) {
 
       {/* Nav */}
       <nav className="flex-1 min-h-0 overflow-y-auto py-3 px-2">
-        {NAV.map(item => {
+        {visibleNav.map(item => {
           const active = item.href === '/dashboard'
             ? pathname === '/dashboard'
             : pathname.startsWith(item.href)

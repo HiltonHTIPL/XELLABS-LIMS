@@ -136,8 +136,17 @@ CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
 CELERY_TIMEZONE = "UTC"
 
+SENAITE_URL      = os.getenv("SENAITE_URL",      "http://senaite:8080/senaite")
+SENAITE_USER     = os.getenv("SENAITE_USER",     "admin")
+SENAITE_PASSWORD = os.getenv("SENAITE_PASSWORD", "admin")
+
 from celery.schedules import crontab
 CELERY_BEAT_SCHEDULE = {
+    # Auto-sync from reference LIMS disabled — clients are created manually via the UI
+    # "sync-clients-every-5-minutes": {
+    #     "task": "core.tasks.sync_clients",
+    #     "schedule": 300,
+    # },
     "check-inventory-expiry-daily": {
         "task": "inventory.tasks.check_inventory_expiry",
         "schedule": crontab(hour=6, minute=0),
