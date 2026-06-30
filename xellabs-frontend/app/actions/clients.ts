@@ -146,7 +146,11 @@ export type SyncResult = {
 export async function syncClientsFromSenaite(): Promise<SyncResult> {
   const session = await getSession()
   if (!session?.djangoToken) return { success: false, message: 'Not authenticated.', created: 0, updated: 0, total: 0 }
-  if (!session.senaiteToken) return { success: false, message: 'No SENAITE session. Please log in again.', created: 0, updated: 0, total: 0 }
+
+  // Use session senaite token if available, otherwise fall back to server-side credentials
+  const SENAITE_USER = process.env.SENAITE_ADMIN_USER ?? 'admin'
+  const SENAITE_PASS = process.env.SENAITE_ADMIN_PASS ?? 'admin'
+  const senaiteToken = session.senaiteToken ?? Buffer.from(`${SENAITE_USER}:${SENAITE_PASS}`).toString('base64')
 
   // 1. Fetch all clients currently in Django to build a uid→id map
   const existingRes = await fetch(`${DJANGO_API}/api/clients/?page_size=1000`, {
@@ -161,7 +165,7 @@ export async function syncClientsFromSenaite(): Promise<SyncResult> {
   }
 
   // 2. Fetch all clients from SENAITE
-  const senaiteClients = await fetchSenaiteClients(session.senaiteToken)
+  const senaiteClients = await fetchSenaiteClients(senaiteToken)
   if (senaiteClients.length === 0) {
     return { success: false, message: 'No clients found in SENAITE. Verify SENAITE is running and you are logged in as a SENAITE user.', created: 0, updated: 0, total: 0 }
   }
