@@ -1,8 +1,9 @@
 'use client'
-import { useState, useRef } from 'react'
+import { useState, useRef, useActionState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import type { DjangoClient } from '@/app/actions/clients'
+import type { DjangoClient, ClientFormState } from '@/app/actions/clients'
+import { updateClient } from '@/app/actions/clients'
 import type { TenantDetail, TenantUser } from '@/app/actions/tenants'
 import { uploadTenantLogo, removeTenantLogo } from '@/app/actions/tenants'
 
@@ -65,72 +66,69 @@ function OverviewTab({ client }: { client: DjangoClient }) {
     || client.contact_person
 
   return (
-    <div className="space-y-3">
-      {/* Organisation contact */}
-      <div className="bg-white rounded-xl px-4 py-2" style={{ border: '1px solid #E5E7EB' }}>
-        <h2 className="text-xs font-semibold py-2" style={{ color: '#374151', borderBottom: '1px solid #F3F4F6' }}>Organisation</h2>
-        <Field label="Email Address" value={client.email}  icon="email" />
-        <Field label="Phone"         value={client.phone}  icon="phone" />
-        {client.fax    && <Field label="Fax"    value={client.fax}    icon="fax" />}
-        {client.mobile && <Field label="Mobile" value={client.mobile} icon="smartphone" />}
-        {client.tax_number     && <Field label="Tax Number"    value={client.tax_number}    icon="receipt" />}
-        {client.account_number && <Field label="Account No."  value={client.account_number} icon="tag" />}
-      </div>
+    <div className="grid gap-3" style={{ gridTemplateColumns: '1fr 1fr' }}>
+      {/* Left column */}
+      <div className="space-y-3">
+        {/* Organisation */}
+        <div className="bg-white rounded-xl px-4 py-2" style={{ border: '1px solid #E5E7EB' }}>
+          <h2 className="text-xs font-semibold py-2" style={{ color: '#374151', borderBottom: '1px solid #F3F4F6' }}>Organisation</h2>
+          <Field label="Email Address"  value={client.email}          icon="email" />
+          <Field label="Phone"          value={client.phone}          icon="phone" />
+          <Field label="Fax"            value={client.fax}            icon="fax" />
+          <Field label="Mobile"         value={client.mobile}         icon="smartphone" />
+          <Field label="Tax Number"     value={client.tax_number}     icon="receipt" />
+          <Field label="Account No."    value={client.account_number} icon="tag" />
+        </div>
 
-      {/* Primary contact person */}
-      {contactName && (
+        {/* Primary Contact */}
         <div className="bg-white rounded-xl px-4 py-2" style={{ border: '1px solid #E5E7EB' }}>
           <h2 className="text-xs font-semibold py-2" style={{ color: '#374151', borderBottom: '1px solid #F3F4F6' }}>Primary Contact</h2>
-          <Field label="Name"       value={contactName}               icon="person" />
-          {client.contact_job_title   && <Field label="Job Title"   value={client.contact_job_title}   icon="work" />}
-          {client.contact_department  && <Field label="Department"  value={client.contact_department}  icon="corporate_fare" />}
-          {client.contact_email       && <Field label="Email"       value={client.contact_email}       icon="email" />}
-          {client.contact_phone       && <Field label="Phone"       value={client.contact_phone}       icon="phone" />}
+          <Field label="Name"       value={contactName || undefined}          icon="person" />
+          <Field label="Job Title"  value={client.contact_job_title}          icon="work" />
+          <Field label="Department" value={client.contact_department}         icon="corporate_fare" />
+          <Field label="Email"      value={client.contact_email}              icon="email" />
+          <Field label="Phone"      value={client.contact_phone}              icon="phone" />
         </div>
-      )}
 
-      {/* Addresses */}
-      {(Object.values(client.physical_address ?? {}).some(v => v) ||
-        Object.values(client.postal_address   ?? {}).some(v => v) ||
-        Object.values(client.billing_address  ?? {}).some(v => v)) && (
+        {/* Notes */}
+        <div className="bg-white rounded-xl px-4 py-3" style={{ border: '1px solid #E5E7EB' }}>
+          <h2 className="text-xs font-semibold mb-2" style={{ color: '#374151' }}>Notes / Remarks</h2>
+          {client.remarks
+            ? <p className="text-xs whitespace-pre-line" style={{ color: '#6B7280' }}>{client.remarks}</p>
+            : <p className="text-xs" style={{ color: '#D1D5DB' }}>No remarks</p>}
+        </div>
+      </div>
+
+      {/* Right column */}
+      <div className="space-y-3">
+        {/* Addresses */}
         <div className="bg-white rounded-xl px-4 py-2" style={{ border: '1px solid #E5E7EB' }}>
           <h2 className="text-xs font-semibold py-2" style={{ color: '#374151', borderBottom: '1px solid #F3F4F6' }}>Addresses</h2>
-          <div className="grid gap-4 pt-2" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
-            <AddrBlock label="Physical"  addr={client.physical_address as Record<string, string>} />
-            <AddrBlock label="Postal"    addr={client.postal_address   as Record<string, string>} />
-            <AddrBlock label="Billing"   addr={client.billing_address  as Record<string, string>} />
+          <div className="space-y-4 pt-2">
+            <AddrBlock label="Physical Address" addr={client.physical_address as Record<string, string>} />
+            <AddrBlock label="Postal Address"   addr={client.postal_address   as Record<string, string>} />
+            <AddrBlock label="Billing Address"  addr={client.billing_address  as Record<string, string>} />
           </div>
+          {!Object.values(client.physical_address ?? {}).some(v => v) &&
+           !Object.values(client.postal_address   ?? {}).some(v => v) &&
+           !Object.values(client.billing_address  ?? {}).some(v => v) && (
+            <p className="py-2 text-xs" style={{ color: '#D1D5DB' }}>No addresses on file</p>
+          )}
         </div>
-      )}
 
-      {/* Financial */}
-      {(client.bank_name || client.swift_code || client.iban || Number(client.bulk_discount) > 0) && (
+        {/* Financial */}
         <div className="bg-white rounded-xl px-4 py-2" style={{ border: '1px solid #E5E7EB' }}>
           <h2 className="text-xs font-semibold py-2" style={{ color: '#374151', borderBottom: '1px solid #F3F4F6' }}>Financial</h2>
-          {client.bank_name   && <Field label="Bank"         value={`${client.bank_name}${client.bank_branch ? ' — ' + client.bank_branch : ''}`} icon="account_balance" />}
-          {client.swift_code  && <Field label="SWIFT"        value={client.swift_code}  icon="swap_horiz" />}
-          {client.iban        && <Field label="IBAN"         value={client.iban}        icon="credit_card" />}
-          {client.nib         && <Field label="NIB"          value={client.nib}         icon="credit_card" />}
-          {Number(client.bulk_discount) > 0   && <Field label="Bulk Discount"   value={`${client.bulk_discount}%`}   icon="percent" />}
-          {Number(client.member_discount) > 0 && <Field label="Member Discount" value={`${client.member_discount}%`} icon="percent" />}
+          <Field label="Bank Name"       value={client.bank_name}   icon="account_balance" />
+          <Field label="Bank Branch"     value={client.bank_branch} icon="account_balance" />
+          <Field label="SWIFT Code"      value={client.swift_code}  icon="swap_horiz" />
+          <Field label="IBAN"            value={client.iban}        icon="credit_card" />
+          <Field label="NIB"             value={client.nib}         icon="credit_card" />
+          <Field label="Bulk Discount"   value={Number(client.bulk_discount)   > 0 ? `${client.bulk_discount}%`   : undefined} icon="percent" />
+          <Field label="Member Discount" value={Number(client.member_discount) > 0 ? `${client.member_discount}%` : undefined} icon="percent" />
         </div>
-      )}
 
-      {/* Remarks */}
-      {client.remarks && (
-        <div className="bg-white rounded-xl px-4 py-3" style={{ border: '1px solid #E5E7EB' }}>
-          <h2 className="text-xs font-semibold mb-1.5" style={{ color: '#374151' }}>Notes</h2>
-          <p className="text-xs whitespace-pre-line" style={{ color: '#6B7280' }}>{client.remarks}</p>
-        </div>
-      )}
-
-      {/* SENAITE sync badge */}
-      {client.senaite_uid && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ backgroundColor: '#F0FDFA', border: '1px solid #CCFBF1' }}>
-          <MI name="sync" size={13} color="#0D9488" />
-          <p style={{ fontSize: 10, color: '#0D9488' }}>Synced to SENAITE — UID: <span className="font-mono">{client.senaite_uid}</span></p>
-        </div>
-      )}
+      </div>
     </div>
   )
 }
@@ -361,6 +359,202 @@ function BrandingTab({ tenant, clientId }: { tenant: TenantDetail | null; client
   )
 }
 
+// ── Inline Edit Drawer ────────────────────────────────────────────────────────
+function EditField({
+  label, name, type = 'text', placeholder, defaultValue, as,
+}: {
+  label: string; name: string; type?: string; placeholder?: string; defaultValue?: string; as?: 'textarea'
+}) {
+  const base = 'w-full px-2.5 py-1.5 text-xs rounded-lg outline-none'
+  const border = { border: '1px solid #D1D5DB', color: '#111827' }
+  return (
+    <div>
+      <label className="block text-xs font-medium mb-0.5" style={{ color: '#374151' }}>{label}</label>
+      {as === 'textarea'
+        ? <textarea name={name} rows={3} placeholder={placeholder} defaultValue={defaultValue} className={`${base} resize-none`} style={border} />
+        : <input name={name} type={type} placeholder={placeholder} defaultValue={defaultValue} className={base} style={border} />}
+    </div>
+  )
+}
+
+function EditRow({ children }: { children: React.ReactNode }) {
+  return <div className="grid gap-3" style={{ gridTemplateColumns: '1fr 1fr' }}>{children}</div>
+}
+
+function EditAddrSection({ prefix, label, addr }: { prefix: string; label: string; addr?: Record<string, string> }) {
+  return (
+    <div className="space-y-2 p-3 rounded-lg" style={{ backgroundColor: '#FAFAFA', border: '1px solid #E5E7EB' }}>
+      <p className="text-xs font-semibold" style={{ color: '#374151' }}>{label}</p>
+      <EditField label="Street" name={`${prefix}_street`} placeholder="123 Main St" defaultValue={addr?.address} />
+      <EditRow>
+        <EditField label="City"    name={`${prefix}_city`}    placeholder="City"    defaultValue={addr?.city} />
+        <EditField label="State"   name={`${prefix}_state`}   placeholder="State"   defaultValue={addr?.state} />
+      </EditRow>
+      <EditRow>
+        <EditField label="ZIP"     name={`${prefix}_zip`}     placeholder="00000"   defaultValue={addr?.zip} />
+        <EditField label="Country" name={`${prefix}_country`} placeholder="Country" defaultValue={addr?.country} />
+      </EditRow>
+    </div>
+  )
+}
+
+function EditDrawer({ client, onClose }: { client: DjangoClient; onClose: () => void }) {
+  const router = useRouter()
+  const [state, action, pending] = useActionState(
+    async (prev: ClientFormState, formData: FormData) => {
+      const result = await updateClient(client.id, prev, formData)
+      if (result.success) { onClose(); router.refresh() }
+      return result
+    },
+    {}
+  )
+  const phys = client.physical_address as Record<string, string> | undefined
+  const post = client.postal_address   as Record<string, string> | undefined
+  const bill = client.billing_address  as Record<string, string> | undefined
+
+  return (
+    <div style={{ position: 'fixed', top: 56, bottom: 40, left: 0, right: 0, zIndex: 200 }}>
+      <div onClick={onClose} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)' }} />
+      <div style={{
+        position: 'absolute', top: 0, right: 0, bottom: 0, width: 540,
+        backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.12)',
+        display: 'flex', flexDirection: 'column',
+      }}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3.5 shrink-0" style={{ borderBottom: '1px solid #F3F4F6' }}>
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#EFF6FF' }}>
+              <MI name="edit" size={14} color="#2563EB" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>Edit Client</h2>
+              <p style={{ fontSize: 10, color: '#9CA3AF' }}>{client.name}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={15} color="#9CA3AF" /></button>
+        </div>
+
+        {state.message && !state.success && (
+          <div className="mx-5 mt-3 px-3 py-2 rounded-lg text-xs shrink-0" style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#DC2626' }}>
+            {state.message}
+          </div>
+        )}
+
+        <form action={action} className="flex flex-col flex-1 min-h-0">
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+
+            {/* Basic */}
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#9CA3AF' }}>Basic Info</p>
+              <div className="space-y-2">
+                <EditRow>
+                  <EditField label="Client Name *" name="name" placeholder="e.g. Green Valley Farms" defaultValue={client.name} />
+                  <EditField label="Client ID *"   name="client_id" placeholder="e.g. CL-001"         defaultValue={client.client_id} />
+                </EditRow>
+                <EditRow>
+                  <EditField label="Email"  name="email"  type="email" placeholder="contact@client.com" defaultValue={client.email} />
+                  <EditField label="Phone"  name="phone"               placeholder="+1 555 000 0000"    defaultValue={client.phone} />
+                </EditRow>
+                <EditRow>
+                  <EditField label="Fax"    name="fax"    placeholder="+1 555 000 0001" defaultValue={client.fax} />
+                  <EditField label="Mobile" name="mobile" placeholder="+1 555 000 0002" defaultValue={client.mobile} />
+                </EditRow>
+                <EditRow>
+                  <EditField label="Tax Number"     name="tax_number"     placeholder="VAT / Tax" defaultValue={client.tax_number} />
+                  <EditField label="Account Number" name="account_number" placeholder="Billing account no." defaultValue={client.account_number} />
+                </EditRow>
+              </div>
+            </div>
+
+            {/* Contact */}
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#9CA3AF' }}>Primary Contact</p>
+              <div className="space-y-2">
+                <div className="grid gap-3" style={{ gridTemplateColumns: '90px 1fr 1fr' }}>
+                  <div>
+                    <label className="block text-xs font-medium mb-0.5" style={{ color: '#374151' }}>Salutation</label>
+                    <select name="salutation" defaultValue={client.salutation} className="w-full px-2.5 py-1.5 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827' }}>
+                      <option value="">—</option>
+                      {['Mr','Mrs','Ms','Dr','Prof'].map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <EditField label="First Name" name="contact_first_name" placeholder="First name" defaultValue={client.contact_first_name} />
+                  <EditField label="Last Name"  name="contact_last_name"  placeholder="Last name"  defaultValue={client.contact_last_name} />
+                </div>
+                <EditRow>
+                  <EditField label="Contact Email" name="contact_email" type="email" placeholder="person@client.com" defaultValue={client.contact_email} />
+                  <EditField label="Contact Phone" name="contact_phone"               placeholder="+1 555 000 0003"   defaultValue={client.contact_phone} />
+                </EditRow>
+                <EditRow>
+                  <EditField label="Job Title"  name="contact_job_title"  placeholder="e.g. Lab Director"     defaultValue={client.contact_job_title} />
+                  <EditField label="Department" name="contact_department" placeholder="e.g. Quality Assurance" defaultValue={client.contact_department} />
+                </EditRow>
+              </div>
+            </div>
+
+            {/* Addresses */}
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#9CA3AF' }}>Addresses</p>
+              <div className="space-y-2">
+                <EditAddrSection prefix="physical" label="Physical Address" addr={phys} />
+                <EditAddrSection prefix="postal"   label="Postal Address"   addr={post} />
+                <EditAddrSection prefix="billing"  label="Billing Address"  addr={bill} />
+              </div>
+            </div>
+
+            {/* Financial */}
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#9CA3AF' }}>Financial</p>
+              <div className="space-y-2">
+                <EditRow>
+                  <EditField label="Bank Name"   name="bank_name"   placeholder="Bank name"   defaultValue={client.bank_name} />
+                  <EditField label="Bank Branch" name="bank_branch" placeholder="Branch name" defaultValue={client.bank_branch} />
+                </EditRow>
+                <EditRow>
+                  <EditField label="SWIFT Code" name="swift_code" placeholder="e.g. AAAABBCC" defaultValue={client.swift_code} />
+                  <EditField label="IBAN"       name="iban"       placeholder="e.g. GB29..."  defaultValue={client.iban} />
+                </EditRow>
+                <EditRow>
+                  <EditField label="NIB"                name="nib"           placeholder="NIB"   defaultValue={client.nib} />
+                  <EditField label="Bulk Discount (%)"  name="bulk_discount"   type="number" placeholder="0" defaultValue={client.bulk_discount} />
+                </EditRow>
+                <EditRow>
+                  <EditField label="Member Discount (%)" name="member_discount" type="number" placeholder="0" defaultValue={client.member_discount} />
+                  <div />
+                </EditRow>
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#9CA3AF' }}>Notes</p>
+              <EditField label="Remarks" name="remarks" as="textarea" placeholder="Any additional notes…" defaultValue={client.remarks} />
+            </div>
+
+          </div>
+
+          {/* Footer */}
+          <div className="px-5 py-3 flex gap-2 shrink-0" style={{ borderTop: '1px solid #F3F4F6' }}>
+            <button type="button" onClick={onClose} className="px-4 py-1.5 text-xs rounded-lg font-medium" style={{ border: '1px solid #D1D5DB', color: '#374151' }}>
+              Cancel
+            </button>
+            <div className="flex-1" />
+            <button
+              type="submit"
+              disabled={pending}
+              className="flex items-center gap-1.5 px-4 py-1.5 text-xs rounded-lg font-medium text-white"
+              style={{ backgroundColor: pending ? '#93C5FD' : '#2563EB', cursor: pending ? 'not-allowed' : 'pointer' }}
+            >
+              <MI name={pending ? 'hourglass_top' : 'check'} size={13} color="#fff" />
+              {pending ? 'Saving…' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 // ── Shell ─────────────────────────────────────────────────────────────────────
 export default function ClientDetailShell({
   client, tenant, users,
@@ -370,6 +564,7 @@ export default function ClientDetailShell({
   users: TenantUser[]
 }) {
   const [tab, setTab] = useState<Tab>('Overview')
+  const [showEdit, setShowEdit] = useState(false)
 
   const createdDate = new Date(client.created_at).toLocaleDateString('en-US', {
     year: 'numeric', month: 'long', day: 'numeric',
@@ -425,11 +620,23 @@ export default function ClientDetailShell({
             </p>
           )}
         </div>
-        <div className="text-right shrink-0">
-          <p style={{ fontSize: 10, color: '#9CA3AF' }}>Users</p>
-          <p className="text-xl font-bold" style={{ color: '#111827' }}>{users.length}</p>
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="text-right mr-3">
+            <p style={{ fontSize: 10, color: '#9CA3AF' }}>Users</p>
+            <p className="text-xl font-bold" style={{ color: '#111827' }}>{users.length}</p>
+          </div>
+          <button
+            onClick={() => setShowEdit(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white"
+            style={{ backgroundColor: '#2563EB' }}
+          >
+            <MI name="edit" size={13} color="#fff" />
+            Edit
+          </button>
         </div>
       </div>
+
+      {showEdit && <EditDrawer client={client} onClose={() => setShowEdit(false)} />}
 
       {/* Tabs */}
       <div className="flex gap-0.5 mb-3 p-1 rounded-lg w-fit" style={{ backgroundColor: '#E5E7EB' }}>

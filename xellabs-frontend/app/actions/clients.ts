@@ -290,6 +290,9 @@ export async function createClient(
   if (!client_id) errors.client_id = ['Client ID is required']
   if (Object.keys(errors).length > 0) return { errors }
 
+  // Extract logo file before sending JSON (file stays separate)
+  const logoFile = formData.get('logo') as File | null
+
   const payload = {
     // Core
     name,
@@ -338,6 +341,40 @@ export async function createClient(
       const err = await res.json().catch(() => ({}))
       const msg = Object.values(err).flat().join(' ') || `Error ${res.status}`
       return { message: msg }
+    }
+
+    const created: DjangoClient = await res.json()
+
+    // Upload logo if provided — compress to <30 KB with sharp
+    if (logoFile && logoFile.size > 0 && created.tenant) {
+      try {
+        const sharp = (await import('sharp')).default
+        const buffer = Buffer.from(await logoFile.arrayBuffer())
+
+        // Compress: resize to 400px wide, webp quality 80
+        let compressed = await sharp(buffer)
+          .resize({ width: 400, withoutEnlargement: true })
+          .webp({ quality: 80 })
+          .toBuffer()
+
+        // If still over 30 KB, compress harder
+        if (compressed.byteLength > 30 * 1024) {
+          compressed = await sharp(buffer)
+            .resize({ width: 200, withoutEnlargement: true })
+            .webp({ quality: 50 })
+            .toBuffer()
+        }
+
+        const logoForm = new FormData()
+        logoForm.append('logo', new Blob([compressed], { type: 'image/webp' }), 'logo.webp')
+        await fetch(`${DJANGO_API}/api/tenants/${created.tenant}/logo/`, {
+          method: 'POST',
+          headers: { Authorization: `Token ${session.djangoToken}` },
+          body: logoForm,
+        }).catch(() => null)
+      } catch {
+        // Logo upload failure is non-fatal — client was created successfully
+      }
     }
 
     revalidatePath('/dashboard/clients')

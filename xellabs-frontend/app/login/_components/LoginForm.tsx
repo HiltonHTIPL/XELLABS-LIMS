@@ -8,9 +8,11 @@ const initialState: LoginFormState = undefined
 export default function LoginForm({
   tenantName,
   tenantSubdomain,
+  tenantLogo,
 }: {
   tenantName?: string
   tenantSubdomain?: string
+  tenantLogo?: string
 }) {
   const [state, action, pending] = useActionState(login, initialState)
 
@@ -18,8 +20,20 @@ export default function LoginForm({
 
   return (
     <div className="w-full max-w-sm">
-      {/* Tenant badge — shown only on subdomain */}
-      {isTenant && (
+      {/* Client logo — shown above "Welcome back" when on a client subdomain */}
+      {isTenant && tenantLogo && (
+        <div className="mb-6 flex justify-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={tenantLogo}
+            alt={tenantName || tenantSubdomain}
+            style={{ maxHeight: 72, maxWidth: 200, objectFit: 'contain' }}
+          />
+        </div>
+      )}
+
+      {/* Tenant badge — shown only on subdomain (when no logo) */}
+      {isTenant && !tenantLogo && (
         <div
           className="mb-6 flex items-center gap-2 px-3 py-2 rounded-lg text-sm"
           style={{ backgroundColor: '#F0FDFA', border: '1px solid #99F6E4', color: '#0D9488' }}

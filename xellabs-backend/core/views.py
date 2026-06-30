@@ -1,13 +1,14 @@
 import logging
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model, authenticate
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.generics import ListAPIView, RetrieveUpdateAPIView
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
 from rest_framework.authentication import TokenAuthentication
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.filters import SearchFilter, OrderingFilter
+from rest_framework.authtoken.models import Token
 from django_filters.rest_framework import DjangoFilterBackend
 
 from .models import Client, Tenant
@@ -15,6 +16,51 @@ from .serializers import ClientSerializer, UserSerializer, TenantSerializer, Ten
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
+
+
+class FlexibleTokenView(APIView):
+    """
+    POST /api/auth/login/  { username, password }
+    Accepts username OR email in the 'username' field.
+    Returns { token }.
+    """
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        identifier = request.data.get('username', '').strip()
+        password = request.data.get('password', '').strip()
+
+        if not identifier or not password:
+            return Response({'non_field_errors': ['Must include username and password.']}, status=400)
+
+        # Resolve identifier to the exact stored username (case-insensitive for both email and username)
+        username = identifier
+        if '@' in identifier:
+            # Email lookup
+            try:
+                user_obj = User.objects.get(email__iexact=identifier)
+                username = user_obj.username
+            except User.DoesNotExist:
+                return Response({'non_field_errors': ['No account found with that email address.']}, status=400)
+            except User.MultipleObjectsReturned:
+                pass
+        else:
+            # Case-insensitive username lookup (e.g. "liji" → "LIJI")
+            try:
+                user_obj = User.objects.get(username__iexact=identifier)
+                username = user_obj.username
+            except (User.DoesNotExist, User.MultipleObjectsReturned):
+                pass
+
+        user = authenticate(request=request, username=username, password=password)
+        if not user:
+            return Response({'non_field_errors': ['Invalid credentials.']}, status=400)
+        if not user.is_active:
+            return Response({'non_field_errors': ['This account is disabled.']}, status=400)
+
+        token, _ = Token.objects.get_or_create(user=user)
+        return Response({'token': token.key})
 
 
 class UserMeView(APIView):
@@ -51,7 +97,34 @@ class ClientViewSet(ModelViewSet):
         return Client.objects.all()
 
     def perform_create(self, serializer):
-        serializer.save(tenant=self.request.user.tenant)
+        from django.utils.text import slugify
+
+        name = serializer.validated_data.get('name', '')
+        client_id_val = serializer.validated_data.get('client_id', '')
+        email = serializer.validated_data.get('email', '')
+
+        # Derive a unique slug from client_id (preferred) or name
+        raw = client_id_val or name
+        slug = slugify(raw) or 'client'
+
+        # Auto-create tenant (also creates {slug}.localhost domain via Tenant.save())
+        tenant, _ = Tenant.objects.get_or_create(
+            slug=slug,
+            defaults={'name': name, 'schema_name': slug},
+        )
+
+        # Auto-create a portal login (username=client_id, password=admin, role=client)
+        username = client_id_val or slug
+        if not User.objects.filter(username=username).exists():
+            User.objects.create_user(
+                username=username,
+                email=email,
+                password='admin',
+                role='client',
+                tenant=tenant,
+            )
+
+        serializer.save(tenant=tenant)
 
 
 class TenantListView(ListAPIView):
