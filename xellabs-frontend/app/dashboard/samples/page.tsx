@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import Link from 'next/link'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -237,12 +238,16 @@ export default function SamplesPage() {
                         <td className="px-3 py-2.5">
                           <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleOne(s.id)} style={{ accentColor: '#2563EB', cursor: 'pointer' }} />
                         </td>
-                        <td style={{ padding: '10px 8px' }}>
-                          <span style={{ fontSize: 12, fontWeight: 600, color: '#2563EB' }}>{s.id}</span>
+                        <td style={{ padding: '10px 8px', whiteSpace: 'nowrap' }}>
+                          <Link href={`/dashboard/samples/${s.id}`} style={{ fontSize: 12, fontWeight: 600, color: '#2563EB', textDecoration: 'none', cursor: 'pointer' }}
+                            onMouseEnter={e => (e.currentTarget.style.textDecoration = 'underline')}
+                            onMouseLeave={e => (e.currentTarget.style.textDecoration = 'none')}>
+                            {s.id}
+                          </Link>
                         </td>
-                        <td style={{ padding: '10px 8px', fontSize: 12, color: '#374151' }}>{s.client}</td>
-                        <td style={{ padding: '10px 8px', fontSize: 12, color: '#374151' }}>{s.type}</td>
-                        <td style={{ padding: '10px 8px' }}>
+                        <td style={{ padding: '10px 8px', fontSize: 12, color: '#374151', whiteSpace: 'nowrap' }}>{s.client}</td>
+                        <td style={{ padding: '10px 8px', fontSize: 12, color: '#374151', whiteSpace: 'nowrap' }}>{s.type}</td>
+                        <td style={{ padding: '10px 8px', whiteSpace: 'nowrap' }}>
                           <div className="flex items-center gap-1.5">
                             <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: s.condition==='Acceptable'?'#22C55E':'#EF4444', flexShrink: 0, display: 'inline-block' }} />
                             <span style={{ fontSize: 12, color: '#374151' }}>{s.condition}</span>
@@ -256,8 +261,8 @@ export default function SamplesPage() {
                         </td>
                         <td style={{ padding: '10px 8px', fontSize: 12, color: '#6B7280', whiteSpace: 'nowrap' }}>{s.received}</td>
                         <td style={{ padding: '10px 8px', fontSize: 12, color: '#6B7280', whiteSpace: 'nowrap' }}>{s.due}</td>
-                        <td style={{ padding: '10px 8px', fontSize: 12, color: '#374151' }}>{s.analyst}</td>
-                        <td style={{ padding: '10px 8px', fontSize: 12, color: '#374151' }}>{s.storage}</td>
+                        <td style={{ padding: '10px 8px', fontSize: 12, color: '#374151', whiteSpace: 'nowrap' }}>{s.analyst}</td>
+                        <td style={{ padding: '10px 8px', fontSize: 12, color: '#374151', whiteSpace: 'nowrap' }}>{s.storage}</td>
                         <td style={{ padding: '10px 8px' }}>
                           <button className="p-1 rounded hover:bg-gray-100" style={{ cursor: 'pointer' }}>
                             <MI name="more_vert" size={16} color="#9CA3AF" />
