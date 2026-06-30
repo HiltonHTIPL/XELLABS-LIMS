@@ -80,6 +80,11 @@ class Sample(models.Model):
     status = models.CharField(max_length=20, choices=STATUS, default="registered")
     storage_location = models.CharField(max_length=200, blank=True)
     barcode = models.CharField(max_length=100, blank=True)
+    is_locked = models.BooleanField(default=False)
+    locked_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                  on_delete=models.SET_NULL, related_name="samples_locked")
+    locked_at = models.DateTimeField(null=True, blank=True)
+    locked_reason = models.CharField(max_length=300, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="samples_created")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -170,6 +175,7 @@ class Result(models.Model):
     submitted_at = models.DateTimeField(null=True, blank=True)
     verified_at = models.DateTimeField(null=True, blank=True)
     remarks = models.TextField(blank=True)
+    is_locked = models.BooleanField(default=False)
 
     class Meta:
         db_table = "results"

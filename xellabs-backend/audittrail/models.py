@@ -14,13 +14,15 @@ class AuditEvent(models.Model):
         ("reject", "Rejected"),
         ("sign", "Signed"),
         ("print", "Printed"),
+        ("instrument_import", "Instrument Import"),
     ]
     user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
-    action = models.CharField(max_length=20, choices=ACTION)
+    action = models.CharField(max_length=30, choices=ACTION)
     content_type = models.ForeignKey(ContentType, null=True, blank=True, on_delete=models.SET_NULL)
     object_id = models.PositiveBigIntegerField(null=True, blank=True)
     object_repr = models.CharField(max_length=300, blank=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
+    extra_data = models.JSONField(null=True, blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -67,3 +69,23 @@ class SecurityEvent(models.Model):
     class Meta:
         db_table = "security_events"
         ordering = ["-timestamp"]
+
+
+class RecordVersion(models.Model):
+    """Immutable snapshot of a record at each save — version control for compliance."""
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = models.PositiveBigIntegerField()
+    version_number = models.PositiveIntegerField()
+    data = models.JSONField()
+    changed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+    reason = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "record_versions"
+        ordering = ["content_type", "object_id", "version_number"]
+        unique_together = ("content_type", "object_id", "version_number")
+        indexes = [models.Index(fields=["content_type", "object_id"])]
+
+    def __str__(self):
+        return f"{self.content_type} #{self.object_id} v{self.version_number}"

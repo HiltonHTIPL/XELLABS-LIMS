@@ -49,6 +49,7 @@ MIDDLEWARE = [
     "config.tenant_middleware.XelLabsTenantMiddleware",   # must be first; reads X-Tenant-Schema header
     "django.middleware.security.SecurityMiddleware",
     "corsheaders.middleware.CorsMiddleware",
+    "audittrail.middleware.AuditMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -68,7 +69,7 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [BASE_DIR / "reporting" / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -134,3 +135,17 @@ REST_FRAMEWORK = {
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
 CELERY_TIMEZONE = "UTC"
+
+from celery.schedules import crontab
+CELERY_BEAT_SCHEDULE = {
+    "check-inventory-expiry-daily": {
+        "task": "inventory.tasks.check_inventory_expiry",
+        "schedule": crontab(hour=6, minute=0),
+        "kwargs": {"days_ahead": 30},
+    },
+    "check-sample-expiry-daily": {
+        "task": "inventory.tasks.check_sample_expiry",
+        "schedule": crontab(hour=6, minute=15),
+        "kwargs": {"days_ahead": 7},
+    },
+}

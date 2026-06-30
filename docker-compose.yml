@@ -32,8 +32,14 @@ services:
       context: ./xellabs-backend
     restart: unless-stopped
     env_file:
-      - ./xellabs-backend/.env
+      - path: ./xellabs-backend/.env
+        required: false
     environment:
+      DEBUG: "True"
+      SECRET_KEY: "dev-secret-key-change-in-production"
+      DB_NAME: xellabs_lims
+      DB_USER: xellabs_user
+      DB_PASSWORD: "3333"
       DB_HOST: postgres
       DB_PORT: "5432"
       CELERY_BROKER_URL: redis://redis:6379/0
@@ -41,7 +47,8 @@ services:
     ports:
       - "8001:8001"
     volumes:
-      - ./xellabs-backend:/app   # live-mount source; runserver auto-reloads on .py changes
+      - ./xellabs-backend:/app
+      - django_packages:/usr/local/lib/python3.12/site-packages
     depends_on:
       postgres:
         condition: service_healthy
@@ -56,14 +63,21 @@ services:
       context: ./xellabs-backend
     restart: unless-stopped
     env_file:
-      - ./xellabs-backend/.env
+      - path: ./xellabs-backend/.env
+        required: false
     environment:
+      DEBUG: "True"
+      SECRET_KEY: "dev-secret-key-change-in-production"
+      DB_NAME: xellabs_lims
+      DB_USER: xellabs_user
+      DB_PASSWORD: "3333"
       DB_HOST: postgres
       DB_PORT: "5432"
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
     volumes:
-      - ./xellabs-backend:/app   # live-mount source; watchmedo restarts worker on .py changes
+      - ./xellabs-backend:/app
+      - celery_packages:/usr/local/lib/python3.12/site-packages
     depends_on:
       postgres:
         condition: service_healthy
@@ -77,8 +91,37 @@ services:
         --
         celery -A config worker --loglevel=info --pool=solo
 
+  celery-beat:
+    build:
+      context: ./xellabs-backend
+    restart: unless-stopped
+    env_file:
+      - path: ./xellabs-backend/.env
+        required: false
+    environment:
+      DEBUG: "True"
+      SECRET_KEY: "dev-secret-key-change-in-production"
+      DB_NAME: xellabs_lims
+      DB_USER: xellabs_user
+      DB_PASSWORD: "3333"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - ./xellabs-backend:/app
+      - celery_packages:/usr/local/lib/python3.12/site-packages
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A config beat --loglevel=info
+
   senaite:
-    image: senaite/senaite:v2.6.0
+    build:
+      context: ./senaite-rebrand
+      dockerfile: Dockerfile
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -110,3 +153,5 @@ services:
 volumes:
   postgres_data:
   senaite_data:
+  django_packages:
+  celery_packages:

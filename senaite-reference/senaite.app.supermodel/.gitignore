@@ -1,0 +1,17 @@
+.installed.cfg
+.mr.developer.cfg
+bin
+parts
+var
+develop-eggs
+eggs
+src/senaite.*
+dist
+build
+*.pyc
+*.egg-info
+/.Python
+/include/
+/lib/
+/pyvenv.cfg
+/downloads
