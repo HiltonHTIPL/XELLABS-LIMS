@@ -8,7 +8,7 @@ import { senaiteLogin, mapSenaiteRole } from '@/app/lib/senaite'
 
 const rateLimiter = new RateLimiterMemory({ points: 5, duration: 60 })
 
-const DJANGO_API = process.env.DJANGO_API_URL ?? 'http://localhost:8001'
+const DJANGO_API = process.env.DJANGO_API_URL ?? 'http://django:8001'
 
 async function getDjangoToken(username: string, password: string): Promise<string> {
   try {
