@@ -1,4 +1,7 @@
-from rest_framework import viewsets, filters
+from django.utils import timezone
+from rest_framework import viewsets, filters, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import Instrument, InstrumentMethod, Calibration, Maintenance, InstrumentRun, InstrumentResultImport
 from .serializers import (
@@ -14,6 +17,26 @@ class InstrumentViewSet(viewsets.ModelViewSet):
     filterset_fields = ["status"]
     search_fields = ["name", "instrument_id", "serial_number"]
     ordering_fields = ["name", "next_calibration", "next_maintenance"]
+
+    @action(detail=False, methods=["get"], url_path="calibration-due")
+    def calibration_due(self, request):
+        """Instruments with calibration due within the next 30 days."""
+        days = int(request.query_params.get("days", 30))
+        cutoff = timezone.now().date() + timezone.timedelta(days=days)
+        qs = self.get_queryset().filter(
+            status="active", next_calibration__isnull=False, next_calibration__lte=cutoff
+        ).order_by("next_calibration")
+        return Response(InstrumentSerializer(qs, many=True).data)
+
+    @action(detail=False, methods=["get"], url_path="maintenance-due")
+    def maintenance_due(self, request):
+        """Instruments with maintenance due within the next 30 days."""
+        days = int(request.query_params.get("days", 30))
+        cutoff = timezone.now().date() + timezone.timedelta(days=days)
+        qs = self.get_queryset().filter(
+            status="active", next_maintenance__isnull=False, next_maintenance__lte=cutoff
+        ).order_by("next_maintenance")
+        return Response(InstrumentSerializer(qs, many=True).data)
 
 
 class InstrumentMethodViewSet(viewsets.ModelViewSet):

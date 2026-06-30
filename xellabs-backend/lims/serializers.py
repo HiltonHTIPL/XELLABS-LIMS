@@ -57,8 +57,11 @@ class SampleSerializer(RecordLockMixin, serializers.ModelSerializer):
         read_only_fields = ("created_by", "locked_by", "locked_at", "created_at", "updated_at")
 
     def create(self, validated_data):
+        from .services import generate_sample_id
         validated_data.pop("reason_for_change", None)
         validated_data["created_by"] = self.context["request"].user
+        if not validated_data.get("sample_id"):
+            validated_data["sample_id"] = generate_sample_id(validated_data["sample_type"])
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
@@ -80,6 +83,9 @@ class AnalysisRequestSerializer(serializers.ModelSerializer):
         read_only_fields = ("created_by", "created_at", "updated_at")
 
     def create(self, validated_data):
+        from .services import generate_ar_id
+        if not validated_data.get("ar_id"):
+            validated_data["ar_id"] = generate_ar_id()
         validated_data["created_by"] = self.context["request"].user
         return super().create(validated_data)
 
@@ -99,6 +105,9 @@ class WorksheetSerializer(serializers.ModelSerializer):
         read_only_fields = ("analyst", "created_at", "updated_at")
 
     def create(self, validated_data):
+        from .services import generate_ws_id
+        if not validated_data.get("ws_id"):
+            validated_data["ws_id"] = generate_ws_id()
         validated_data["analyst"] = self.context["request"].user
         return super().create(validated_data)
 

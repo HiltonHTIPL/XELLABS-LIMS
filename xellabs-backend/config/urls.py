@@ -3,10 +3,12 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.authtoken.views import obtain_auth_token
+from core.dashboard import DashboardView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/auth/token/", obtain_auth_token, name="api_token_auth"),
+    path("api/dashboard/", DashboardView.as_view(), name="dashboard"),
     path("api/", include("lims.urls")),
     path("api/inventory/", include("inventory.urls")),
     path("api/instruments/", include("instruments.urls")),

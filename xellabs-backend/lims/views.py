@@ -1,5 +1,8 @@
-from rest_framework import viewsets, filters
+from rest_framework import viewsets, filters, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
+from core.permissions import IsReviewerOrAbove, IsLabManagerOrAbove
 from .models import (
     SampleType, Method, Test, Specification,
     Sample, AnalysisRequest, Worksheet, WorksheetAssignment,
@@ -52,6 +55,20 @@ class SampleViewSet(viewsets.ModelViewSet):
     search_fields = ["sample_id", "barcode", "description"]
     ordering_fields = ["created_at", "collection_date", "received_date"]
 
+    @action(detail=True, methods=["post"])
+    def receive(self, request, pk=None):
+        from .services import receive_sample
+        sample = self.get_object()
+        try:
+            receive_sample(
+                sample, request.user,
+                location=request.data.get("location", ""),
+                notes=request.data.get("notes", ""),
+            )
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(SampleSerializer(sample).data)
+
 
 class AnalysisRequestViewSet(viewsets.ModelViewSet):
     queryset = AnalysisRequest.objects.select_related("sample", "created_by").prefetch_related("tests").all()
@@ -70,6 +87,36 @@ class WorksheetViewSet(viewsets.ModelViewSet):
     search_fields = ["ws_id"]
     ordering_fields = ["created_at"]
 
+    @action(detail=True, methods=["post"])
+    def submit_for_review(self, request, pk=None):
+        from .services import submit_worksheet_for_review
+        ws = self.get_object()
+        try:
+            submit_worksheet_for_review(ws, request.user)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(WorksheetSerializer(ws).data)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsLabManagerOrAbove])
+    def verify(self, request, pk=None):
+        from .services import verify_worksheet
+        ws = self.get_object()
+        try:
+            verify_worksheet(ws, request.user)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(WorksheetSerializer(ws).data)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsLabManagerOrAbove])
+    def reject(self, request, pk=None):
+        from .services import reject_worksheet
+        ws = self.get_object()
+        try:
+            reject_worksheet(ws, request.user)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(WorksheetSerializer(ws).data)
+
 
 class WorksheetAssignmentViewSet(viewsets.ModelViewSet):
     queryset = WorksheetAssignment.objects.select_related("worksheet", "analysis_request", "test").all()
@@ -85,6 +132,37 @@ class ResultViewSet(viewsets.ModelViewSet):
     serializer_class = ResultSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ["status", "is_out_of_range", "worksheet_assignment"]
+
+    @action(detail=True, methods=["post"])
+    def submit(self, request, pk=None):
+        from .services import submit_result
+        result = self.get_object()
+        try:
+            submit_result(result, request.user)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(ResultSerializer(result).data)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsReviewerOrAbove])
+    def verify(self, request, pk=None):
+        from .services import verify_result
+        result = self.get_object()
+        try:
+            verify_result(result, request.user)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(ResultSerializer(result).data)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsReviewerOrAbove])
+    def reject(self, request, pk=None):
+        from .services import reject_result
+        result = self.get_object()
+        remarks = request.data.get("remarks", "")
+        try:
+            reject_result(result, request.user, remarks=remarks)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(ResultSerializer(result).data)
 
 
 class QCSampleViewSet(viewsets.ModelViewSet):

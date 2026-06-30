@@ -73,6 +73,27 @@ services:
         condition: service_healthy
     command: celery -A config worker --loglevel=info
 
+  celery-beat:
+    build:
+      context: ./xellabs-backend
+    restart: unless-stopped
+    env_file:
+      - ./xellabs-backend/.env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - ./xellabs-backend:/app
+      - celery_packages:/usr/local/lib/python3.12/site-packages
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A config beat --loglevel=info
+
   senaite:
     build:
       context: ./senaite-rebrand

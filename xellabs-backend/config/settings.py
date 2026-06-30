@@ -145,3 +145,17 @@ REST_FRAMEWORK = {
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
 CELERY_TIMEZONE = "UTC"
+
+from celery.schedules import crontab
+CELERY_BEAT_SCHEDULE = {
+    "check-inventory-expiry-daily": {
+        "task": "inventory.tasks.check_inventory_expiry",
+        "schedule": crontab(hour=6, minute=0),
+        "kwargs": {"days_ahead": 30},
+    },
+    "check-sample-expiry-daily": {
+        "task": "inventory.tasks.check_sample_expiry",
+        "schedule": crontab(hour=6, minute=15),
+        "kwargs": {"days_ahead": 7},
+    },
+}

@@ -35,6 +35,48 @@ class TaskViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ["status", "priority", "created_by"]
 
+    @action(detail=False, methods=["get"], url_path="my-tasks")
+    def my_tasks(self, request):
+        """Tasks assigned to the current user."""
+        task_ids = TaskAssignment.objects.filter(assigned_to=request.user).values_list("task_id", flat=True)
+        qs = Task.objects.filter(pk__in=task_ids).select_related("created_by")
+        status_filter = request.query_params.get("status")
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return Response(TaskSerializer(qs, many=True).data)
+
+    @action(detail=True, methods=["post"])
+    def assign(self, request, pk=None):
+        """Assign a user to a task. Body: {assigned_to: <user_id>}"""
+        task = self.get_object()
+        user_id = request.data.get("assigned_to")
+        if not user_id:
+            return Response({"detail": "assigned_to is required."}, status=status.HTTP_400_BAD_REQUEST)
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        try:
+            assignee = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+        assignment, created = TaskAssignment.objects.get_or_create(
+            task=task, assigned_to=assignee,
+            defaults={"assigned_by": request.user},
+        )
+        return Response(TaskAssignmentSerializer(assignment).data,
+                        status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"])
+    def update_status(self, request, pk=None):
+        """Update task status. Body: {status: open|in_progress|done|cancelled}"""
+        task = self.get_object()
+        new_status = request.data.get("status")
+        valid = [s[0] for s in Task.STATUS]
+        if new_status not in valid:
+            return Response({"detail": f"Invalid status. Choices: {valid}"}, status=status.HTTP_400_BAD_REQUEST)
+        task.status = new_status
+        task.save(update_fields=["status", "updated_at"])
+        return Response(TaskSerializer(task).data)
+
 
 class TaskAssignmentViewSet(viewsets.ModelViewSet):
     queryset = TaskAssignment.objects.select_related("task", "assigned_to", "assigned_by").all()
