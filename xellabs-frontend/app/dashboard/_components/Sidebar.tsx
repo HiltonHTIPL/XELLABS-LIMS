@@ -10,6 +10,7 @@ function MI({ name, size = 16 }: { name: string; size?: number }) {
 const NAV = [
   { label: 'Dashboard',        href: '/dashboard',                 icon: 'dashboard'               },
   { label: 'Samples',          href: '/dashboard/samples',         icon: 'science'                 },
+  { label: 'Clients',          href: '/dashboard/clients',         icon: 'business'                },
   { label: 'Sample Receipt',   href: '/dashboard/sample-receipts', icon: 'receipt_long'            },
   { label: 'Storage',          href: '/dashboard/storage',         icon: 'inventory_2'             },
   { label: 'Chain of Custody', href: '/dashboard/chain-of-custody',icon: 'link'                   },
