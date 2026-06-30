@@ -134,7 +134,7 @@ services:
 
   frontend:
     build:
-      context: ./XELLABS
+      context: ./xellabs-frontend
     restart: unless-stopped
     ports:
       - "3000:3000"
@@ -144,7 +144,7 @@ services:
       - SESSION_SECRET=xellabs-lims-hipaa-jwt-secret-change-in-production-min32chars
       - NODE_ENV=development
     volumes:
-      - ./XELLABS:/app              # live-mount source; next dev HMR reloads on .tsx/.ts changes
+      - ./xellabs-frontend:/app              # live-mount source; next dev HMR reloads on .tsx/.ts changes
       - /app/node_modules           # preserve packages installed during image build
       - /app/.next                  # isolate turbopack cache in container (prevents host-path corruption)
     depends_on:
