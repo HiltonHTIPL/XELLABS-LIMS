@@ -12,7 +12,7 @@ import 'server-only'
 import { headers } from 'next/headers'
 import { getSession } from '@/app/lib/session'
 
-const DJANGO_API = process.env.DJANGO_API_URL ?? 'http://localhost:8001'
+const DJANGO_API = process.env.DJANGO_API_URL ?? 'http://django:8001'
 
 export async function djangoFetch(
   path: string,
