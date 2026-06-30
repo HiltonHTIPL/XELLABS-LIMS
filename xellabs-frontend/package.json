@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
+    "sharp": "^0.34.5",
     "helmet": "^8.2.0",
     "jose": "^6.2.3",
     "next": "16.2.9",

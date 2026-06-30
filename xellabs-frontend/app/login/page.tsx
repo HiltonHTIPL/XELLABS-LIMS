@@ -1,24 +1,43 @@
+import Image from 'next/image'
 import { headers } from 'next/headers'
-import { djangoFetch } from '@/app/lib/django'
 import LoginForm from './_components/LoginForm'
 
-async function getTenantName(subdomain: string): Promise<string | undefined> {
+const DJANGO_API = process.env.DJANGO_API_URL ?? 'http://django:8001'
+
+async function getTenantInfo(subdomain: string): Promise<{ name?: string; logoDataUrl?: string }> {
   try {
-    // Look up tenant by slug (schema_name) via the public API
-    const res = await djangoFetch(`/api/tenants/?slug=${subdomain}`, { skipAuth: true } as any)
-    if (!res.ok) return undefined
+    const res = await fetch(`${DJANGO_API}/api/tenants/?slug=${subdomain}`, { cache: 'no-store' })
+    if (!res.ok) return {}
     const data = await res.json()
-    const results = data.results ?? data
-    return results[0]?.name
+    const tenant = (data.results ?? data)[0]
+    if (!tenant) return {}
+
+    let logoDataUrl: string | undefined
+    if (tenant.logo) {
+      // tenant.logo may be an absolute URL (http://django:8001/media/...) or relative path
+      const logoUrl = tenant.logo.startsWith('http')
+        ? tenant.logo
+        : `${DJANGO_API}${tenant.logo.startsWith('/') ? '' : '/'}${tenant.logo}`
+      const logoRes = await fetch(logoUrl).catch(() => null)
+      if (logoRes?.ok) {
+        const buf = await logoRes.arrayBuffer()
+        const b64 = Buffer.from(buf).toString('base64')
+        const mime = logoRes.headers.get('content-type') || 'image/webp'
+        logoDataUrl = `data:${mime};base64,${b64}`
+      }
+    }
+
+    return { name: tenant.name as string, logoDataUrl }
   } catch {
-    return undefined
+    return {}
   }
 }
 
 export default async function LoginPage() {
   const headerStore = await headers()
   const tenantSubdomain = headerStore.get('x-tenant-subdomain') || ''
-  const tenantName = tenantSubdomain ? await getTenantName(tenantSubdomain) : undefined
+  const { name: tenantName, logoDataUrl: tenantLogo } =
+    tenantSubdomain ? await getTenantInfo(tenantSubdomain) : {}
 
   return (
     <div className="min-h-screen flex">
@@ -36,11 +55,14 @@ export default async function LoginPage() {
           }}
         />
         <div className="relative z-10">
-          <div className="flex items-baseline gap-2">
-            <span className="text-5xl font-bold tracking-widest" style={{ color: '#ffffff', fontFamily: 'var(--font-geist-sans)' }}>XEL</span>
-            <span className="text-5xl font-light tracking-widest" style={{ color: '#93C5FD', fontFamily: 'var(--font-geist-sans)' }}>LABS</span>
-          </div>
-          <div className="mt-2 h-px w-16" style={{ backgroundColor: 'rgba(147,197,253,0.4)' }} />
+          <Image
+            src="/xellabs-logo.png"
+            alt="XelLabs LIMS"
+            width={140}
+            height={40}
+            style={{ objectFit: 'contain', objectPosition: 'left' }}
+          />
+          <div className="mt-4 h-px w-16" style={{ backgroundColor: 'rgba(147,197,253,0.4)' }} />
           <p className="mt-3 text-xs tracking-[0.3em] uppercase" style={{ color: 'rgba(147,197,253,0.6)', fontFamily: 'var(--font-geist-mono)' }}>
             LIMS · v1.0
           </p>
@@ -66,7 +88,11 @@ export default async function LoginPage() {
 
       {/* ── Right form panel ── */}
       <div className="flex-1 flex items-center justify-center px-6 py-12" style={{ backgroundColor: '#F7FAFF' }}>
-        <LoginForm tenantSubdomain={tenantSubdomain || undefined} tenantName={tenantName} />
+        <LoginForm
+          tenantSubdomain={tenantSubdomain || undefined}
+          tenantName={tenantName}
+          tenantLogo={tenantLogo}
+        />
       </div>
     </div>
   )

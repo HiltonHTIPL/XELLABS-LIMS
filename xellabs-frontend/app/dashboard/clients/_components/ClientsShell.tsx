@@ -2,7 +2,7 @@
 import { useState, useActionState, useTransition, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient, updateClient, toggleClientActive, syncClientsFromSenaite, type ClientFormState, type DjangoClient, type SenaiteAddress, type SyncResult } from '@/app/actions/clients'
+import { createClient, updateClient, toggleClientActive, type ClientFormState, type DjangoClient, type SenaiteAddress } from '@/app/actions/clients'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -47,6 +47,74 @@ function AddressBlock({ prefix, label, defaultValue }: { prefix: string; label: 
         <Field label="ZIP / Postal"     name={`${prefix}_zip`}     placeholder="00000"  defaultValue={defaultValue?.zip} />
         <Field label="Country"          name={`${prefix}_country`} placeholder="Country" defaultValue={defaultValue?.country} />
       </Row>
+    </div>
+  )
+}
+
+// ── Logo upload (create only) ─────────────────────────────────────────────────
+function LogoUpload() {
+  const [preview, setPreview] = useState<string | null>(null)
+  const [fileName, setFileName] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  function handleFile(f: File) {
+    setFileName(f.name)
+    const url = URL.createObjectURL(f)
+    setPreview(url)
+  }
+
+  function clear(e: React.MouseEvent) {
+    e.preventDefault()
+    setPreview(null)
+    setFileName(null)
+    if (inputRef.current) {
+      inputRef.current.value = ''
+    }
+  }
+
+  return (
+    <div>
+      <label className="block text-xs font-medium mb-1.5" style={{ color: '#374151' }}>
+        Client Logo
+        <span className="ml-1 font-normal" style={{ color: '#9CA3AF' }}>(optional · compressed to &lt;30 KB)</span>
+      </label>
+      <div className="flex items-center gap-3">
+        {preview ? (
+          <div className="w-14 h-14 rounded-xl overflow-hidden shrink-0 flex items-center justify-center" style={{ border: '1px solid #E5E7EB', backgroundColor: '#F9FAFB' }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={preview} alt="Logo preview" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+          </div>
+        ) : (
+          <div className="w-14 h-14 rounded-xl shrink-0 flex items-center justify-center" style={{ border: '1px dashed #D1D5DB', backgroundColor: '#F9FAFB' }}>
+            <MI name="add_photo_alternate" size={22} color="#D1D5DB" />
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          {fileName && <p className="text-xs truncate mb-1" style={{ color: '#6B7280' }}>{fileName}</p>}
+          <div className="flex gap-2">
+            <label
+              className="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
+              style={{ border: '1px solid #D1D5DB', color: '#374151', backgroundColor: '#fff' }}
+            >
+              <MI name="upload" size={12} color="#6B7280" />
+              {preview ? 'Change' : 'Upload'}
+              <input
+                ref={inputRef}
+                type="file"
+                name="logo"
+                accept="image/*"
+                className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }}
+              />
+            </label>
+            {preview && (
+              <button onClick={clear} type="button" className="px-3 py-1.5 rounded-lg text-xs font-medium" style={{ border: '1px solid #FECACA', color: '#DC2626', backgroundColor: '#FEF2F2' }}>
+                Remove
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -288,8 +356,7 @@ export default function ClientsShell({ initialClients }: { initialClients: Djang
   const [showForm, setShowForm]       = useState(false)
   const [step, setStep]               = useState(0)
   const [editingClient, setEditingClient] = useState<DjangoClient | null>(null)
-  const [syncing, startSync]          = useTransition()
-  const [syncResult, setSyncResult]   = useState<SyncResult | null>(null)
+
 
   const [state, action, pending] = useActionState(
     async (prev: ClientFormState, formData: FormData) => {
@@ -329,22 +396,6 @@ export default function ClientsShell({ initialClients }: { initialClients: Djang
           <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Manage laboratory clients</p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              startSync(async () => {
-                const result = await syncClientsFromSenaite()
-                setSyncResult(result)
-                setTimeout(() => setSyncResult(null), 5000)
-                if (result.success) router.refresh()
-              })
-            }}
-            disabled={syncing}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium"
-            style={{ border: '1px solid #D1D5DB', color: '#374151', backgroundColor: '#fff', cursor: syncing ? 'not-allowed' : 'pointer' }}
-          >
-            <MI name={syncing ? 'sync' : 'sync'} size={15} color={syncing ? '#9CA3AF' : '#6B7280'} />
-            {syncing ? 'Syncing…' : 'Sync SENAITE'}
-          </button>
           <button
             onClick={openForm}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white"
@@ -424,7 +475,10 @@ export default function ClientsShell({ initialClients }: { initialClients: Djang
             {isEditing && <input type="hidden" name="_clientId" value={editingClient.id} />}
 
             <div className="flex-1 overflow-y-auto px-6 pb-4 space-y-1">
-              <div style={{ display: step === 0 ? 'block' : 'none' }}><Step1 errors={state.errors} client={editingClient ?? undefined} /></div>
+              <div style={{ display: step === 0 ? 'block' : 'none' }}>
+                <Step1 errors={state.errors} client={editingClient ?? undefined} />
+                {!isEditing && <div className="mt-3"><LogoUpload /></div>}
+              </div>
               <div style={{ display: step === 1 ? 'block' : 'none' }}><Step2 client={editingClient ?? undefined} /></div>
               <div style={{ display: step === 2 ? 'block' : 'none' }}><Step3 client={editingClient ?? undefined} /></div>
               <div style={{ display: step === 3 ? 'block' : 'none' }}><Step4 client={editingClient ?? undefined} /></div>
@@ -470,19 +524,6 @@ export default function ClientsShell({ initialClients }: { initialClients: Djang
           </form>
         </div>
       </div>
-
-      {/* Sync result toast */}
-      {syncResult && (
-        <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
-          style={{
-            backgroundColor: syncResult.success ? '#ECFDF5' : '#FEF2F2',
-            border: `1px solid ${syncResult.success ? '#A7F3D0' : '#FECACA'}`,
-            color: syncResult.success ? '#065F46' : '#991B1B',
-          }}>
-          <MI name={syncResult.success ? 'check_circle' : 'error'} size={13} color={syncResult.success ? '#10B981' : '#EF4444'} />
-          {syncResult.message}
-        </div>
-      )}
 
       {/* Success toast */}
       {state.success && (
