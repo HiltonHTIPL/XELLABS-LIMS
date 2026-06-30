@@ -21,8 +21,8 @@ var/
 sdist/
 develop-eggs/
 .installed.cfg
-lib/
-lib64/
+xellabs-backend/lib/
+xellabs-backend/lib64/
 
 # Virtual environment
 xellabs-backend/venv/
