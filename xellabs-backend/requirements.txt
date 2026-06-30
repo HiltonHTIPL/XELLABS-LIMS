@@ -1,0 +1,11 @@
+Django==6.0.6
+django-tenants==3.10.1
+djangorestframework==3.17.1
+psycopg[binary]==3.3.4
+celery==5.6.3
+redis==8.0.1
+django-cors-headers==4.9.0
+django-filter==25.2
+python-dotenv==1.2.2
+Pillow==11.2.1
+watchdog==6.0.0
