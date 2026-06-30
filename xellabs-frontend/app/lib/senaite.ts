@@ -133,6 +133,233 @@ export async function fetchSenaiteClients(token: string): Promise<SenaiteClient[
   }
 }
 
+// ─── Sample Types ────────────────────────────────────────────────────────────
+
+export type SenaiteSampleType = {
+  uid: string
+  id: string
+  title: string
+  Prefix: string
+  MinimumVolume: string
+  RetentionPeriod: Record<string, unknown>
+}
+
+export async function fetchSenaiteSampleTypes(token: string): Promise<SenaiteSampleType[]> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/SampleType?complete=true&limit=1000`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return (data.items ?? []).map((t: Record<string, unknown>) => ({
+      uid:           (t.uid as string) ?? '',
+      id:            (t.id as string) ?? '',
+      title:         (t.title as string) ?? '',
+      Prefix:        (t.Prefix as string) ?? '',
+      MinimumVolume: (t.MinimumVolume as string) ?? '',
+      RetentionPeriod: (t.RetentionPeriod as Record<string, unknown>) ?? {},
+    }))
+  } catch { return [] }
+}
+
+// ─── Analysis Services ────────────────────────────────────────────────────────
+
+export type SenaiteAnalysisService = {
+  uid: string
+  id: string
+  title: string
+  Keyword: string
+  Category: string
+  Price: string
+  Unit: string
+}
+
+export async function fetchSenaiteAnalysisServices(token: string): Promise<SenaiteAnalysisService[]> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/AnalysisService?complete=true&limit=1000`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return (data.items ?? []).map((s: Record<string, unknown>) => ({
+      uid:      (s.uid as string) ?? '',
+      id:       (s.id as string) ?? '',
+      title:    (s.title as string) ?? '',
+      Keyword:  (s.Keyword as string) ?? '',
+      Category: typeof s.Category === 'object' && s.Category !== null ? ((s.Category as Record<string, unknown>).title as string) ?? '' : (s.Category as string) ?? '',
+      Price:    (s.Price as string) ?? '',
+      Unit:     (s.Unit as string) ?? '',
+    }))
+  } catch { return [] }
+}
+
+// ─── Samples (AnalysisRequests) ───────────────────────────────────────────────
+
+export type SenaiteSample = {
+  uid: string
+  id: string
+  title: string
+  ClientTitle: string
+  ClientID: string
+  ClientUID: string
+  SampleTypeTitle: string
+  SampleTypeUID: string
+  DateReceived: string | null
+  DateSampled: string | null
+  DateDue: string | null
+  review_state: string
+  Priority: string
+  ClientSampleID: string
+  Analyses: { uid: string; title: string; Keyword: string; review_state: string }[]
+  url: string
+}
+
+function mapSample(s: Record<string, unknown>): SenaiteSample {
+  const client = (s.Client as Record<string, unknown>) ?? {}
+  const sampleType = (s.SampleType as Record<string, unknown>) ?? {}
+  return {
+    uid:             (s.uid as string) ?? '',
+    id:              (s.id as string) ?? '',
+    title:           (s.title as string) ?? '',
+    ClientTitle:     (client.title as string) ?? (s.ClientTitle as string) ?? '',
+    ClientID:        (client.ClientID as string) ?? (s.ClientID as string) ?? '',
+    ClientUID:       (client.uid as string) ?? '',
+    SampleTypeTitle: (sampleType.title as string) ?? (s.SampleTypeTitle as string) ?? '',
+    SampleTypeUID:   (sampleType.uid as string) ?? '',
+    DateReceived:    (s.DateReceived as string) ?? null,
+    DateSampled:     (s.DateSampled as string) ?? null,
+    DateDue:         (s.DateDue as string) ?? null,
+    review_state:    (s.review_state as string) ?? '',
+    Priority:        (s.Priority as string) ?? '3',
+    ClientSampleID:  (s.ClientSampleID as string) ?? '',
+    Analyses:        Array.isArray(s.Analyses)
+      ? (s.Analyses as Record<string, unknown>[]).map(a => ({
+          uid:          (a.uid as string) ?? '',
+          title:        (a.title as string) ?? '',
+          Keyword:      (a.Keyword as string) ?? '',
+          review_state: (a.review_state as string) ?? '',
+        }))
+      : [],
+    url: (s.url as string) ?? '',
+  }
+}
+
+export async function fetchSenaiteSamples(token: string, params: Record<string, string> = {}): Promise<SenaiteSample[]> {
+  const qs = new URLSearchParams({ complete: 'true', limit: '100', ...params }).toString()
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/AnalysisRequest?${qs}`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return (data.items ?? []).map(mapSample)
+  } catch { return [] }
+}
+
+export async function fetchSenaiteSample(token: string, uid: string): Promise<SenaiteSample | null> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/AnalysisRequest/${uid}?complete=true`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    const items = data.items ?? []
+    return items.length > 0 ? mapSample(items[0]) : null
+  } catch { return null }
+}
+
+export async function createSenaiteSample(
+  token: string,
+  payload: {
+    Client: string        // client UID
+    Contact?: string      // contact UID (optional)
+    SampleType: string    // sample type UID
+    DateSampled: string   // ISO date string
+    Analyses?: string[]   // analysis service UIDs
+    Priority?: string     // "1"-"5"
+    ClientSampleID?: string
+  }
+): Promise<{ success: boolean; sample?: SenaiteSample; error?: string }> {
+  try {
+    // SENAITE jsonapi v1 create endpoint
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${token}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify([{
+        obj_type: 'AnalysisRequest',
+        ...payload,
+        Priority: payload.Priority ?? '3',
+      }]),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok) {
+      return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    }
+    const items = (data.items as Record<string, unknown>[]) ?? []
+    if (items.length === 0) return { success: false, error: 'No sample returned from SENAITE' }
+    return { success: true, sample: mapSample(items[0]) }
+  } catch (e) {
+    return { success: false, error: String(e) }
+  }
+}
+
+export async function senaiteWorkflowAction(
+  token: string,
+  uid: string,
+  action: 'receive' | 'verify' | 'publish' | 'retract' | 'cancel'
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/AnalysisRequest/${uid}/workflow_action`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${token}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ action }),
+      cache: 'no-store',
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({})) as Record<string, unknown>
+      return { success: false, error: (err.message as string) ?? `HTTP ${res.status}` }
+    }
+    return { success: true }
+  } catch (e) {
+    return { success: false, error: String(e) }
+  }
+}
+
+export function mapSenaiteState(review_state: string): string {
+  const MAP: Record<string, string> = {
+    registered:      'Registered',
+    sample_due:      'Sample Due',
+    sample_received: 'Received',
+    to_be_verified:  'To Be Verified',
+    verified:        'Verified',
+    published:       'Published',
+    invalid:         'Invalid',
+    cancelled:       'Cancelled',
+    rejected:        'Rejected',
+  }
+  return MAP[review_state] ?? review_state
+}
+
+export function mapSenaitePriority(priority: string): string {
+  const MAP: Record<string, string> = {
+    '1': 'Critical', '2': 'High', '3': 'Normal', '4': 'Low', '5': 'Routine',
+  }
+  return MAP[priority] ?? 'Normal'
+}
+
 /** Create a client in SENAITE */
 export async function createSenaiteClient(
   token: string,
