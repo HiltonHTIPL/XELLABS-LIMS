@@ -14,13 +14,15 @@ class AuditEvent(models.Model):
         ("reject", "Rejected"),
         ("sign", "Signed"),
         ("print", "Printed"),
+        ("instrument_import", "Instrument Import"),
     ]
     user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
-    action = models.CharField(max_length=20, choices=ACTION)
+    action = models.CharField(max_length=30, choices=ACTION)
     content_type = models.ForeignKey(ContentType, null=True, blank=True, on_delete=models.SET_NULL)
     object_id = models.PositiveBigIntegerField(null=True, blank=True)
     object_repr = models.CharField(max_length=300, blank=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
+    extra_data = models.JSONField(null=True, blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
 
     class Meta:

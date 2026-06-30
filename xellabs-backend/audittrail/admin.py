@@ -14,7 +14,7 @@ class AuditEventAdmin(admin.ModelAdmin):
     list_display = ("timestamp", "user", "action", "content_type", "object_repr", "ip_address")
     list_filter = ("action", "content_type")
     search_fields = ("user__username", "object_repr", "ip_address")
-    readonly_fields = ("user", "action", "content_type", "object_id", "object_repr", "ip_address", "timestamp")
+    readonly_fields = ("user", "action", "content_type", "object_id", "object_repr", "ip_address", "extra_data", "timestamp")
     inlines = [DataChangeLogInline]
     ordering = ("-timestamp",)
 

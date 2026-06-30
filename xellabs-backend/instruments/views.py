@@ -75,3 +75,24 @@ class InstrumentResultImportViewSet(viewsets.ModelViewSet):
     serializer_class = InstrumentResultImportSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ["instrument", "status", "file_format"]
+
+    @action(detail=True, methods=["post"])
+    def process(self, request, pk=None):
+        """Dispatch a Celery task to parse and import results from the uploaded file."""
+        imp = self.get_object()
+        if imp.status == "processed":
+            return Response({"detail": "Already processed."}, status=status.HTTP_400_BAD_REQUEST)
+        from .tasks import process_instrument_import
+        task = process_instrument_import.delay(imp.pk)
+        return Response({"task_id": task.id, "import_id": imp.pk, "status": "queued"})
+
+    @action(detail=True, methods=["get"])
+    def errors(self, request, pk=None):
+        """Return the error log for an import as structured JSON."""
+        import json
+        imp = self.get_object()
+        try:
+            errors = json.loads(imp.error_log) if imp.error_log else []
+        except (json.JSONDecodeError, ValueError):
+            errors = [{"detail": imp.error_log}]
+        return Response({"import_id": imp.pk, "status": imp.status, "errors": errors})
