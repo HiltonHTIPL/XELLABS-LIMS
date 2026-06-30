@@ -40,13 +40,15 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/0
     ports:
       - "8001:8001"
+    volumes:
+      - ./xellabs-backend:/app   # live-mount source; runserver auto-reloads on .py changes
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     command: >
-      sh -c "python manage.py migrate --no-input &&
+      sh -c "python manage.py migrate_schemas --shared --noinput &&
              python manage.py runserver 0.0.0.0:8001"
 
   celery:
@@ -60,12 +62,20 @@ services:
       DB_PORT: "5432"
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - ./xellabs-backend:/app   # live-mount source; watchmedo restarts worker on .py changes
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: celery -A config worker --loglevel=info
+    command: >
+      watchmedo auto-restart
+        --directory=/app
+        --pattern=*.py
+        --recursive
+        --
+        celery -A config worker --loglevel=info --pool=solo
 
   senaite:
     image: senaite/senaite:v2.6.0
@@ -78,6 +88,24 @@ services:
       - ADMIN_PASSWORD=admin
     volumes:
       - senaite_data:/data
+
+  frontend:
+    build:
+      context: ./XELLABS
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - DJANGO_API_URL=http://django:8001
+      - SENAITE_URL=http://senaite:8080/senaite
+      - SESSION_SECRET=xellabs-lims-hipaa-jwt-secret-change-in-production-min32chars
+      - NODE_ENV=development
+    volumes:
+      - ./XELLABS:/app              # live-mount source; next dev HMR reloads on .tsx/.ts changes
+      - /app/node_modules           # preserve packages installed during image build
+      - /app/.next                  # isolate turbopack cache in container (prevents host-path corruption)
+    depends_on:
+      - django
 
 volumes:
   postgres_data:

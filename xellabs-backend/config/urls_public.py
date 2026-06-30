@@ -1,4 +1,4 @@
-"""Tenant schema URL conf — serves all tenant subdomains."""
+"""Public schema URL conf — serves the main domain (tenant management)."""
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework.authtoken.views import obtain_auth_token
