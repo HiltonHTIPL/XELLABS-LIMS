@@ -30,9 +30,11 @@ venv/
 env/
 .env/
 
-# Django secrets
+# Django secrets — never commit real .env files
 xellabs-backend/.env
 *.env
+# BUT always commit .env.example files
+!*.env.example
 
 # Django generated
 xellabs-backend/db.sqlite3
