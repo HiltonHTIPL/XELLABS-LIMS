@@ -80,6 +80,9 @@ class Sample(models.Model):
     status = models.CharField(max_length=20, choices=STATUS, default="registered")
     storage_location = models.CharField(max_length=200, blank=True)
     barcode = models.CharField(max_length=100, blank=True)
+    senaite_uid = models.CharField(max_length=100, blank=True, db_index=True)
+    senaite_ar_id = models.CharField(max_length=100, blank=True)
+    last_synced_from_senaite = models.DateTimeField(null=True, blank=True)
     is_locked = models.BooleanField(default=False)
     locked_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
                                   on_delete=models.SET_NULL, related_name="samples_locked")
@@ -112,6 +115,7 @@ class AnalysisRequest(models.Model):
                                 choices=[("low", "Low"), ("normal", "Normal"), ("high", "High"), ("urgent", "Urgent")])
     due_date = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(blank=True)
+    senaite_uid = models.CharField(max_length=100, blank=True, db_index=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

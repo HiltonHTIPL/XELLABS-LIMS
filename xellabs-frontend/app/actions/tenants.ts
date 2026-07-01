@@ -34,7 +34,7 @@ export type TenantUser = {
 
 async function token(): Promise<string | null> {
   const session = await getSession()
-  return session?.djangoToken || null
+  return session?.djangoToken || process.env.DJANGO_SERVICE_TOKEN || null
 }
 
 function authHeader(t: string) {

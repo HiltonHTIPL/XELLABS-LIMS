@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { getSession } from '@/app/lib/session'
 import { TrendChart, StatusDonut } from './_components/DashboardCharts'
 
@@ -33,10 +34,10 @@ const PRIORITY: Record<string, { bg: string; color: string }> = {
 
 /* ── Quick actions ── */
 const QUICK_ACTIONS = [
-  { label: 'New Sample',     icon: 'add_circle',   bg: '#EFF6FF', color: '#2563EB' },
-  { label: 'Receive Sample', icon: 'move_to_inbox', bg: '#F0FDFA', color: '#0D9488' },
-  { label: 'Store Sample',   icon: 'inventory_2',  bg: '#F5F3FF', color: '#7C3AED' },
-  { label: 'Create Report',  icon: 'bar_chart',    bg: '#FFF7ED', color: '#EA580C' },
+  { label: 'New Sample',     icon: 'add_circle',   bg: '#EFF6FF', color: '#2563EB', href: '/dashboard/samples' },
+  { label: 'Receive Sample', icon: 'move_to_inbox', bg: '#F0FDFA', color: '#0D9488', href: '/dashboard/sample-receipts' },
+  { label: 'Store Sample',   icon: 'inventory_2',  bg: '#F5F3FF', color: '#7C3AED', href: '/dashboard/samples' },
+  { label: 'Create Report',  icon: 'bar_chart',    bg: '#FFF7ED', color: '#EA580C', href: '/dashboard/reports' },
 ]
 
 /* ── Recent samples ── */
@@ -200,14 +201,15 @@ export default async function DashboardPage() {
           </div>
           <div className="grid grid-cols-2 gap-2 p-3">
             {QUICK_ACTIONS.map(a => (
-              <button
+              <Link
                 key={a.label}
+                href={a.href}
                 className="flex flex-col items-center justify-center gap-1.5 rounded-xl py-4 px-2 text-center"
-                style={{ backgroundColor: a.bg }}
+                style={{ backgroundColor: a.bg, textDecoration: 'none' }}
               >
                 <MI name={a.icon} size={22} color={a.color} />
                 <span style={{ fontSize: 10, color: a.color, fontWeight: 600, lineHeight: 1.2 }}>{a.label}</span>
-              </button>
+              </Link>
             ))}
           </div>
         </div>

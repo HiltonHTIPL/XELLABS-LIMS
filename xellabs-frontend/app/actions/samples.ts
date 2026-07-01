@@ -60,7 +60,7 @@ export async function createSample(
   formData: FormData
 ): Promise<SampleFormState> {
   const session = await getSession()
-  if (!session?.djangoToken) return { message: 'Not authenticated.' }
+  if (!session) return { message: 'Not authenticated.' }
 
   const clientUID      = (formData.get('client_uid') as string)?.trim()
   const sampleTypeUID  = (formData.get('sample_type_uid') as string)?.trim()
