@@ -5,6 +5,12 @@ import { fetchSenaiteClients } from '@/app/lib/senaite'
 
 const DJANGO_API = process.env.DJANGO_API_URL ?? 'http://django:8001'
 
+/** Returns a valid Django token: session token if present, else the service token from env. */
+async function resolveDjangoToken(): Promise<string> {
+  const session = await getSession()
+  return session?.djangoToken || process.env.DJANGO_SERVICE_TOKEN || ''
+}
+
 export type SenaiteAddress = {
   address: string
   city: string
@@ -84,11 +90,11 @@ function addr(formData: FormData, prefix: string): SenaiteAddress {
 }
 
 export async function getClient(id: number): Promise<DjangoClient | null> {
-  const session = await getSession()
-  if (!session?.djangoToken) return null
+  const token = await resolveDjangoToken()
+  if (!token) return null
   try {
     const res = await fetch(`${DJANGO_API}/api/clients/${id}/`, {
-      headers: authHeader(session.djangoToken),
+      headers: authHeader(token),
       cache: 'no-store',
     })
     if (!res.ok) return null
@@ -99,11 +105,11 @@ export async function getClient(id: number): Promise<DjangoClient | null> {
 }
 
 export async function getClients(): Promise<DjangoClient[]> {
-  const session = await getSession()
-  if (!session?.djangoToken) return []
+  const token = await resolveDjangoToken()
+  if (!token) return []
   try {
     const res = await fetch(`${DJANGO_API}/api/clients/`, {
-      headers: authHeader(session.djangoToken),
+      headers: authHeader(token),
       cache: 'no-store',
     })
     if (!res.ok) return []
@@ -118,12 +124,12 @@ export async function toggleClientActive(
   id: number,
   is_active: boolean
 ): Promise<{ success: boolean; message: string }> {
-  const session = await getSession()
-  if (!session?.djangoToken) return { success: false, message: 'Not authenticated.' }
+  const token = await resolveDjangoToken()
+  if (!token) return { success: false, message: 'Not authenticated.' }
   try {
     const res = await fetch(`${DJANGO_API}/api/clients/${id}/`, {
       method: 'PATCH',
-      headers: authHeader(session.djangoToken),
+      headers: authHeader(token),
       body: JSON.stringify({ is_active }),
       cache: 'no-store',
     })
@@ -145,16 +151,20 @@ export type SyncResult = {
 
 export async function syncClientsFromSenaite(): Promise<SyncResult> {
   const session = await getSession()
-  if (!session?.djangoToken) return { success: false, message: 'Not authenticated.', created: 0, updated: 0, total: 0 }
+  if (!session) return { success: false, message: 'Not authenticated. Please sign in again.', created: 0, updated: 0, total: 0 }
 
-  // Use session senaite token if available, otherwise fall back to server-side credentials
+  // Django token: use session token, fall back to service token from env
+  const djangoToken = session.djangoToken || process.env.DJANGO_SERVICE_TOKEN || ''
+  if (!djangoToken) return { success: false, message: 'No Django token available. Set DJANGO_SERVICE_TOKEN in environment.', created: 0, updated: 0, total: 0 }
+
+  // SENAITE token: use session token, fall back to server-side admin credentials
   const SENAITE_USER = process.env.SENAITE_ADMIN_USER ?? 'admin'
   const SENAITE_PASS = process.env.SENAITE_ADMIN_PASS ?? 'admin'
   const senaiteToken = session.senaiteToken ?? Buffer.from(`${SENAITE_USER}:${SENAITE_PASS}`).toString('base64')
 
   // 1. Fetch all clients currently in Django to build a uid→id map
   const existingRes = await fetch(`${DJANGO_API}/api/clients/?page_size=1000`, {
-    headers: authHeader(session.djangoToken),
+    headers: authHeader(djangoToken),
     cache: 'no-store',
   }).catch(() => null)
   const existingData = existingRes?.ok ? await existingRes.json() : { results: [] }
@@ -196,7 +206,7 @@ export async function syncClientsFromSenaite(): Promise<SyncResult> {
       // PATCH — update existing
       await fetch(`${DJANGO_API}/api/clients/${existingId}/`, {
         method: 'PATCH',
-        headers: authHeader(session.djangoToken),
+        headers: authHeader(djangoToken),
         body: JSON.stringify(payload),
         cache: 'no-store',
       }).catch(() => null)
@@ -205,7 +215,7 @@ export async function syncClientsFromSenaite(): Promise<SyncResult> {
       // POST — create new
       await fetch(`${DJANGO_API}/api/clients/`, {
         method: 'POST',
-        headers: authHeader(session.djangoToken),
+        headers: authHeader(djangoToken),
         body: JSON.stringify({ ...payload, is_active: true }),
         cache: 'no-store',
       }).catch(() => null)
@@ -228,8 +238,8 @@ export async function updateClient(
   _state: ClientFormState,
   formData: FormData
 ): Promise<ClientFormState> {
-  const session = await getSession()
-  if (!session?.djangoToken) return { message: 'Not authenticated. Please sign in again.' }
+  const token = await resolveDjangoToken()
+  if (!token) return { message: 'Not authenticated. Please sign in again.' }
 
   const g = (key: string) => (formData.get(key) as string)?.trim() ?? ''
 
@@ -261,7 +271,7 @@ export async function updateClient(
   try {
     const res = await fetch(`${DJANGO_API}/api/clients/${id}/`, {
       method: 'PATCH',
-      headers: authHeader(session.djangoToken),
+      headers: authHeader(token),
       body: JSON.stringify(payload),
       cache: 'no-store',
     })
@@ -281,8 +291,8 @@ export async function createClient(
   _state: ClientFormState,
   formData: FormData
 ): Promise<ClientFormState> {
-  const session = await getSession()
-  if (!session?.djangoToken) return { message: 'Not authenticated. Please sign in again.' }
+  const token = await resolveDjangoToken()
+  if (!token) return { message: 'Not authenticated. Please sign in again.' }
 
   const g = (key: string) => (formData.get(key) as string)?.trim() ?? ''
 
@@ -336,7 +346,7 @@ export async function createClient(
   try {
     const res = await fetch(`${DJANGO_API}/api/clients/`, {
       method: 'POST',
-      headers: authHeader(session.djangoToken),
+      headers: authHeader(token),
       body: JSON.stringify(payload),
       cache: 'no-store',
     })
@@ -373,7 +383,7 @@ export async function createClient(
         logoForm.append('logo', new Blob([compressed], { type: 'image/webp' }), 'logo.webp')
         await fetch(`${DJANGO_API}/api/tenants/${created.tenant}/logo/`, {
           method: 'POST',
-          headers: { Authorization: `Token ${session.djangoToken}` },
+          headers: { Authorization: `Token ${token}` },
           body: logoForm,
         }).catch(() => null)
       } catch {

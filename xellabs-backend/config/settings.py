@@ -142,6 +142,7 @@ SENAITE_PASSWORD = os.getenv("SENAITE_PASSWORD", "admin")
 
 from celery.schedules import crontab
 CELERY_BEAT_SCHEDULE = {
+    # Pull sample status + results from SENAITE every 5 minutes
     "sync-from-senaite-every-5-minutes": {
         "task": "lims.tasks.sync_from_senaite",
         "schedule": 300,
@@ -157,3 +158,4 @@ CELERY_BEAT_SCHEDULE = {
         "kwargs": {"days_ahead": 7},
     },
 }
+

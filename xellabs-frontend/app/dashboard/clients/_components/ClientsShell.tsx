@@ -261,18 +261,30 @@ function Step5({ client }: { client?: DjangoClient }) {
 
 // ── Per-row actions menu ──────────────────────────────────────────────────────
 function ActionsMenu({ client, onEdit, onDone }: { client: DjangoClient; onEdit: (c: DjangoClient) => void; onDone: () => void }) {
-  const [open, setOpen]       = useState(false)
+  const [open, setOpen]         = useState(false)
   const [busy, startTransition] = useTransition()
-  const [toast, setToast]     = useState<{ ok: boolean; msg: string } | null>(null)
-  const ref = useRef<HTMLDivElement>(null)
+  const [toast, setToast]       = useState<{ ok: boolean; msg: string } | null>(null)
+  const [menuPos, setMenuPos]   = useState<{ top: number; right: number } | null>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      if (
+        btnRef.current && !btnRef.current.contains(e.target as Node) &&
+        menuRef.current && !menuRef.current.contains(e.target as Node)
+      ) setOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
+
+  function handleOpen() {
+    if (!btnRef.current) return
+    const rect = btnRef.current.getBoundingClientRect()
+    setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+    setOpen(o => !o)
+  }
 
   function toggle() {
     startTransition(async () => {
@@ -285,7 +297,7 @@ function ActionsMenu({ client, onEdit, onDone }: { client: DjangoClient; onEdit:
   }
 
   return (
-    <div ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
+    <div style={{ display: 'inline-block' }}>
       {toast && (
         <div style={{
           position: 'fixed', bottom: 24, right: 24, zIndex: 999,
@@ -299,7 +311,8 @@ function ActionsMenu({ client, onEdit, onDone }: { client: DjangoClient; onEdit:
         </div>
       )}
       <button
-        onClick={() => setOpen(o => !o)}
+        ref={btnRef}
+        onClick={handleOpen}
         disabled={busy}
         className="p-1 rounded hover:bg-gray-100"
         style={{ cursor: 'pointer', border: 'none', background: 'none' }}
@@ -307,11 +320,11 @@ function ActionsMenu({ client, onEdit, onDone }: { client: DjangoClient; onEdit:
         <span className="material-icons" style={{ fontSize: 16, color: '#9CA3AF', lineHeight: 1 }}>more_vert</span>
       </button>
 
-      {open && (
-        <div style={{
-          position: 'absolute', right: 0, top: '100%', zIndex: 50,
+      {open && menuPos && (
+        <div ref={menuRef} style={{
+          position: 'fixed', top: menuPos.top, right: menuPos.right, zIndex: 9999,
           backgroundColor: '#fff', border: '1px solid #E5E7EB',
-          borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.10)',
+          borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
           minWidth: 160, padding: '4px 0',
         }}>
           <Link href={`/dashboard/clients/${client.id}`}
@@ -356,8 +369,6 @@ export default function ClientsShell({ initialClients }: { initialClients: Djang
   const [showForm, setShowForm]       = useState(false)
   const [step, setStep]               = useState(0)
   const [editingClient, setEditingClient] = useState<DjangoClient | null>(null)
-
-
   const [state, action, pending] = useActionState(
     async (prev: ClientFormState, formData: FormData) => {
       const clientIdField = formData.get('_clientId')

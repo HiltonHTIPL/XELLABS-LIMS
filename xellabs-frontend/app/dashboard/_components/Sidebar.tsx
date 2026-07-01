@@ -10,6 +10,12 @@ function MI({ name, size = 16 }: { name: string; size?: number }) {
 const NAV = [
   { label: 'Dashboard',        href: '/dashboard',                 icon: 'dashboard',               roles: null },
   { label: 'Samples',          href: '/dashboard/samples',         icon: 'science',                 roles: null },
+  { label: 'Sample Types',     href: '/dashboard/sample-types',    icon: 'category',                roles: ['admin', 'lab_manager'] },
+  { label: 'Methods',           href: '/dashboard/methods',           icon: 'biotech',                 roles: ['admin', 'lab_manager'] },
+  { label: 'Tests',             href: '/dashboard/tests',             icon: 'assignment',              roles: ['admin', 'lab_manager', 'analyst'] },
+  { label: 'Sample Register',   href: '/dashboard/lab-samples',       icon: 'colorize',                roles: ['admin', 'lab_manager', 'receptionist', 'analyst'] },
+  { label: 'Analysis Requests', href: '/dashboard/analysis-requests', icon: 'assignment_turned_in',    roles: ['admin', 'lab_manager', 'analyst', 'reviewer'] },
+  { label: 'Worksheets',        href: '/dashboard/worksheets',        icon: 'table_chart',             roles: ['admin', 'lab_manager', 'analyst'] },
   { label: 'Clients',          href: '/dashboard/clients',         icon: 'business',                roles: ['admin', 'lab_manager', 'receptionist'] },
   { label: 'Sample Receipt',   href: '/dashboard/sample-receipts', icon: 'receipt_long',            roles: null },
   { label: 'Storage',          href: '/dashboard/storage',         icon: 'inventory_2',             roles: ['admin', 'lab_manager', 'analyst', 'client'] },

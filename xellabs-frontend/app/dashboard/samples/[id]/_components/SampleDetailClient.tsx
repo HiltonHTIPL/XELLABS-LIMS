@@ -194,7 +194,7 @@ export default function SampleDetailClient({ sample, uid }: Props) {
               ['Date Received',    fmtDate(sample.DateReceived)],
               ['Date Due',         fmtDate(sample.DateDue)],
               ['Client Sample ID', sample.ClientSampleID || '—'],
-              ['SENAITE UID',      sample.uid],
+              ['Sample UID',       sample.uid],
             ].map(([label, value]) => (
               <div key={label as string} className="flex items-start justify-between gap-2 mb-2.5">
                 <span style={{ fontSize: 10, color: '#9CA3AF', flexShrink: 0 }}>{label}</span>

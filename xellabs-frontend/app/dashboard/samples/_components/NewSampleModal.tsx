@@ -47,7 +47,7 @@ export default function NewSampleModal({ onClose, clients, sampleTypes, analysis
         <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: '1px solid #F3F4F6' }}>
           <div>
             <h2 style={{ fontSize: 16, fontWeight: 700, color: '#111827', margin: 0 }}>New Sample</h2>
-            <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0, marginTop: 2 }}>Register a new sample in SENAITE</p>
+            <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0, marginTop: 2 }}>Register a new sample in XELLABS LIMS</p>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
             <MI name="close" size={20} color="#9CA3AF" />

@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 def generate_coa_pdf(self, report_id, schema_name="public"):
     from django_tenants.utils import schema_context
     from .models import Report
-    from lims.models import QCSample, WorksheetAssignment
+    from lims.models import Sample, QCSample, WorksheetAssignment
     from workflow.models import ElectronicSignature
 
     try:
@@ -82,11 +82,13 @@ def generate_coa_pdf(self, report_id, schema_name="public"):
                     content_type=sample_ct, object_id=sample.pk
                 ).select_related("signed_by").order_by("signed_at")
 
+                analyst_roles = ("analyst",)
+                reviewer_roles = ("reviewer", "lab_manager", "admin")
                 for sig in sigs:
                     role = getattr(sig.signed_by, "role", "")
-                    if role == "analyst" and analyst_sig is None:
+                    if role in analyst_roles and analyst_sig is None:
                         analyst_sig = sig
-                    elif role in ("reviewer", "lab_manager", "admin") and reviewer_sig is None:
+                    elif role in reviewer_roles and reviewer_sig is None:
                         reviewer_sig = sig
 
             html_content = render_to_string("reporting/coa.html", {

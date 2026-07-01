@@ -163,6 +163,56 @@ export async function fetchSenaiteSampleTypes(token: string): Promise<SenaiteSam
   } catch { return [] }
 }
 
+export async function createSenaiteSampleType(
+  token: string,
+  payload: { title: string; Prefix: string; MinimumVolume?: string }
+): Promise<{ success: boolean; sampleType?: SenaiteSampleType; error?: string }> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify([{ obj_type: 'SampleType', ...payload }]),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok) return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    const items = (data.items as Record<string, unknown>[]) ?? []
+    if (!items.length) return { success: false, error: 'No sample type returned from SENAITE' }
+    const t = items[0]
+    return {
+      success: true,
+      sampleType: {
+        uid: (t.uid as string) ?? '',
+        id: (t.id as string) ?? '',
+        title: (t.title as string) ?? '',
+        Prefix: (t.Prefix as string) ?? '',
+        MinimumVolume: (t.MinimumVolume as string) ?? '',
+        RetentionPeriod: (t.RetentionPeriod as Record<string, unknown>) ?? {},
+      },
+    }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+export async function updateSenaiteSampleType(
+  token: string,
+  uid: string,
+  payload: { title?: string; Prefix?: string; MinimumVolume?: string }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify([{ uid, ...payload }]),
+      cache: 'no-store',
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({})) as Record<string, unknown>
+      return { success: false, error: (err.message as string) ?? `HTTP ${res.status}` }
+    }
+    return { success: true }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
 // ─── Analysis Services ────────────────────────────────────────────────────────
 
 export type SenaiteAnalysisService = {
@@ -396,4 +446,158 @@ export async function createSenaiteClient(
   } catch (e) {
     return { success: false, error: String(e) }
   }
+}
+
+// ─── Worksheets ───────────────────────────────────────────────────────────────
+
+export type SenaiteWorksheet = {
+  uid: string
+  id: string
+  title: string
+  Analyst: string
+  AnalystTitle: string
+  review_state: string
+  created: string
+  analyses_count: number
+}
+
+export type SenaiteAnalysis = {
+  uid: string
+  id: string
+  title: string
+  Keyword: string
+  Result: string | null
+  Unit: string
+  review_state: string
+  SampleID: string
+  ClientTitle: string
+  CategoryTitle: string
+  WorksheetUID: string | null
+}
+
+export async function fetchSenaiteWorksheets(token: string): Promise<SenaiteWorksheet[]> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Worksheet?complete=true&limit=100`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return (data.items ?? []).map((w: Record<string, unknown>) => {
+      const analyst = (w.Analyst as Record<string, unknown>) ?? {}
+      return {
+        uid:            (w.uid as string) ?? '',
+        id:             (w.id as string) ?? '',
+        title:          (w.title as string) ?? '',
+        Analyst:        (analyst.uid as string) ?? (w.Analyst as string) ?? '',
+        AnalystTitle:   (analyst.fullname as string) ?? (w.AnalystTitle as string) ?? '',
+        review_state:   (w.review_state as string) ?? '',
+        created:        (w.created as string) ?? '',
+        analyses_count: Array.isArray(w.Analyses) ? (w.Analyses as unknown[]).length : 0,
+      }
+    })
+  } catch { return [] }
+}
+
+export async function createSenaiteWorksheet(token: string): Promise<{ success: boolean; uid?: string; id?: string; error?: string }> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify([{ obj_type: 'Worksheet' }]),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok) return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    const items = (data.items as Record<string, unknown>[]) ?? []
+    if (!items.length) return { success: false, error: 'No worksheet returned' }
+    return { success: true, uid: (items[0].uid as string) ?? '', id: (items[0].id as string) ?? '' }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+export async function fetchUnassignedAnalyses(token: string): Promise<SenaiteAnalysis[]> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Analysis?review_state=unassigned&complete=true&limit=200`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return (data.items ?? []).map((a: Record<string, unknown>) => mapAnalysis(a))
+  } catch { return [] }
+}
+
+export async function fetchWorksheetAnalyses(token: string, worksheetUid: string): Promise<SenaiteAnalysis[]> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Analysis?getWorksheetUID=${worksheetUid}&complete=true&limit=200`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return (data.items ?? []).map((a: Record<string, unknown>) => mapAnalysis(a))
+  } catch { return [] }
+}
+
+function mapAnalysis(a: Record<string, unknown>): SenaiteAnalysis {
+  const sample = (a.SampleID ?? a.RequestID ?? '') as string
+  const ws = a.Worksheet as Record<string, unknown> | null
+  return {
+    uid:           (a.uid as string) ?? '',
+    id:            (a.id as string) ?? '',
+    title:         (a.title as string) ?? '',
+    Keyword:       (a.Keyword as string) ?? '',
+    Result:        a.Result !== undefined && a.Result !== null ? String(a.Result) : null,
+    Unit:          (a.Unit as string) ?? '',
+    review_state:  (a.review_state as string) ?? '',
+    SampleID:      sample,
+    ClientTitle:   (a.ClientTitle as string) ?? '',
+    CategoryTitle: (a.CategoryTitle as string) ?? (a.Category as string) ?? '',
+    WorksheetUID:  ws ? (ws.uid as string) ?? null : null,
+  }
+}
+
+export async function assignAnalysesToWorksheet(
+  token: string,
+  worksheetUid: string,
+  analysisUids: string[]
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify([{ uid: worksheetUid, Analyses: analysisUids.map(uid => ({ uid })) }]),
+      cache: 'no-store',
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({})) as Record<string, unknown>
+      return { success: false, error: (err.message as string) ?? `HTTP ${res.status}` }
+    }
+    return { success: true }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+export async function submitAnalysisResult(
+  token: string,
+  analysisUid: string,
+  result: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const updateRes = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify([{ uid: analysisUid, Result: result }]),
+      cache: 'no-store',
+    })
+    if (!updateRes.ok) return { success: false, error: `Update failed: HTTP ${updateRes.status}` }
+
+    const wfRes = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Analysis/${analysisUid}/workflow_action`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ action: 'submit' }),
+      cache: 'no-store',
+    })
+    if (!wfRes.ok) return { success: false, error: `Submit action failed: HTTP ${wfRes.status}` }
+    return { success: true }
+  } catch (e) { return { success: false, error: String(e) } }
 }

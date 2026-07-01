@@ -116,7 +116,7 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
       <div className="flex items-start justify-between mb-4">
         <div>
           <h1 className="text-xl font-bold" style={{ color: '#111827' }}>Samples</h1>
-          <p className="text-xs mt-0.5" style={{ color: '#6B7280' }}>Manage and track laboratory samples — live from SENAITE.</p>
+          <p className="text-xs mt-0.5" style={{ color: '#6B7280' }}>Manage and track laboratory samples — live from XELLABS LIMS.</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => router.refresh()} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg"
@@ -192,7 +192,7 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
         <div className="bg-white rounded-xl flex flex-col items-center justify-center" style={{ border: '1px solid #E5E7EB', height: 280 }}>
           <MI name="science" size={40} color="#E5E7EB" />
           <p style={{ fontSize: 14, color: '#9CA3AF', marginTop: 12 }}>No samples yet</p>
-          <p style={{ fontSize: 12, color: '#D1D5DB', marginTop: 4 }}>Create a sample or check SENAITE for existing ones</p>
+          <p style={{ fontSize: 12, color: '#D1D5DB', marginTop: 4 }}>Create a sample or check XELLABS LIMS for existing ones</p>
           <button onClick={() => setShowModal(true)} className="mt-4 flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-lg text-white"
             style={{ backgroundColor: '#2563EB', cursor: 'pointer' }}>
             <MI name="add" size={14} color="#fff" /> New Sample
