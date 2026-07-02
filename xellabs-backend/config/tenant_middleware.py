@@ -1,3 +1,5 @@
+import os
+
 from django_tenants.middleware.main import TenantMainMiddleware
 
 
@@ -18,19 +20,23 @@ class XelLabsTenantMiddleware(TenantMainMiddleware):
     def hostname_from_request(self, request):
         schema = request.META.get('HTTP_X_TENANT_SCHEMA', '').strip().lower()
         if schema:
-            # Map schema_name → primary domain so the parent logic works as-is
-            try:
-                from core.models import Domain
-                domain = (
-                    Domain.objects
-                    .filter(tenant__schema_name=schema, is_primary=True)
-                    .values_list('domain', flat=True)
-                    .first()
-                )
-                if domain:
-                    return domain
-            except Exception:
-                pass  # fall through to normal host resolution
+            # Map schema_name → primary domain so the parent logic works as-is.
+            # If the schema is explicitly specified but doesn't exist, raise so
+            # django-tenants returns 404 instead of silently falling back to localhost.
+            from core.models import Domain
+            domain = (
+                Domain.objects
+                .filter(tenant__schema_name=schema, is_primary=True)
+                .values_list('domain', flat=True)
+                .first()
+            )
+            if domain:
+                return domain
+            # Schema was explicitly requested but not found — raise to produce 404
+            from django_tenants.utils import get_tenant_model
+            raise get_tenant_model().DoesNotExist(
+                f"No tenant found for schema '{schema}'"
+            )
 
         return super().hostname_from_request(request)
 
@@ -38,8 +44,8 @@ class XelLabsTenantMiddleware(TenantMainMiddleware):
         try:
             return super().get_tenant(model, hostname)
         except Exception:
-            # Unknown host (e.g. internal Docker service name 'django') → public schema
-            try:
-                return super().get_tenant(model, 'localhost')
-            except Exception:
+            # Only remap to the known internal Docker hostname (e.g. 'django'),
+            # never a client-controlled Host header, to avoid tenant confusion.
+            if hostname != os.getenv("INTERNAL_SERVICE_HOSTNAME", "django"):
                 raise
+            return super().get_tenant(model, "localhost")

@@ -529,19 +529,30 @@ export async function fetchSenaiteWorksheets(token: string): Promise<SenaiteWork
   } catch { return [] }
 }
 
-export async function createSenaiteWorksheet(token: string): Promise<{ success: boolean; uid?: string; id?: string; error?: string }> {
+export async function createSenaiteWorksheet(
+  token: string,
+  analysisUids: string[] = [],
+): Promise<{ success: boolean; uid?: string; id?: string; error?: string }> {
   try {
-    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
+    // SENAITE requires Analyses at creation time — use the Plone REST API endpoint.
+    const res = await fetch(`${SENAITE_URL}/senaite/worksheets`, {
       method: 'POST',
-      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify([{ obj_type: 'Worksheet' }]),
+      headers: {
+        Authorization: `Basic ${token}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ '@type': 'Worksheet', Analyses: analysisUids }),
       cache: 'no-store',
     })
     const data = await res.json().catch(() => ({})) as Record<string, unknown>
-    if (!res.ok) return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
-    const items = (data.items as Record<string, unknown>[]) ?? []
-    if (!items.length) return { success: false, error: 'No worksheet returned' }
-    return { success: true, uid: (items[0].uid as string) ?? '', id: (items[0].id as string) ?? '' }
+    if (!res.ok) {
+      const msg = (data.message as string) ?? (data.error as string) ?? `HTTP ${res.status}`
+      return { success: false, error: msg }
+    }
+    const uid = (data.UID as string) ?? (data.uid as string) ?? ''
+    const id  = (data.id  as string) ?? ''
+    return { success: true, uid, id }
   } catch (e) { return { success: false, error: String(e) } }
 }
 

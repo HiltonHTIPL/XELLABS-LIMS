@@ -36,57 +36,64 @@ def process_instrument_import(self, import_id: int):
         _fail(imp, f"Could not read file: {e}")
         return
 
-    if imp.file_format == "xml":
-        rows, parse_errors = parse_xml(file_content)
-    else:
-        rows, parse_errors = parse_csv(file_content)
-
-    if not rows and parse_errors:
-        _fail(imp, "File could not be parsed. Errors: " + json.dumps(parse_errors))
-        return
-
-    # ── 2. Map to DB objects ──────────────────────────────────────────────────
-    mapped, map_errors = map_results(rows)
-    all_errors = parse_errors + map_errors
-
-    # ── 3. Create/update Result records ──────────────────────────────────────
-    created_count = 0
-    skipped_count = 0
-
-    for row in mapped:
-        # Find an open WorksheetAssignment for this sample + test
-        wa = WorksheetAssignment.objects.filter(
-            analysis_request__sample__pk=row["sample_pk"],
-            test__pk=row["test_pk"],
-        ).first()
-
-        if not wa:
-            all_errors.append({
-                "row": row.get("sample_id"),
-                "detail": f"No open WorksheetAssignment found for sample={row['sample_id']} test={row['test_code']}.",
-            })
-            skipped_count += 1
-            continue
-
-        result, created = Result.objects.get_or_create(
-            worksheet_assignment=wa,
-            defaults={"value": row["value"], "unit": row["unit"], "remarks": row["flags"]},
-        )
-        if created:
-            created_count += 1
+    try:
+        if imp.file_format == "xml":
+            rows, parse_errors = parse_xml(file_content)
         else:
-            # Update existing pending result (analyst may not have entered it yet)
-            if result.status == "pending":
-                result.value = row["value"]
-                result.unit = row["unit"]
-                result.remarks = row["flags"]
-                result.save(update_fields=["value", "unit", "remarks"])
-            else:
-                all_errors.append({
-                    "row": row["sample_id"],
-                    "detail": f"Result for {row['sample_id']}/{row['test_code']} already {result.status} — skipped.",
-                })
-                skipped_count += 1
+            rows, parse_errors = parse_csv(file_content)
+
+        if not rows and parse_errors:
+            _fail(imp, "File could not be parsed. Errors: " + json.dumps(parse_errors))
+            return
+
+        # ── 2. Map to DB objects ──────────────────────────────────────────────
+        mapped, map_errors = map_results(rows)
+        all_errors = parse_errors + map_errors
+
+        # ── 3. Create/update Result records ────────────────────────────────────
+        created_count = 0
+        skipped_count = 0
+
+        for row in mapped:
+            from django.db import transaction
+            with transaction.atomic():
+                # Find an open WorksheetAssignment for this sample + test
+                wa = WorksheetAssignment.objects.select_for_update().filter(
+                    analysis_request__sample__pk=row["sample_pk"],
+                    test__pk=row["test_pk"],
+                ).first()
+
+                if not wa:
+                    all_errors.append({
+                        "row": row.get("sample_id"),
+                        "detail": f"No open WorksheetAssignment found for sample={row['sample_id']} test={row['test_code']}.",
+                    })
+                    skipped_count += 1
+                    continue
+
+                result, created = Result.objects.get_or_create(
+                    worksheet_assignment=wa,
+                    defaults={"value": row["value"], "unit": row["unit"], "remarks": row["flags"]},
+                )
+                if created:
+                    created_count += 1
+                else:
+                    # Update existing pending result (analyst may not have entered it yet)
+                    if result.status == "pending":
+                        result.value = row["value"]
+                        result.unit = row["unit"]
+                        result.remarks = row["flags"]
+                        result.save(update_fields=["value", "unit", "remarks"])
+                    else:
+                        all_errors.append({
+                            "row": row["sample_id"],
+                            "detail": f"Result for {row['sample_id']}/{row['test_code']} already {result.status} — skipped.",
+                        })
+                        skipped_count += 1
+    except Exception as e:
+        logger.exception("Import #%d crashed during parse/map/create.", imp.pk)
+        _fail(imp, f"Import failed unexpectedly: {e}")
+        return
 
     # ── 4. Write audit event ──────────────────────────────────────────────────
     from django.contrib.contenttypes.models import ContentType
@@ -107,7 +114,9 @@ def process_instrument_import(self, import_id: int):
     )
 
     # ── 5. Finalise import record ─────────────────────────────────────────────
-    imp.status = "processed" if not all_errors else "processed"  # processed even with partial errors
+    # "failed" only when nothing at all succeeded; partial success still counts as "processed"
+    # so the error log (recorded either way) can be reviewed via the /errors endpoint.
+    imp.status = "failed" if (mapped and created_count == 0) else "processed"
     imp.error_log = json.dumps(all_errors) if all_errors else ""
     imp.save(update_fields=["status", "error_log"])
 

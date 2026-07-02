@@ -5,6 +5,7 @@ import { headers } from 'next/headers'
 import { createSession, deleteSession } from '@/app/lib/session'
 import { LoginSchema, type LoginFormState } from '@/app/lib/definitions'
 import { senaiteLogin, mapSenaiteRole } from '@/app/lib/senaite'
+import { djangoFetch } from '@/app/lib/django'
 
 const rateLimiter = new RateLimiterMemory({ points: 5, duration: 60 })
 
@@ -88,9 +89,11 @@ export async function login(
   }
 
   try {
-    const meRes = await fetch(`${DJANGO_API}/api/auth/me/`, {
+    // No session exists yet at this point in login, so djangoFetch can't read the
+    // token from getSession() — pass the freshly obtained token explicitly. It still
+    // picks up X-Tenant-Schema from the x-tenant-subdomain request header automatically.
+    const meRes = await djangoFetch('/api/auth/me/', {
       headers: { Authorization: `Token ${djangoToken}` },
-      cache: 'no-store',
     })
     if (!meRes.ok) return { message: 'Failed to retrieve user profile.' }
     userProfile = await meRes.json()

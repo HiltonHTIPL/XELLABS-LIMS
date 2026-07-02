@@ -2,7 +2,10 @@ import 'server-only'
 import { SignJWT, jwtVerify } from 'jose'
 import { cookies } from 'next/headers'
 
-const SESSION_SECRET = process.env.SESSION_SECRET!
+const SESSION_SECRET = process.env.SESSION_SECRET
+if (!SESSION_SECRET || SESSION_SECRET.length < 32) {
+  throw new Error('SESSION_SECRET env var must be set to a string of at least 32 characters')
+}
 const encodedKey = new TextEncoder().encode(SESSION_SECRET)
 
 // 8 hours — HIPAA §164.312(a)(2)(iii) automatic logoff
@@ -46,7 +49,7 @@ export async function createSession(payload: Omit<SessionPayload, 'expiresAt'>) 
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     expires: expiresAt,
-    sameSite: 'lax',
+    sameSite: 'strict',
     path: '/',
   })
 }

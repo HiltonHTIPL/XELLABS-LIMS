@@ -1,15 +1,8 @@
 'use server'
 import { revalidatePath } from 'next/cache'
 import { getSession } from '@/app/lib/session'
+import { djangoFetch } from '@/app/lib/django'
 import { fetchSenaiteClients } from '@/app/lib/senaite'
-
-const DJANGO_API = process.env.DJANGO_API_URL ?? 'http://django:8001'
-
-/** Returns a valid Django token: session token if present, else the service token from env. */
-async function resolveDjangoToken(): Promise<string> {
-  const session = await getSession()
-  return session?.djangoToken || process.env.DJANGO_SERVICE_TOKEN || ''
-}
 
 export type SenaiteAddress = {
   address: string
@@ -21,15 +14,13 @@ export type SenaiteAddress = {
 
 export type DjangoClient = {
   id: number
-  // Core identifiers
   name: string
   client_id: string
-  // Organisation contact
+  tenant_detail?: { id: number; name: string; slug: string; schema_name: string } | null
   email: string
   phone: string
   fax: string
   mobile: string
-  // Primary contact person
   contact_person: string
   salutation: string
   contact_first_name: string
@@ -38,12 +29,10 @@ export type DjangoClient = {
   contact_phone: string
   contact_job_title: string
   contact_department: string
-  // Addresses
   address: string
   physical_address: SenaiteAddress | Record<string, never>
   postal_address: SenaiteAddress | Record<string, never>
   billing_address: SenaiteAddress | Record<string, never>
-  // Financial
   tax_number: string
   account_number: string
   bank_name: string
@@ -53,10 +42,8 @@ export type DjangoClient = {
   nib: string
   bulk_discount: string
   member_discount: string
-  // Notes & sync
   remarks: string
   senaite_uid: string
-  // Meta
   tenant: number | null
   is_active: boolean
   created_at: string
@@ -75,10 +62,6 @@ export type ClientFormState = {
   }
 }
 
-function authHeader(token: string) {
-  return { Authorization: `Token ${token}`, 'Content-Type': 'application/json' }
-}
-
 function addr(formData: FormData, prefix: string): SenaiteAddress {
   return {
     address: (formData.get(`${prefix}_street`) as string)?.trim() ?? '',
@@ -90,13 +73,8 @@ function addr(formData: FormData, prefix: string): SenaiteAddress {
 }
 
 export async function getClient(id: number): Promise<DjangoClient | null> {
-  const token = await resolveDjangoToken()
-  if (!token) return null
   try {
-    const res = await fetch(`${DJANGO_API}/api/clients/${id}/`, {
-      headers: authHeader(token),
-      cache: 'no-store',
-    })
+    const res = await djangoFetch(`/api/clients/${id}/`)
     if (!res.ok) return null
     return await res.json()
   } catch {
@@ -105,13 +83,8 @@ export async function getClient(id: number): Promise<DjangoClient | null> {
 }
 
 export async function getClients(): Promise<DjangoClient[]> {
-  const token = await resolveDjangoToken()
-  if (!token) return []
   try {
-    const res = await fetch(`${DJANGO_API}/api/clients/`, {
-      headers: authHeader(token),
-      cache: 'no-store',
-    })
+    const res = await djangoFetch('/api/clients/')
     if (!res.ok) return []
     const data = await res.json()
     return data.results ?? data
@@ -124,14 +97,10 @@ export async function toggleClientActive(
   id: number,
   is_active: boolean
 ): Promise<{ success: boolean; message: string }> {
-  const token = await resolveDjangoToken()
-  if (!token) return { success: false, message: 'Not authenticated.' }
   try {
-    const res = await fetch(`${DJANGO_API}/api/clients/${id}/`, {
+    const res = await djangoFetch(`/api/clients/${id}/`, {
       method: 'PATCH',
-      headers: authHeader(token),
       body: JSON.stringify({ is_active }),
-      cache: 'no-store',
     })
     if (!res.ok) return { success: false, message: `Server error ${res.status}` }
     revalidatePath('/dashboard/clients')
@@ -153,20 +122,8 @@ export async function syncClientsFromSenaite(): Promise<SyncResult> {
   const session = await getSession()
   if (!session) return { success: false, message: 'Not authenticated. Please sign in again.', created: 0, updated: 0, total: 0 }
 
-  // Django token: use session token, fall back to service token from env
-  const djangoToken = session.djangoToken || process.env.DJANGO_SERVICE_TOKEN || ''
-  if (!djangoToken) return { success: false, message: 'No Django token available. Set DJANGO_SERVICE_TOKEN in environment.', created: 0, updated: 0, total: 0 }
-
-  // SENAITE token: use session token, fall back to server-side admin credentials
-  const SENAITE_USER = process.env.SENAITE_ADMIN_USER ?? 'admin'
-  const SENAITE_PASS = process.env.SENAITE_ADMIN_PASS ?? 'admin'
-  const senaiteToken = session.senaiteToken ?? Buffer.from(`${SENAITE_USER}:${SENAITE_PASS}`).toString('base64')
-
-  // 1. Fetch all clients currently in Django to build a uid→id map
-  const existingRes = await fetch(`${DJANGO_API}/api/clients/?page_size=1000`, {
-    headers: authHeader(djangoToken),
-    cache: 'no-store',
-  }).catch(() => null)
+  // 1. Fetch all Django clients to build uid→id map (uses djangoFetch — tenant-aware)
+  const existingRes = await djangoFetch('/api/clients/?page_size=1000').catch(() => null)
   const existingData = existingRes?.ok ? await existingRes.json() : { results: [] }
   const existingList: DjangoClient[] = existingData.results ?? existingData
   const byUid = new Map<string, number>()
@@ -174,7 +131,10 @@ export async function syncClientsFromSenaite(): Promise<SyncResult> {
     if (c.senaite_uid) byUid.set(c.senaite_uid, c.id)
   }
 
-  // 2. Fetch all clients from SENAITE
+  // 2. Fetch all clients from SENAITE (raw fetch — not a Django endpoint)
+  const SENAITE_USER = process.env.SENAITE_ADMIN_USER ?? 'admin'
+  const SENAITE_PASS = process.env.SENAITE_ADMIN_PASS ?? 'admin'
+  const senaiteToken = session.senaiteToken ?? Buffer.from(`${SENAITE_USER}:${SENAITE_PASS}`).toString('base64')
   const senaiteClients = await fetchSenaiteClients(senaiteToken)
   if (senaiteClients.length === 0) {
     return { success: false, message: 'No clients found in SENAITE. Verify SENAITE is running and you are logged in as a SENAITE user.', created: 0, updated: 0, total: 0 }
@@ -182,6 +142,7 @@ export async function syncClientsFromSenaite(): Promise<SyncResult> {
 
   let created = 0
   let updated = 0
+  let failed = 0
 
   // 3. Upsert each SENAITE client into Django
   for (const sc of senaiteClients) {
@@ -202,31 +163,29 @@ export async function syncClientsFromSenaite(): Promise<SyncResult> {
     }
 
     const existingId = byUid.get(sc.uid)
-    if (existingId) {
-      // PATCH — update existing
-      await fetch(`${DJANGO_API}/api/clients/${existingId}/`, {
-        method: 'PATCH',
-        headers: authHeader(djangoToken),
-        body: JSON.stringify(payload),
-        cache: 'no-store',
-      }).catch(() => null)
-      updated++
-    } else {
-      // POST — create new
-      await fetch(`${DJANGO_API}/api/clients/`, {
-        method: 'POST',
-        headers: authHeader(djangoToken),
-        body: JSON.stringify({ ...payload, is_active: true }),
-        cache: 'no-store',
-      }).catch(() => null)
-      created++
+    try {
+      const res = existingId
+        ? await djangoFetch(`/api/clients/${existingId}/`, { method: 'PATCH', body: JSON.stringify(payload) })
+        : await djangoFetch('/api/clients/', { method: 'POST', body: JSON.stringify({ ...payload, is_active: true }) })
+
+      if (!res.ok) {
+        failed++
+      } else if (existingId) {
+        updated++
+      } else {
+        created++
+      }
+    } catch {
+      failed++
     }
   }
 
   revalidatePath('/dashboard/clients')
   return {
-    success: true,
-    message: `Sync complete — ${created} created, ${updated} updated.`,
+    success: failed === 0,
+    message: failed === 0
+      ? `Sync complete — ${created} created, ${updated} updated.`
+      : `Sync finished with errors — ${created} created, ${updated} updated, ${failed} failed. Check server logs.`,
     created,
     updated,
     total: senaiteClients.length,
@@ -238,9 +197,6 @@ export async function updateClient(
   _state: ClientFormState,
   formData: FormData
 ): Promise<ClientFormState> {
-  const token = await resolveDjangoToken()
-  if (!token) return { message: 'Not authenticated. Please sign in again.' }
-
   const g = (key: string) => (formData.get(key) as string)?.trim() ?? ''
 
   const name      = g('name')
@@ -269,11 +225,9 @@ export async function updateClient(
   }
 
   try {
-    const res = await fetch(`${DJANGO_API}/api/clients/${id}/`, {
+    const res = await djangoFetch(`/api/clients/${id}/`, {
       method: 'PATCH',
-      headers: authHeader(token),
       body: JSON.stringify(payload),
-      cache: 'no-store',
     })
     if (!res.ok) {
       const err = await res.json().catch(() => ({}))
@@ -291,9 +245,6 @@ export async function createClient(
   _state: ClientFormState,
   formData: FormData
 ): Promise<ClientFormState> {
-  const token = await resolveDjangoToken()
-  if (!token) return { message: 'Not authenticated. Please sign in again.' }
-
   const g = (key: string) => (formData.get(key) as string)?.trim() ?? ''
 
   const name      = g('name')
@@ -304,51 +255,29 @@ export async function createClient(
   if (!client_id) errors.client_id = ['Client ID is required']
   if (Object.keys(errors).length > 0) return { errors }
 
-  // Extract logo file before sending JSON (file stays separate)
   const logoFile = formData.get('logo') as File | null
 
   const payload = {
-    // Core
-    name,
-    client_id,
-    // Organisation contact
-    email:  g('email'),
-    phone:  g('phone'),
-    fax:    g('fax'),
-    mobile: g('mobile'),
-    // Primary contact person
-    contact_person:    g('contact_person'),
-    salutation:        g('salutation'),
-    contact_first_name: g('contact_first_name'),
-    contact_last_name:  g('contact_last_name'),
-    contact_email:      g('contact_email'),
-    contact_phone:      g('contact_phone'),
-    contact_job_title:  g('contact_job_title'),
-    contact_department: g('contact_department'),
-    // Addresses
+    name, client_id,
+    email:  g('email'), phone: g('phone'), fax: g('fax'), mobile: g('mobile'),
+    contact_person: g('contact_person'), salutation: g('salutation'),
+    contact_first_name: g('contact_first_name'), contact_last_name: g('contact_last_name'),
+    contact_email: g('contact_email'), contact_phone: g('contact_phone'),
+    contact_job_title: g('contact_job_title'), contact_department: g('contact_department'),
     physical_address: addr(formData, 'physical'),
     postal_address:   addr(formData, 'postal'),
     billing_address:  addr(formData, 'billing'),
-    // Financial
-    tax_number:      g('tax_number'),
-    account_number:  g('account_number'),
-    bank_name:       g('bank_name'),
-    bank_branch:     g('bank_branch'),
-    swift_code:      g('swift_code'),
-    iban:            g('iban'),
-    nib:             g('nib'),
-    bulk_discount:   g('bulk_discount')   || '0',
-    member_discount: g('member_discount') || '0',
-    // Notes
+    tax_number: g('tax_number'), account_number: g('account_number'),
+    bank_name: g('bank_name'), bank_branch: g('bank_branch'),
+    swift_code: g('swift_code'), iban: g('iban'), nib: g('nib'),
+    bulk_discount: g('bulk_discount') || '0', member_discount: g('member_discount') || '0',
     remarks: g('remarks'),
   }
 
   try {
-    const res = await fetch(`${DJANGO_API}/api/clients/`, {
+    const res = await djangoFetch('/api/clients/', {
       method: 'POST',
-      headers: authHeader(token),
       body: JSON.stringify(payload),
-      cache: 'no-store',
     })
 
     if (!res.ok) {
@@ -360,18 +289,17 @@ export async function createClient(
     const created: DjangoClient = await res.json()
 
     // Upload logo if provided — compress to <30 KB with sharp
+    let logoWarning = ''
     if (logoFile && logoFile.size > 0 && created.tenant) {
       try {
         const sharp = (await import('sharp')).default
         const buffer = Buffer.from(await logoFile.arrayBuffer())
 
-        // Compress: resize to 400px wide, webp quality 80
         let compressed = await sharp(buffer)
           .resize({ width: 400, withoutEnlargement: true })
           .webp({ quality: 80 })
           .toBuffer()
 
-        // If still over 30 KB, compress harder
         if (compressed.byteLength > 30 * 1024) {
           compressed = await sharp(buffer)
             .resize({ width: 200, withoutEnlargement: true })
@@ -381,18 +309,19 @@ export async function createClient(
 
         const logoForm = new FormData()
         logoForm.append('logo', new Blob([compressed], { type: 'image/webp' }), 'logo.webp')
-        await fetch(`${DJANGO_API}/api/tenants/${created.tenant}/logo/`, {
+
+        const logoRes = await djangoFetch(`/api/tenants/${created.tenant}/logo/`, {
           method: 'POST',
-          headers: { Authorization: `Token ${token}` },
           body: logoForm,
-        }).catch(() => null)
+        })
+        if (!logoRes.ok) logoWarning = ' (logo upload failed — you can retry it from the client detail page)'
       } catch {
-        // Logo upload failure is non-fatal — client was created successfully
+        logoWarning = ' (logo upload failed — you can retry it from the client detail page)'
       }
     }
 
     revalidatePath('/dashboard/clients')
-    return { success: true, message: `Client "${name}" created successfully.` }
+    return { success: true, message: `Client "${name}" created successfully.${logoWarning}` }
   } catch {
     return { message: 'Could not reach the server. Please try again.' }
   }

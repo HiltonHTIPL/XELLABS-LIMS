@@ -44,14 +44,18 @@ class FlexibleTokenView(APIView):
             except User.DoesNotExist:
                 return Response({'non_field_errors': ['No account found with that email address.']}, status=400)
             except User.MultipleObjectsReturned:
-                pass
+                logger.error("Duplicate accounts share email '%s' (case-insensitive) — data integrity issue.", identifier)
+                return Response({'non_field_errors': ['Multiple accounts found for that email. Contact support.']}, status=400)
         else:
             # Case-insensitive username lookup (e.g. "liji" → "LIJI")
             try:
                 user_obj = User.objects.get(username__iexact=identifier)
                 username = user_obj.username
-            except (User.DoesNotExist, User.MultipleObjectsReturned):
+            except User.DoesNotExist:
                 pass
+            except User.MultipleObjectsReturned:
+                logger.error("Duplicate accounts share username '%s' (case-insensitive) — data integrity issue.", identifier)
+                return Response({'non_field_errors': ['Multiple accounts found for that username. Contact support.']}, status=400)
 
         user = authenticate(request=request, username=username, password=password)
         if not user:
@@ -98,6 +102,7 @@ class ClientViewSet(ModelViewSet):
 
     def perform_create(self, serializer):
         from django.utils.text import slugify
+        from django_tenants.utils import schema_context
 
         name = serializer.validated_data.get('name', '')
         client_id_val = serializer.validated_data.get('client_id', '')
@@ -107,22 +112,30 @@ class ClientViewSet(ModelViewSet):
         raw = client_id_val or name
         slug = slugify(raw) or 'client'
 
-        # Auto-create tenant (also creates {slug}.localhost domain via Tenant.save())
-        tenant, _ = Tenant.objects.get_or_create(
-            slug=slug,
-            defaults={'name': name, 'schema_name': slug},
-        )
-
-        # Auto-create a portal login (username=client_id, password=admin, role=client)
-        username = client_id_val or slug
-        if not User.objects.filter(username=username).exists():
-            User.objects.create_user(
-                username=username,
-                email=email,
-                password='admin',
-                role='client',
-                tenant=tenant,
+        # Tenant and User live in the public schema — must switch context before creating them.
+        # The request arrives scoped to a tenant schema (e.g. hl-01); without this wrapper
+        # django-tenants raises "Can't create tenant outside the public schema."
+        with schema_context('public'):
+            tenant, _ = Tenant.objects.get_or_create(
+                slug=slug,
+                defaults={'name': name, 'schema_name': slug},
             )
+
+            username = client_id_val or slug
+            if not User.objects.filter(username=username).exists():
+                from django.utils.crypto import get_random_string
+                temp_password = get_random_string(20)
+                User.objects.create_user(
+                    username=username,
+                    email=email,
+                    password=temp_password,
+                    role='client',
+                    tenant=tenant,
+                )
+                # TODO: email temp_password (or a password-reset link) to the client contact.
+                # Logged here only so the account isn't left completely inaccessible until
+                # that email flow is built — do not log this in production once it exists.
+                logger.info("Created client user '%s' with a temporary password.", username)
 
         serializer.save(tenant=tenant)
 
@@ -167,7 +180,8 @@ class TenantLogoView(APIView):
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_object(self, tenant_id):
-        return Tenant.objects.get(pk=tenant_id)
+        from django.shortcuts import get_object_or_404
+        return get_object_or_404(Tenant, pk=tenant_id)
 
     def post(self, request, tenant_id):
         tenant = self.get_object(tenant_id)

@@ -92,7 +92,19 @@ const COC_EVENTS = [
 ]
 
 /* ── Tree node ── */
-function TreeNode({ node, depth = 0 }: { node: any; depth?: number }) {
+type StorageNode = {
+  id: string
+  label: string
+  status?: string
+  temp?: string
+  used?: number
+  cap?: number
+  selected?: boolean
+  isArchive?: boolean
+  children?: StorageNode[]
+}
+
+function TreeNode({ node, depth = 0 }: { node: StorageNode; depth?: number }) {
   const [open, setOpen] = useState(true)
   const hasChildren = !!node.children?.length
   const isLeaf      = !hasChildren && !node.isArchive
@@ -160,7 +172,7 @@ function TreeNode({ node, depth = 0 }: { node: any; depth?: number }) {
       </div>
 
       {/* Children */}
-      {hasChildren && open && node.children.map((c: any) => (
+      {hasChildren && open && node.children!.map(c => (
         <TreeNode key={c.id} node={c} depth={depth + 1} />
       ))}
     </div>
@@ -400,7 +412,7 @@ export default function ChainOfCustodyPage() {
                 {ev.fields.map(f => (
                   <div key={f.label} style={{ display: 'flex', gap: 4, marginBottom: 3 }}>
                     <span style={{ fontSize: 10, color: '#9CA3AF', minWidth: 58, flexShrink: 0 }}>{f.label}</span>
-                    {(f as any).badge ? (
+                    {'badge' in f && f.badge ? (
                       <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 8px', borderRadius: 999, backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>{f.value}</span>
                     ) : (
                       <span style={{ fontSize: 10, fontWeight: 500, color: '#374151' }}>{f.value}</span>
