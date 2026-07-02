@@ -58,8 +58,11 @@ export async function login(
     const { token: senaiteToken, user } = senaiteResult
     const role = mapSenaiteRole(user.roles)
 
-    // Also get a Django token so the Client/Tenant API works
+    // Also get a Django token so the Client/Tenant API works.
+    // Fall back to service token if this user doesn't exist in Django.
     const djangoToken = await getDjangoToken(username, password)
+      || process.env.DJANGO_SERVICE_TOKEN
+      || ''
 
     await createSession({
       userId: user.userid,

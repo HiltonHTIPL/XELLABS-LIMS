@@ -5,6 +5,13 @@ CLAUDE.md
 # Startup / reference docs
 start-commands.txt
 
+# Local change tracking (cleared after every push — never commit)
+pending-changes.md
+
+# Celery runtime files
+celerybeat-schedule
+celerybeat.pid
+
 # Python
 __pycache__/
 *.py[cod]
@@ -64,3 +71,7 @@ senaite-rebrand/*.bak
 
 # Temp scripts
 xellabs-backend/reset_inventory.py
+
+# Backup script and backup output (server-side only — not tracked in git)
+backup.sh
+xellabs-backups/
