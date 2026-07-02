@@ -25,6 +25,9 @@ class SampleTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = SampleType
         fields = "__all__"
+        extra_kwargs = {
+            'prefix': {'required': True, 'allow_blank': False},
+        }
 
 
 class MethodSerializer(serializers.ModelSerializer):

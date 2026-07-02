@@ -1,13 +1,6 @@
 'use server'
 import { revalidatePath } from 'next/cache'
-import { getSession } from '@/app/lib/session'
-
-const DJANGO_API = process.env.DJANGO_API_URL ?? 'http://django:8001'
-
-async function resolveDjangoToken(): Promise<string> {
-  const session = await getSession()
-  return session?.djangoToken || process.env.DJANGO_SERVICE_TOKEN || ''
-}
+import { djangoFetch } from '@/app/lib/django'
 
 export type AnalysisRequest = {
   id: number
@@ -31,12 +24,8 @@ export type ARFormState = {
 }
 
 export async function getAnalysisRequests(): Promise<AnalysisRequest[]> {
-  const token = await resolveDjangoToken()
   try {
-    const res = await fetch(`${DJANGO_API}/api/lims/analysis-requests/?ordering=-created_at`, {
-      headers: { Authorization: `Token ${token}`, Accept: 'application/json' },
-      cache: 'no-store',
-    })
+    const res = await djangoFetch('/api/lims/analysis-requests/?ordering=-created_at')
     if (!res.ok) return []
     const data = await res.json()
     return data.results ?? data ?? []
@@ -44,7 +33,6 @@ export async function getAnalysisRequests(): Promise<AnalysisRequest[]> {
 }
 
 export async function createAnalysisRequest(_state: ARFormState, formData: FormData): Promise<ARFormState> {
-  const token = await resolveDjangoToken()
   const sample   = (formData.get('sample') as string)?.trim()
   const tests    = formData.getAll('tests') as string[]
   const status   = (formData.get('status') as string)?.trim() || 'pending'
@@ -53,14 +41,13 @@ export async function createAnalysisRequest(_state: ARFormState, formData: FormD
   const notes    = (formData.get('notes') as string)?.trim()
 
   const errors: Record<string, string[]> = {}
-  if (!sample)        errors.sample = ['Sample is required']
-  if (!tests.length)  errors.tests  = ['At least one test is required']
+  if (!sample)       errors.sample = ['Sample is required']
+  if (!tests.length) errors.tests  = ['At least one test is required']
   if (Object.keys(errors).length) return { errors }
 
   try {
-    const res = await fetch(`${DJANGO_API}/api/lims/analysis-requests/`, {
+    const res = await djangoFetch('/api/lims/analysis-requests/', {
       method: 'POST',
-      headers: { Authorization: `Token ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
         sample: Number(sample),
         tests: tests.map(Number),
@@ -69,11 +56,10 @@ export async function createAnalysisRequest(_state: ARFormState, formData: FormD
         ...(due_date ? { due_date } : {}),
         ...(notes    ? { notes }    : {}),
       }),
-      cache: 'no-store',
     })
-    const data = await res.json()
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
     if (!res.ok) {
-      return { message: data.sample?.[0] ?? data.tests?.[0] ?? data.detail ?? 'Failed to create analysis request.' }
+      return { message: (data.sample as string[])?.[0] ?? (data.tests as string[])?.[0] ?? (data.detail as string) ?? 'Failed to create analysis request.' }
     }
     revalidatePath('/dashboard/analysis-requests')
     return { success: true, message: `Analysis request ${data.ar_id} created.` }
@@ -81,13 +67,10 @@ export async function createAnalysisRequest(_state: ARFormState, formData: FormD
 }
 
 export async function updateARStatus(id: number, status: string): Promise<{ success: boolean; message: string }> {
-  const token = await resolveDjangoToken()
   try {
-    const res = await fetch(`${DJANGO_API}/api/lims/analysis-requests/${id}/`, {
+    const res = await djangoFetch(`/api/lims/analysis-requests/${id}/`, {
       method: 'PATCH',
-      headers: { Authorization: `Token ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ status }),
-      cache: 'no-store',
     })
     revalidatePath('/dashboard/analysis-requests')
     return { success: res.ok, message: res.ok ? 'Status updated.' : 'Failed to update status.' }

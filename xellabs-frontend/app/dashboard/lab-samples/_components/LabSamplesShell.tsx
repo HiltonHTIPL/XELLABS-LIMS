@@ -1,9 +1,8 @@
 'use client'
 import { useState, useActionState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createLabSample, updateLabSample, type LabSample, type LabSampleFormState } from '@/app/actions/lab-samples'
+import { createLabSample, updateLabSample, type LabSample, type LabSampleFormState, type DjangoSampleType } from '@/app/actions/lab-samples'
 import { type DjangoClient } from '@/app/actions/clients'
-import { type SenaiteSampleType } from '@/app/lib/senaite'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -34,11 +33,11 @@ const STATUS_BADGE: Record<string, { bg: string; color: string }> = {
 type Props = {
   initialSamples: LabSample[]
   clients: DjangoClient[]
-  sampleTypes: SenaiteSampleType[]
+  sampleTypes: DjangoSampleType[]
 }
 
 function SampleModal({ editing, clients, sampleTypes, onClose, onDone }: {
-  editing: LabSample | null; clients: DjangoClient[]; sampleTypes: SenaiteSampleType[]
+  editing: LabSample | null; clients: DjangoClient[]; sampleTypes: DjangoSampleType[]
   onClose: () => void; onDone: () => void
 }) {
   const isEdit = editing !== null
@@ -104,7 +103,7 @@ function SampleModal({ editing, clients, sampleTypes, onClose, onDone }: {
               <label className="block text-xs font-medium mb-1" style={labelStyle}>Sample Type <span style={{ color: '#EF4444' }}>*</span></label>
               <select name="sample_type" required defaultValue={editing?.sample_type ?? ''} className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={inputStyle(state.errors?.sample_type?.[0])}>
                 <option value="">Select sample type…</option>
-                {sampleTypes.map(st => <option key={st.uid} value={st.uid}>{st.title}</option>)}
+                {sampleTypes.map(st => <option key={st.id} value={st.id}>{st.name}</option>)}
               </select>
               {state.errors?.sample_type && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{state.errors.sample_type[0]}</p>}
             </div>

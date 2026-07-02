@@ -1,12 +1,20 @@
 'use server'
 import { revalidatePath } from 'next/cache'
-import { getSession } from '@/app/lib/session'
+import { djangoFetch } from '@/app/lib/django'
 
-const DJANGO_API = process.env.DJANGO_API_URL ?? 'http://django:8001'
+export type DjangoSampleType = {
+  id: number
+  name: string
+  prefix: string
+}
 
-async function resolveDjangoToken(): Promise<string> {
-  const session = await getSession()
-  return session?.djangoToken || process.env.DJANGO_SERVICE_TOKEN || ''
+export async function getDjangoSampleTypes(): Promise<DjangoSampleType[]> {
+  try {
+    const res = await djangoFetch('/api/lims/sample-types/?ordering=name')
+    if (!res.ok) return []
+    const data = await res.json()
+    return data.results ?? data ?? []
+  } catch { return [] }
 }
 
 export type LabSample = {
@@ -34,12 +42,8 @@ export type LabSampleFormState = {
 }
 
 export async function getLabSamples(): Promise<LabSample[]> {
-  const token = await resolveDjangoToken()
   try {
-    const res = await fetch(`${DJANGO_API}/api/lims/samples/?ordering=-created_at`, {
-      headers: { Authorization: `Token ${token}`, Accept: 'application/json' },
-      cache: 'no-store',
-    })
+    const res = await djangoFetch('/api/lims/samples/?ordering=-created_at')
     if (!res.ok) return []
     const data = await res.json()
     return data.results ?? data ?? []
@@ -47,17 +51,16 @@ export async function getLabSamples(): Promise<LabSample[]> {
 }
 
 export async function createLabSample(_state: LabSampleFormState, formData: FormData): Promise<LabSampleFormState> {
-  const token = await resolveDjangoToken()
-  const sample_id     = (formData.get('sample_id') as string)?.trim()
-  const client        = (formData.get('client') as string)?.trim()
-  const sample_type   = (formData.get('sample_type') as string)?.trim()
-  const description   = (formData.get('description') as string)?.trim()
-  const collection_date = (formData.get('collection_date') as string)?.trim()
-  const received_date = (formData.get('received_date') as string)?.trim()
-  const expiry_date   = (formData.get('expiry_date') as string)?.trim()
-  const status        = (formData.get('status') as string)?.trim() || 'registered'
+  const sample_id        = (formData.get('sample_id') as string)?.trim()
+  const client           = (formData.get('client') as string)?.trim()
+  const sample_type      = (formData.get('sample_type') as string)?.trim()
+  const description      = (formData.get('description') as string)?.trim()
+  const collection_date  = (formData.get('collection_date') as string)?.trim()
+  const received_date    = (formData.get('received_date') as string)?.trim()
+  const expiry_date      = (formData.get('expiry_date') as string)?.trim()
+  const status           = (formData.get('status') as string)?.trim() || 'registered'
   const storage_location = (formData.get('storage_location') as string)?.trim()
-  const barcode       = (formData.get('barcode') as string)?.trim()
+  const barcode          = (formData.get('barcode') as string)?.trim()
 
   const errors: Record<string, string[]> = {}
   if (!client)      errors.client      = ['Client is required']
@@ -67,27 +70,25 @@ export async function createLabSample(_state: LabSampleFormState, formData: Form
   const body: Record<string, unknown> = {
     status,
     is_active: true,
-    ...(sample_id        ? { sample_id }        : {}),
-    ...(client           ? { client: Number(client) }          : {}),
-    ...(sample_type      ? { sample_type: Number(sample_type) } : {}),
-    ...(description      ? { description }      : {}),
-    ...(collection_date  ? { collection_date }  : {}),
-    ...(received_date    ? { received_date }    : {}),
-    ...(expiry_date      ? { expiry_date }      : {}),
-    ...(storage_location ? { storage_location } : {}),
-    ...(barcode          ? { barcode }          : {}),
+    ...(sample_id        ? { sample_id }                         : {}),
+    ...(client           ? { client: Number(client) }            : {}),
+    ...(sample_type      ? { sample_type: Number(sample_type) }  : {}),
+    ...(description      ? { description }                       : {}),
+    ...(collection_date  ? { collection_date }                   : {}),
+    ...(received_date    ? { received_date }                     : {}),
+    ...(expiry_date      ? { expiry_date }                       : {}),
+    ...(storage_location ? { storage_location }                  : {}),
+    ...(barcode          ? { barcode }                           : {}),
   }
 
   try {
-    const res = await fetch(`${DJANGO_API}/api/lims/samples/`, {
+    const res = await djangoFetch('/api/lims/samples/', {
       method: 'POST',
-      headers: { Authorization: `Token ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(body),
-      cache: 'no-store',
     })
-    const data = await res.json()
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
     if (!res.ok) {
-      return { message: data.sample_id?.[0] ?? data.client?.[0] ?? data.detail ?? 'Failed to register sample.' }
+      return { message: (data.sample_id as string[])?.[0] ?? (data.client as string[])?.[0] ?? (data.detail as string) ?? 'Failed to register sample.' }
     }
     revalidatePath('/dashboard/lab-samples')
     return { success: true, message: `Sample ${data.sample_id} registered successfully.` }
@@ -95,14 +96,13 @@ export async function createLabSample(_state: LabSampleFormState, formData: Form
 }
 
 export async function updateLabSample(id: number, _state: LabSampleFormState, formData: FormData): Promise<LabSampleFormState> {
-  const token = await resolveDjangoToken()
-  const description   = (formData.get('description') as string)?.trim()
-  const collection_date = (formData.get('collection_date') as string)?.trim()
-  const received_date = (formData.get('received_date') as string)?.trim()
-  const expiry_date   = (formData.get('expiry_date') as string)?.trim()
-  const status        = (formData.get('status') as string)?.trim()
+  const description      = (formData.get('description') as string)?.trim()
+  const collection_date  = (formData.get('collection_date') as string)?.trim()
+  const received_date    = (formData.get('received_date') as string)?.trim()
+  const expiry_date      = (formData.get('expiry_date') as string)?.trim()
+  const status           = (formData.get('status') as string)?.trim()
   const storage_location = (formData.get('storage_location') as string)?.trim()
-  const barcode       = (formData.get('barcode') as string)?.trim()
+  const barcode          = (formData.get('barcode') as string)?.trim()
 
   const body: Record<string, unknown> = {
     ...(description      ? { description }      : {}),
@@ -115,14 +115,12 @@ export async function updateLabSample(id: number, _state: LabSampleFormState, fo
   }
 
   try {
-    const res = await fetch(`${DJANGO_API}/api/lims/samples/${id}/`, {
+    const res = await djangoFetch(`/api/lims/samples/${id}/`, {
       method: 'PATCH',
-      headers: { Authorization: `Token ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(body),
-      cache: 'no-store',
     })
     if (!res.ok) {
-      const data = await res.json()
+      const data = await res.json().catch(() => ({})) as { detail?: string }
       return { message: data.detail ?? 'Failed to update sample.' }
     }
     revalidatePath('/dashboard/lab-samples')
