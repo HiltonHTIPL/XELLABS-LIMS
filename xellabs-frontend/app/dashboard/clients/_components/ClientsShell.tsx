@@ -481,7 +481,7 @@ export default function ClientsShell({ initialClients }: { initialClients: Djang
           )}
 
           {/* Scrollable form body */}
-          <form action={action} className="flex flex-col flex-1 min-h-0">
+          <form action={action} noValidate className="flex flex-col flex-1 min-h-0">
             {/* Hidden field — signals update vs create */}
             {isEditing && <input type="hidden" name="_clientId" value={editingClient.id} />}
 
