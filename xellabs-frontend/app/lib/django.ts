@@ -45,10 +45,14 @@ export async function djangoFetch(
 
   const { skipAuth: _omit, ...fetchInit } = init
 
+  // Don't set Content-Type for FormData bodies — fetch must set its own
+  // multipart boundary, and a forced 'application/json' here would break uploads.
+  const isFormData = typeof FormData !== 'undefined' && fetchInit.body instanceof FormData
+
   return fetch(`${DJANGO_API}${path}`, {
     ...fetchInit,
     headers: {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...authHeaders,
       ...tenantHeaders,
       ...(fetchInit.headers as Record<string, string> | undefined),

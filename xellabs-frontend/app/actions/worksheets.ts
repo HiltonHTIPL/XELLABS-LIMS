@@ -40,7 +40,19 @@ export async function getUnassignedAnalyses(): Promise<SenaiteAnalysis[]> {
 
 export async function createWorksheet(): Promise<{ success: boolean; message: string; uid?: string; id?: string }> {
   const session = await getSession()
-  const result = await createSenaiteWorksheet(sessionToken(session))
+  const token = sessionToken(session)
+
+  // SENAITE requires at least one analysis when creating a worksheet.
+  // Check before attempting creation so we can return a clear error.
+  const unassigned = await fetchUnassignedAnalyses(token)
+  if (unassigned.length === 0) {
+    return {
+      success: false,
+      message: 'No unassigned analyses available. Please register samples with analyses in SENAITE first, then create a worksheet.',
+    }
+  }
+
+  const result = await createSenaiteWorksheet(token, unassigned.map(a => a.uid))
   if (!result.success) return { success: false, message: result.error ?? 'Failed to create worksheet.' }
   revalidatePath('/dashboard/worksheets')
   return { success: true, message: `Worksheet ${result.id} created.`, uid: result.uid, id: result.id }

@@ -56,23 +56,38 @@ class LotViewSet(viewsets.ModelViewSet):
         """Return lots whose current quantity is below their item's min_stock_level."""
         from django.contrib.contenttypes.models import ContentType
         from decimal import Decimal
+        from collections import defaultdict
 
         results = []
         for ct in ContentType.objects.filter(app_label="inventory", model__in=["reagent", "standard", "solvent"]):
             model_cls = ct.model_class()
             if model_cls is None:
                 continue
-            for item in model_cls.objects.filter(is_active=True):
-                lots = Lot.objects.filter(content_type=ct, object_id=item.pk)
-                total_in = (
-                    InventoryTransaction.objects.filter(lot__in=lots, transaction_type="in")
-                    .aggregate(s=Coalesce(Sum("quantity"), Decimal("0")))["s"]
+            items = list(model_cls.objects.filter(is_active=True))
+            if not items:
+                continue
+
+            # One query for all lots of this item type, one query for all their
+            # transactions — instead of 2 queries per item.
+            lot_to_object = dict(
+                Lot.objects.filter(content_type=ct, object_id__in=[i.pk for i in items])
+                .values_list("pk", "object_id")
+            )
+            net_by_object = defaultdict(Decimal)
+            if lot_to_object:
+                txns = (
+                    InventoryTransaction.objects
+                    .filter(lot_id__in=lot_to_object.keys())
+                    .values("lot_id", "transaction_type")
+                    .annotate(total=Coalesce(Sum("quantity"), Decimal("0")))
                 )
-                total_out = (
-                    InventoryTransaction.objects.filter(lot__in=lots, transaction_type__in=["out", "dispose"])
-                    .aggregate(s=Coalesce(Sum("quantity"), Decimal("0")))["s"]
-                )
-                current = total_in - total_out
+                for row in txns:
+                    object_id = lot_to_object[row["lot_id"]]
+                    sign = 1 if row["transaction_type"] == "in" else (-1 if row["transaction_type"] in ("out", "dispose") else 0)
+                    net_by_object[object_id] += sign * row["total"]
+
+            for item in items:
+                current = net_by_object.get(item.pk, Decimal("0"))
                 if current < item.min_stock_level:
                     results.append({
                         "item_type": ct.model,
@@ -92,6 +107,19 @@ class InventoryTransactionViewSet(viewsets.ModelViewSet):
     filterset_fields = ["transaction_type", "lot"]
     ordering_fields = ["created_at"]
 
+    def perform_create(self, serializer):
+        from django.contrib.contenttypes.models import ContentType
+        from audittrail.models import AuditEvent
+        txn = serializer.save()
+        AuditEvent.objects.create(
+            user=self.request.user,
+            action="create",
+            content_type=ContentType.objects.get_for_model(txn),
+            object_id=txn.pk,
+            object_repr=str(txn),
+            extra_data={"transaction_type": txn.transaction_type, "quantity": float(txn.quantity), "lot_id": txn.lot_id},
+        )
+
 
 class ExpiryAlertViewSet(viewsets.ModelViewSet):
     queryset = ExpiryAlert.objects.select_related("lot", "acknowledged_by").all()
@@ -107,6 +135,17 @@ class ExpiryAlertViewSet(viewsets.ModelViewSet):
         alert.is_acknowledged = True
         alert.acknowledged_by = request.user
         alert.save(update_fields=["is_acknowledged", "acknowledged_by"])
+
+        from django.contrib.contenttypes.models import ContentType
+        from audittrail.models import AuditEvent
+        AuditEvent.objects.create(
+            user=request.user,
+            action="update",
+            content_type=ContentType.objects.get_for_model(alert),
+            object_id=alert.pk,
+            object_repr=str(alert),
+            extra_data={"acknowledged": True},
+        )
         return Response(ExpiryAlertSerializer(alert).data)
 
     @action(detail=False, methods=["get"], url_path="upcoming")

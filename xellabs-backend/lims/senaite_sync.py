@@ -3,6 +3,7 @@ SENAITE → Django pull sync service.
 Polls SENAITE REST API and updates Sample status + Results in Django.
 """
 import logging
+from django.db import transaction
 from django.utils import timezone
 import requests
 from django.conf import settings
@@ -106,9 +107,29 @@ def pull_samples_and_results():
             skipped += 1
             continue
 
-        # 2. Find matching Django Sample by sample_id (= ClientSampleID in SENAITE)
+        # 2. Find matching Django Sample by sample_id (= ClientSampleID in SENAITE),
+        # locking the row so a concurrent lock/status change can't race with this sync.
         try:
-            sample = Sample.objects.get(sample_id=client_sample_id)
+            with transaction.atomic():
+                sample = Sample.objects.select_for_update().get(sample_id=client_sample_id)
+
+                # 3. Update Sample status + senaite_uid
+                new_status = STATUS_MAP.get(review_state, "")
+                changed_fields = ["last_synced_from_senaite"]
+                sample.last_synced_from_senaite = timezone.now()
+
+                if senaite_uid and not sample.senaite_uid:
+                    sample.senaite_uid = senaite_uid
+                    changed_fields.append("senaite_uid")
+                if senaite_ar_id and not sample.senaite_ar_id:
+                    sample.senaite_ar_id = senaite_ar_id
+                    changed_fields.append("senaite_ar_id")
+                if new_status and sample.status != new_status and not sample.is_locked:
+                    logger.info("Sample %s: %s → %s", sample.sample_id, sample.status, new_status)
+                    sample.status = new_status
+                    changed_fields.append("status")
+
+                sample.save(update_fields=changed_fields)
         except Sample.DoesNotExist:
             logger.debug("No Django sample for SENAITE ClientSampleID=%s", client_sample_id)
             skipped += 1
@@ -117,20 +138,6 @@ def pull_samples_and_results():
             logger.warning("Multiple samples for ClientSampleID=%s — skipping", client_sample_id)
             errors += 1
             continue
-
-        # 3. Update Sample status + senaite_uid
-        new_status = STATUS_MAP.get(review_state, "")
-        update_fields = {"last_synced_from_senaite": timezone.now()}
-
-        if senaite_uid and not sample.senaite_uid:
-            update_fields["senaite_uid"] = senaite_uid
-        if senaite_ar_id and not sample.senaite_ar_id:
-            update_fields["senaite_ar_id"] = senaite_ar_id
-        if new_status and sample.status != new_status and not sample.is_locked:
-            update_fields["status"] = new_status
-            logger.info("Sample %s: %s → %s", sample.sample_id, sample.status, new_status)
-
-        Sample.objects.filter(pk=sample.pk).update(**update_fields)
 
         # 4. Pull analyses (results) for this AR
         ar_uid = senaite_uid
@@ -210,36 +217,38 @@ def _sync_results(session, sample, ar_uid: str):
             logger.debug("No Django Test matching '%s' — skipping result", test_title)
             continue
 
-        # Find WorksheetAssignment for this test + AR
-        wa = WorksheetAssignment.objects.filter(
-            analysis_request=django_ar,
-            test=test,
-        ).first()
+        # Find WorksheetAssignment for this test + AR, locking it against a
+        # concurrent instrument-import task writing to the same Result.
+        with transaction.atomic():
+            wa = WorksheetAssignment.objects.select_for_update().filter(
+                analysis_request=django_ar,
+                test=test,
+            ).first()
 
-        if not wa:
-            logger.debug(
-                "No WorksheetAssignment for AR %s / test '%s' — skipping",
-                django_ar.ar_id, test_title,
+            if not wa:
+                logger.debug(
+                    "No WorksheetAssignment for AR %s / test '%s' — skipping",
+                    django_ar.ar_id, test_title,
+                )
+                continue
+
+            # Create or update the Result
+            result, created = Result.objects.get_or_create(
+                worksheet_assignment=wa,
+                defaults={
+                    "value": result_value,
+                    "unit": result_unit or test.unit,
+                    "status": result_status,
+                    "is_out_of_range": is_out_of_range,
+                },
             )
-            continue
 
-        # Create or update the Result
-        result, created = Result.objects.get_or_create(
-            worksheet_assignment=wa,
-            defaults={
-                "value": result_value,
-                "unit": result_unit or test.unit,
-                "status": result_status,
-                "is_out_of_range": is_out_of_range,
-            },
-        )
-
-        if not created and not result.is_locked:
-            result.value = result_value
-            result.unit = result_unit or test.unit
-            result.status = result_status
-            result.is_out_of_range = is_out_of_range
-            result.save(update_fields=["value", "unit", "status", "is_out_of_range"])
-            logger.debug("Updated result for %s / %s", sample.sample_id, test_title)
-        elif created:
-            logger.info("Created result for %s / %s = %s", sample.sample_id, test_title, result_value)
+            if not created and not result.is_locked:
+                result.value = result_value
+                result.unit = result_unit or test.unit
+                result.status = result_status
+                result.is_out_of_range = is_out_of_range
+                result.save(update_fields=["value", "unit", "status", "is_out_of_range"])
+                logger.debug("Updated result for %s / %s", sample.sample_id, test_title)
+            elif created:
+                logger.info("Created result for %s / %s = %s", sample.sample_id, test_title, result_value)

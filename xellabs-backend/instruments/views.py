@@ -47,6 +47,8 @@ class InstrumentMethodViewSet(viewsets.ModelViewSet):
 
 
 class CalibrationViewSet(viewsets.ModelViewSet):
+    # Calibration already gets automatic AuditEvent + DataChangeLog logging via
+    # the post_save signal wired in audittrail/apps.py — no manual audit needed.
     queryset = Calibration.objects.select_related("instrument", "performed_by").all()
     serializer_class = CalibrationSerializer
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]

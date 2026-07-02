@@ -6,6 +6,12 @@ import re
 from django.db import transaction
 from django.utils import timezone
 
+# NOTE: Sample, Result, AnalysisRequest, and Worksheet already get automatic
+# AuditEvent + field-level DataChangeLog + RecordVersion logging on every
+# save()/delete() via the generic post_save/post_delete signals wired in
+# audittrail/apps.py (see audittrail/signals.py: wire_signals). Do not add
+# manual audit calls here for those models — it just duplicates that trail.
+
 
 # ── ID generation ────────────────────────────────────────────────────────────
 

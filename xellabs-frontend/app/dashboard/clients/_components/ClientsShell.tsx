@@ -563,18 +563,19 @@ export default function ClientsShell({ initialClients }: { initialClients: Djang
         <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E5E7EB' }}>
           <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
             <colgroup>
-              <col style={{ width: '22%' }} />
-              <col style={{ width: '10%' }} />
               <col style={{ width: '20%' }} />
-              <col style={{ width: '12%' }} />
-              <col style={{ width: '13%' }} />
-              <col style={{ width: '10%' }} />
               <col style={{ width: '9%' }} />
+              <col style={{ width: '18%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '16%' }} />
+              <col style={{ width: '8%' }} />
               <col style={{ width: '4%' }} />
+              <col style={{ width: '3%' }} />
             </colgroup>
             <thead>
               <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                {['Client Name', 'Client ID', 'Email', 'Phone', 'Contact', 'Tax No.', 'Status', ''].map(h => (
+                {['Client Name', 'Client ID', 'Email', 'Phone', 'Contact', 'Schema', 'Status', 'Tax No.', ''].map(h => (
                   <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
                 ))}
               </tr>
@@ -596,7 +597,13 @@ export default function ClientsShell({ initialClients }: { initialClients: Djang
                   <td className="px-3 py-2 text-xs truncate" style={{ color: '#6B7280' }}>
                     {[c.contact_first_name, c.contact_last_name].filter(Boolean).join(' ') || c.contact_person || '—'}
                   </td>
-                  <td className="px-3 py-2 text-xs font-mono" style={{ color: '#6B7280' }}>{c.tax_number || '—'}</td>
+                  <td className="px-3 py-2">
+                    {c.tenant_detail?.schema_name ? (
+                      <span className="font-mono" style={{ fontSize: 10, color: '#0369A1', backgroundColor: '#E0F2FE', padding: '2px 6px', borderRadius: 4, whiteSpace: 'nowrap' }}>
+                        {c.tenant_detail.schema_name}
+                      </span>
+                    ) : <span style={{ color: '#9CA3AF', fontSize: 11 }}>—</span>}
+                  </td>
                   <td className="px-3 py-2">
                     <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, color: c.is_active ? '#166534' : '#6B7280' }}>
                       <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: c.is_active ? '#22C55E' : '#9CA3AF', display: 'inline-block' }} />

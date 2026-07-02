@@ -72,7 +72,12 @@ export async function updateARStatus(id: number, status: string): Promise<{ succ
       method: 'PATCH',
       body: JSON.stringify({ status }),
     })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>
+      const msg = (data.status as string[])?.[0] ?? (data.detail as string) ?? `Failed to update status (${res.status}).`
+      return { success: false, message: msg }
+    }
     revalidatePath('/dashboard/analysis-requests')
-    return { success: res.ok, message: res.ok ? 'Status updated.' : 'Failed to update status.' }
+    return { success: true, message: 'Status updated.' }
   } catch (e) { return { success: false, message: String(e) } }
 }
