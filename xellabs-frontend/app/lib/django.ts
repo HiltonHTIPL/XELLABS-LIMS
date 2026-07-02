@@ -25,6 +25,7 @@ export async function djangoFetch(
   const tenantSubdomain =
     session?.tenantSubdomain ||
     headerStore.get('x-tenant-subdomain') ||
+    process.env.DEFAULT_TENANT_SCHEMA ||
     ''
 
   const tenantHeaders: Record<string, string> = {}
@@ -32,9 +33,14 @@ export async function djangoFetch(
     tenantHeaders['X-Tenant-Schema'] = tenantSubdomain
   }
 
+  const token =
+    session?.djangoToken ||
+    process.env.DJANGO_SERVICE_TOKEN ||
+    ''
+
   const authHeaders: Record<string, string> = {}
-  if (!init.skipAuth && session?.djangoToken) {
-    authHeaders['Authorization'] = `Token ${session.djangoToken}`
+  if (!init.skipAuth && token) {
+    authHeaders['Authorization'] = `Token ${token}`
   }
 
   const { skipAuth: _omit, ...fetchInit } = init

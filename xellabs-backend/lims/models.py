@@ -5,7 +5,7 @@ from django.conf import settings
 class SampleType(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
-    prefix = models.CharField(max_length=10, blank=True)
+    prefix = models.CharField(max_length=10)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

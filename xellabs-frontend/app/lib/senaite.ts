@@ -31,6 +31,7 @@ export type SenaiteClient = {
   BillingAddress?: SenaiteAddress | null
   review_state?: string
   url: string
+  path?: string
 }
 
 /** Authenticate against SENAITE using Basic Auth (JWT plugin not required) */
@@ -104,6 +105,7 @@ export async function fetchSenaiteClients(token: string): Promise<SenaiteClient[
         BillingAddress:  mapAddr(c.BillingAddress),
         review_state:    (c.review_state as string) ?? 'active',
         url:             (c.url as string) ?? '',
+        path:            (c.path as string) ?? '',
       }))
       if (items.length > 0) return items
     }
@@ -331,7 +333,7 @@ export async function fetchSenaiteSample(token: string, uid: string): Promise<Se
 export async function createSenaiteSample(
   token: string,
   payload: {
-    Client: string        // client UID
+    Client: string        // client UID — used to look up parent_path
     Contact?: string      // contact UID (optional)
     SampleType: string    // sample type UID
     DateSampled: string   // ISO date string
@@ -340,20 +342,40 @@ export async function createSenaiteSample(
     ClientSampleID?: string
   }
 ): Promise<{ success: boolean; sample?: SenaiteSample; error?: string }> {
+  const headers = {
+    Authorization: `Basic ${token}`,
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+  }
+
   try {
-    // SENAITE jsonapi v1 create endpoint
+    // Step 1: resolve the client's path (SENAITE needs parent_path, not Client UID)
+    const clientRes = await fetch(`${SENAITE_URL}/@@API/senaite/v1/client?UID=${encodeURIComponent(payload.Client)}&complete=true`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!clientRes.ok) return { success: false, error: `Client not found in SENAITE (${clientRes.status})` }
+    const clientData = await clientRes.json().catch(() => ({})) as Record<string, unknown>
+    const clientItems = (clientData.items as Record<string, unknown>[]) ?? []
+    const clientPath = (clientItems[0]?.path as string) ?? ''
+    if (!clientPath) return { success: false, error: 'Could not determine client path in SENAITE' }
+
+    // Step 2: create the AnalysisRequest under the client
+    const body: Record<string, unknown> = {
+      portal_type: 'AnalysisRequest',
+      parent_path: clientPath,
+      SampleType: payload.SampleType,
+      DateSampled: payload.DateSampled,
+      Priority: payload.Priority ?? '3',
+    }
+    if (payload.Analyses?.length)    body.Analyses       = payload.Analyses
+    if (payload.ClientSampleID)      body.ClientSampleID = payload.ClientSampleID
+    if (payload.Contact)             body.Contact        = payload.Contact
+
     const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
       method: 'POST',
-      headers: {
-        Authorization: `Basic ${token}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify([{
-        obj_type: 'AnalysisRequest',
-        ...payload,
-        Priority: payload.Priority ?? '3',
-      }]),
+      headers,
+      body: JSON.stringify(body),
       cache: 'no-store',
     })
     const data = await res.json().catch(() => ({})) as Record<string, unknown>
@@ -361,7 +383,9 @@ export async function createSenaiteSample(
       return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
     }
     const items = (data.items as Record<string, unknown>[]) ?? []
-    if (items.length === 0) return { success: false, error: 'No sample returned from SENAITE' }
+    if (items.length === 0) {
+      return { success: false, error: (data.message as string) ?? 'No sample returned from SENAITE' }
+    }
     return { success: true, sample: mapSample(items[0]) }
   } catch (e) {
     return { success: false, error: String(e) }

@@ -143,6 +143,7 @@ services:
       - SENAITE_URL=http://senaite:8080/senaite
       - SESSION_SECRET=xellabs-lims-hipaa-jwt-secret-change-in-production-min32chars
       - DJANGO_SERVICE_TOKEN=9f5add4ff0c23f0f123407dbb7a2cec61d3fd5e6
+      - DEFAULT_TENANT_SCHEMA=hl-01
       - NODE_ENV=development
     volumes:
       - ./xellabs-frontend:/app              # live-mount source; next dev HMR reloads on .tsx/.ts changes

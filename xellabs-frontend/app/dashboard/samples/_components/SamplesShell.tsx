@@ -56,7 +56,10 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
   const [actionMsg, setActionMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const [isPending, startTransition] = useTransition()
 
-  const clientOptions: ClientOption[] = clients.map(c => ({ uid: c.senaite_uid || String(c.id), name: c.name, client_id: c.client_id }))
+  // Only include clients that have a SENAITE UID — sending Django integer IDs to SENAITE causes sample creation failure
+  const clientOptions: ClientOption[] = clients
+    .filter(c => c.senaite_uid)
+    .map(c => ({ uid: c.senaite_uid!, name: c.name, client_id: c.client_id }))
 
   const filtered = samples.filter(s => {
     const stateLabel = mapSenaiteState(s.review_state)
