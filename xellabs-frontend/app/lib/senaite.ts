@@ -171,7 +171,13 @@ export async function createSenaiteSampleType(
     const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
       method: 'POST',
       headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify([{ obj_type: 'SampleType', ...payload }]),
+      body: JSON.stringify({
+        portal_type: 'SampleType',
+        parent_path: '/senaite/setup/sampletypes',
+        title: payload.title,
+        Prefix: payload.Prefix,
+        min_volume: payload.MinimumVolume || '1 ml',
+      }),
       cache: 'no-store',
     })
     const data = await res.json().catch(() => ({})) as Record<string, unknown>
@@ -185,9 +191,9 @@ export async function createSenaiteSampleType(
         uid: (t.uid as string) ?? '',
         id: (t.id as string) ?? '',
         title: (t.title as string) ?? '',
-        Prefix: (t.Prefix as string) ?? '',
-        MinimumVolume: (t.MinimumVolume as string) ?? '',
-        RetentionPeriod: (t.RetentionPeriod as Record<string, unknown>) ?? {},
+        Prefix: (t.prefix as string) ?? (t.Prefix as string) ?? '',
+        MinimumVolume: (t.min_volume as string) ?? (t.MinimumVolume as string) ?? '',
+        RetentionPeriod: (t.retention_period as Record<string, unknown>) ?? {},
       },
     }
   } catch (e) { return { success: false, error: String(e) } }
