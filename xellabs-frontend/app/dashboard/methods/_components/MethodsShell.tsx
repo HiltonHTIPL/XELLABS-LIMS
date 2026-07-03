@@ -56,12 +56,6 @@ function MethodModal({ editing, onClose, onDone }: { editing: Method | null; onC
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
         </div>
-        {state.message && !state.success && (
-          <div className="mx-5 mt-4 px-3 py-2 rounded-lg flex items-center gap-2" style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA' }}>
-            <MI name="error_outline" size={14} color="#EF4444" />
-            <span style={{ fontSize: 12, color: '#B91C1C' }}>{state.message}</span>
-          </div>
-        )}
         <form action={action} className="px-5 py-4 flex flex-col gap-3">
           <div className="grid grid-cols-2 gap-3">
             <Field label="Method Name" name="name" placeholder="e.g. HPLC Analysis" required error={state.errors?.name?.[0]} defaultValue={editing?.name} />

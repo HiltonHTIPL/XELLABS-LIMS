@@ -20,14 +20,19 @@ def _register_client_signal():
 
 
 def _register_ar_signal():
+    from django.db import connection
     from lims.models import AnalysisRequest
     from core.tasks import sync_analysis_request_to_senaite
 
     @receiver(post_save, sender=AnalysisRequest, dispatch_uid="senaite_sync_ar")
     def on_ar_saved(sender, instance, created, **kwargs):
         if created:
-            sync_analysis_request_to_senaite.apply_async(args=[instance.pk], countdown=5)
-            logger.debug("Queued SENAITE AR sync for AR pk=%s", instance.pk)
+            # AnalysisRequest is a tenant-app model — capture the schema the save
+            # happened in now, since the Celery worker has no request context to
+            # infer it from later (it would otherwise default to 'public').
+            schema_name = connection.schema_name
+            sync_analysis_request_to_senaite.apply_async(args=[instance.pk, schema_name], countdown=5)
+            logger.debug("Queued SENAITE AR sync for AR pk=%s (schema=%s)", instance.pk, schema_name)
 
 
 def register_all():

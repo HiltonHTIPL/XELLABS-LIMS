@@ -48,7 +48,7 @@ export async function createWorksheet(): Promise<{ success: boolean; message: st
   if (unassigned.length === 0) {
     return {
       success: false,
-      message: 'No unassigned analyses available. Please register samples with analyses in SENAITE first, then create a worksheet.',
+      message: 'No unassigned analyses available. Please register samples with analyses in XelLabs first, then create a worksheet.',
     }
   }
 

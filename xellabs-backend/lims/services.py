@@ -94,17 +94,32 @@ def check_result_against_spec(result):
 # ── Sample workflow ───────────────────────────────────────────────────────────
 
 @transaction.atomic
-def receive_sample(sample, user, location="", notes=""):
-    """Transition sample registered → received and record chain of custody."""
+def receive_sample(sample, user, location="", notes="", **receipt_fields):
+    """Transition sample registered → received, save intake fields, record chain of custody."""
     from .models import ChainOfCustody
     if sample.status not in ("registered",):
         raise ValueError(f"Cannot receive a sample with status '{sample.status}'.")
 
     sample.status = "received"
     sample.received_date = timezone.now()
+    sample.received_by = user
     if location:
         sample.storage_location = location
-    sample.save(update_fields=["status", "received_date", "storage_location", "updated_at"])
+    if notes:
+        sample.receipt_notes = notes
+
+    intake_fields = [
+        "condition", "seal_condition", "seal_number",
+        "quantity_received", "quantity_unit", "sampling_deviation",
+        "storage_requirement", "priority", "hold_for_qa", "collector",
+    ]
+    update_fields = ["status", "received_date", "received_by_id", "storage_location", "receipt_notes", "updated_at"]
+    for field in intake_fields:
+        if field in receipt_fields and receipt_fields[field] not in (None, ""):
+            setattr(sample, field, receipt_fields[field])
+            update_fields.append(field)
+
+    sample.save(update_fields=list(set(update_fields)))
 
     ChainOfCustody.objects.create(
         sample=sample,

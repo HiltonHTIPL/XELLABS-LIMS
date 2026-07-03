@@ -57,30 +57,25 @@ function TestModal({ editing, methods, onClose, onDone }: { editing: LimsTest | 
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
         </div>
-        {state.message && !state.success && (
-          <div className="mx-5 mt-4 px-3 py-2 rounded-lg flex items-center gap-2" style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA' }}>
-            <MI name="error_outline" size={14} color="#EF4444" />
-            <span style={{ fontSize: 12, color: '#B91C1C' }}>{state.message}</span>
-          </div>
-        )}
         <form action={action} className="px-5 py-4 flex flex-col gap-3">
           <div className="grid grid-cols-2 gap-3">
             <Field label="Test Name" name="name" placeholder="e.g. Total Protein" required error={state.errors?.name?.[0]} defaultValue={editing?.name} />
             <Field label="Code" name="code" placeholder="e.g. TP-001" required error={state.errors?.code?.[0]} defaultValue={editing?.code} />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Unit" name="unit" placeholder="e.g. g/dL" defaultValue={editing?.unit} />
+            <Field label="Unit" name="unit" placeholder="e.g. g/dL" error={state.errors?.unit?.[0]} defaultValue={editing?.unit} />
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Method</label>
-              <select name="method" defaultValue={editing?.method ?? ''} className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827' }}>
+              <select name="method" defaultValue={editing?.method ?? ''} className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={{ border: `1px solid ${state.errors?.method?.[0] ? '#EF4444' : '#D1D5DB'}`, color: '#111827' }}>
                 <option value="">— None —</option>
                 {methods.filter(m => m.is_active).map(m => (
                   <option key={m.id} value={m.id}>{m.name} ({m.code})</option>
                 ))}
               </select>
+              {state.errors?.method?.[0] && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{state.errors.method[0]}</p>}
             </div>
           </div>
-          <Field label="Description" name="description" as="textarea" placeholder="Describe this test…" defaultValue={editing?.description} />
+          <Field label="Description" name="description" as="textarea" placeholder="Describe this test…" error={state.errors?.description?.[0]} defaultValue={editing?.description} />
           <div className="flex items-center justify-end gap-2 pt-1" style={{ borderTop: '1px solid #F3F4F6' }}>
             <button type="button" onClick={onClose} disabled={pending}
               style={{ fontSize: 12, fontWeight: 500, padding: '7px 16px', borderRadius: 8, border: '1px solid #E5E7EB', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>

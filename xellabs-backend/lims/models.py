@@ -70,6 +70,41 @@ class Sample(models.Model):
         ("rejected", "Rejected"),
         ("disposed", "Disposed"),
     ]
+    CONDITION = [
+        ("good", "Good"),
+        ("acceptable", "Acceptable"),
+        ("compromised", "Compromised"),
+        ("not_acceptable", "Not Acceptable"),
+    ]
+    SEAL_CONDITION = [
+        ("intact", "Intact"),
+        ("broken", "Broken"),
+        ("missing", "Missing"),
+    ]
+    DEVIATION = [
+        ("none", "None"),
+        ("temperature_excursion", "Temperature Excursion"),
+        ("delayed_transport", "Delayed Transport"),
+        ("haemolysis", "Haemolysis"),
+    ]
+    STORAGE_REQ = [
+        ("2_8c", "2–8 °C (Refrigerated)"),
+        ("minus_20c", "-20 °C (Frozen)"),
+        ("minus_80c", "-80 °C (Ultra-frozen)"),
+        ("room_temp", "Room Temperature"),
+    ]
+    PRIORITY = [
+        ("high", "High"),
+        ("medium", "Medium"),
+        ("low", "Low"),
+    ]
+    QTY_UNIT = [
+        ("tubes", "Tubes"),
+        ("vials", "Vials"),
+        ("bags", "Bags"),
+        ("slides", "Slides"),
+    ]
+
     sample_id = models.CharField(max_length=50, unique=True)
     client = models.ForeignKey("core.Client", on_delete=models.PROTECT, related_name="samples")
     sample_type = models.ForeignKey(SampleType, on_delete=models.PROTECT)
@@ -80,6 +115,20 @@ class Sample(models.Model):
     status = models.CharField(max_length=20, choices=STATUS, default="registered")
     storage_location = models.CharField(max_length=200, blank=True)
     barcode = models.CharField(max_length=100, blank=True)
+    # Receipt intake fields
+    condition = models.CharField(max_length=20, choices=CONDITION, blank=True)
+    seal_condition = models.CharField(max_length=20, choices=SEAL_CONDITION, blank=True)
+    seal_number = models.CharField(max_length=100, blank=True)
+    quantity_received = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    quantity_unit = models.CharField(max_length=20, choices=QTY_UNIT, blank=True)
+    sampling_deviation = models.CharField(max_length=30, choices=DEVIATION, blank=True, default="none")
+    storage_requirement = models.CharField(max_length=20, choices=STORAGE_REQ, blank=True)
+    priority = models.CharField(max_length=10, choices=PRIORITY, blank=True, default="medium")
+    hold_for_qa = models.BooleanField(default=False)
+    collector = models.CharField(max_length=200, blank=True)
+    received_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                    on_delete=models.SET_NULL, related_name="samples_received")
+    receipt_notes = models.TextField(blank=True)
     senaite_uid = models.CharField(max_length=100, blank=True, db_index=True)
     senaite_ar_id = models.CharField(max_length=100, blank=True)
     last_synced_from_senaite = models.DateTimeField(null=True, blank=True)

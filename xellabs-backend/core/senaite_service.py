@@ -106,6 +106,30 @@ def push_client(client) -> str | None:
 
 # ── Analysis Request sync ─────────────────────────────────────────────────────
 
+def _find_by_title(portal_type: str, title: str) -> dict | None:
+    """
+    Look up a single SENAITE object by case-insensitive exact title match.
+    SENAITE's `title=` query filter is an exact, case-sensitive match server-side,
+    so it can't be relied on to find e.g. "Blood Test" vs "Blood test" — instead we
+    fetch the full list and match client-side.
+    """
+    if not title:
+        return None
+    s = _session()
+    try:
+        resp = s.get(_api(portal_type), params={"complete": "true", "limit": "1000"}, timeout=15)
+        resp.raise_for_status()
+        items = resp.json().get("items") or []
+        needle = title.strip().lower()
+        for item in items:
+            if (item.get("title") or "").strip().lower() == needle:
+                return item
+        return None
+    except requests.RequestException as exc:
+        logger.error("SENAITE lookup failed for %s '%s': %s", portal_type, title, exc)
+        return None
+
+
 def push_analysis_request(ar) -> str | None:
     """
     Push an AnalysisRequest + its Sample to SENAITE.
@@ -121,19 +145,66 @@ def push_analysis_request(ar) -> str | None:
         )
         return None
 
-    services = []
+    # parent_path must be the client's SENAITE *path* (e.g. /senaite/clients/client-8),
+    # not its UID — the create API 404s if given a raw UID here.
+    client_item = _find_by_title("client", client.name) or {}
+    # Fall back to a direct UID lookup if title matching didn't resolve it.
+    client_path = client_item.get("path")
+    if not client_path:
+        s = _session()
+        try:
+            resp = s.get(_api("client"), params={"UID": client.senaite_uid, "complete": "true"}, timeout=15)
+            resp.raise_for_status()
+            items = resp.json().get("items") or []
+            client_path = items[0].get("path") if items else None
+        except requests.RequestException:
+            client_path = None
+    if not client_path:
+        logger.error("Cannot push AR %s — could not resolve client path in SENAITE.", ar.ar_id)
+        return None
+
+    # SampleType must be a UID, not a name.
+    sample_type_uid = None
+    if sample.sample_type:
+        st_item = _find_by_title("SampleType", sample.sample_type.name)
+        sample_type_uid = st_item.get("uid") if st_item else None
+    if not sample_type_uid:
+        logger.error(
+            "Cannot push AR %s — no SENAITE SampleType matches Django sample type '%s'. "
+            "Create a matching Sample Type in SENAITE (Sample Types page) with the exact same name first.",
+            ar.ar_id, sample.sample_type.name if sample.sample_type else "(none)",
+        )
+        return None
+
+    # Analyses must be a list of Analysis Service UIDs, not {"title": ...} objects.
+    analysis_uids = []
+    missing_tests = []
     for test in ar.tests.all():
-        services.append({"title": test.name})
+        svc = _find_by_title("AnalysisService", test.name)
+        if svc and svc.get("uid"):
+            analysis_uids.append(svc["uid"])
+        else:
+            missing_tests.append(test.name)
+    if missing_tests:
+        logger.warning(
+            "AR %s: no SENAITE Analysis Service found for test(s) %s — create them in SENAITE "
+            "(Setup > Analysis Services) with a title exactly matching the Test name.",
+            ar.ar_id, missing_tests,
+        )
+    if not analysis_uids:
+        logger.error("Cannot push AR %s — none of its tests have a matching SENAITE Analysis Service.", ar.ar_id)
+        return None
+
+    from django.utils import timezone
 
     payload = {
         "portal_type": "AnalysisRequest",
-        "parent_path": f"/senaite/clients/{client.senaite_uid}",
-        "Client": client.senaite_uid,
-        "SampleType": sample.sample_type.name if sample.sample_type else "",
-        "DateSampled": sample.collection_date.isoformat() if sample.collection_date else "",
+        "parent_path": client_path,
+        "SampleType": sample_type_uid,
+        "DateSampled": (sample.collection_date or timezone.now()).isoformat(),
         "ClientSampleID": sample.sample_id,
         "Priority": ar.priority or "normal",
-        "Analyses": services,
+        "Analyses": analysis_uids,
     }
 
     s = _session()

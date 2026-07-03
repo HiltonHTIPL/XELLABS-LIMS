@@ -240,6 +240,16 @@ class TenantDetailView(RetrieveUpdateAPIView):
     permission_classes = [IsAuthenticated]
     queryset = Tenant.objects.prefetch_related('domains').all()
 
+    def get_object(self):
+        from django_tenants.utils import schema_context
+        with schema_context('public'):
+            return super().get_object()
+
+    def update(self, request, *args, **kwargs):
+        from django_tenants.utils import schema_context
+        with schema_context('public'):
+            return super().update(request, *args, **kwargs)
+
 
 class TenantLogoView(APIView):
     """Upload or delete the tenant logo."""
@@ -249,18 +259,25 @@ class TenantLogoView(APIView):
 
     def get_object(self, tenant_id):
         from django.shortcuts import get_object_or_404
-        return get_object_or_404(Tenant, pk=tenant_id)
+        from django_tenants.utils import schema_context
+        with schema_context('public'):
+            return get_object_or_404(Tenant, pk=tenant_id)
 
     def post(self, request, tenant_id):
-        tenant = self.get_object(tenant_id)
-        serializer = TenantLogoSerializer(tenant, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response({'logo': request.build_absolute_uri(tenant.logo.url) if tenant.logo else None})
-        return Response(serializer.errors, status=400)
+        from django_tenants.utils import schema_context
+        with schema_context('public'):
+            tenant = self.get_object(tenant_id)
+            serializer = TenantLogoSerializer(tenant, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                logo_url = request.build_absolute_uri(tenant.logo.url) if tenant.logo else None
+                return Response({'logo': logo_url})
+            return Response(serializer.errors, status=400)
 
     def delete(self, request, tenant_id):
-        tenant = self.get_object(tenant_id)
-        if tenant.logo:
-            tenant.logo.delete(save=True)
+        from django_tenants.utils import schema_context
+        with schema_context('public'):
+            tenant = self.get_object(tenant_id)
+            if tenant.logo:
+                tenant.logo.delete(save=True)
         return Response({'logo': None})

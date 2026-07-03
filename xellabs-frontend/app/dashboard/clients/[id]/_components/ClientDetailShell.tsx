@@ -235,7 +235,7 @@ function UsersTab({ users }: { users: TenantUser[] }) {
                     </span>
                   </td>
                   <td className="px-3 py-2" style={{ fontSize: 10, color: '#9CA3AF' }}>
-                    {new Date(u.date_joined).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    {new Date(u.date_joined).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}
                   </td>
                 </tr>
               )
@@ -567,7 +567,7 @@ export default function ClientDetailShell({
   const [showEdit, setShowEdit] = useState(false)
 
   const createdDate = new Date(client.created_at).toLocaleDateString('en-US', {
-    year: 'numeric', month: 'long', day: 'numeric',
+    year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC',
   })
   const initials = client.name.slice(0, 2).toUpperCase()
 

@@ -84,7 +84,7 @@ export async function createSample(
     Analyses:      analysisUIDs.length > 0 ? analysisUIDs : undefined,
   })
 
-  if (!result.success) return { message: result.error ?? 'Failed to create sample in SENAITE.' }
+  if (!result.success) return { message: result.error ?? 'Failed to create sample in XelLabs.' }
 
   revalidatePath('/dashboard/samples')
   return { success: true, message: `Sample ${result.sample?.id} created successfully.`, sample: result.sample }

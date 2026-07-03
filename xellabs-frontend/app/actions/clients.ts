@@ -175,7 +175,7 @@ export async function syncClientsFromSenaite(): Promise<SyncResult> {
   const senaiteToken = session.senaiteToken ?? Buffer.from(`${SENAITE_USER}:${SENAITE_PASS}`).toString('base64')
   const senaiteClients = await fetchSenaiteClients(senaiteToken)
   if (senaiteClients.length === 0) {
-    return { success: false, message: 'No clients found in SENAITE. Verify SENAITE is running and you are logged in as a SENAITE user.', created: 0, updated: 0, total: 0 }
+    return { success: false, message: 'No clients found in XelLabs. Verify XelLabs is running and you are logged in as a XelLabs user.', created: 0, updated: 0, total: 0 }
   }
 
   let created = 0

@@ -6,6 +6,7 @@ import {
   updateSenaiteSampleType,
   SenaiteSampleType,
 } from '@/app/lib/senaite'
+import { djangoFetch } from '@/app/lib/django'
 
 const SENAITE_USER = process.env.SENAITE_ADMIN_USER ?? 'admin'
 const SENAITE_PASS = process.env.SENAITE_ADMIN_PASS ?? 'admin'
@@ -43,8 +44,27 @@ export async function createSampleType(
     ...(minimumVolume ? { MinimumVolume: minimumVolume } : {}),
   })
 
-  if (!result.success) return { message: result.error ?? 'Failed to create sample type.' }
+  if (!result.success) {
+    // SENAITE returns field errors as JSON strings e.g. {"prefix": "No whitespaces in prefix allowed"}
+    const raw = result.error ?? 'Failed to create sample type.'
+    try {
+      const parsed = JSON.parse(raw) as Record<string, string>
+      const errors: Record<string, string[]> = {}
+      if (parsed.prefix) errors.Prefix = [parsed.prefix]
+      if (parsed.title)  errors.title  = [parsed.title]
+      if (Object.keys(errors).length) return { errors }
+    } catch { /* not JSON — fall through to message */ }
+    return { message: raw }
+  }
+
+  // Mirror into Django so it appears in Lab Sample registration dropdowns
+  await djangoFetch('/api/lims/sample-types/', {
+    method: 'POST',
+    body: JSON.stringify({ name: title, prefix, description: minimumVolume ?? '' }),
+  }).catch(() => null) // non-fatal — SENAITE is the source of truth
+
   revalidatePath('/dashboard/sample-types')
+  revalidatePath('/dashboard/lab-samples')
   return { success: true, message: `Sample type "${title}" created.` }
 }
 
@@ -68,7 +88,18 @@ export async function updateSampleType(
     ...(minimumVolume ? { MinimumVolume: minimumVolume } : {}),
   })
 
-  if (!result.success) return { message: result.error ?? 'Failed to update sample type.' }
+  if (!result.success) {
+    const raw = result.error ?? 'Failed to update sample type.'
+    try {
+      const parsed = JSON.parse(raw) as Record<string, string>
+      const errors: Record<string, string[]> = {}
+      if (parsed.prefix) errors.Prefix = [parsed.prefix]
+      if (parsed.title)  errors.title  = [parsed.title]
+      if (Object.keys(errors).length) return { errors }
+    } catch { /* not JSON */ }
+    return { message: raw }
+  }
   revalidatePath('/dashboard/sample-types')
+  revalidatePath('/dashboard/lab-samples')
   return { success: true, message: `Sample type "${title}" updated.` }
 }

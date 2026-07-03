@@ -95,6 +95,62 @@ export async function createLabSample(_state: LabSampleFormState, formData: Form
   } catch (e) { return { message: String(e) } }
 }
 
+export async function getLabSample(id: number): Promise<LabSample | null> {
+  try {
+    const res = await djangoFetch(`/api/lims/samples/${id}/`)
+    if (!res.ok) return null
+    return await res.json()
+  } catch { return null }
+}
+
+export type ReceiptFormState = {
+  success?: boolean
+  message?: string
+}
+
+export async function receiveLabSample(id: number, data: {
+  condition: string
+  seal_condition: string
+  seal_number: string
+  quantity_received: string
+  quantity_unit: string
+  sampling_deviation: string
+  storage_requirement: string
+  priority: string
+  hold_for_qa: boolean
+  collector: string
+  location: string
+  notes: string
+}): Promise<ReceiptFormState> {
+  try {
+    const body: Record<string, unknown> = {
+      condition:           data.condition,
+      seal_condition:      data.seal_condition,
+      seal_number:         data.seal_number,
+      quantity_unit:       data.quantity_unit,
+      sampling_deviation:  data.sampling_deviation,
+      storage_requirement: data.storage_requirement,
+      priority:            data.priority,
+      hold_for_qa:         data.hold_for_qa,
+      collector:           data.collector,
+      location:            data.location,
+      notes:               data.notes,
+      ...(data.quantity_received ? { quantity_received: parseFloat(data.quantity_received) } : {}),
+    }
+    const res = await djangoFetch(`/api/lims/samples/${id}/receive/`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    })
+    const resData = await res.json().catch(() => ({})) as { detail?: string; sample_id?: string }
+    if (!res.ok) {
+      return { message: resData.detail ?? 'Failed to receive sample.' }
+    }
+    revalidatePath('/dashboard/lab-samples')
+    revalidatePath('/dashboard/sample-receipts')
+    return { success: true, message: `Sample ${resData.sample_id ?? ''} marked as received.` }
+  } catch (e) { return { message: String(e) } }
+}
+
 export async function updateLabSample(id: number, _state: LabSampleFormState, formData: FormData): Promise<LabSampleFormState> {
   const description      = (formData.get('description') as string)?.trim()
   const collection_date  = (formData.get('collection_date') as string)?.trim()
@@ -127,3 +183,4 @@ export async function updateLabSample(id: number, _state: LabSampleFormState, fo
     return { success: true, message: 'Sample updated.' }
   } catch (e) { return { message: String(e) } }
 }
+

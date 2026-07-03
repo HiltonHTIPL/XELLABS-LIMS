@@ -50,12 +50,6 @@ function ARModal({ samples, tests, onClose, onDone }: { samples: LabSample[]; te
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
         </div>
-        {state.message && !state.success && (
-          <div className="mx-5 mt-4 px-3 py-2 rounded-lg flex items-center gap-2" style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA' }}>
-            <MI name="error_outline" size={14} color="#EF4444" />
-            <span style={{ fontSize: 12, color: '#B91C1C' }}>{state.message}</span>
-          </div>
-        )}
         <form action={action} className="px-5 py-4 flex flex-col gap-3">
           <div>
             <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Sample <span style={{ color: '#EF4444' }}>*</span></label>
@@ -83,18 +77,21 @@ function ARModal({ samples, tests, onClose, onDone }: { samples: LabSample[]; te
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Priority</label>
-              <select name="priority" defaultValue="normal" className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={inputStyle()}>
+              <select name="priority" defaultValue="normal" className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={inputStyle(state.errors?.priority?.[0])}>
                 {PRIORITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
+              {state.errors?.priority?.[0] && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{state.errors.priority[0]}</p>}
             </div>
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Due Date</label>
-              <input type="date" name="due_date" className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={inputStyle()} />
+              <input type="date" name="due_date" className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={inputStyle(state.errors?.due_date?.[0])} />
+              {state.errors?.due_date?.[0] && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{state.errors.due_date[0]}</p>}
             </div>
           </div>
           <div>
             <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Notes</label>
-            <textarea name="notes" rows={2} placeholder="Any additional instructions…" className="w-full px-3 py-2 text-xs rounded-lg outline-none resize-none" style={inputStyle()} />
+            <textarea name="notes" rows={2} placeholder="Any additional instructions…" className="w-full px-3 py-2 text-xs rounded-lg outline-none resize-none" style={inputStyle(state.errors?.notes?.[0])} />
+            {state.errors?.notes?.[0] && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{state.errors.notes[0]}</p>}
           </div>
           <div className="flex items-center justify-end gap-2 pt-1" style={{ borderTop: '1px solid #F3F4F6' }}>
             <button type="button" onClick={onClose} disabled={pending}
@@ -187,7 +184,7 @@ export default function ARShell({ initialARs, samples, tests }: Props) {
                     <td className="px-3 py-2.5">
                       <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: pri.bg, color: pri.color }}>{pri.label}</span>
                     </td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{ar.due_date ? new Date(ar.due_date).toLocaleDateString() : '—'}</td>
+                    <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{ar.due_date ? new Date(ar.due_date).toLocaleDateString('en-GB', { timeZone: 'UTC' }) : '—'}</td>
                     <td className="px-3 py-2.5">
                       <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: sta.bg, color: sta.color }}>{sta.label}</span>
                     </td>

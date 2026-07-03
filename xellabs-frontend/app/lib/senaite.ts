@@ -392,31 +392,77 @@ export async function createSenaiteSample(
   }
 }
 
+// This SENAITE 2.6 instance has no `/workflow_action` REST route (senaite.jsonapi only
+// registers create/update/delete — confirmed by reading its routes/content.py). Calling
+// that URL always returns HTTP 200 with an error message embedded in the JSON body, which
+// looks like success to a caller that only checks res.ok. The real way to trigger a
+// workflow transition is the classic Zope/Plone `content_status_modify` view on the
+// object's own path, POSTed as a form field (not JSON). Since that view renders an HTML
+// page rather than returning a structured result, success is confirmed by re-fetching the
+// object and checking its review_state actually changed.
+async function _resolvePath(token: string, resource: string, uid: string): Promise<string | null> {
+  const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/${resource}/${uid}?complete=true`, {
+    headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+    cache: 'no-store',
+  })
+  if (!res.ok) return null
+  const data = await res.json().catch(() => ({})) as Record<string, unknown>
+  const items = (data.items as Record<string, unknown>[]) ?? []
+  return (items[0]?.path as string) ?? null
+}
+
+async function _contentStatusModify(
+  token: string,
+  path: string,
+  workflowAction: string
+): Promise<boolean> {
+  const res = await fetch(`${SENAITE_URL}${path}/content_status_modify`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${token}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({ workflow_action: workflowAction }).toString(),
+    cache: 'no-store',
+  })
+  return res.ok
+}
+
 export async function senaiteWorkflowAction(
   token: string,
   uid: string,
   action: 'receive' | 'verify' | 'publish' | 'retract' | 'cancel'
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/AnalysisRequest/${uid}/workflow_action`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${token}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({ action }),
+    const before = await fetch(`${SENAITE_URL}/@@API/senaite/v1/AnalysisRequest/${uid}?complete=true`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
       cache: 'no-store',
     })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({})) as Record<string, unknown>
-      return { success: false, error: (err.message as string) ?? `HTTP ${res.status}` }
+    const beforeData = await before.json().catch(() => ({})) as Record<string, unknown>
+    const beforeItems = (beforeData.items as Record<string, unknown>[]) ?? []
+    const path = beforeItems[0]?.path as string | undefined
+    const stateBefore = beforeItems[0]?.review_state as string | undefined
+    if (!path) return { success: false, error: 'Sample not found in SENAITE.' }
+
+    const ok = await _contentStatusModify(token, path, action)
+    if (!ok) return { success: false, error: 'Failed to trigger workflow transition.' }
+
+    const after = await fetch(`${SENAITE_URL}/@@API/senaite/v1/AnalysisRequest/${uid}?complete=true`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    const afterData = await after.json().catch(() => ({})) as Record<string, unknown>
+    const afterItems = (afterData.items as Record<string, unknown>[]) ?? []
+    const stateAfter = afterItems[0]?.review_state as string | undefined
+
+    if (stateAfter && stateAfter !== stateBefore) return { success: true }
+    return {
+      success: false,
+      error: `Transition did not apply (still "${stateAfter ?? stateBefore}"). This can happen if your role/state doesn't allow this action — e.g. SENAITE blocks the same user from both submitting and verifying a result.`,
     }
-    return { success: true }
-  } catch (e) {
-    return { success: false, error: String(e) }
-  }
+  } catch (e) { return { success: false, error: String(e) } }
 }
+
 
 export function mapSenaiteState(review_state: string): string {
   const MAP: Record<string, string> = {
@@ -632,13 +678,13 @@ export async function submitAnalysisResult(
     })
     if (!updateRes.ok) return { success: false, error: `Update failed: HTTP ${updateRes.status}` }
 
-    const wfRes = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Analysis/${analysisUid}/workflow_action`, {
-      method: 'POST',
-      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ action: 'submit' }),
-      cache: 'no-store',
-    })
-    if (!wfRes.ok) return { success: false, error: `Submit action failed: HTTP ${wfRes.status}` }
+    // See senaiteWorkflowAction for why content_status_modify is used instead of
+    // the nonexistent `/workflow_action` REST route.
+    const path = await _resolvePath(token, 'Analysis', analysisUid)
+    if (!path) return { success: false, error: 'Analysis not found in SENAITE after update.' }
+
+    const ok = await _contentStatusModify(token, path, 'submit')
+    if (!ok) return { success: false, error: 'Failed to submit result for verification.' }
     return { success: true }
   } catch (e) { return { success: false, error: String(e) } }
 }

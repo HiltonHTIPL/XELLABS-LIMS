@@ -32,7 +32,7 @@ const PRIORITY_BADGE: Record<string, { bg: string; color: string }> = {
 
 function fmtDate(d: string | null): string {
   if (!d) return '—'
-  try { return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) }
+  try { return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) }
   catch { return d }
 }
 

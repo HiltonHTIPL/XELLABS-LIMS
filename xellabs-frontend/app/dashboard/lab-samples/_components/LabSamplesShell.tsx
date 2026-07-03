@@ -1,6 +1,7 @@
 'use client'
 import { useState, useActionState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { createLabSample, updateLabSample, type LabSample, type LabSampleFormState, type DjangoSampleType } from '@/app/actions/lab-samples'
 import { type DjangoClient } from '@/app/actions/clients'
 
@@ -150,7 +151,6 @@ export default function LabSamplesShell({ initialSamples, clients, sampleTypes }
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<LabSample | null>(null)
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
-
   function openCreate() { setEditing(null); setShowModal(true) }
   function openEdit(s: LabSample) { setEditing(s); setShowModal(true) }
   function closeModal() { setShowModal(false); setEditing(null) }
@@ -191,12 +191,12 @@ export default function LabSamplesShell({ initialSamples, clients, sampleTypes }
         <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E5E7EB' }}>
           <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
             <colgroup>
-              <col style={{ width: '14%' }} /><col style={{ width: '18%' }} /><col style={{ width: '15%' }} /><col style={{ width: '14%' }} /><col style={{ width: '14%' }} /><col style={{ width: '13%' }} /><col style={{ width: '8%' }} /><col style={{ width: '4%' }} />
+              <col style={{ width: '12%' }} /><col style={{ width: '15%' }} /><col style={{ width: '13%' }} /><col style={{ width: '11%' }} /><col style={{ width: '11%' }} /><col style={{ width: '11%' }} /><col style={{ width: '9%' }} /><col style={{ width: '10%' }} /><col style={{ width: '8%' }} />
             </colgroup>
             <thead>
               <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                {['Sample ID', 'Client', 'Sample Type', 'Collection', 'Received', 'Status', 'Barcode', ''].map(h => (
-                  <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
+                {['Sample ID', 'Client', 'Sample Type', 'Collection', 'Received', 'Status', 'Barcode', '', ''].map((h, i) => (
+                  <th key={i} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -208,17 +208,31 @@ export default function LabSamplesShell({ initialSamples, clients, sampleTypes }
                     <td className="px-3 py-2.5 text-xs font-semibold" style={{ color: '#2563EB' }}>{s.sample_id}</td>
                     <td className="px-3 py-2.5 text-xs truncate" style={{ color: '#374151' }}>{s.client_name || '—'}</td>
                     <td className="px-3 py-2.5 text-xs" style={{ color: '#374151' }}>{s.sample_type_name || '—'}</td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{s.collection_date ? new Date(s.collection_date).toLocaleDateString() : '—'}</td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{s.received_date ? new Date(s.received_date).toLocaleDateString() : '—'}</td>
+                    <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{s.collection_date ? new Date(s.collection_date).toLocaleDateString('en-GB', { timeZone: 'UTC' }) : '—'}</td>
+                    <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{s.received_date ? new Date(s.received_date).toLocaleDateString('en-GB', { timeZone: 'UTC' }) : '—'}</td>
                     <td className="px-3 py-2.5">
                       <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: badge.bg, color: badge.color }}>
                         {STATUS_OPTIONS.find(o => o.value === s.status)?.label ?? s.status}
                       </span>
                     </td>
-                    <td className="px-3 py-2.5 text-xs font-mono truncate" style={{ color: '#9CA3AF' }}>{s.barcode || '—'}</td>
+                    <td className="px-3 py-2.5 text-xs font-mono" style={{ color: '#9CA3AF', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.barcode || '—'}</td>
                     <td className="px-3 py-2.5">
-                      <button onClick={() => openEdit(s)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-                        <MI name="edit" size={14} color="#9CA3AF" />
+                      {s.status === 'registered' && (
+                        <Link
+                          href={`/dashboard/sample-receipts?id=${s.id}`}
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium"
+                          style={{ backgroundColor: '#CCFBF1', color: '#0F766E', textDecoration: 'none', whiteSpace: 'nowrap', width: 'fit-content' }}
+                        >
+                          <MI name="move_to_inbox" size={13} color="#0F766E" />
+                          Receive
+                        </Link>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <button onClick={() => openEdit(s)} title="Edit"
+                        className="flex items-center justify-center rounded-lg hover:bg-gray-100"
+                        style={{ width: 28, height: 28, border: 'none', backgroundColor: '#F9FAFB', cursor: 'pointer' }}>
+                        <MI name="edit" size={15} color="#6B7280" />
                       </button>
                     </td>
                   </tr>
