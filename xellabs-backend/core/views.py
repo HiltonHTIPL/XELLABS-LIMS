@@ -103,10 +103,16 @@ class ClientViewSet(ModelViewSet):
     def perform_create(self, serializer):
         from django.utils.text import slugify
         from django_tenants.utils import schema_context
+        from rest_framework.exceptions import ValidationError as DRFValidationError
 
         name = serializer.validated_data.get('name', '')
-        client_id_val = serializer.validated_data.get('client_id', '')
+        # Normalise client_id to uppercase so "hl-01" and "HL-01" are the same
+        client_id_val = serializer.validated_data.get('client_id', '').upper()
         email = serializer.validated_data.get('email', '')
+
+        # Check uniqueness before hitting the DB so we return a clean 400, not a 500
+        if client_id_val and Client.objects.filter(client_id=client_id_val).exists():
+            raise DRFValidationError({'client_id': [f'A client with ID "{client_id_val}" already exists.']})
 
         # Derive a unique slug from client_id (preferred) or name
         raw = client_id_val or name
@@ -116,12 +122,21 @@ class ClientViewSet(ModelViewSet):
         # The request arrives scoped to a tenant schema (e.g. hl-01); without this wrapper
         # django-tenants raises "Can't create tenant outside the public schema."
         with schema_context('public'):
-            tenant, _ = Tenant.objects.get_or_create(
-                slug=slug,
-                defaults={'name': name, 'schema_name': slug},
-            )
+            from django.db import IntegrityError as DBIntegrityError
+            try:
+                tenant, _ = Tenant.objects.get_or_create(
+                    slug=slug,
+                    defaults={'name': name, 'schema_name': slug},
+                )
+            except DBIntegrityError:
+                # Tenant name collision (another tenant already has this name).
+                # Fall back to slug as the tenant name — it is always unique.
+                tenant, _ = Tenant.objects.get_or_create(
+                    slug=slug,
+                    defaults={'name': slug, 'schema_name': slug},
+                )
 
-            username = client_id_val or slug
+            username = client_id_val or slug.upper()
             if not User.objects.filter(username=username).exists():
                 from django.utils.crypto import get_random_string
                 temp_password = get_random_string(20)
@@ -132,12 +147,65 @@ class ClientViewSet(ModelViewSet):
                     role='client',
                     tenant=tenant,
                 )
-                # TODO: email temp_password (or a password-reset link) to the client contact.
-                # Logged here only so the account isn't left completely inaccessible until
-                # that email flow is built — do not log this in production once it exists.
                 logger.info("Created client user '%s' with a temporary password.", username)
+                # Surfaced once in the create response so an admin can hand it to the
+                # client immediately — there is no email flow yet to deliver it another
+                # way. Never logged, never stored anywhere, never returned again after
+                # this response (a fresh GET/list call never includes it).
+                self.request._created_client_password = temp_password
 
-        serializer.save(tenant=tenant)
+        # Attach the username to the request so the view can surface it in the response
+        self.request._created_client_username = username
+        serializer.save(tenant=tenant, client_id=client_id_val)
+
+    def create(self, request, *args, **kwargs):
+        response = super().create(request, *args, **kwargs)
+        username = getattr(request, '_created_client_username', None)
+        password = getattr(request, '_created_client_password', None)
+        if username:
+            response.data['login_username'] = username
+        if password:
+            response.data['login_password'] = password
+        return response
+
+
+class ClientResetPasswordView(APIView):
+    """
+    POST /api/clients/{id}/reset-password/  { new_password }
+    Admin-only: reset the login password for the user account linked to a client.
+    """
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, client_id):
+        from django_tenants.utils import schema_context
+        from rest_framework.exceptions import PermissionDenied, ValidationError as DRFValidationError
+
+        if request.user.role not in ('admin', 'lab_manager'):
+            raise PermissionDenied("Only admins and lab managers can reset client passwords.")
+
+        new_password = request.data.get('new_password', '').strip()
+        if len(new_password) < 8:
+            raise DRFValidationError({'new_password': ['Password must be at least 8 characters.']})
+
+        try:
+            client = Client.objects.get(pk=client_id)
+        except Client.DoesNotExist:
+            return Response({'detail': 'Client not found.'}, status=404)
+
+        username = client.client_id or ''
+        if not username:
+            return Response({'detail': 'This client has no linked user account.'}, status=400)
+
+        with schema_context('public'):
+            try:
+                user = User.objects.get(username=username)
+                user.set_password(new_password)
+                user.save()
+                logger.info("Password reset for client user '%s' by '%s'.", username, request.user.username)
+                return Response({'detail': f"Password for {username} updated successfully."})
+            except User.DoesNotExist:
+                return Response({'detail': f'No user account found for username "{username}".'}, status=404)
 
 
 class TenantListView(ListAPIView):
