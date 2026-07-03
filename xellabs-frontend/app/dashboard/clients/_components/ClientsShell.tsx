@@ -2,7 +2,7 @@
 import { useState, useActionState, useTransition, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient, updateClient, toggleClientActive, type ClientFormState, type DjangoClient, type SenaiteAddress } from '@/app/actions/clients'
+import { createClient, updateClient, toggleClientActive, resetClientPassword, checkClientIdAvailable, type ClientFormState, type DjangoClient, type SenaiteAddress } from '@/app/actions/clients'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -165,12 +165,52 @@ function StepBar({ step }: { step: number }) {
 }
 
 // ── Step panels ───────────────────────────────────────────────────────────────
-function Step1({ errors, client }: { errors?: ClientFormState['errors']; client?: DjangoClient }) {
+type ClientIdCheck = 'idle' | 'checking' | 'available' | 'taken'
+
+function Step1({
+  errors, client, nameError, clientIdCheck, onClientIdChange, onClientIdBlur,
+}: {
+  errors?: ClientFormState['errors']
+  client?: DjangoClient
+  nameError?: string
+  clientIdCheck?: ClientIdCheck
+  onClientIdChange?: () => void
+  onClientIdBlur?: (value: string) => void
+}) {
+  const clientIdErrorMsg = clientIdCheck === 'taken'
+    ? 'This Client ID is already in use — choose a different one.'
+    : errors?.client_id?.[0]
+
   return (
     <div className="space-y-3">
       <Row>
-        <Field label="Client Name" name="name"      placeholder="e.g. Green Valley Farms" required error={errors?.name?.[0]}      defaultValue={client?.name} />
-        <Field label="Client ID"   name="client_id" placeholder="e.g. CL-001"             required error={errors?.client_id?.[0]} defaultValue={client?.client_id} />
+        <Field label="Client Name" name="name" placeholder="e.g. Green Valley Farms" required error={nameError ?? errors?.name?.[0]} defaultValue={client?.name} />
+        <div className="flex-1 min-w-0">
+          <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
+            Client ID<span style={{ color: '#EF4444' }}> *</span>
+          </label>
+          <div className="relative">
+            <input
+              name="client_id"
+              placeholder="e.g. CL-001"
+              required
+              defaultValue={client?.client_id}
+              onChange={onClientIdChange}
+              onBlur={e => onClientIdBlur?.(e.target.value)}
+              className="w-full px-3 py-2 text-xs rounded-lg outline-none"
+              style={{ border: `1px solid ${clientIdErrorMsg ? '#FCA5A5' : '#D1D5DB'}`, color: '#111827' }}
+            />
+            {clientIdCheck === 'checking' && (
+              <span className="absolute right-2.5" style={{ top: '50%', transform: 'translateY(-50%)', fontSize: 9, color: '#9CA3AF' }}>checking…</span>
+            )}
+            {clientIdCheck === 'available' && (
+              <span className="absolute right-2.5" style={{ top: '50%', transform: 'translateY(-50%)' }}>
+                <MI name="check_circle" size={13} color="#10B981" />
+              </span>
+            )}
+          </div>
+          {clientIdErrorMsg && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{clientIdErrorMsg}</p>}
+        </div>
       </Row>
       <Row>
         <Field label="Email Address" name="email"  type="email" placeholder="contact@client.com" defaultValue={client?.email} />
@@ -259,12 +299,95 @@ function Step5({ client }: { client?: DjangoClient }) {
   )
 }
 
+// ── Reset Password Modal ──────────────────────────────────────────────────────
+function ResetPasswordModal({ client, onClose }: { client: DjangoClient; onClose: () => void }) {
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm]   = useState('')
+  const [busy, setBusy]         = useState(false)
+  const [result, setResult]     = useState<{ ok: boolean; msg: string } | null>(null)
+  const [show, setShow]         = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (password.length < 8) { setResult({ ok: false, msg: 'Password must be at least 8 characters.' }); return }
+    if (password !== confirm) { setResult({ ok: false, msg: 'Passwords do not match.' }); return }
+    setBusy(true)
+    const res = await resetClientPassword(client.id, password)
+    setResult({ ok: res.success, msg: res.message })
+    setBusy(false)
+    if (res.success) setTimeout(onClose, 1800)
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)' }}>
+      <div style={{ background: '#fff', borderRadius: 12, padding: 24, width: 360, boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <MI name="lock_reset" size={18} color="#2563EB" />
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Reset Password</h3>
+          </div>
+          <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
+            <MI name="close" size={16} color="#9CA3AF" />
+          </button>
+        </div>
+        <p style={{ fontSize: 12, color: '#6B7280', marginBottom: 16 }}>
+          Set a new login password for <strong style={{ color: '#111827' }}>{client.name}</strong>
+          {client.client_id && <> (username: <code style={{ background: '#F3F4F6', padding: '1px 4px', borderRadius: 3 }}>{client.client_id}</code>)</>}
+        </p>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>New Password</label>
+            <div style={{ position: 'relative' }}>
+              <input
+                type={show ? 'text' : 'password'}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="Min. 8 characters"
+                style={{ width: '100%', padding: '8px 32px 8px 10px', fontSize: 12, border: '1px solid #D1D5DB', borderRadius: 6, outline: 'none' }}
+                required
+              />
+              <button type="button" onClick={() => setShow(s => !s)} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer' }}>
+                <MI name={show ? 'visibility_off' : 'visibility'} size={14} color="#9CA3AF" />
+              </button>
+            </div>
+          </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Confirm Password</label>
+            <input
+              type={show ? 'text' : 'password'}
+              value={confirm}
+              onChange={e => setConfirm(e.target.value)}
+              placeholder="Re-enter password"
+              style={{ width: '100%', padding: '8px 10px', fontSize: 12, border: '1px solid #D1D5DB', borderRadius: 6, outline: 'none' }}
+              required
+            />
+          </div>
+          {result && (
+            <div style={{ fontSize: 12, padding: '8px 10px', borderRadius: 6, backgroundColor: result.ok ? '#ECFDF5' : '#FEF2F2', color: result.ok ? '#065F46' : '#991B1B', border: `1px solid ${result.ok ? '#A7F3D0' : '#FECACA'}` }}>
+              {result.msg}
+            </div>
+          )}
+          <div className="flex gap-2 justify-end" style={{ marginTop: 4 }}>
+            <button type="button" onClick={onClose} style={{ padding: '7px 14px', fontSize: 12, border: '1px solid #D1D5DB', borderRadius: 6, background: '#fff', cursor: 'pointer', color: '#374151' }}>
+              Cancel
+            </button>
+            <button type="submit" disabled={busy} style={{ padding: '7px 14px', fontSize: 12, borderRadius: 6, border: 'none', background: busy ? '#93C5FD' : '#2563EB', color: '#fff', cursor: busy ? 'not-allowed' : 'pointer', fontWeight: 600 }}>
+              {busy ? 'Saving…' : 'Reset Password'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 // ── Per-row actions menu ──────────────────────────────────────────────────────
 function ActionsMenu({ client, onEdit, onDone }: { client: DjangoClient; onEdit: (c: DjangoClient) => void; onDone: () => void }) {
-  const [open, setOpen]         = useState(false)
-  const [busy, startTransition] = useTransition()
-  const [toast, setToast]       = useState<{ ok: boolean; msg: string } | null>(null)
-  const [menuPos, setMenuPos]   = useState<{ top: number; right: number } | null>(null)
+  const [open, setOpen]             = useState(false)
+  const [busy, startTransition]     = useTransition()
+  const [toast, setToast]           = useState<{ ok: boolean; msg: string } | null>(null)
+  const [menuPos, setMenuPos]       = useState<{ top: number; right: number } | null>(null)
+  const [showResetPwd, setShowResetPwd] = useState(false)
   const btnRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -298,6 +421,7 @@ function ActionsMenu({ client, onEdit, onDone }: { client: DjangoClient; onEdit:
 
   return (
     <div style={{ display: 'inline-block' }}>
+      {showResetPwd && <ResetPasswordModal client={client} onClose={() => setShowResetPwd(false)} />}
       {toast && (
         <div style={{
           position: 'fixed', bottom: 24, right: 24, zIndex: 999,
@@ -325,7 +449,7 @@ function ActionsMenu({ client, onEdit, onDone }: { client: DjangoClient; onEdit:
           position: 'fixed', top: menuPos.top, right: menuPos.right, zIndex: 9999,
           backgroundColor: '#fff', border: '1px solid #E5E7EB',
           borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
-          minWidth: 160, padding: '4px 0',
+          minWidth: 170, padding: '4px 0',
         }}>
           <Link href={`/dashboard/clients/${client.id}`}
             className="flex items-center gap-2 px-3 py-2 text-xs hover:bg-gray-50"
@@ -340,6 +464,13 @@ function ActionsMenu({ client, onEdit, onDone }: { client: DjangoClient; onEdit:
             style={{ color: '#2563EB', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
             <span className="material-icons" style={{ fontSize: 14, color: '#2563EB' }}>edit</span>
             Edit Client
+          </button>
+          <button
+            onClick={() => { setOpen(false); setShowResetPwd(true) }}
+            className="flex items-center gap-2 w-full px-3 py-2 text-xs hover:bg-gray-50"
+            style={{ color: '#7C3AED', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+            <span className="material-icons" style={{ fontSize: 14, color: '#7C3AED' }}>lock_reset</span>
+            Reset Password
           </button>
           <div style={{ borderTop: '1px solid #F3F4F6', margin: '2px 0' }} />
           <button
@@ -369,6 +500,10 @@ export default function ClientsShell({ initialClients }: { initialClients: Djang
   const [showForm, setShowForm]       = useState(false)
   const [step, setStep]               = useState(0)
   const [editingClient, setEditingClient] = useState<DjangoClient | null>(null)
+  const [clientIdCheck, setClientIdCheck] = useState<ClientIdCheck>('idle')
+  const [step1Error, setStep1Error]       = useState<string | null>(null)
+  const [checkingNext, setCheckingNext]   = useState(false)
+  const formRef = useRef<HTMLFormElement>(null)
   const [state, action, pending] = useActionState(
     async (prev: ClientFormState, formData: FormData) => {
       const clientIdField = formData.get('_clientId')
@@ -389,13 +524,34 @@ export default function ClientsShell({ initialClients }: { initialClients: Djang
     initialState
   )
 
-  function openForm() { setEditingClient(null); setShowForm(true); setStep(0) }
-  function openEdit(c: DjangoClient) { setEditingClient(c); setShowForm(true); setStep(0) }
-  function closeForm() { setShowForm(false); setStep(0); setEditingClient(null) }
+  function resetStep1Validation() { setClientIdCheck('idle'); setStep1Error(null) }
+  function openForm() { setEditingClient(null); setShowForm(true); setStep(0); resetStep1Validation() }
+  function openEdit(c: DjangoClient) { setEditingClient(c); setShowForm(true); setStep(0); resetStep1Validation() }
+  function closeForm() { setShowForm(false); setStep(0); setEditingClient(null); resetStep1Validation() }
 
   const isLast  = step === STEPS.length - 1
   const isFirst = step === 0
   const isEditing = editingClient !== null
+
+  async function handleNext() {
+    if (step !== 0) { setStep(s => s + 1); return }
+
+    const form = formRef.current
+    const name = (form?.elements.namedItem('name') as HTMLInputElement | null)?.value.trim() ?? ''
+    const clientId = (form?.elements.namedItem('client_id') as HTMLInputElement | null)?.value.trim() ?? ''
+
+    if (!name) { setStep1Error('Client name is required'); return }
+    setStep1Error(null)
+
+    if (!clientId) { setClientIdCheck('idle'); return } // required attr will catch this on submit
+    setCheckingNext(true)
+    const available = await checkClientIdAvailable(clientId, editingClient?.id)
+    setCheckingNext(false)
+    setClientIdCheck(available ? 'available' : 'taken')
+    if (!available) return
+
+    setStep(s => s + 1)
+  }
 
   return (
     <div style={{ padding: '12px 20px 0', backgroundColor: '#F5F6FA', minHeight: '100%' }}>
@@ -481,13 +637,26 @@ export default function ClientsShell({ initialClients }: { initialClients: Djang
           )}
 
           {/* Scrollable form body */}
-          <form action={action} noValidate className="flex flex-col flex-1 min-h-0">
+          <form ref={formRef} action={action} noValidate className="flex flex-col flex-1 min-h-0">
             {/* Hidden field — signals update vs create */}
             {isEditing && <input type="hidden" name="_clientId" value={editingClient.id} />}
 
             <div className="flex-1 overflow-y-auto px-6 pb-4 space-y-1">
               <div style={{ display: step === 0 ? 'block' : 'none' }}>
-                <Step1 errors={state.errors} client={editingClient ?? undefined} />
+                <Step1
+                  errors={state.errors}
+                  client={editingClient ?? undefined}
+                  nameError={step1Error ?? undefined}
+                  clientIdCheck={clientIdCheck}
+                  onClientIdChange={() => { setClientIdCheck('idle') }}
+                  onClientIdBlur={async (value) => {
+                    const trimmed = value.trim()
+                    if (!trimmed) { setClientIdCheck('idle'); return }
+                    setClientIdCheck('checking')
+                    const available = await checkClientIdAvailable(trimmed, editingClient?.id)
+                    setClientIdCheck(available ? 'available' : 'taken')
+                  }}
+                />
                 {!isEditing && <div className="mt-3"><LogoUpload /></div>}
               </div>
               <div style={{ display: step === 1 ? 'block' : 'none' }}><Step2 client={editingClient ?? undefined} /></div>
@@ -513,12 +682,13 @@ export default function ClientsShell({ initialClients }: { initialClients: Djang
               {!isLast ? (
                 <button
                   type="button"
-                  onClick={() => setStep(s => s + 1)}
+                  onClick={handleNext}
+                  disabled={checkingNext}
                   className="flex items-center gap-1.5 px-4 py-2 text-xs rounded-lg font-medium text-white"
-                  style={{ backgroundColor: '#14B8A6' }}
+                  style={{ backgroundColor: checkingNext ? '#99F6E4' : '#14B8A6', cursor: checkingNext ? 'not-allowed' : 'pointer' }}
                 >
-                  Next
-                  <MI name="arrow_forward" size={13} color="#fff" />
+                  {checkingNext ? 'Checking…' : 'Next'}
+                  <MI name={checkingNext ? 'hourglass_top' : 'arrow_forward'} size={13} color="#fff" />
                 </button>
               ) : (
                 <button
@@ -538,9 +708,28 @@ export default function ClientsShell({ initialClients }: { initialClients: Djang
 
       {/* Success toast */}
       {state.success && (
-        <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#ECFDF5', border: '1px solid #A7F3D0', color: '#065F46' }}>
-          <MI name="check_circle" size={13} color="#10B981" />
-          {state.message}
+        <div className="mb-3 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#ECFDF5', border: '1px solid #A7F3D0', color: '#065F46' }}>
+          <div className="flex items-center gap-2">
+            <MI name="check_circle" size={13} color="#10B981" />
+            <span>{state.message}</span>
+          </div>
+          {state.login_username && (
+            <div className="mt-1.5 flex flex-col gap-1 px-2 py-1.5 rounded-md" style={{ backgroundColor: '#D1FAE5', color: '#065F46' }}>
+              <div className="flex items-center gap-2">
+                <MI name="person" size={13} color="#059669" />
+                <span>Username: <strong style={{ fontFamily: 'monospace', letterSpacing: '0.03em' }}>{state.login_username}</strong></span>
+              </div>
+              {state.login_password && (
+                <div className="flex items-center gap-2">
+                  <MI name="key" size={13} color="#059669" />
+                  <span>Temp password: <strong style={{ fontFamily: 'monospace', letterSpacing: '0.03em' }}>{state.login_password}</strong></span>
+                </div>
+              )}
+              <span style={{ color: '#065F46', fontSize: 10, marginTop: 2 }}>
+                Share these with the client now — the password is shown only once and cannot be retrieved again.
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -563,19 +752,20 @@ export default function ClientsShell({ initialClients }: { initialClients: Djang
         <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E5E7EB' }}>
           <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
             <colgroup>
-              <col style={{ width: '20%' }} />
-              <col style={{ width: '9%' }} />
               <col style={{ width: '18%' }} />
-              <col style={{ width: '10%' }} />
-              <col style={{ width: '12%' }} />
-              <col style={{ width: '16%' }} />
               <col style={{ width: '8%' }} />
-              <col style={{ width: '4%' }} />
+              <col style={{ width: '15%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '10%' }} />
               <col style={{ width: '3%' }} />
             </colgroup>
             <thead>
               <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                {['Client Name', 'Client ID', 'Email', 'Phone', 'Contact', 'Schema', 'Status', 'Tax No.', ''].map(h => (
+                {['Client Name', 'Client ID', 'Email', 'Phone', 'Contact', 'Schema', 'Username', 'Status', 'Tax No.', ''].map(h => (
                   <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
                 ))}
               </tr>
@@ -605,11 +795,20 @@ export default function ClientsShell({ initialClients }: { initialClients: Djang
                     ) : <span style={{ color: '#9CA3AF', fontSize: 11 }}>—</span>}
                   </td>
                   <td className="px-3 py-2">
+                    {c.client_id ? (
+                      <span className="font-mono flex items-center gap-1" style={{ fontSize: 10, color: '#065F46', backgroundColor: '#D1FAE5', padding: '2px 6px', borderRadius: 4, whiteSpace: 'nowrap' }}>
+                        <MI name="person" size={11} color="#059669" />
+                        {c.client_id.toUpperCase()}
+                      </span>
+                    ) : <span style={{ color: '#9CA3AF', fontSize: 11 }}>—</span>}
+                  </td>
+                  <td className="px-3 py-2">
                     <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, color: c.is_active ? '#166534' : '#6B7280' }}>
                       <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: c.is_active ? '#22C55E' : '#9CA3AF', display: 'inline-block' }} />
                       {c.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </td>
+                  <td className="px-3 py-2 text-xs" style={{ color: '#6B7280' }}>{c.tax_number || '—'}</td>
                   <td className="px-3 py-2">
                     <ActionsMenu client={c} onEdit={openEdit} onDone={() => router.refresh()} />
                   </td>

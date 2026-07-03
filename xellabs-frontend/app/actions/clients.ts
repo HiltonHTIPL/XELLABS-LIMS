@@ -53,6 +53,8 @@ export type DjangoClient = {
 export type ClientFormState = {
   success?: boolean
   message?: string
+  login_username?: string
+  login_password?: string
   errors?: {
     name?: string[]
     client_id?: string[]
@@ -69,6 +71,42 @@ function addr(formData: FormData, prefix: string): SenaiteAddress {
     state:   (formData.get(`${prefix}_state`)  as string)?.trim() ?? '',
     zip:     (formData.get(`${prefix}_zip`)    as string)?.trim() ?? '',
     country: (formData.get(`${prefix}_country`) as string)?.trim() ?? '',
+  }
+}
+
+export async function resetClientPassword(
+  clientId: number,
+  newPassword: string
+): Promise<{ success: boolean; message: string }> {
+  try {
+    const res = await djangoFetch(`/api/clients/${clientId}/reset-password/`, {
+      method: 'POST',
+      body: JSON.stringify({ new_password: newPassword }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      const msg = (data as { new_password?: string[]; detail?: string }).new_password?.[0]
+        ?? (data as { detail?: string }).detail
+        ?? `Error ${res.status}`
+      return { success: false, message: msg }
+    }
+    return { success: true, message: (data as { detail?: string }).detail ?? 'Password updated.' }
+  } catch {
+    return { success: false, message: 'Could not reach the server.' }
+  }
+}
+
+export async function checkClientIdAvailable(clientId: string, excludeId?: number): Promise<boolean> {
+  const trimmed = clientId.trim().toUpperCase()
+  if (!trimmed) return true
+  try {
+    const res = await djangoFetch(`/api/clients/?search=${encodeURIComponent(trimmed)}`)
+    if (!res.ok) return true // fail open — the real uniqueness check still runs server-side on submit
+    const data = await res.json()
+    const list: DjangoClient[] = data.results ?? data
+    return !list.some(c => c.client_id?.toUpperCase() === trimmed && c.id !== excludeId)
+  } catch {
+    return true
   }
 }
 
@@ -321,7 +359,13 @@ export async function createClient(
     }
 
     revalidatePath('/dashboard/clients')
-    return { success: true, message: `Client "${name}" created successfully.${logoWarning}` }
+    const createdWithCreds = created as DjangoClient & { login_username?: string; login_password?: string }
+    return {
+      success: true,
+      message: `Client "${name}" created successfully.${logoWarning}`,
+      login_username: createdWithCreds.login_username ?? '',
+      login_password: createdWithCreds.login_password ?? '',
+    }
   } catch {
     return { message: 'Could not reach the server. Please try again.' }
   }

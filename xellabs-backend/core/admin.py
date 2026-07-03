@@ -11,9 +11,14 @@ admin.site.index_title = "Laboratory Management System"
 class CustomUserAdmin(UserAdmin):
     list_display = ("username", "email", "first_name", "last_name", "role", "is_active")
     list_filter = ("role", "is_active")
-    fieldsets = UserAdmin.fieldsets + (
+    fieldsets = (
+        (None, {"fields": ("username", "password")}),
+        ("Personal info", {"fields": ("first_name", "last_name", "email")}),
         ("XELLABS", {"fields": ("role", "phone", "department")}),
+        ("Permissions", {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
+        ("Important dates", {"fields": ("last_login", "date_joined")}),
     )
+    add_fieldsets = UserAdmin.add_fieldsets
 
 
 @admin.register(Tenant)
