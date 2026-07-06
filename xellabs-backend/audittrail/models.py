@@ -15,6 +15,10 @@ class AuditEvent(models.Model):
         ("sign", "Signed"),
         ("print", "Printed"),
         ("instrument_import", "Instrument Import"),
+        ("receive", "Received"),
+        ("submit", "Submitted"),
+        ("verify", "Verified"),
+        ("complete", "Completed"),
     ]
     user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
     action = models.CharField(max_length=30, choices=ACTION)

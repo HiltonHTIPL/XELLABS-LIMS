@@ -5,8 +5,9 @@ from django.conf import settings
 class SampleType(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
-    prefix = models.CharField(max_length=10, blank=True)
+    prefix = models.CharField(max_length=10)
     is_active = models.BooleanField(default=True)
+    senaite_uid = models.CharField(max_length=100, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -35,8 +36,10 @@ class Test(models.Model):
     code = models.CharField(max_length=50, unique=True)
     description = models.TextField(blank=True)
     unit = models.CharField(max_length=50, blank=True)
+    price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     method = models.ForeignKey(Method, null=True, blank=True, on_delete=models.SET_NULL)
     is_active = models.BooleanField(default=True)
+    senaite_uid = models.CharField(max_length=100, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -70,6 +73,41 @@ class Sample(models.Model):
         ("rejected", "Rejected"),
         ("disposed", "Disposed"),
     ]
+    CONDITION = [
+        ("good", "Good"),
+        ("acceptable", "Acceptable"),
+        ("compromised", "Compromised"),
+        ("not_acceptable", "Not Acceptable"),
+    ]
+    SEAL_CONDITION = [
+        ("intact", "Intact"),
+        ("broken", "Broken"),
+        ("missing", "Missing"),
+    ]
+    DEVIATION = [
+        ("none", "None"),
+        ("temperature_excursion", "Temperature Excursion"),
+        ("delayed_transport", "Delayed Transport"),
+        ("haemolysis", "Haemolysis"),
+    ]
+    STORAGE_REQ = [
+        ("2_8c", "2–8 °C (Refrigerated)"),
+        ("minus_20c", "-20 °C (Frozen)"),
+        ("minus_80c", "-80 °C (Ultra-frozen)"),
+        ("room_temp", "Room Temperature"),
+    ]
+    PRIORITY = [
+        ("high", "High"),
+        ("medium", "Medium"),
+        ("low", "Low"),
+    ]
+    QTY_UNIT = [
+        ("tubes", "Tubes"),
+        ("vials", "Vials"),
+        ("bags", "Bags"),
+        ("slides", "Slides"),
+    ]
+
     sample_id = models.CharField(max_length=50, unique=True)
     client = models.ForeignKey("core.Client", on_delete=models.PROTECT, related_name="samples")
     sample_type = models.ForeignKey(SampleType, on_delete=models.PROTECT)
@@ -80,6 +118,39 @@ class Sample(models.Model):
     status = models.CharField(max_length=20, choices=STATUS, default="registered")
     storage_location = models.CharField(max_length=200, blank=True)
     barcode = models.CharField(max_length=100, blank=True)
+    # Receipt intake fields
+    condition = models.CharField(max_length=20, choices=CONDITION, blank=True)
+    seal_condition = models.CharField(max_length=20, choices=SEAL_CONDITION, blank=True)
+    seal_number = models.CharField(max_length=100, blank=True)
+    quantity_received = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    quantity_unit = models.CharField(max_length=20, choices=QTY_UNIT, blank=True)
+    sampling_deviation = models.CharField(max_length=30, choices=DEVIATION, blank=True, default="none")
+    storage_requirement = models.CharField(max_length=20, choices=STORAGE_REQ, blank=True)
+    priority = models.CharField(max_length=10, choices=PRIORITY, blank=True, default="medium")
+    hold_for_qa = models.BooleanField(default=False)
+    collector = models.CharField(max_length=200, blank=True)
+    received_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                    on_delete=models.SET_NULL, related_name="samples_received")
+    receipt_notes = models.TextField(blank=True)
+    # Extended intake fields
+    contact_name = models.CharField(max_length=200, blank=True)
+    cc_contact = models.CharField(max_length=200, blank=True)
+    cc_emails = models.TextField(blank=True)
+    batch_id = models.CharField(max_length=100, blank=True)
+    batch_sub_group = models.CharField(max_length=100, blank=True)
+    container_type = models.CharField(max_length=100, blank=True)
+    preservation = models.CharField(max_length=100, blank=True)
+    analysis_specification = models.CharField(max_length=100, blank=True)
+    sample_point = models.CharField(max_length=200, blank=True)
+    environmental_conditions = models.CharField(max_length=100, blank=True)
+    composite = models.BooleanField(default=False)
+    internal_use = models.BooleanField(default=False)
+    client_order_number = models.CharField(max_length=100, blank=True)
+    client_reference = models.CharField(max_length=200, blank=True)
+    client_sample_id = models.CharField(max_length=100, blank=True)
+    senaite_uid = models.CharField(max_length=100, blank=True, db_index=True)
+    senaite_ar_id = models.CharField(max_length=100, blank=True)
+    last_synced_from_senaite = models.DateTimeField(null=True, blank=True)
     is_locked = models.BooleanField(default=False)
     locked_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
                                   on_delete=models.SET_NULL, related_name="samples_locked")
@@ -112,6 +183,7 @@ class AnalysisRequest(models.Model):
                                 choices=[("low", "Low"), ("normal", "Normal"), ("high", "High"), ("urgent", "Urgent")])
     due_date = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(blank=True)
+    senaite_uid = models.CharField(max_length=100, blank=True, db_index=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

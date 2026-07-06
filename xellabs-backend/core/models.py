@@ -97,7 +97,7 @@ class Client(models.Model):
 
     # ── Core identifiers ─────────────────────────────────────────────────────
     name = models.CharField(max_length=200)               # SENAITE: title
-    client_id = models.CharField(max_length=50, blank=True)  # SENAITE: ClientID
+    client_id = models.CharField(max_length=50, blank=True, unique=True)  # SENAITE: ClientID
 
     # ── Organisation contact ──────────────────────────────────────────────────
     email = models.EmailField(blank=True)                  # SENAITE: EmailAddress

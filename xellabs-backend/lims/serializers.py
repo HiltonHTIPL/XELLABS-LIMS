@@ -25,6 +25,9 @@ class SampleTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = SampleType
         fields = "__all__"
+        extra_kwargs = {
+            'prefix': {'required': True, 'allow_blank': False},
+        }
 
 
 class MethodSerializer(serializers.ModelSerializer):
@@ -35,6 +38,7 @@ class MethodSerializer(serializers.ModelSerializer):
 
 class TestSerializer(serializers.ModelSerializer):
     method_name = serializers.CharField(source="method.name", read_only=True)
+    method_code = serializers.CharField(source="method.code", read_only=True)
 
     class Meta:
         model = Test
@@ -50,7 +54,14 @@ class SpecificationSerializer(serializers.ModelSerializer):
 class SampleSerializer(RecordLockMixin, serializers.ModelSerializer):
     sample_type_name = serializers.CharField(source="sample_type.name", read_only=True)
     client_name = serializers.CharField(source="client.name", read_only=True)
+    received_by_name = serializers.SerializerMethodField(read_only=True)
     reason_for_change = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
+    def get_received_by_name(self, obj):
+        if obj.received_by:
+            full = f"{obj.received_by.first_name} {obj.received_by.last_name}".strip()
+            return full or obj.received_by.username
+        return ""
     sample_id = serializers.CharField(
         required=False, allow_blank=True,
         validators=[UniqueValidator(queryset=Sample.objects.all())],
@@ -74,13 +85,23 @@ class SampleSerializer(RecordLockMixin, serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         validated_data.pop("reason_for_change", None)
-        # Auto-lock when published
-        if validated_data.get("status") == "published" and not instance.is_locked:
-            from django.utils import timezone
-            validated_data["is_locked"] = True
-            validated_data["locked_by"] = self.context["request"].user
-            validated_data["locked_at"] = timezone.now()
-            validated_data["locked_reason"] = "Auto-locked on publication"
+        new_status = validated_data.get("status")
+        if new_status and new_status != instance.status:
+            if instance.status == "registered" and new_status == "received":
+                raise serializers.ValidationError(
+                    {"status": "Use the /receive action to move a sample to 'received' — "
+                               "it also records chain of custody."}
+                )
+            # Auto-lock when published
+            if new_status == "published" and not instance.is_locked:
+                from django.utils import timezone
+                validated_data["is_locked"] = True
+                validated_data["locked_by"] = self.context["request"].user
+                validated_data["locked_at"] = timezone.now()
+                validated_data["locked_reason"] = "Auto-locked on publication"
+            # Sample's post_save signal (audittrail/signals.py) already logs this
+            # status change to AuditEvent + a field-level DataChangeLog — no manual
+            # audit call needed here.
         return super().update(instance, validated_data)
 
 
@@ -89,6 +110,7 @@ class AnalysisRequestSerializer(serializers.ModelSerializer):
         required=False, allow_blank=True,
         validators=[UniqueValidator(queryset=AnalysisRequest.objects.all())],
     )
+    tests_detail = TestSerializer(source="tests", many=True, read_only=True)
 
     class Meta:
         model = AnalysisRequest
@@ -139,9 +161,16 @@ class ResultSerializer(RecordLockMixin, serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         validated_data.pop("reason_for_change", None)
-        # Auto-lock when verified
-        if validated_data.get("status") == "verified":
-            validated_data["is_locked"] = True
+        new_status = validated_data.get("status")
+        if new_status and new_status != instance.status:
+            if new_status == "verified":
+                raise serializers.ValidationError(
+                    {"status": "Use the /verify action to verify a result — it also records "
+                               "the verifier, timestamp, and audit trail."}
+                )
+            # Result's post_save signal (audittrail/signals.py) already logs this
+            # status change to AuditEvent + a field-level DataChangeLog — no manual
+            # audit call needed here.
         return super().update(instance, validated_data)
 
     def create(self, validated_data):

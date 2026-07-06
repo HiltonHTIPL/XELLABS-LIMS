@@ -18,7 +18,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .join(' ')
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden" style={{ backgroundColor: '#F5F6FA' }}>
+    <div className="flex flex-col h-screen overflow-hidden" style={{ backgroundColor: '#F7F8FC' }}>
       <DashboardShell initials={initials} displayName={displayName} roleLabel={roleLabel} role={session.role}>
         {children}
       </DashboardShell>
@@ -29,7 +29,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         style={{ backgroundColor: '#0B1E47', color: 'rgba(255,255,255,0.55)' }}
       >
         <div className="flex items-center gap-2">
-          <span className="material-icons" style={{ fontSize: 14, color: '#14B8A6' }}>security</span>
+          <span className="material-icons" style={{ fontSize: 14, color: '#0154FC' }}>security</span>
           <span style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 500 }}>Secure. Compliant. Reliable.</span>
           <span className="mx-1" style={{ color: 'rgba(255,255,255,0.25)' }}>·</span>
           <span>XelLabs LIMS is configured and supported by Hephzibah Technologies Inc.</span>

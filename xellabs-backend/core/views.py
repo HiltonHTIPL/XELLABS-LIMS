@@ -44,14 +44,18 @@ class FlexibleTokenView(APIView):
             except User.DoesNotExist:
                 return Response({'non_field_errors': ['No account found with that email address.']}, status=400)
             except User.MultipleObjectsReturned:
-                pass
+                logger.error("Duplicate accounts share email '%s' (case-insensitive) — data integrity issue.", identifier)
+                return Response({'non_field_errors': ['Multiple accounts found for that email. Contact support.']}, status=400)
         else:
             # Case-insensitive username lookup (e.g. "liji" → "LIJI")
             try:
                 user_obj = User.objects.get(username__iexact=identifier)
                 username = user_obj.username
-            except (User.DoesNotExist, User.MultipleObjectsReturned):
+            except User.DoesNotExist:
                 pass
+            except User.MultipleObjectsReturned:
+                logger.error("Duplicate accounts share username '%s' (case-insensitive) — data integrity issue.", identifier)
+                return Response({'non_field_errors': ['Multiple accounts found for that username. Contact support.']}, status=400)
 
         user = authenticate(request=request, username=username, password=password)
         if not user:
@@ -98,33 +102,118 @@ class ClientViewSet(ModelViewSet):
 
     def perform_create(self, serializer):
         from django.utils.text import slugify
+        from django_tenants.utils import schema_context
+        from rest_framework.exceptions import ValidationError as DRFValidationError, APIException
 
         name = serializer.validated_data.get('name', '')
-        client_id_val = serializer.validated_data.get('client_id', '')
+        # Normalise client_id to uppercase so "hl-01" and "HL-01" are the same
+        client_id_val = serializer.validated_data.get('client_id', '').upper()
         email = serializer.validated_data.get('email', '')
+
+        # Check uniqueness before hitting the DB so we return a clean 400, not a 500
+        if client_id_val and Client.objects.filter(client_id=client_id_val).exists():
+            raise DRFValidationError({'client_id': [f'A client with ID "{client_id_val}" already exists.']})
 
         # Derive a unique slug from client_id (preferred) or name
         raw = client_id_val or name
         slug = slugify(raw) or 'client'
 
-        # Auto-create tenant (also creates {slug}.localhost domain via Tenant.save())
-        tenant, _ = Tenant.objects.get_or_create(
-            slug=slug,
-            defaults={'name': name, 'schema_name': slug},
-        )
+        # Tenant and User live in the public schema — must switch context before creating them.
+        # The request arrives scoped to a tenant schema (e.g. hl-01); without this wrapper
+        # django-tenants raises "Can't create tenant outside the public schema."
+        try:
+            with schema_context('public'):
+                from django.db import IntegrityError as DBIntegrityError
+                try:
+                    tenant, _ = Tenant.objects.get_or_create(
+                        slug=slug,
+                        defaults={'name': name, 'schema_name': slug},
+                    )
+                except DBIntegrityError:
+                    # Tenant name collision (another tenant already has this name).
+                    # Fall back to slug as the tenant name — it is always unique.
+                    tenant, _ = Tenant.objects.get_or_create(
+                        slug=slug,
+                        defaults={'name': slug, 'schema_name': slug},
+                    )
 
-        # Auto-create a portal login (username=client_id, password=admin, role=client)
-        username = client_id_val or slug
-        if not User.objects.filter(username=username).exists():
-            User.objects.create_user(
-                username=username,
-                email=email,
-                password='admin',
-                role='client',
-                tenant=tenant,
-            )
+                username = client_id_val or slug.upper()
+                if not User.objects.filter(username=username).exists():
+                    from django.utils.crypto import get_random_string
+                    temp_password = get_random_string(20)
+                    User.objects.create_user(
+                        username=username,
+                        email=email,
+                        password=temp_password,
+                        role='client',
+                        tenant=tenant,
+                    )
+                    logger.info("Created client user '%s' with a temporary password.", username)
+                    # Surfaced once in the create response so an admin can hand it to the
+                    # client immediately — there is no email flow yet to deliver it another
+                    # way. Never logged, never stored anywhere, never returned again after
+                    # this response (a fresh GET/list call never includes it).
+                    self.request._created_client_password = temp_password
+        except (DRFValidationError, APIException):
+            raise
+        except Exception as exc:
+            logger.exception("Unexpected error in ClientViewSet.perform_create (slug=%s)", slug)
+            raise APIException(
+                detail=f"Failed to provision client workspace: {type(exc).__name__}: {exc}"
+            ) from exc
 
-        serializer.save(tenant=tenant)
+        # Attach the username to the request so the view can surface it in the response
+        self.request._created_client_username = username
+        serializer.save(tenant=tenant, client_id=client_id_val)
+
+    def create(self, request, *args, **kwargs):
+        response = super().create(request, *args, **kwargs)
+        username = getattr(request, '_created_client_username', None)
+        password = getattr(request, '_created_client_password', None)
+        if username:
+            response.data['login_username'] = username
+        if password:
+            response.data['login_password'] = password
+        return response
+
+
+class ClientResetPasswordView(APIView):
+    """
+    POST /api/clients/{id}/reset-password/  { new_password }
+    Admin-only: reset the login password for the user account linked to a client.
+    """
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, client_id):
+        from django_tenants.utils import schema_context
+        from rest_framework.exceptions import PermissionDenied, ValidationError as DRFValidationError
+
+        if request.user.role not in ('admin', 'lab_manager'):
+            raise PermissionDenied("Only admins and lab managers can reset client passwords.")
+
+        new_password = request.data.get('new_password', '').strip()
+        if len(new_password) < 8:
+            raise DRFValidationError({'new_password': ['Password must be at least 8 characters.']})
+
+        try:
+            client = Client.objects.get(pk=client_id)
+        except Client.DoesNotExist:
+            return Response({'detail': 'Client not found.'}, status=404)
+
+        username = client.client_id or ''
+        if not username:
+            return Response({'detail': 'This client has no linked user account.'}, status=400)
+
+        with schema_context('public'):
+            try:
+                user = User.objects.get(username=username)
+                user.set_password(new_password)
+                user.save()
+                logger.info("Password reset for client user '%s' by '%s'.", username, request.user.username)
+                return Response({'detail': f"Password for {username} updated successfully."})
+            except User.DoesNotExist:
+                return Response({'detail': f'No user account found for username "{username}".'}, status=404)
 
 
 class TenantListView(ListAPIView):
@@ -159,6 +248,16 @@ class TenantDetailView(RetrieveUpdateAPIView):
     permission_classes = [IsAuthenticated]
     queryset = Tenant.objects.prefetch_related('domains').all()
 
+    def get_object(self):
+        from django_tenants.utils import schema_context
+        with schema_context('public'):
+            return super().get_object()
+
+    def update(self, request, *args, **kwargs):
+        from django_tenants.utils import schema_context
+        with schema_context('public'):
+            return super().update(request, *args, **kwargs)
+
 
 class TenantLogoView(APIView):
     """Upload or delete the tenant logo."""
@@ -167,18 +266,26 @@ class TenantLogoView(APIView):
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_object(self, tenant_id):
-        return Tenant.objects.get(pk=tenant_id)
+        from django.shortcuts import get_object_or_404
+        from django_tenants.utils import schema_context
+        with schema_context('public'):
+            return get_object_or_404(Tenant, pk=tenant_id)
 
     def post(self, request, tenant_id):
-        tenant = self.get_object(tenant_id)
-        serializer = TenantLogoSerializer(tenant, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response({'logo': request.build_absolute_uri(tenant.logo.url) if tenant.logo else None})
-        return Response(serializer.errors, status=400)
+        from django_tenants.utils import schema_context
+        with schema_context('public'):
+            tenant = self.get_object(tenant_id)
+            serializer = TenantLogoSerializer(tenant, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                logo_url = request.build_absolute_uri(tenant.logo.url) if tenant.logo else None
+                return Response({'logo': logo_url})
+            return Response(serializer.errors, status=400)
 
     def delete(self, request, tenant_id):
-        tenant = self.get_object(tenant_id)
-        if tenant.logo:
-            tenant.logo.delete(save=True)
+        from django_tenants.utils import schema_context
+        with schema_context('public'):
+            tenant = self.get_object(tenant_id)
+            if tenant.logo:
+                tenant.logo.delete(save=True)
         return Response({'logo': None})

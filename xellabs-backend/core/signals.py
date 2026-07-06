@@ -1,0 +1,66 @@
+"""
+Django signals to trigger SENAITE sync automatically.
+"""
+import logging
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+
+logger = logging.getLogger(__name__)
+
+
+def _register_client_signal():
+    from core.models import Client
+    from core.tasks import sync_client_to_senaite
+
+    @receiver(post_save, sender=Client, dispatch_uid="senaite_sync_client")
+    def on_client_saved(sender, instance, created, **kwargs):
+        # Skip if already queued within this save (avoid double-fire)
+        sync_client_to_senaite.apply_async(args=[instance.pk], countdown=2)
+        logger.debug("Queued SENAITE sync for client pk=%s", instance.pk)
+
+
+def _register_ar_signal():
+    from django.db import connection
+    from lims.models import AnalysisRequest
+    from core.tasks import sync_analysis_request_to_senaite
+
+    @receiver(post_save, sender=AnalysisRequest, dispatch_uid="senaite_sync_ar")
+    def on_ar_saved(sender, instance, created, **kwargs):
+        if created:
+            # AnalysisRequest is a tenant-app model — capture the schema the save
+            # happened in now, since the Celery worker has no request context to
+            # infer it from later (it would otherwise default to 'public').
+            schema_name = connection.schema_name
+            sync_analysis_request_to_senaite.apply_async(args=[instance.pk, schema_name], countdown=5)
+            logger.debug("Queued SENAITE AR sync for AR pk=%s (schema=%s)", instance.pk, schema_name)
+
+
+def _register_test_signal():
+    from django.db import connection
+    from lims.models import Test
+    from core.tasks import sync_test_to_senaite
+
+    @receiver(post_save, sender=Test, dispatch_uid="senaite_sync_test")
+    def on_test_saved(sender, instance, created, **kwargs):
+        schema_name = connection.schema_name
+        sync_test_to_senaite.apply_async(args=[instance.pk, schema_name], countdown=2)
+        logger.debug("Queued SENAITE sync for Test pk=%s (schema=%s)", instance.pk, schema_name)
+
+
+def _register_sample_type_signal():
+    from django.db import connection
+    from lims.models import SampleType
+    from core.tasks import sync_sample_type_to_senaite
+
+    @receiver(post_save, sender=SampleType, dispatch_uid="senaite_sync_sample_type")
+    def on_sample_type_saved(sender, instance, created, **kwargs):
+        schema_name = connection.schema_name
+        sync_sample_type_to_senaite.apply_async(args=[instance.pk, schema_name], countdown=2)
+        logger.debug("Queued SENAITE sync for SampleType pk=%s (schema=%s)", instance.pk, schema_name)
+
+
+def register_all():
+    _register_client_signal()
+    _register_ar_signal()
+    _register_test_signal()
+    _register_sample_type_signal()

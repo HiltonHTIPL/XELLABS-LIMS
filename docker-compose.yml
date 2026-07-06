@@ -181,7 +181,7 @@ services:
       - SESSION_SECRET=${SESSION_SECRET}
       - DJANGO_SERVICE_TOKEN=${DJANGO_SERVICE_TOKEN}
       - DEFAULT_TENANT_SCHEMA=hl-01
-      - NODE_ENV=production
+      - NODE_ENV=${NODE_ENV:-production}
     volumes:
       - ./xellabs-frontend:/app   # source mount — build runs against latest code on every container start
       - /app/node_modules         # preserve packages installed during image build

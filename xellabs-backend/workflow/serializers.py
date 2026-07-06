@@ -44,6 +44,16 @@ class ApprovalSerializer(serializers.ModelSerializer):
         fields = "__all__"
         read_only_fields = ("requested_by", "reviewed_by", "requested_at", "reviewed_at")
 
+    def validate(self, attrs):
+        content_type = attrs.get("content_type") or getattr(self.instance, "content_type", None)
+        object_id = attrs.get("object_id") or getattr(self.instance, "object_id", None)
+        if content_type and object_id is not None:
+            try:
+                content_type.get_object_for_this_type(pk=object_id)
+            except content_type.model_class().DoesNotExist:
+                raise serializers.ValidationError("The object this approval refers to does not exist.")
+        return attrs
+
     def create(self, validated_data):
         validated_data["requested_by"] = self.context["request"].user
         return super().create(validated_data)
@@ -74,7 +84,9 @@ class SignRequestSerializer(serializers.Serializer):
             ct = ContentType.objects.get(app_label=attrs["app_label"], model=attrs["model"])
         except ContentType.DoesNotExist:
             raise serializers.ValidationError("Unknown content type.")
-        if not ct.get_object_for_this_type(pk=attrs["object_id"]):
+        try:
+            ct.get_object_for_this_type(pk=attrs["object_id"])
+        except ct.model_class().DoesNotExist:
             raise serializers.ValidationError("Object not found.")
         attrs["content_type"] = ct
 

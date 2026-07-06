@@ -48,26 +48,53 @@ class SpecificationViewSet(viewsets.ModelViewSet):
 
 
 class SampleViewSet(viewsets.ModelViewSet):
-    queryset = Sample.objects.select_related("client", "sample_type", "created_by").all()
+    queryset = Sample.objects.select_related("client", "sample_type", "created_by", "received_by").all()
     serializer_class = SampleSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["status", "sample_type", "client"]
+    filterset_fields = ["status", "sample_type", "client", "priority", "hold_for_qa"]
     search_fields = ["sample_id", "barcode", "description"]
-    ordering_fields = ["created_at", "collection_date", "received_date"]
+    ordering_fields = ["created_at", "collection_date", "received_date", "expiry_date"]
+
+    @action(detail=False, methods=["get"])
+    def stats(self, request):
+        from django.utils import timezone
+        qs = self.get_queryset()
+        now = timezone.now()
+        return Response({
+            "logged":         qs.filter(status="registered").count(),
+            "received":       qs.filter(status="received").count(),
+            "in_process":     qs.filter(status="in_progress").count(),
+            "to_be_verified": qs.filter(status="results_pending").count(),
+            "on_hold_for_qa": qs.filter(hold_for_qa=True).count(),
+            "completed":      qs.filter(status="published").count(),
+            "overdue":        qs.filter(
+                expiry_date__lt=now
+            ).exclude(status__in=["published", "disposed", "rejected"]).count(),
+        })
 
     @action(detail=True, methods=["post"])
     def receive(self, request, pk=None):
         from .services import receive_sample
         sample = self.get_object()
+        intake = {
+            "location":            request.data.get("location", ""),
+            "notes":               request.data.get("notes", ""),
+            "condition":           request.data.get("condition", ""),
+            "seal_condition":      request.data.get("seal_condition", ""),
+            "seal_number":         request.data.get("seal_number", ""),
+            "quantity_received":   request.data.get("quantity_received"),
+            "quantity_unit":       request.data.get("quantity_unit", ""),
+            "sampling_deviation":  request.data.get("sampling_deviation", ""),
+            "storage_requirement": request.data.get("storage_requirement", ""),
+            "priority":            request.data.get("priority", ""),
+            "hold_for_qa":         request.data.get("hold_for_qa", False),
+            "collector":           request.data.get("collector", ""),
+        }
         try:
-            receive_sample(
-                sample, request.user,
-                location=request.data.get("location", ""),
-                notes=request.data.get("notes", ""),
-            )
+            receive_sample(sample, request.user, **intake)
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response(SampleSerializer(sample).data)
+        return Response(SampleSerializer(sample, context={"request": request}).data)
 
 
 class AnalysisRequestViewSet(viewsets.ModelViewSet):

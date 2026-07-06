@@ -25,6 +25,7 @@ export async function djangoFetch(
   const tenantSubdomain =
     session?.tenantSubdomain ||
     headerStore.get('x-tenant-subdomain') ||
+    process.env.DEFAULT_TENANT_SCHEMA ||
     ''
 
   const tenantHeaders: Record<string, string> = {}
@@ -32,17 +33,26 @@ export async function djangoFetch(
     tenantHeaders['X-Tenant-Schema'] = tenantSubdomain
   }
 
+  const token =
+    session?.djangoToken ||
+    process.env.DJANGO_SERVICE_TOKEN ||
+    ''
+
   const authHeaders: Record<string, string> = {}
-  if (!init.skipAuth && session?.djangoToken) {
-    authHeaders['Authorization'] = `Token ${session.djangoToken}`
+  if (!init.skipAuth && token) {
+    authHeaders['Authorization'] = `Token ${token}`
   }
 
   const { skipAuth: _omit, ...fetchInit } = init
 
+  // Don't set Content-Type for FormData bodies — fetch must set its own
+  // multipart boundary, and a forced 'application/json' here would break uploads.
+  const isFormData = typeof FormData !== 'undefined' && fetchInit.body instanceof FormData
+
   return fetch(`${DJANGO_API}${path}`, {
     ...fetchInit,
     headers: {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...authHeaders,
       ...tenantHeaders,
       ...(fetchInit.headers as Record<string, string> | undefined),
