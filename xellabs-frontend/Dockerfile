@@ -8,6 +8,8 @@ COPY . .
 
 EXPOSE 3000
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV WATCHPACK_POLLING=true
+ENV NODE_ENV=production
 
-CMD ["npm", "run", "dev", "--", "-H", "0.0.0.0"]
+# Build then start. Volume-mounted source overrides COPY at runtime,
+# so the build always uses the latest code from the host.
+CMD ["sh", "-c", "npm run build && npm start -- -H 0.0.0.0"]

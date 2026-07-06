@@ -67,6 +67,9 @@ class SampleSerializer(RecordLockMixin, serializers.ModelSerializer):
         validated_data["created_by"] = self.context["request"].user
         if not validated_data.get("sample_id"):
             validated_data["sample_id"] = generate_sample_id(validated_data["sample_type"])
+        # barcode defaults to sample_id so every sample is always scannable
+        if not validated_data.get("barcode"):
+            validated_data["barcode"] = validated_data["sample_id"]
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
