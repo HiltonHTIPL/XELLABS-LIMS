@@ -27,45 +27,161 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
         if not sample_id:
             return Response({"error": "sample_id is required."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Fetch sample from lims — search by sample_id OR barcode
+        from lims.models import Sample
+        sample_obj = (
+            Sample.objects.select_related("sample_type", "client", "received_by")
+            .filter(sample_id=sample_id)
+            .first()
+        )
+        if not sample_obj:
+            # Try barcode lookup
+            sample_obj = (
+                Sample.objects.select_related("sample_type", "client", "received_by")
+                .filter(barcode=sample_id)
+                .first()
+            )
+        if not sample_obj:
+            return Response({"error": f"Sample '{sample_id}' not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Use the canonical sample_id (barcode scan may have passed barcode value)
+        canonical_id = sample_obj.sample_id
+
+        sample_data = {
+            "sample_id": canonical_id,
+            "status": sample_obj.status,
+            "status_display": sample_obj.get_status_display(),
+            "sample_type": sample_obj.sample_type.name if sample_obj.sample_type else "",
+            "client": sample_obj.client.name if sample_obj.client else "",
+            "barcode": sample_obj.barcode or "",
+            "collection_date": sample_obj.collection_date.isoformat() if sample_obj.collection_date else None,
+            "received_date": sample_obj.received_date.isoformat() if sample_obj.received_date else None,
+            "expiry_date": sample_obj.expiry_date.isoformat() if sample_obj.expiry_date else None,
+            "condition": sample_obj.condition or "",
+            "seal_condition": sample_obj.seal_condition or "",
+            "priority": sample_obj.priority or "",
+            "storage_requirement": sample_obj.storage_requirement or "",
+            "sampling_deviation": sample_obj.sampling_deviation or "",
+            "quantity_received": str(sample_obj.quantity_received) if sample_obj.quantity_received is not None else "",
+            "quantity_unit": sample_obj.quantity_unit or "",
+            "hold_for_qa": sample_obj.hold_for_qa,
+            "received_by": (
+                sample_obj.received_by.get_full_name() or sample_obj.received_by.username
+            ) if sample_obj.received_by else "",
+            "receipt_notes": sample_obj.receipt_notes or "",
+        }
+
         # Current slot holding this sample
         slot = StorageLocation.objects.filter(
-            location_type="box_location", assigned_sample_id=sample_id
+            location_type="box_location", assigned_sample_id=canonical_id
         ).select_related("parent__parent__parent__parent").first()
 
         current_location = None
         if slot:
-            # Build path
             path_parts = []
             node = slot
             while node:
                 path_parts.insert(0, node.name)
                 node = node.parent
+            # Capacity of the parent box
+            capacity = None
+            if slot.parent and slot.parent.location_type == "box":
+                box = slot.parent
+                total = StorageLocation.objects.filter(parent=box, location_type="box_location").count()
+                occupied = StorageLocation.objects.filter(parent=box, location_type="box_location", is_occupied=True).count()
+                capacity = {"total": total, "occupied": occupied, "free": total - occupied}
             current_location = {
                 "slot_id": slot.slot_id,
                 "slot_name": slot.name,
                 "storage_path": " / ".join(path_parts),
                 "temperature": slot.parent.temperature if slot.parent else "",
+                "capacity": capacity,
             }
 
-        # Audit trail for this sample
+        # Build full audit history from multiple sources
         from audittrail.models import AuditEvent
-        events = AuditEvent.objects.filter(
-            action="store", object_repr__icontains=sample_id
+        history = []
+
+        # 1. Sample registration event
+        history.append({
+            "id": 0,
+            "timestamp": sample_obj.created_at.isoformat(),
+            "user": (
+                sample_obj.created_by.get_full_name() or sample_obj.created_by.username
+            ) if hasattr(sample_obj, "created_by") and sample_obj.created_by else "System",
+            "event_type": "sample_registered",
+            "label": "Sample Registered",
+            "details": {"sample_id": canonical_id, "sample_type": sample_data["sample_type"]},
+        })
+
+        # 2. Sample received event (if received_date is set)
+        if sample_obj.received_date:
+            history.append({
+                "id": -1,
+                "timestamp": sample_obj.received_date.isoformat(),
+                "user": sample_data["received_by"] or "System",
+                "event_type": "sample_received",
+                "label": "Sample Received",
+                "details": {
+                    "condition": sample_data["condition"],
+                    "seal_condition": sample_data["seal_condition"],
+                    "quantity": sample_data["quantity_received"],
+                    "unit": sample_data["quantity_unit"],
+                },
+            })
+
+        # 3. Store/release events from AuditEvent
+        audit_events = AuditEvent.objects.filter(
+            object_repr__icontains=canonical_id
         ).select_related("user").order_by("timestamp")
 
-        history = [
-            {
-                "id": e.pk,
-                "timestamp": e.timestamp.isoformat(),
-                "user": e.user.get_full_name() or e.user.username if e.user else "System",
-                "description": e.object_repr,
-                "extra": e.extra_data or {},
-            }
-            for e in events
-        ]
+        for e in audit_events:
+            extra = e.extra_data or {}
+            if e.action == "store":
+                history.append({
+                    "id": e.pk,
+                    "timestamp": e.timestamp.isoformat(),
+                    "user": e.user.get_full_name() or e.user.username if e.user else "System",
+                    "event_type": "stored",
+                    "label": "Stored in " + extra.get("storage_path", "Storage"),
+                    "details": extra,
+                })
+            elif e.action == "update" and extra.get("slot_id"):
+                history.append({
+                    "id": e.pk,
+                    "timestamp": e.timestamp.isoformat(),
+                    "user": e.user.get_full_name() or e.user.username if e.user else "System",
+                    "event_type": "released",
+                    "label": "Released from Storage",
+                    "details": extra,
+                })
+
+        # 4. Status change events from AuditEvent
+        status_events = AuditEvent.objects.filter(
+            action="update",
+            content_type__app_label="lims",
+            content_type__model="sample",
+            object_repr__icontains=canonical_id,
+        ).select_related("user").order_by("timestamp")
+
+        for e in status_events:
+            extra = e.extra_data or {}
+            if "status" in extra:
+                history.append({
+                    "id": e.pk,
+                    "timestamp": e.timestamp.isoformat(),
+                    "user": e.user.get_full_name() or e.user.username if e.user else "System",
+                    "event_type": "status_change",
+                    "label": f"Status → {extra['status']}",
+                    "details": extra,
+                })
+
+        # Sort all events by timestamp
+        history.sort(key=lambda x: x["timestamp"])
 
         return Response({
-            "sample_id": sample_id,
+            "sample_id": canonical_id,
+            "sample": sample_data,
             "current_location": current_location,
             "history": history,
         })
