@@ -1,5 +1,7 @@
-import UnderDevelopment from '../_components/UnderDevelopment'
+import { getStorageLocations } from '@/app/actions/storage'
+import StorageShell from './_components/StorageShell'
 
-export default function StoragePage() {
-  return <UnderDevelopment title="Storage Management" />
+export default async function StoragePage() {
+  const locations = await getStorageLocations()
+  return <StorageShell initialLocations={locations} />
 }
