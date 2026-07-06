@@ -55,3 +55,38 @@ def check_sample_expiry(days_ahead=7):
     if ids:
         logger.warning("Samples expiring within %d days: %s", days_ahead, ids)
     return ids
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=30)
+def sync_storage_location_to_senaite(self, location_id: int):
+    """Sync a single StorageLocation to SENAITE and store the returned UID."""
+    from inventory.models import StorageLocation
+    from core.senaite_service import push_storage_location
+
+    try:
+        location = StorageLocation.objects.get(id=location_id)
+    except StorageLocation.DoesNotExist:
+        logger.warning("sync_storage_location_to_senaite: location %s not found", location_id)
+        return
+
+    uid = push_storage_location(location)
+    if uid:
+        StorageLocation.objects.filter(id=location_id).update(senaite_uid=uid)
+        logger.info("Updated senaite_uid for location %s -> %s", location_id, uid)
+    else:
+        logger.warning("SENAITE sync returned no UID for location %s, retrying...", location_id)
+        raise self.retry(exc=Exception(f"SENAITE sync returned no UID for location {location_id}"), countdown=30)
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=30)
+def sync_box_slots_to_senaite(self, box_id: int):
+    """Sync all slot children of a box to SENAITE."""
+    from inventory.models import StorageLocation
+    from core.senaite_service import push_storage_location
+
+    slots = StorageLocation.objects.filter(parent_id=box_id, location_type='box_location')
+    for slot in slots:
+        uid = push_storage_location(slot)
+        if uid:
+            StorageLocation.objects.filter(id=slot.id).update(senaite_uid=uid)
+    logger.info("Synced %d slots for box %s to SENAITE", slots.count(), box_id)

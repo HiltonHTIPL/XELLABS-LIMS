@@ -103,7 +103,7 @@ class ClientViewSet(ModelViewSet):
     def perform_create(self, serializer):
         from django.utils.text import slugify
         from django_tenants.utils import schema_context
-        from rest_framework.exceptions import ValidationError as DRFValidationError, APIException
+        from rest_framework.exceptions import ValidationError as DRFValidationError
 
         name = serializer.validated_data.get('name', '')
         # Normalise client_id to uppercase so "hl-01" and "HL-01" are the same
@@ -121,46 +121,38 @@ class ClientViewSet(ModelViewSet):
         # Tenant and User live in the public schema — must switch context before creating them.
         # The request arrives scoped to a tenant schema (e.g. hl-01); without this wrapper
         # django-tenants raises "Can't create tenant outside the public schema."
-        try:
-            with schema_context('public'):
-                from django.db import IntegrityError as DBIntegrityError
-                try:
-                    tenant, _ = Tenant.objects.get_or_create(
-                        slug=slug,
-                        defaults={'name': name, 'schema_name': slug},
-                    )
-                except DBIntegrityError:
-                    # Tenant name collision (another tenant already has this name).
-                    # Fall back to slug as the tenant name — it is always unique.
-                    tenant, _ = Tenant.objects.get_or_create(
-                        slug=slug,
-                        defaults={'name': slug, 'schema_name': slug},
-                    )
+        with schema_context('public'):
+            from django.db import IntegrityError as DBIntegrityError
+            try:
+                tenant, _ = Tenant.objects.get_or_create(
+                    slug=slug,
+                    defaults={'name': name, 'schema_name': slug},
+                )
+            except DBIntegrityError:
+                # Tenant name collision (another tenant already has this name).
+                # Fall back to slug as the tenant name — it is always unique.
+                tenant, _ = Tenant.objects.get_or_create(
+                    slug=slug,
+                    defaults={'name': slug, 'schema_name': slug},
+                )
 
-                username = client_id_val or slug.upper()
-                if not User.objects.filter(username=username).exists():
-                    from django.utils.crypto import get_random_string
-                    temp_password = get_random_string(20)
-                    User.objects.create_user(
-                        username=username,
-                        email=email,
-                        password=temp_password,
-                        role='client',
-                        tenant=tenant,
-                    )
-                    logger.info("Created client user '%s' with a temporary password.", username)
-                    # Surfaced once in the create response so an admin can hand it to the
-                    # client immediately — there is no email flow yet to deliver it another
-                    # way. Never logged, never stored anywhere, never returned again after
-                    # this response (a fresh GET/list call never includes it).
-                    self.request._created_client_password = temp_password
-        except (DRFValidationError, APIException):
-            raise
-        except Exception as exc:
-            logger.exception("Unexpected error in ClientViewSet.perform_create (slug=%s)", slug)
-            raise APIException(
-                detail=f"Failed to provision client workspace: {type(exc).__name__}: {exc}"
-            ) from exc
+            username = client_id_val or slug.upper()
+            if not User.objects.filter(username=username).exists():
+                from django.utils.crypto import get_random_string
+                temp_password = get_random_string(20)
+                User.objects.create_user(
+                    username=username,
+                    email=email,
+                    password=temp_password,
+                    role='client',
+                    tenant=tenant,
+                )
+                logger.info("Created client user '%s' with a temporary password.", username)
+                # Surfaced once in the create response so an admin can hand it to the
+                # client immediately — there is no email flow yet to deliver it another
+                # way. Never logged, never stored anywhere, never returned again after
+                # this response (a fresh GET/list call never includes it).
+                self.request._created_client_password = temp_password
 
         # Attach the username to the request so the view can surface it in the response
         self.request._created_client_username = username

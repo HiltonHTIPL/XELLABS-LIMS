@@ -48,29 +48,12 @@ class SpecificationViewSet(viewsets.ModelViewSet):
 
 
 class SampleViewSet(viewsets.ModelViewSet):
-    queryset = Sample.objects.select_related("client", "sample_type", "created_by", "received_by").all()
+    queryset = Sample.objects.select_related("client", "sample_type", "created_by").all()
     serializer_class = SampleSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["status", "sample_type", "client", "priority", "hold_for_qa"]
+    filterset_fields = ["status", "sample_type", "client"]
     search_fields = ["sample_id", "barcode", "description"]
-    ordering_fields = ["created_at", "collection_date", "received_date", "expiry_date"]
-
-    @action(detail=False, methods=["get"])
-    def stats(self, request):
-        from django.utils import timezone
-        qs = self.get_queryset()
-        now = timezone.now()
-        return Response({
-            "logged":         qs.filter(status="registered").count(),
-            "received":       qs.filter(status="received").count(),
-            "in_process":     qs.filter(status="in_progress").count(),
-            "to_be_verified": qs.filter(status="results_pending").count(),
-            "on_hold_for_qa": qs.filter(hold_for_qa=True).count(),
-            "completed":      qs.filter(status="published").count(),
-            "overdue":        qs.filter(
-                expiry_date__lt=now
-            ).exclude(status__in=["published", "disposed", "rejected"]).count(),
-        })
+    ordering_fields = ["created_at", "collection_date", "received_date"]
 
     @action(detail=True, methods=["post"])
     def receive(self, request, pk=None):

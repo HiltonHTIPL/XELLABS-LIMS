@@ -3,7 +3,6 @@ SENAITE REST API client.
 Handles authentication and CRUD operations for clients and analysis requests.
 """
 import logging
-import time
 import requests
 from django.conf import settings
 
@@ -103,94 +102,6 @@ def push_client(client) -> str | None:
     except requests.RequestException as exc:
         logger.error("SENAITE client sync failed for '%s': %s", client.name, exc)
         return None
-
-
-# ── Test → Analysis Service sync ────────────────────────────────────────────────
-
-def push_test(test) -> str | None:
-    """
-    Create or update the SENAITE Analysis Service matching a Django Test.
-    Returns the SENAITE UID on success, None on failure.
-    """
-    s = _session()
-    payload = {
-        "title": test.name,
-        "Keyword": (test.code or test.name)[:20].upper().replace(" ", "").replace("-", ""),
-        "Unit": test.unit or "",
-    }
-
-    # IMPORTANT: do not add a "Category" field to this payload. Confirmed via direct
-    # testing (100+ attempts): SENAITE's create/update endpoint for AnalysisService
-    # crashes internally (silently, HTTP 200 with a misleading error message) whenever
-    # Category is present in the payload, in this SENAITE build — with or without
-    # Category ever succeeding. Every attempt WITHOUT Category succeeded; every attempt
-    # WITH it failed. Category ends up unset on the resulting service (cosmetic/
-    # organizational only in SENAITE) — this does not affect Analysis Requests,
-    # Worksheets, or Results, which only need the title/UID to match.
-    for attempt in range(3):
-        try:
-            if test.senaite_uid:
-                payload["uid"] = test.senaite_uid
-                resp = s.post(_api("update"), json=payload, timeout=15)
-            else:
-                payload["portal_type"] = "AnalysisService"
-                payload["parent_path"] = "/senaite/bika_setup/bika_analysisservices"
-                resp = s.post(_api("create"), json=payload, timeout=15)
-            resp.raise_for_status()
-
-            lookup = s.get(_api("AnalysisService"), params={"complete": "true", "limit": "1000"}, timeout=15)
-            lookup.raise_for_status()
-            for item in lookup.json().get("items") or []:
-                if (item.get("title") or "").strip().lower() == test.name.strip().lower():
-                    uid = item.get("uid")
-                    logger.info("SENAITE Test sync OK: %s → uid=%s (attempt %d)", test.name, uid, attempt + 1)
-                    return uid
-
-            logger.warning("SENAITE Test sync: '%s' not found after attempt %d/3.", test.name, attempt + 1)
-        except requests.RequestException as exc:
-            logger.error("SENAITE Test sync attempt %d/3 failed for '%s': %s", attempt + 1, test.name, exc)
-        time.sleep(1)
-
-    return None
-
-
-# ── SampleType sync ──────────────────────────────────────────────────────────────
-
-def push_sample_type(sample_type) -> str | None:
-    """
-    Create or update the SENAITE SampleType matching a Django SampleType.
-    Returns the SENAITE UID on success, None on failure.
-    """
-    s = _session()
-    payload = {
-        "title": sample_type.name,
-        "Prefix": sample_type.prefix or sample_type.name[:2].upper(),
-        "min_volume": "1 ml",
-    }
-
-    import time
-    for attempt in range(3):
-        try:
-            if sample_type.senaite_uid:
-                payload["uid"] = sample_type.senaite_uid
-                resp = s.post(_api("update"), json=payload, timeout=15)
-            else:
-                payload["portal_type"] = "SampleType"
-                payload["parent_path"] = "/senaite/setup/sampletypes"
-                resp = s.post(_api("create"), json=payload, timeout=15)
-            resp.raise_for_status()
-            data = resp.json()
-            items = data.get("items") or []
-            if items:
-                uid = items[0].get("uid") or items[0].get("UID")
-                logger.info("SENAITE SampleType sync OK: %s → uid=%s (attempt %d)", sample_type.name, uid, attempt + 1)
-                return uid
-            logger.warning("SENAITE SampleType sync: unexpected response on attempt %d/3: %s", attempt + 1, data)
-        except requests.RequestException as exc:
-            logger.error("SENAITE SampleType sync attempt %d/3 failed for '%s': %s", attempt + 1, sample_type.name, exc)
-        time.sleep(1)
-
-    return None
 
 
 # ── Analysis Request sync ─────────────────────────────────────────────────────
@@ -311,4 +222,71 @@ def push_analysis_request(ar) -> str | None:
 
     except requests.RequestException as exc:
         logger.error("SENAITE AR sync failed for '%s': %s", ar.ar_id, exc)
+        return None
+
+
+# ── Storage Location sync ─────────────────────────────────────────────────────
+
+def _build_storage_path(location) -> str:
+    """Walk up parent chain to build full path, e.g. 'Room 1 / Fridge A / Shelf 2'."""
+    from inventory.models import StorageLocation
+    parts = [location.name]
+    current = location
+    while current.parent_id:
+        try:
+            current = StorageLocation.objects.get(id=current.parent_id)
+            parts.insert(0, current.name)
+        except StorageLocation.DoesNotExist:
+            break
+    return ' / '.join(parts)
+
+
+def _build_senaite_payload(location, title: str) -> dict:
+    payload = {
+        "title": title,
+        "description": location.description or "",
+    }
+    for field in [
+        "address", "site_title", "site_code", "site_description",
+        "location_title", "location_code", "location_description",
+        "shelf_title", "shelf_code", "shelf_description",
+    ]:
+        val = getattr(location, field, "")
+        if val:
+            payload[field] = val
+    if location.senaite_location_type:
+        payload["location_type"] = location.senaite_location_type
+    return payload
+
+
+def push_storage_location(location) -> "str | None":
+    """
+    Create or update a StorageLocation in SENAITE.
+    Returns SENAITE UID on success, None on failure (non-fatal).
+    """
+    s = _session()
+    title = _build_storage_path(location)
+
+    try:
+        payload = _build_senaite_payload(location, title)
+
+        if location.senaite_uid:
+            resp = s.post(_api(f"update/{location.senaite_uid}"), json=payload, timeout=15)
+        else:
+            payload["portal_type"] = "StorageLocation"
+            payload["parent_path"] = "/senaite/setup/storagelocations"
+            resp = s.post(_api("create"), json=payload, timeout=15)
+
+        resp.raise_for_status()
+        items = resp.json().get("items") or []
+        if items:
+            uid = items[0].get("uid") or items[0].get("UID")
+            logger.info("SENAITE storage sync OK: '%s' -> uid=%s", title, uid)
+            return uid
+
+        logger.warning("SENAITE storage sync: unexpected response for '%s': %s", title, resp.json())
+        return None
+
+    except Exception as exc:
+        logger.error("SENAITE storage sync failed for '%s': %s", title, exc)
         return None

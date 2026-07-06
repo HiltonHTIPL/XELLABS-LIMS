@@ -5,16 +5,52 @@ from django.contrib.contenttypes.models import ContentType
 
 
 class StorageLocation(models.Model):
-    name = models.CharField(max_length=200)
-    location_type = models.CharField(max_length=50, default="room",
-                                     choices=[("room", "Room"), ("fridge", "Fridge"), ("freezer", "Freezer"),
-                                              ("cabinet", "Cabinet"), ("shelf", "Shelf")])
-    parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="children")
-    temperature = models.CharField(max_length=50, blank=True)
-    notes = models.TextField(blank=True)
+    LOCATION_TYPES = [
+        ("room",         "Room"),
+        ("fridge",       "Fridge"),
+        ("freezer",      "Freezer"),
+        ("cabinet",      "Cabinet"),
+        ("shelf",        "Shelf"),
+        ("box",          "Box"),
+        ("box_location", "Box Location"),
+    ]
+
+    name          = models.CharField(max_length=200)
+    location_type = models.CharField(max_length=50, default="room", choices=LOCATION_TYPES)
+    parent        = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="children")
+    temperature   = models.CharField(max_length=50, blank=True)
+    notes         = models.TextField(blank=True)
+    # SENAITE metadata fields
+    description        = models.TextField(blank=True)
+    address            = models.CharField(max_length=500, blank=True)
+    site_title         = models.CharField(max_length=200, blank=True)
+    site_code          = models.CharField(max_length=100, blank=True)
+    site_description   = models.TextField(blank=True)
+    location_title     = models.CharField(max_length=200, blank=True)
+    location_code      = models.CharField(max_length=100, blank=True)
+    location_description = models.TextField(blank=True)
+    senaite_location_type = models.CharField(max_length=100, blank=True)  # e.g. SafetyLevel1
+    shelf_title        = models.CharField(max_length=200, blank=True)
+    shelf_code         = models.CharField(max_length=100, blank=True)
+    shelf_description  = models.TextField(blank=True)
+    # SENAITE sync
+    senaite_uid   = models.CharField(max_length=100, blank=True)
+    # Box-specific
+    rows          = models.IntegerField(null=True, blank=True)
+    columns       = models.IntegerField(null=True, blank=True)
+    # Box location (slot) specific
+    slot_id            = models.CharField(max_length=20, blank=True)
+    is_occupied        = models.BooleanField(default=False)
+    assigned_sample_id = models.CharField(max_length=200, blank=True)
 
     class Meta:
         db_table = "storage_locations"
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(parent=models.F('id')),
+                name='storage_location_no_self_parent',
+            )
+        ]
 
     def __str__(self):
         return self.name
