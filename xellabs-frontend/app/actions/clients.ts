@@ -268,8 +268,12 @@ export async function updateClient(
       body: JSON.stringify(payload),
     })
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      const msg = Object.values(err).flat().join(' ') || `Error ${res.status}`
+      let msg = `Error ${res.status}`
+      try {
+        const err = await res.json()
+        const parts = Object.values(err as Record<string, unknown>).flat() as string[]
+        if (parts.length) msg = parts.join(' ')
+      } catch { /* non-JSON body */ }
       return { message: msg }
     }
     revalidatePath('/dashboard/clients')
@@ -319,8 +323,12 @@ export async function createClient(
     })
 
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      const msg = Object.values(err).flat().join(' ') || `Error ${res.status}`
+      let msg = `Error ${res.status}`
+      try {
+        const err = await res.json()
+        const parts = Object.values(err as Record<string, unknown>).flat() as string[]
+        if (parts.length) msg = parts.join(' ')
+      } catch { /* non-JSON body — keep generic message */ }
       return { message: msg }
     }
 

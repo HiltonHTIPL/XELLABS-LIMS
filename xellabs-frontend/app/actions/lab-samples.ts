@@ -29,10 +29,120 @@ export type LabSample = {
   received_date: string | null
   expiry_date: string | null
   status: string
+  condition: string
+  priority: string
+  hold_for_qa: boolean
   storage_location: string
   barcode: string
   is_locked: boolean
+  received_by_name: string
   created_at: string
+  // Extended intake fields
+  contact_name: string
+  cc_contact: string
+  cc_emails: string
+  batch_id: string
+  batch_sub_group: string
+  container_type: string
+  preservation: string
+  analysis_specification: string
+  sample_point: string
+  environmental_conditions: string
+  composite: boolean
+  internal_use: boolean
+  client_order_number: string
+  client_reference: string
+  client_sample_id: string
+}
+
+export type NewSamplePayload = {
+  client: number
+  sample_type: number
+  priority: string
+  condition: string
+  collection_date?: string
+  expiry_date?: string
+  description?: string
+  storage_location?: string
+  contact_name?: string
+  cc_contact?: string
+  cc_emails?: string
+  batch_id?: string
+  batch_sub_group?: string
+  container_type?: string
+  preservation?: string
+  analysis_specification?: string
+  sample_point?: string
+  environmental_conditions?: string
+  composite?: boolean
+  internal_use?: boolean
+  client_order_number?: string
+  client_reference?: string
+  client_sample_id?: string
+}
+
+export async function createSampleWithAnalyses(
+  payload: NewSamplePayload,
+  testIds: number[],
+): Promise<{ success: boolean; message: string; sample_id?: string }> {
+  try {
+    // Step 1: Create the sample
+    const sampleRes = await djangoFetch('/api/lims/samples/', {
+      method: 'POST',
+      body: JSON.stringify({ ...payload, status: 'registered', is_active: true }),
+    })
+    const sampleData = await sampleRes.json().catch(() => ({})) as Record<string, unknown>
+    if (!sampleRes.ok) {
+      const msg = (sampleData.client as string[])?.[0]
+        ?? (sampleData.sample_type as string[])?.[0]
+        ?? (sampleData.detail as string)
+        ?? 'Failed to create sample.'
+      return { success: false, message: msg }
+    }
+    const sampleId = sampleData.id as number
+    const sampleDisplayId = sampleData.sample_id as string
+
+    // Step 2: Create analysis request if tests selected
+    if (testIds.length > 0) {
+      const arRes = await djangoFetch('/api/lims/analysis-requests/', {
+        method: 'POST',
+        body: JSON.stringify({
+          sample: sampleId,
+          tests: testIds,
+          status: 'pending',
+          priority: payload.priority === 'high' ? 'high' : payload.priority === 'low' ? 'low' : 'normal',
+        }),
+      })
+      if (!arRes.ok) {
+        // Sample created but AR failed — return partial success
+        return { success: true, message: `Sample ${sampleDisplayId} created. Note: analysis request could not be created.`, sample_id: sampleDisplayId }
+      }
+    }
+
+    revalidatePath('/dashboard/samples-overview')
+    revalidatePath('/dashboard/analysis-requests')
+    return { success: true, message: `Sample ${sampleDisplayId} logged successfully.`, sample_id: sampleDisplayId }
+  } catch (e) {
+    return { success: false, message: String(e) }
+  }
+}
+
+export type SampleStats = {
+  logged: number
+  received: number
+  in_process: number
+  to_be_verified: number
+  on_hold_for_qa: number
+  completed: number
+  overdue: number
+}
+
+export async function getSampleStats(): Promise<SampleStats> {
+  try {
+    const res = await djangoFetch('/api/lims/samples/stats/')
+    if (!res.ok) return { logged: 0, received: 0, in_process: 0, to_be_verified: 0, on_hold_for_qa: 0, completed: 0, overdue: 0 }
+    return await res.json()
+  } catch { return { logged: 0, received: 0, in_process: 0, to_be_verified: 0, on_hold_for_qa: 0, completed: 0, overdue: 0 } }
 }
 
 export type LabSampleFormState = {

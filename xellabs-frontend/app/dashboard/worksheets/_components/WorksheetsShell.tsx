@@ -10,9 +10,9 @@ function MI({ name, size = 16, color }: { name: string; size?: number; color?: s
 }
 
 const STATE_BADGE: Record<string, { bg: string; color: string; label: string }> = {
-  open:              { bg: '#CCFBF1', color: '#0F766E', label: 'Open' },
+  open:              { bg: '#DBEAFE', color: '#0154FC', label: 'Open' },
   'to_be_verified':  { bg: '#FEF3C7', color: '#92400E', label: 'To Be Verified' },
-  verified:          { bg: '#DCFCE7', color: '#166534', label: 'Verified' },
+  verified:          { bg: '#DBEAFE', color: '#0154FC', label: 'Verified' },
   rejected:          { bg: '#FEE2E2', color: '#991B1B', label: 'Rejected' },
 }
 
@@ -31,15 +31,15 @@ export default function WorksheetsShell({ initialWorksheets }: { initialWorkshee
   }
 
   return (
-    <div style={{ padding: '12px 20px 0', backgroundColor: '#F5F6FA', minHeight: '100%' }}>
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
       <div className="flex items-center justify-between mb-3">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: '#111827' }}>Worksheets</h1>
+          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Worksheets</h1>
           <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Assign analyses to worksheets and enter results</p>
         </div>
         <button onClick={handleCreate} disabled={busy}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white"
-          style={{ backgroundColor: '#14B8A6', opacity: busy ? 0.7 : 1, cursor: busy ? 'not-allowed' : 'pointer' }}>
+          style={{ backgroundColor: '#0154FC', opacity: busy ? 0.7 : 1, cursor: busy ? 'not-allowed' : 'pointer' }}>
           <MI name={busy ? 'hourglass_top' : 'add'} size={15} color="#fff" />
           {busy ? 'Creating…' : 'New Worksheet'}
         </button>
@@ -47,25 +47,25 @@ export default function WorksheetsShell({ initialWorksheets }: { initialWorkshee
 
       {toast && (
         <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
-          style={{ backgroundColor: toast.ok ? '#ECFDF5' : '#FEF2F2', border: `1px solid ${toast.ok ? '#A7F3D0' : '#FECACA'}`, color: toast.ok ? '#065F46' : '#991B1B' }}>
-          <MI name={toast.ok ? 'check_circle' : 'error'} size={13} color={toast.ok ? '#10B981' : '#DC2626'} />
+          style={{ backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', border: toast.ok ? "1px solid #93C5FD" : "1px solid #FECACA", color: toast.ok ? '#0154FC' : '#991B1B' }}>
+          <MI name={toast.ok ? 'check_circle' : 'error'} size={13} color={toast.ok ? '#0154FC' : '#DC2626'} />
           {toast.msg}
         </div>
       )}
 
       {initialWorksheets.length === 0 ? (
-        <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E5E7EB' }}>
+        <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="table_chart" size={36} color="#D1D5DB" />
           <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No worksheets yet</p>
           <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>Create a worksheet to start assigning analyses</p>
           <button onClick={handleCreate} disabled={busy}
             className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white"
-            style={{ backgroundColor: '#14B8A6' }}>
+            style={{ backgroundColor: '#0154FC' }}>
             <MI name="add" size={13} color="#fff" /> New Worksheet
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E5E7EB' }}>
+        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
           <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
             <colgroup>
               <col style={{ width: '20%' }} /><col style={{ width: '25%' }} /><col style={{ width: '15%' }} /><col style={{ width: '18%' }} /><col style={{ width: '14%' }} /><col style={{ width: '8%' }} />

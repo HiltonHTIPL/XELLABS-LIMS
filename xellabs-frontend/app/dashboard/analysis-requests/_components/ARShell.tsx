@@ -19,7 +19,7 @@ const PRIORITY_OPTIONS = [
 const STATUS_OPTIONS = [
   { value: 'pending',     label: 'Pending',     bg: '#F3F4F6', color: '#374151' },
   { value: 'in_progress', label: 'In Progress', bg: '#DBEAFE', color: '#1E40AF' },
-  { value: 'completed',   label: 'Completed',   bg: '#DCFCE7', color: '#166534' },
+  { value: 'completed',   label: 'Completed',   bg: '#DBEAFE', color: '#0154FC' },
   { value: 'cancelled',   label: 'Cancelled',   bg: '#FEE2E2', color: '#991B1B' },
 ]
 
@@ -40,8 +40,8 @@ function ARModal({ samples, tests, onClose, onDone }: { samples: LabSample[]; te
       <div style={{ backgroundColor: '#fff', borderRadius: 16, width: 520, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #F3F4F6' }}>
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#F0FDFA' }}>
-              <MI name="assignment_add" size={16} color="#14B8A6" />
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#DBEAFE' }}>
+              <MI name="assignment_add" size={16} color="#0154FC" />
             </div>
             <div>
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>New Analysis Request</h2>
@@ -95,11 +95,11 @@ function ARModal({ samples, tests, onClose, onDone }: { samples: LabSample[]; te
           </div>
           <div className="flex items-center justify-end gap-2 pt-1" style={{ borderTop: '1px solid #F3F4F6' }}>
             <button type="button" onClick={onClose} disabled={pending}
-              style={{ fontSize: 12, fontWeight: 500, padding: '7px 16px', borderRadius: 8, border: '1px solid #E5E7EB', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
+              style={{ fontSize: 12, fontWeight: 500, padding: '7px 16px', borderRadius: 8, border: '1px solid #E8EAF2', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
               Cancel
             </button>
             <button type="submit" disabled={pending} className="flex items-center gap-1.5"
-              style={{ fontSize: 12, fontWeight: 600, padding: '7px 18px', borderRadius: 8, backgroundColor: '#14B8A6', color: '#fff', border: 'none', cursor: pending ? 'not-allowed' : 'pointer', opacity: pending ? 0.7 : 1 }}>
+              style={{ fontSize: 12, fontWeight: 600, padding: '7px 18px', borderRadius: 8, backgroundColor: '#0154FC', color: '#fff', border: 'none', cursor: pending ? 'not-allowed' : 'pointer', opacity: pending ? 0.7 : 1 }}>
               <MI name={pending ? 'hourglass_top' : 'check'} size={13} color="#fff" />
               {pending ? 'Creating…' : 'Create Request'}
             </button>
@@ -132,35 +132,35 @@ export default function ARShell({ initialARs, samples, tests }: Props) {
   }
 
   return (
-    <div style={{ padding: '12px 20px 0', backgroundColor: '#F5F6FA', minHeight: '100%' }}>
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
       <div className="flex items-center justify-between mb-3">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: '#111827' }}>Analysis Requests</h1>
+          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Analysis Requests</h1>
           <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Link samples to tests and manage analysis workflow</p>
         </div>
-        <button onClick={() => setShowModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#14B8A6' }}>
+        <button onClick={() => setShowModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
           <MI name="add" size={15} color="#fff" /> New Request
         </button>
       </div>
       {toast && (
         <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
-          style={{ backgroundColor: toast.ok ? '#ECFDF5' : '#FEF2F2', border: `1px solid ${toast.ok ? '#A7F3D0' : '#FECACA'}`, color: toast.ok ? '#065F46' : '#991B1B' }}>
-          <MI name={toast.ok ? 'check_circle' : 'error'} size={13} color={toast.ok ? '#10B981' : '#DC2626'} />
+          style={{ backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', border: toast.ok ? "1px solid #93C5FD" : "1px solid #FECACA", color: toast.ok ? '#0154FC' : '#991B1B' }}>
+          <MI name={toast.ok ? 'check_circle' : 'error'} size={13} color={toast.ok ? '#0154FC' : '#DC2626'} />
           {toast.msg}
         </div>
       )}
       {showModal && <ARModal samples={samples} tests={tests} onClose={() => setShowModal(false)} onDone={handleDone} />}
       {initialARs.length === 0 ? (
-        <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E5E7EB' }}>
+        <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="assignment" size={36} color="#D1D5DB" />
           <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No analysis requests yet</p>
           <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>Register a sample first, then create an analysis request</p>
-          <button onClick={() => setShowModal(true)} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#14B8A6' }}>
+          <button onClick={() => setShowModal(true)} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
             <MI name="add" size={13} color="#fff" /> New Request
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E5E7EB' }}>
+        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
           <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
             <colgroup>
               <col style={{ width: '12%' }} /><col style={{ width: '14%' }} /><col style={{ width: '28%' }} /><col style={{ width: '10%' }} /><col style={{ width: '10%' }} /><col style={{ width: '12%' }} /><col style={{ width: '14%' }} />

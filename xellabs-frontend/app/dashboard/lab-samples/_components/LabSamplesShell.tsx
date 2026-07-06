@@ -22,11 +22,11 @@ const STATUS_OPTIONS = [
 
 const STATUS_BADGE: Record<string, { bg: string; color: string }> = {
   registered:      { bg: '#F3F4F6', color: '#374151' },
-  received:        { bg: '#CCFBF1', color: '#0F766E' },
+  received:        { bg: '#DBEAFE', color: '#0154FC' },
   in_progress:     { bg: '#DBEAFE', color: '#1E40AF' },
   results_pending: { bg: '#FEF3C7', color: '#92400E' },
   reviewed:        { bg: '#E0E7FF', color: '#3730A3' },
-  published:       { bg: '#DCFCE7', color: '#166534' },
+  published:       { bg: '#DBEAFE', color: '#0154FC' },
   rejected:        { bg: '#FEE2E2', color: '#991B1B' },
   disposed:        { bg: '#F3F4F6', color: '#6B7280' },
 }
@@ -62,8 +62,8 @@ function SampleModal({ editing, clients, sampleTypes, onClose, onDone }: {
       <div style={{ backgroundColor: '#fff', borderRadius: 16, width: 560, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #F3F4F6' }}>
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: isEdit ? '#EFF6FF' : '#F0FDFA' }}>
-              <MI name={isEdit ? 'edit' : 'science'} size={16} color={isEdit ? '#2563EB' : '#14B8A6'} />
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: isEdit ? '#EFF6FF' : '#DBEAFE' }}>
+              <MI name={isEdit ? 'edit' : 'science'} size={16} color={isEdit ? '#2563EB' : '#0154FC'} />
             </div>
             <div>
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>{isEdit ? `Edit — ${editing!.sample_id}` : 'Register Sample'}</h2>
@@ -131,11 +131,11 @@ function SampleModal({ editing, clients, sampleTypes, onClose, onDone }: {
           </div>
           <div className="flex items-center justify-end gap-2 pt-1" style={{ borderTop: '1px solid #F3F4F6' }}>
             <button type="button" onClick={onClose} disabled={pending}
-              style={{ fontSize: 12, fontWeight: 500, padding: '7px 16px', borderRadius: 8, border: '1px solid #E5E7EB', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
+              style={{ fontSize: 12, fontWeight: 500, padding: '7px 16px', borderRadius: 8, border: '1px solid #E8EAF2', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
               Cancel
             </button>
             <button type="submit" disabled={pending} className="flex items-center gap-1.5"
-              style={{ fontSize: 12, fontWeight: 600, padding: '7px 18px', borderRadius: 8, backgroundColor: isEdit ? '#2563EB' : '#14B8A6', color: '#fff', border: 'none', cursor: pending ? 'not-allowed' : 'pointer', opacity: pending ? 0.7 : 1 }}>
+              style={{ fontSize: 12, fontWeight: 600, padding: '7px 18px', borderRadius: 8, backgroundColor: isEdit ? '#2563EB' : '#0154FC', color: '#fff', border: 'none', cursor: pending ? 'not-allowed' : 'pointer', opacity: pending ? 0.7 : 1 }}>
               <MI name={pending ? 'hourglass_top' : 'check'} size={13} color="#fff" />
               {pending ? (isEdit ? 'Saving…' : 'Registering…') : isEdit ? 'Save Changes' : 'Register Sample'}
             </button>
@@ -161,34 +161,34 @@ export default function LabSamplesShell({ initialSamples, clients, sampleTypes }
   }
 
   return (
-    <div style={{ padding: '12px 20px 0', backgroundColor: '#F5F6FA', minHeight: '100%' }}>
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
       <div className="flex items-center justify-between mb-3">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: '#111827' }}>Sample Registration</h1>
+          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Sample Registration</h1>
           <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Register and track laboratory samples</p>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#14B8A6' }}>
+        <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
           <MI name="add" size={15} color="#fff" /> Register Sample
         </button>
       </div>
       {toast && (
         <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
-          style={{ backgroundColor: toast.ok ? '#ECFDF5' : '#FEF2F2', border: `1px solid ${toast.ok ? '#A7F3D0' : '#FECACA'}`, color: toast.ok ? '#065F46' : '#991B1B' }}>
-          <MI name={toast.ok ? 'check_circle' : 'error'} size={13} color={toast.ok ? '#10B981' : '#DC2626'} />
+          style={{ backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', border: toast.ok ? "1px solid #93C5FD" : "1px solid #FECACA", color: toast.ok ? '#0154FC' : '#991B1B' }}>
+          <MI name={toast.ok ? 'check_circle' : 'error'} size={13} color={toast.ok ? '#0154FC' : '#DC2626'} />
           {toast.msg}
         </div>
       )}
       {showModal && <SampleModal editing={editing} clients={clients} sampleTypes={sampleTypes} onClose={closeModal} onDone={handleDone} />}
       {initialSamples.length === 0 ? (
-        <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E5E7EB' }}>
+        <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="science" size={36} color="#D1D5DB" />
           <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No samples registered yet</p>
-          <button onClick={openCreate} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#14B8A6' }}>
+          <button onClick={openCreate} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
             <MI name="add" size={13} color="#fff" /> Register Sample
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E5E7EB' }}>
+        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
           <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
             <colgroup>
               <col style={{ width: '12%' }} /><col style={{ width: '15%' }} /><col style={{ width: '13%' }} /><col style={{ width: '11%' }} /><col style={{ width: '11%' }} /><col style={{ width: '11%' }} /><col style={{ width: '9%' }} /><col style={{ width: '10%' }} /><col style={{ width: '8%' }} />
@@ -205,7 +205,7 @@ export default function LabSamplesShell({ initialSamples, clients, sampleTypes }
                 const badge = STATUS_BADGE[s.status] ?? STATUS_BADGE.registered
                 return (
                   <tr key={s.id} style={{ borderBottom: i < initialSamples.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
-                    <td className="px-3 py-2.5 text-xs font-semibold" style={{ color: '#2563EB' }}>{s.sample_id}</td>
+                    <td className="px-3 py-2.5 text-xs font-semibold" style={{ color: '#2563EB', whiteSpace: 'nowrap' }}>{s.sample_id}</td>
                     <td className="px-3 py-2.5 text-xs truncate" style={{ color: '#374151' }}>{s.client_name || '—'}</td>
                     <td className="px-3 py-2.5 text-xs" style={{ color: '#374151' }}>{s.sample_type_name || '—'}</td>
                     <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{s.collection_date ? new Date(s.collection_date).toLocaleDateString('en-GB', { timeZone: 'UTC' }) : '—'}</td>
@@ -221,9 +221,9 @@ export default function LabSamplesShell({ initialSamples, clients, sampleTypes }
                         <Link
                           href={`/dashboard/sample-receipts?id=${s.id}`}
                           className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium"
-                          style={{ backgroundColor: '#CCFBF1', color: '#0F766E', textDecoration: 'none', whiteSpace: 'nowrap', width: 'fit-content' }}
+                          style={{ backgroundColor: '#DBEAFE', color: '#0154FC', textDecoration: 'none', whiteSpace: 'nowrap', width: 'fit-content' }}
                         >
-                          <MI name="move_to_inbox" size={13} color="#0F766E" />
+                          <MI name="move_to_inbox" size={13} color="#0154FC" />
                           Receive
                         </Link>
                       )}

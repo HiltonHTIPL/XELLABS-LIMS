@@ -8,8 +8,10 @@ export type LimsTest = {
   code: string
   description: string
   unit: string
+  price: string | null
   method: number | null
   method_name: string
+  method_code: string
   is_active: boolean
   created_at: string
 }

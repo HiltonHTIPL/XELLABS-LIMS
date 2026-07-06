@@ -7,6 +7,7 @@ class SampleType(models.Model):
     description = models.TextField(blank=True)
     prefix = models.CharField(max_length=10)
     is_active = models.BooleanField(default=True)
+    senaite_uid = models.CharField(max_length=100, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -35,8 +36,10 @@ class Test(models.Model):
     code = models.CharField(max_length=50, unique=True)
     description = models.TextField(blank=True)
     unit = models.CharField(max_length=50, blank=True)
+    price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     method = models.ForeignKey(Method, null=True, blank=True, on_delete=models.SET_NULL)
     is_active = models.BooleanField(default=True)
+    senaite_uid = models.CharField(max_length=100, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -129,6 +132,22 @@ class Sample(models.Model):
     received_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
                                     on_delete=models.SET_NULL, related_name="samples_received")
     receipt_notes = models.TextField(blank=True)
+    # Extended intake fields
+    contact_name = models.CharField(max_length=200, blank=True)
+    cc_contact = models.CharField(max_length=200, blank=True)
+    cc_emails = models.TextField(blank=True)
+    batch_id = models.CharField(max_length=100, blank=True)
+    batch_sub_group = models.CharField(max_length=100, blank=True)
+    container_type = models.CharField(max_length=100, blank=True)
+    preservation = models.CharField(max_length=100, blank=True)
+    analysis_specification = models.CharField(max_length=100, blank=True)
+    sample_point = models.CharField(max_length=200, blank=True)
+    environmental_conditions = models.CharField(max_length=100, blank=True)
+    composite = models.BooleanField(default=False)
+    internal_use = models.BooleanField(default=False)
+    client_order_number = models.CharField(max_length=100, blank=True)
+    client_reference = models.CharField(max_length=200, blank=True)
+    client_sample_id = models.CharField(max_length=100, blank=True)
     senaite_uid = models.CharField(max_length=100, blank=True, db_index=True)
     senaite_ar_id = models.CharField(max_length=100, blank=True)
     last_synced_from_senaite = models.DateTimeField(null=True, blank=True)

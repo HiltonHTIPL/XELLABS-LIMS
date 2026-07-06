@@ -44,7 +44,7 @@ export default async function LoginPage() {
       {/* ── Left brand panel ── */}
       <div
         className="hidden lg:flex lg:w-[45%] relative flex-col justify-between p-12 overflow-hidden"
-        style={{ backgroundColor: '#0B1E47' }}
+        style={{ backgroundColor: '#122A5E' }}
       >
         {/* Hex grid background */}
         <div
@@ -62,8 +62,8 @@ export default async function LoginPage() {
             height={40}
             style={{ objectFit: 'contain', objectPosition: 'left' }}
           />
-          <div className="mt-4 h-px w-16" style={{ backgroundColor: 'rgba(147,197,253,0.4)' }} />
-          <p className="mt-3 text-xs tracking-[0.3em] uppercase" style={{ color: 'rgba(147,197,253,0.6)', fontFamily: 'var(--font-geist-mono)' }}>
+          <div className="mt-4 h-0.5 w-16 rounded-full" style={{ backgroundColor: '#0154FC' }} />
+          <p className="mt-3 text-xs tracking-[0.3em] uppercase" style={{ color: 'rgba(94,234,212,0.65)', fontFamily: 'var(--font-geist-mono)' }}>
             LIMS · v1.0
           </p>
         </div>
@@ -87,7 +87,7 @@ export default async function LoginPage() {
       </div>
 
       {/* ── Right form panel ── */}
-      <div className="flex-1 flex items-center justify-center px-6 py-12" style={{ backgroundColor: '#F7FAFF' }}>
+      <div className="flex-1 flex items-center justify-center px-6 py-12" style={{ backgroundColor: '#F7F8FC' }}>
         <LoginForm
           tenantSubdomain={tenantSubdomain || undefined}
           tenantName={tenantName}

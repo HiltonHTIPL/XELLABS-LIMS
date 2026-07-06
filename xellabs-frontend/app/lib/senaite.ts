@@ -241,7 +241,7 @@ export async function fetchSenaiteAnalysisServices(token: string): Promise<Senai
     })
     if (!res.ok) return []
     const data = await res.json()
-    return (data.items ?? []).map((s: Record<string, unknown>) => ({
+    const all = (data.items ?? []).map((s: Record<string, unknown>) => ({
       uid:      (s.uid as string) ?? '',
       id:       (s.id as string) ?? '',
       title:    (s.title as string) ?? '',
@@ -250,6 +250,19 @@ export async function fetchSenaiteAnalysisServices(token: string): Promise<Senai
       Price:    (s.Price as string) ?? '',
       Unit:     (s.Unit as string) ?? '',
     }))
+    // SENAITE's headless create API for this content type intermittently produces
+    // untitled orphan objects, and its delete endpoint doesn't reliably remove them
+    // either — so filter blanks and dedupe by title here rather than depending on a
+    // clean SENAITE dataset. Keeps the first (oldest) UID per title.
+    const seen = new Set<string>()
+    const cleaned: typeof all = []
+    for (const svc of all) {
+      const key = svc.title.trim().toLowerCase()
+      if (!key || seen.has(key)) continue
+      seen.add(key)
+      cleaned.push(svc)
+    }
+    return cleaned
   } catch { return [] }
 }
 
@@ -456,9 +469,20 @@ export async function senaiteWorkflowAction(
     const stateAfter = afterItems[0]?.review_state as string | undefined
 
     if (stateAfter && stateAfter !== stateBefore) return { success: true }
+
+    // State didn't change — determine a helpful reason
+    const currentState = stateAfter ?? stateBefore
+    const alreadyDoneStates: Record<string, string> = {
+      sample_received: 'This sample has already been received.',
+      verified:        'This sample has already been verified.',
+      published:       'This sample has already been published.',
+      cancelled:       'This sample has already been cancelled.',
+      rejected:        'This sample has already been rejected.',
+    }
+    const alreadyMsg = currentState ? alreadyDoneStates[currentState] : undefined
     return {
       success: false,
-      error: `Transition did not apply (still "${stateAfter ?? stateBefore}"). This can happen if your role/state doesn't allow this action — e.g. SENAITE blocks the same user from both submitting and verifying a result.`,
+      error: alreadyMsg ?? `Action not allowed in the current state ("${currentState}"). A different user may need to perform this step.`,
     }
   } catch (e) { return { success: false, error: String(e) } }
 }
@@ -580,24 +604,43 @@ export async function createSenaiteWorksheet(
   analysisUids: string[] = [],
 ): Promise<{ success: boolean; uid?: string; id?: string; error?: string }> {
   try {
-    // SENAITE requires Analyses at creation time — use the Plone REST API endpoint.
-    const res = await fetch(`${SENAITE_URL}/senaite/worksheets`, {
+    // The Plone REST API (/worksheets, @type: Worksheet) 500s when serializing the
+    // response for this content type ("No converter for making <Analysis> JSON
+    // compatible") — a plone.restapi limitation with SENAITE's custom Analysis
+    // reference fields, confirmed by direct testing. senaite.jsonapi's v1 create
+    // endpoint (used everywhere else in this file) works correctly for Worksheet.
+    // Analyses is required by SENAITE at creation time (returns 400 without it).
+    // After creation, assignAnalysesToWorksheet is called separately to ensure the
+    // getWorksheetUID catalog index is updated so fetchWorksheetAnalyses can find them.
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
       method: 'POST',
       headers: {
         Authorization: `Basic ${token}`,
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
-      body: JSON.stringify({ '@type': 'Worksheet', Analyses: analysisUids }),
+      body: JSON.stringify({
+        portal_type: 'Worksheet',
+        parent_path: `${new URL(SENAITE_URL).pathname}/worksheets`,
+        Analyses: analysisUids.map(uid => ({ uid })),
+      }),
       cache: 'no-store',
     })
-    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    const rawText = await res.text()
+    console.log('[createSenaiteWorksheet] status:', res.status, 'body:', rawText)
+    let data: Record<string, unknown> = {}
+    try { data = JSON.parse(rawText) } catch { /* non-JSON */ }
+
     if (!res.ok) {
-      const msg = (data.message as string) ?? (data.error as string) ?? `HTTP ${res.status}`
+      const msg = (data.message as string) ?? (data.error as string) ?? rawText ?? `HTTP ${res.status}`
       return { success: false, error: msg }
     }
-    const uid = (data.UID as string) ?? (data.uid as string) ?? ''
-    const id  = (data.id  as string) ?? ''
+    const items = (data.items as Record<string, unknown>[]) ?? []
+    if (items.length === 0) {
+      return { success: false, error: (data.message as string) ?? rawText ?? 'No worksheet returned from SENAITE.' }
+    }
+    const uid = (items[0].uid as string) ?? (items[0].UID as string) ?? ''
+    const id  = (items[0].id  as string) ?? ''
     return { success: true, uid, id }
   } catch (e) { return { success: false, error: String(e) } }
 }

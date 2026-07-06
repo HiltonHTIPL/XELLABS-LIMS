@@ -14,10 +14,10 @@ const tatData = [
 
 const statusData = [
   { name: 'Received',       value: 1248, pct: '49.0%', color: '#3B82F6' },
-  { name: 'In Process',     value: 326,  pct: '12.8%', color: '#14B8A6' },
+  { name: 'In Process',     value: 326,  pct: '12.8%', color: '#0154FC' },
   { name: 'To Be Verified', value: 204,  pct: '8.0%',  color: '#F59E0B' },
   { name: 'On Hold for QA', value: 18,   pct: '0.7%',  color: '#F97316' },
-  { name: 'Completed',      value: 892,  pct: '35.0%', color: '#10B981' },
+  { name: 'Completed',      value: 892,  pct: '35.0%', color: '#0154FC' },
   { name: 'Overdue',        value: 32,   pct: '1.3%',  color: '#EF4444' },
 ]
 const TOTAL = 2548

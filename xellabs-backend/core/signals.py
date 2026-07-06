@@ -35,6 +35,32 @@ def _register_ar_signal():
             logger.debug("Queued SENAITE AR sync for AR pk=%s (schema=%s)", instance.pk, schema_name)
 
 
+def _register_test_signal():
+    from django.db import connection
+    from lims.models import Test
+    from core.tasks import sync_test_to_senaite
+
+    @receiver(post_save, sender=Test, dispatch_uid="senaite_sync_test")
+    def on_test_saved(sender, instance, created, **kwargs):
+        schema_name = connection.schema_name
+        sync_test_to_senaite.apply_async(args=[instance.pk, schema_name], countdown=2)
+        logger.debug("Queued SENAITE sync for Test pk=%s (schema=%s)", instance.pk, schema_name)
+
+
+def _register_sample_type_signal():
+    from django.db import connection
+    from lims.models import SampleType
+    from core.tasks import sync_sample_type_to_senaite
+
+    @receiver(post_save, sender=SampleType, dispatch_uid="senaite_sync_sample_type")
+    def on_sample_type_saved(sender, instance, created, **kwargs):
+        schema_name = connection.schema_name
+        sync_sample_type_to_senaite.apply_async(args=[instance.pk, schema_name], countdown=2)
+        logger.debug("Queued SENAITE sync for SampleType pk=%s (schema=%s)", instance.pk, schema_name)
+
+
 def register_all():
     _register_client_signal()
     _register_ar_signal()
+    _register_test_signal()
+    _register_sample_type_signal()

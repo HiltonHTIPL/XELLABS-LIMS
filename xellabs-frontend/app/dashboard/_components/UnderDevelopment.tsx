@@ -7,7 +7,7 @@ export default function UnderDevelopment({ title }: { title: string }) {
         alignItems: 'center',
         justifyContent: 'center',
         padding: '40px 24px',
-        backgroundColor: '#F5F6FA',
+        backgroundColor: '#F7F8FC',
         minHeight: '100%',
       }}
     >
@@ -16,14 +16,14 @@ export default function UnderDevelopment({ title }: { title: string }) {
           backgroundColor: '#fff',
           borderRadius: 16,
           overflow: 'hidden',
-          border: '1px solid #E5E7EB',
+          border: '1px solid #E8EAF2',
           width: '100%',
           maxWidth: 500,
           boxShadow: '0 2px 16px rgba(11,30,71,0.06)',
         }}
       >
         {/* Accent stripe */}
-        <div style={{ height: 4, background: 'linear-gradient(90deg, #0B1E47 0%, #14B8A6 100%)' }} />
+        <div style={{ height: 4, background: 'linear-gradient(90deg, #0B1E47 0%, #0154FC 100%)' }} />
 
         <div
           style={{
@@ -49,13 +49,13 @@ export default function UnderDevelopment({ title }: { title: string }) {
                 position: 'absolute',
                 inset: 10,
                 borderRadius: '50%',
-                backgroundColor: '#F0FDFA',
+                backgroundColor: '#DBEAFE',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              <span className="material-icons" style={{ fontSize: 34, color: '#14B8A6' }}>build_circle</span>
+              <span className="material-icons" style={{ fontSize: 34, color: '#0154FC' }}>build_circle</span>
             </div>
           </div>
 
@@ -127,7 +127,7 @@ export default function UnderDevelopment({ title }: { title: string }) {
             </span>
             <span style={{ fontSize: 13, fontWeight: 700, color: '#0B1E47', letterSpacing: '-0.1px' }}>
               Hephzibah{' '}
-              <span style={{ color: '#14B8A6' }}>Technologies</span>
+              <span style={{ color: '#0154FC' }}>Technologies</span>
             </span>
           </div>
         </div>

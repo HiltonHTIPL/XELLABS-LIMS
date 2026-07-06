@@ -46,8 +46,8 @@ function MethodModal({ editing, onClose, onDone }: { editing: Method | null; onC
       <div style={{ backgroundColor: '#fff', borderRadius: 16, width: 440, boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #F3F4F6' }}>
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: isEdit ? '#EFF6FF' : '#F0FDFA' }}>
-              <MI name={isEdit ? 'edit' : 'add'} size={16} color={isEdit ? '#2563EB' : '#14B8A6'} />
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: isEdit ? '#EFF6FF' : '#DBEAFE' }}>
+              <MI name={isEdit ? 'edit' : 'add'} size={16} color={isEdit ? '#2563EB' : '#0154FC'} />
             </div>
             <div>
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>{isEdit ? `Edit — ${editing!.name}` : 'New Method'}</h2>
@@ -68,7 +68,7 @@ function MethodModal({ editing, onClose, onDone }: { editing: Method | null; onC
               Cancel
             </button>
             <button type="submit" disabled={pending} className="flex items-center gap-1.5"
-              style={{ fontSize: 12, fontWeight: 600, padding: '7px 18px', borderRadius: 8, backgroundColor: isEdit ? '#2563EB' : '#14B8A6', color: '#fff', border: 'none', cursor: pending ? 'not-allowed' : 'pointer', opacity: pending ? 0.7 : 1 }}>
+              style={{ fontSize: 12, fontWeight: 600, padding: '7px 18px', borderRadius: 8, backgroundColor: isEdit ? '#2563EB' : '#0154FC', color: '#fff', border: 'none', cursor: pending ? 'not-allowed' : 'pointer', opacity: pending ? 0.7 : 1 }}>
               <MI name={pending ? 'hourglass_top' : 'check'} size={13} color="#fff" />
               {pending ? (isEdit ? 'Saving…' : 'Creating…') : isEdit ? 'Save Changes' : 'Create'}
             </button>
@@ -104,34 +104,34 @@ export default function MethodsShell({ initialMethods }: { initialMethods: Metho
   }
 
   return (
-    <div style={{ padding: '12px 20px 0', backgroundColor: '#F5F6FA', minHeight: '100%' }}>
-      <div className="flex items-center justify-between mb-3">
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
+      <div className="flex items-center justify-between mb-5">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: '#111827' }}>Methods</h1>
-          <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Manage analytical methods used in testing</p>
+          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Methods</h1>
+          <p className="mt-1" style={{ fontSize: 13, color: '#6B7280' }}>Manage analytical methods used in testing</p>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#14B8A6' }}>
+        <button onClick={openCreate} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#2563EB', border: 'none', cursor: 'pointer' }}>
           <MI name="add" size={15} color="#fff" /> New Method
         </button>
       </div>
       {toast && (
         <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
-          style={{ backgroundColor: toast.ok ? '#ECFDF5' : '#FEF2F2', border: `1px solid ${toast.ok ? '#A7F3D0' : '#FECACA'}`, color: toast.ok ? '#065F46' : '#991B1B' }}>
-          <MI name={toast.ok ? 'check_circle' : 'error'} size={13} color={toast.ok ? '#10B981' : '#DC2626'} />
+          style={{ backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', border: toast.ok ? "1px solid #93C5FD" : "1px solid #FECACA", color: toast.ok ? '#0154FC' : '#991B1B' }}>
+          <MI name={toast.ok ? 'check_circle' : 'error'} size={13} color={toast.ok ? '#0154FC' : '#DC2626'} />
           {toast.msg}
         </div>
       )}
       {showModal && <MethodModal editing={editing} onClose={closeModal} onDone={handleDone} />}
       {initialMethods.length === 0 ? (
-        <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E5E7EB' }}>
+        <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2', borderRadius: 14 }}>
           <MI name="biotech" size={36} color="#D1D5DB" />
           <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No methods yet</p>
-          <button onClick={openCreate} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#14B8A6' }}>
+          <button onClick={openCreate} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
             <MI name="add" size={13} color="#fff" /> New Method
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E5E7EB' }}>
+        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2', borderRadius: 14, boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
           <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
             <colgroup>
               <col style={{ width: '28%' }} /><col style={{ width: '14%' }} /><col style={{ width: '38%' }} /><col style={{ width: '12%' }} /><col style={{ width: '8%' }} />
@@ -151,8 +151,8 @@ export default function MethodsShell({ initialMethods }: { initialMethods: Metho
                   <td className="px-3 py-2.5 text-xs truncate" style={{ color: '#6B7280' }}>{m.description || '—'}</td>
                   <td className="px-3 py-2.5">
                     <button onClick={() => toggle(m)} disabled={busy}
-                      className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, color: m.is_active ? '#166534' : '#6B7280', background: 'none', border: 'none', cursor: 'pointer' }}>
-                      <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: m.is_active ? '#22C55E' : '#9CA3AF', display: 'inline-block' }} />
+                      className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, color: m.is_active ? '#0154FC' : '#6B7280', background: 'none', border: 'none', cursor: 'pointer' }}>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: m.is_active ? '#0154FC' : '#9CA3AF', display: 'inline-block' }} />
                       {m.is_active ? 'Active' : 'Inactive'}
                     </button>
                   </td>

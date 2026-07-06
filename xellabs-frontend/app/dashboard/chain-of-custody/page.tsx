@@ -38,12 +38,12 @@ const TREE = [
 ]
 
 const STATUS_COLOR: Record<string, string> = {
-  Open: '#22C55E', Restricted: '#F59E0B',
+  Open: '#0154FC', Restricted: '#F59E0B',
 }
 
 const COC_EVENTS = [
   {
-    id: 1, icon: 'check_circle', iconBg: '#22C55E',
+    id: 1, icon: 'check_circle', iconBg: '#0154FC',
     title: 'Received', date: 'May 18, 2025', time: '09:15 AM',
     fields: [
       { label: 'By',       value: 'Maria Rodriguez' },
@@ -184,7 +184,7 @@ export default function ChainOfCustodyPage() {
   const [storageNotes, setStorageNotes]   = useState('')
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '216px 1fr 272px', height: '100%', backgroundColor: '#F5F6FA', fontFamily: 'Inter, sans-serif', overflow: 'hidden' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '216px 1fr 272px', height: '100%', backgroundColor: '#F7F8FC', overflow: 'hidden' }}>
 
       {/* ══ LEFT: Storage Location tree ══ */}
       <div className="flex flex-col bg-white" style={{ borderRight: '1px solid #E5E7EB', overflow: 'hidden' }}>
@@ -214,7 +214,7 @@ export default function ChainOfCustodyPage() {
         {/* Legend */}
         <div className="flex items-center gap-4 px-3 py-2.5" style={{ borderTop: '1px solid #F3F4F6', flexShrink: 0 }}>
           <div className="flex items-center gap-1.5">
-            <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#22C55E', display: 'inline-block' }} />
+            <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#0154FC', display: 'inline-block' }} />
             <span style={{ fontSize: 10, color: '#6B7280' }}>Open</span>
           </div>
           <div className="flex items-center gap-1.5">
@@ -292,10 +292,10 @@ export default function ChainOfCustodyPage() {
                 <p style={{ fontSize: 11, color: '#6B7280', margin: 0, lineHeight: 1.4 }}>Scan the storage container barcode<br />Ensure the correct container is selected for storage.</p>
               </div>
             </div>
-            <div className="flex items-start gap-2.5 rounded-xl p-3" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0' }}>
-              <MI name="check_circle" size={18} color="#22C55E" />
+            <div className="flex items-start gap-2.5 rounded-xl p-3" style={{ backgroundColor: '#DBEAFE', border: '1px solid #93C5FD' }}>
+              <MI name="check_circle" size={18} color="#0154FC" />
               <div>
-                <p style={{ fontSize: 11, fontWeight: 700, color: '#166534', margin: '0 0 3px' }}>Barcode Scanned Successfully</p>
+                <p style={{ fontSize: 11, fontWeight: 700, color: '#0154FC', margin: '0 0 3px' }}>Barcode Scanned Successfully</p>
                 <p style={{ fontSize: 12, fontWeight: 700, color: '#111827', margin: '0 0 1px' }}>CONT-RR1-000123</p>
                 <p style={{ fontSize: 10, color: '#6B7280', margin: '0 0 1px' }}>Receiving Refrigerator 1 • Slot 12</p>
                 <p style={{ fontSize: 10, color: '#9CA3AF', margin: 0 }}>May 19, 2025 10:29 AM</p>
@@ -325,7 +325,7 @@ export default function ChainOfCustodyPage() {
             </div>
             <div>
               <p style={{ fontSize: 9, color: '#9CA3AF', marginBottom: 5 }}>Temperature</p>
-              <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 999, backgroundColor: '#CCFBF1', color: '#0F766E' }}>2–6 °C</span>
+              <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 999, backgroundColor: '#DBEAFE', color: '#0154FC' }}>2–6 °C</span>
             </div>
             <div>
               <p style={{ fontSize: 9, color: '#9CA3AF', marginBottom: 3 }}>Capacity</p>

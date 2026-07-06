@@ -11,6 +11,10 @@ pending-changes.md
 # Local scratch / handoff notes — not project source
 qa-admin-handoff.html
 serversideerrorfixes.md
+learning.md
+
+# Claude project map — auto-generated, never committed
+project-map.md
 
 # Celery runtime files
 celerybeat-schedule

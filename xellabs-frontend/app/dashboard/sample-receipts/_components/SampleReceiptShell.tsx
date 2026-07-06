@@ -89,9 +89,9 @@ function LabelInput({ label, required, placeholder, value, onChange, readOnly }:
   )
 }
 
-const conditionDot: Record<string, string> = { good: '#22C55E', acceptable: '#F59E0B', compromised: '#EF4444', not_acceptable: '#EF4444' }
-const sealDot: Record<string, string> = { intact: '#22C55E', broken: '#EF4444', missing: '#F59E0B' }
-const priorityDot: Record<string, string> = { high: '#EF4444', medium: '#F59E0B', low: '#22C55E' }
+const conditionDot: Record<string, string> = { good: '#0154FC', acceptable: '#F59E0B', compromised: '#EF4444', not_acceptable: '#EF4444' }
+const sealDot: Record<string, string> = { intact: '#0154FC', broken: '#EF4444', missing: '#F59E0B' }
+const priorityDot: Record<string, string> = { high: '#EF4444', medium: '#F59E0B', low: '#0154FC' }
 
 export default function SampleReceiptShell({ sample, hasId }: { sample: LabSample | null; hasId: boolean }) {
   const router = useRouter()
@@ -134,13 +134,13 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
   const canSubmit = !!sample && !submitting && !success
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 272px', gap: 0, minHeight: '100%', backgroundColor: '#F5F6FA' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 272px', gap: 0, minHeight: '100%', backgroundColor: '#F7F8FC' }}>
 
       {/* ── Left: form ── */}
       <div style={{ padding: '20px 20px 20px 24px', overflowY: 'auto' }}>
         <div className="flex items-start justify-between mb-4">
           <div>
-            <h1 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: 0 }}>Sample Receipt</h1>
+            <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em', margin: 0 }}>Sample Receipt</h1>
             <p style={{ fontSize: 12, color: '#9CA3AF', marginTop: 3 }}>
               {sample ? `Receiving sample ${sample.sample_id}` : 'Select a registered sample from Lab Samples to begin.'}
             </p>
@@ -155,8 +155,8 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
           </div>
         )}
         {success && (
-          <div className="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#ECFDF5', border: '1px solid #A7F3D0', color: '#065F46' }}>
-            <MI name="check_circle" size={14} color="#10B981" /> {success} — redirecting…
+          <div className="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#DBEAFE', border: '1px solid #93C5FD', color: '#0154FC' }}>
+            <MI name="check_circle" size={14} color="#0154FC" /> {success} — redirecting…
           </div>
         )}
         {!hasId && (
@@ -294,7 +294,7 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
             </button>
             <button type="button" onClick={handleReceive} disabled={!canSubmit}
               className="flex items-center gap-1.5 px-5 py-2 text-xs font-semibold rounded-lg text-white"
-              style={{ backgroundColor: canSubmit ? '#0D9488' : '#9CA3AF', cursor: canSubmit ? 'pointer' : 'not-allowed', border: 'none' }}>
+              style={{ backgroundColor: canSubmit ? '#0154FC' : '#9CA3AF', cursor: canSubmit ? 'pointer' : 'not-allowed', border: 'none' }}>
               <MI name={submitting ? 'hourglass_top' : 'check_circle'} size={14} color="#fff" />
               {submitting ? 'Receiving…' : 'Receive Sample'}
             </button>
@@ -345,7 +345,7 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
           <div className="px-4 py-3">
             <button onClick={handleReceive} disabled={!canSubmit}
               className="flex items-center justify-center gap-2 w-full py-3 rounded-xl text-white text-xs font-semibold"
-              style={{ backgroundColor: canSubmit ? '#0D9488' : '#9CA3AF', cursor: canSubmit ? 'pointer' : 'not-allowed', border: 'none' }}>
+              style={{ backgroundColor: canSubmit ? '#0154FC' : '#9CA3AF', cursor: canSubmit ? 'pointer' : 'not-allowed', border: 'none' }}>
               <MI name={submitting ? 'hourglass_top' : 'check_circle'} size={16} color="#fff" />
               {submitting ? 'Receiving…' : 'Receive Sample'}
             </button>

@@ -16,7 +16,7 @@ type Tab = typeof TABS[number]
 
 const ROLE_COLORS: Record<string, { bg: string; text: string }> = {
   admin:        { bg: '#EFF6FF', text: '#1D4ED8' },
-  lab_manager:  { bg: '#F0FDF4', text: '#15803D' },
+  lab_manager:  { bg: '#DBEAFE', text: '#0154FC' },
   analyst:      { bg: '#FFFBEB', text: '#B45309' },
   reviewer:     { bg: '#FAF5FF', text: '#7C3AED' },
   client:       { bg: '#FFF7ED', text: '#C2410C' },
@@ -27,8 +27,8 @@ const ROLE_COLORS: Record<string, { bg: string; text: string }> = {
 function Field({ label, value, icon }: { label: string; value?: string; icon: string }) {
   return (
     <div className="flex items-center gap-2.5 py-2.5" style={{ borderBottom: '1px solid #F3F4F6' }}>
-      <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style={{ backgroundColor: '#F0FDFA' }}>
-        <MI name={icon} size={13} color="#14B8A6" />
+      <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style={{ backgroundColor: '#DBEAFE' }}>
+        <MI name={icon} size={13} color="#0154FC" />
       </div>
       <div className="min-w-0 flex-1 flex items-center justify-between gap-4">
         <p className="text-xs font-medium shrink-0" style={{ color: '#9CA3AF', width: 120 }}>{label}</p>
@@ -70,7 +70,7 @@ function OverviewTab({ client }: { client: DjangoClient }) {
       {/* Left column */}
       <div className="space-y-3">
         {/* Organisation */}
-        <div className="bg-white rounded-xl px-4 py-2" style={{ border: '1px solid #E5E7EB' }}>
+        <div className="bg-white rounded-xl px-4 py-2" style={{ border: '1px solid #E8EAF2' }}>
           <h2 className="text-xs font-semibold py-2" style={{ color: '#374151', borderBottom: '1px solid #F3F4F6' }}>Organisation</h2>
           <Field label="Email Address"  value={client.email}          icon="email" />
           <Field label="Phone"          value={client.phone}          icon="phone" />
@@ -81,7 +81,7 @@ function OverviewTab({ client }: { client: DjangoClient }) {
         </div>
 
         {/* Primary Contact */}
-        <div className="bg-white rounded-xl px-4 py-2" style={{ border: '1px solid #E5E7EB' }}>
+        <div className="bg-white rounded-xl px-4 py-2" style={{ border: '1px solid #E8EAF2' }}>
           <h2 className="text-xs font-semibold py-2" style={{ color: '#374151', borderBottom: '1px solid #F3F4F6' }}>Primary Contact</h2>
           <Field label="Name"       value={contactName || undefined}          icon="person" />
           <Field label="Job Title"  value={client.contact_job_title}          icon="work" />
@@ -91,7 +91,7 @@ function OverviewTab({ client }: { client: DjangoClient }) {
         </div>
 
         {/* Notes */}
-        <div className="bg-white rounded-xl px-4 py-3" style={{ border: '1px solid #E5E7EB' }}>
+        <div className="bg-white rounded-xl px-4 py-3" style={{ border: '1px solid #E8EAF2' }}>
           <h2 className="text-xs font-semibold mb-2" style={{ color: '#374151' }}>Notes / Remarks</h2>
           {client.remarks
             ? <p className="text-xs whitespace-pre-line" style={{ color: '#6B7280' }}>{client.remarks}</p>
@@ -102,7 +102,7 @@ function OverviewTab({ client }: { client: DjangoClient }) {
       {/* Right column */}
       <div className="space-y-3">
         {/* Addresses */}
-        <div className="bg-white rounded-xl px-4 py-2" style={{ border: '1px solid #E5E7EB' }}>
+        <div className="bg-white rounded-xl px-4 py-2" style={{ border: '1px solid #E8EAF2' }}>
           <h2 className="text-xs font-semibold py-2" style={{ color: '#374151', borderBottom: '1px solid #F3F4F6' }}>Addresses</h2>
           <div className="space-y-4 pt-2">
             <AddrBlock label="Physical Address" addr={client.physical_address as Record<string, string>} />
@@ -117,7 +117,7 @@ function OverviewTab({ client }: { client: DjangoClient }) {
         </div>
 
         {/* Financial */}
-        <div className="bg-white rounded-xl px-4 py-2" style={{ border: '1px solid #E5E7EB' }}>
+        <div className="bg-white rounded-xl px-4 py-2" style={{ border: '1px solid #E8EAF2' }}>
           <h2 className="text-xs font-semibold py-2" style={{ color: '#374151', borderBottom: '1px solid #F3F4F6' }}>Financial</h2>
           <Field label="Bank Name"       value={client.bank_name}   icon="account_balance" />
           <Field label="Bank Branch"     value={client.bank_branch} icon="account_balance" />
@@ -137,7 +137,7 @@ function OverviewTab({ client }: { client: DjangoClient }) {
 function DomainTab({ tenant }: { tenant: TenantDetail | null }) {
   if (!tenant) {
     return (
-      <div className="bg-white rounded-xl p-8 flex flex-col items-center" style={{ border: '1px solid #E5E7EB' }}>
+      <div className="bg-white rounded-xl p-8 flex flex-col items-center" style={{ border: '1px solid #E8EAF2' }}>
         <MI name="domain_disabled" size={32} color="#D1D5DB" />
         <p className="mt-2 text-xs font-medium" style={{ color: '#6B7280' }}>No tenant linked to this client</p>
       </div>
@@ -146,7 +146,7 @@ function DomainTab({ tenant }: { tenant: TenantDetail | null }) {
   return (
     <div className="space-y-3">
       {/* Tenant info card */}
-      <div className="bg-white rounded-xl px-4 py-1" style={{ border: '1px solid #E5E7EB' }}>
+      <div className="bg-white rounded-xl px-4 py-1" style={{ border: '1px solid #E8EAF2' }}>
         <h2 className="text-xs font-semibold py-2.5" style={{ color: '#374151', borderBottom: '1px solid #F3F4F6' }}>Tenant Details</h2>
         {[
           { label: 'Organisation Name', value: tenant.name,        icon: 'business' },
@@ -158,10 +158,10 @@ function DomainTab({ tenant }: { tenant: TenantDetail | null }) {
       </div>
 
       {/* Domains card */}
-      <div className="bg-white rounded-xl px-4 py-1" style={{ border: '1px solid #E5E7EB' }}>
+      <div className="bg-white rounded-xl px-4 py-1" style={{ border: '1px solid #E8EAF2' }}>
         <h2 className="text-xs font-semibold py-2.5" style={{ color: '#374151', borderBottom: '1px solid #F3F4F6' }}>
           Registered Domains
-          <span className="ml-2 font-normal px-1.5 py-0.5 rounded" style={{ fontSize: 10, backgroundColor: '#F0FDFA', color: '#0D9488' }}>{tenant.domains.length}</span>
+          <span className="ml-2 font-normal px-1.5 py-0.5 rounded" style={{ fontSize: 10, backgroundColor: '#DBEAFE', color: '#0154FC' }}>{tenant.domains.length}</span>
         </h2>
         {tenant.domains.length === 0 ? (
           <p className="py-3 text-xs" style={{ color: '#9CA3AF' }}>No domains registered</p>
@@ -169,13 +169,13 @@ function DomainTab({ tenant }: { tenant: TenantDetail | null }) {
           tenant.domains.map(d => (
             <div key={d.id} className="flex items-center justify-between py-2" style={{ borderBottom: '1px solid #F9FAFB' }}>
               <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ backgroundColor: '#F0FDFA' }}>
-                  <MI name="language" size={13} color="#14B8A6" />
+                <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ backgroundColor: '#DBEAFE' }}>
+                  <MI name="language" size={13} color="#0154FC" />
                 </div>
                 <span className="text-xs font-mono" style={{ color: '#111827' }}>{d.domain}</span>
               </div>
               {d.is_primary && (
-                <span className="font-semibold px-2 py-0.5 rounded-full" style={{ fontSize: 10, backgroundColor: '#ECFDF5', color: '#065F46' }}>Primary</span>
+                <span className="font-semibold px-2 py-0.5 rounded-full" style={{ fontSize: 10, backgroundColor: '#DBEAFE', color: '#0154FC' }}>Primary</span>
               )}
             </div>
           ))
@@ -188,11 +188,11 @@ function DomainTab({ tenant }: { tenant: TenantDetail | null }) {
 // ── Users Tab ─────────────────────────────────────────────────────────────────
 function UsersTab({ users }: { users: TenantUser[] }) {
   return (
-    <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E5E7EB' }}>
+    <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
       <div className="px-4 py-2.5 flex items-center justify-between" style={{ borderBottom: '1px solid #F3F4F6' }}>
         <h2 className="text-xs font-semibold" style={{ color: '#374151' }}>
           Users
-          <span className="ml-2 font-normal px-1.5 py-0.5 rounded" style={{ fontSize: 10, backgroundColor: '#F0FDFA', color: '#0D9488' }}>{users.length}</span>
+          <span className="ml-2 font-normal px-1.5 py-0.5 rounded" style={{ fontSize: 10, backgroundColor: '#DBEAFE', color: '#0154FC' }}>{users.length}</span>
         </h2>
       </div>
       {users.length === 0 ? (
@@ -216,7 +216,7 @@ function UsersTab({ users }: { users: TenantUser[] }) {
                 <tr key={u.id} className="hover:bg-gray-50" style={{ borderBottom: i < users.length - 1 ? '1px solid #F9FAFB' : 'none' }}>
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 10, backgroundColor: '#14B8A6' }}>
+                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 10, backgroundColor: '#0154FC' }}>
                         {(u.full_name || u.username).slice(0, 1).toUpperCase()}
                       </div>
                       <div>
@@ -230,7 +230,7 @@ function UsersTab({ users }: { users: TenantUser[] }) {
                   </td>
                   <td className="px-3 py-2 text-xs" style={{ color: '#6B7280' }}>{u.email || '—'}</td>
                   <td className="px-3 py-2">
-                    <span className="font-semibold px-2 py-0.5 rounded-full" style={{ fontSize: 10, backgroundColor: u.is_active ? '#ECFDF5' : '#FEF2F2', color: u.is_active ? '#065F46' : '#991B1B' }}>
+                    <span className="font-semibold px-2 py-0.5 rounded-full" style={{ fontSize: 10, backgroundColor: u.is_active ? '#DBEAFE' : '#FEF2F2', color: u.is_active ? '#0154FC' : '#991B1B' }}>
                       {u.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </td>
@@ -280,7 +280,7 @@ function BrandingTab({ tenant, clientId }: { tenant: TenantDetail | null; client
 
   if (!tenant) {
     return (
-      <div className="bg-white rounded-xl p-8 flex flex-col items-center" style={{ border: '1px solid #E5E7EB' }}>
+      <div className="bg-white rounded-xl p-8 flex flex-col items-center" style={{ border: '1px solid #E8EAF2' }}>
         <MI name="palette" size={32} color="#D1D5DB" />
         <p className="mt-2 text-xs font-medium" style={{ color: '#6B7280' }}>No tenant linked — branding unavailable</p>
       </div>
@@ -290,7 +290,7 @@ function BrandingTab({ tenant, clientId }: { tenant: TenantDetail | null; client
   return (
     <div className="space-y-3">
       {/* Logo card */}
-      <div className="bg-white rounded-xl p-4" style={{ border: '1px solid #E5E7EB' }}>
+      <div className="bg-white rounded-xl p-4" style={{ border: '1px solid #E8EAF2' }}>
         <h2 className="text-xs font-semibold mb-2" style={{ color: '#374151' }}>White-Label Logo</h2>
         <p style={{ fontSize: 10, color: '#6B7280', marginBottom: 12 }}>
           PNG or SVG, min 200×60 px, transparent background.
@@ -323,7 +323,7 @@ function BrandingTab({ tenant, clientId }: { tenant: TenantDetail | null; client
               onClick={() => fileRef.current?.click()}
               disabled={uploading}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white"
-              style={{ backgroundColor: uploading ? '#99F6E4' : '#14B8A6', cursor: uploading ? 'not-allowed' : 'pointer' }}
+              style={{ backgroundColor: uploading ? '#DBEAFE' : '#0154FC', cursor: uploading ? 'not-allowed' : 'pointer' }}
             >
               <MI name="upload" size={13} color="#fff" />
               {uploading ? 'Uploading…' : preview ? 'Replace Logo' : 'Upload Logo'}
@@ -344,10 +344,10 @@ function BrandingTab({ tenant, clientId }: { tenant: TenantDetail | null; client
       </div>
 
       {/* Subdomain info */}
-      <div className="bg-white rounded-xl p-4" style={{ border: '1px solid #E5E7EB' }}>
+      <div className="bg-white rounded-xl p-4" style={{ border: '1px solid #E8EAF2' }}>
         <h2 className="text-xs font-semibold mb-2" style={{ color: '#374151' }}>Subdomain</h2>
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ backgroundColor: '#F9FAFB', border: '1px solid #E5E7EB' }}>
-          <MI name="link" size={13} color="#14B8A6" />
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ backgroundColor: '#F9FAFB', border: '1px solid #E8EAF2' }}>
+          <MI name="link" size={13} color="#0154FC" />
           <span className="text-xs font-mono" style={{ color: '#374151' }}>{tenant.slug}.xellabs.com</span>
           <span className="ml-auto font-medium px-2 py-0.5 rounded" style={{ fontSize: 10, backgroundColor: '#FFF7ED', color: '#C2410C' }}>Pending DNS</span>
         </div>
@@ -383,7 +383,7 @@ function EditRow({ children }: { children: React.ReactNode }) {
 
 function EditAddrSection({ prefix, label, addr }: { prefix: string; label: string; addr?: Record<string, string> }) {
   return (
-    <div className="space-y-2 p-3 rounded-lg" style={{ backgroundColor: '#FAFAFA', border: '1px solid #E5E7EB' }}>
+    <div className="space-y-2 p-3 rounded-lg" style={{ backgroundColor: '#FAFAFA', border: '1px solid #E8EAF2' }}>
       <p className="text-xs font-semibold" style={{ color: '#374151' }}>{label}</p>
       <EditField label="Street" name={`${prefix}_street`} placeholder="123 Main St" defaultValue={addr?.address} />
       <EditRow>
@@ -572,14 +572,14 @@ export default function ClientDetailShell({
   const initials = client.name.slice(0, 2).toUpperCase()
 
   return (
-    <div style={{ padding: '12px 20px 0', backgroundColor: '#F5F6FA', minHeight: '100%' }}>
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
 
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 mb-3">
         <Link
           href="/dashboard/clients"
           className="flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg"
-          style={{ color: '#6B7280', backgroundColor: '#fff', border: '1px solid #E5E7EB' }}
+          style={{ color: '#6B7280', backgroundColor: '#fff', border: '1px solid #E8EAF2' }}
         >
           <MI name="arrow_back" size={13} color="#6B7280" />
           Clients
@@ -589,11 +589,11 @@ export default function ClientDetailShell({
       </div>
 
       {/* Top identity card */}
-      <div className="bg-white rounded-xl p-4 mb-3 flex items-center gap-4" style={{ border: '1px solid #E5E7EB' }}>
+      <div className="bg-white rounded-xl p-4 mb-3 flex items-center gap-4" style={{ border: '1px solid #E8EAF2' }}>
         {/* Avatar or logo */}
         <div
           className="w-12 h-12 rounded-lg flex items-center justify-center text-white font-bold shrink-0 overflow-hidden"
-          style={{ fontSize: 16, backgroundColor: '#14B8A6' }}
+          style={{ fontSize: 16, backgroundColor: '#0154FC' }}
         >
           {tenant?.logo
             ? <img src={tenant.logo} alt="logo" className="w-full h-full object-contain" />
@@ -603,11 +603,11 @@ export default function ClientDetailShell({
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-base font-bold" style={{ color: '#111827' }}>{client.name}</h1>
             {client.client_id && (
-              <span className="font-mono px-2 py-0.5 rounded" style={{ fontSize: 10, backgroundColor: '#F0FDFA', color: '#0D9488' }}>{client.client_id}</span>
+              <span className="font-mono px-2 py-0.5 rounded" style={{ fontSize: 10, backgroundColor: '#DBEAFE', color: '#0154FC' }}>{client.client_id}</span>
             )}
             <span
               className="font-semibold px-2 py-0.5 rounded-full"
-              style={{ fontSize: 10, backgroundColor: client.is_active ? '#ECFDF5' : '#FEF2F2', color: client.is_active ? '#065F46' : '#991B1B' }}
+              style={{ fontSize: 10, backgroundColor: client.is_active ? '#DBEAFE' : '#FEF2F2', color: client.is_active ? '#0154FC' : '#991B1B' }}
             >
               {client.is_active ? 'Active' : 'Inactive'}
             </span>
@@ -615,7 +615,7 @@ export default function ClientDetailShell({
           <p style={{ fontSize: 10, color: '#9CA3AF', marginTop: 2 }}>Added {createdDate}</p>
           {tenant && (
             <p className="flex items-center gap-1" style={{ fontSize: 10, color: '#6B7280', marginTop: 1 }}>
-              <MI name="business" size={11} color="#14B8A6" />
+              <MI name="business" size={11} color="#0154FC" />
               {tenant.name} · <span className="font-mono">{tenant.schema_name}</span>
             </p>
           )}

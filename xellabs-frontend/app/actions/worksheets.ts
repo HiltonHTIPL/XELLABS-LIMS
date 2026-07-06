@@ -54,6 +54,13 @@ export async function createWorksheet(): Promise<{ success: boolean; message: st
 
   const result = await createSenaiteWorksheet(token, unassigned.map(a => a.uid))
   if (!result.success) return { success: false, message: result.error ?? 'Failed to create worksheet.' }
+
+  // Also call assignAnalysesToWorksheet after creation to ensure the getWorksheetUID
+  // catalog index on each analysis is updated so fetchWorksheetAnalyses can find them.
+  if (result.uid && unassigned.length > 0) {
+    await assignAnalysesToWorksheet(token, result.uid, unassigned.map(a => a.uid))
+  }
+
   revalidatePath('/dashboard/worksheets')
   return { success: true, message: `Worksheet ${result.id} created.`, uid: result.uid, id: result.id }
 }

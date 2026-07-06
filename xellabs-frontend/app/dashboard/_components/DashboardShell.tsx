@@ -48,7 +48,7 @@ export default function DashboardShell({ children, initials, displayName, roleLa
         {/* Navbar */}
         <header
           className="flex items-center gap-3 px-4 h-14 shrink-0"
-          style={{ backgroundColor: '#fff', borderBottom: '1px solid #E5E7EB', zIndex: 10 }}
+          style={{ backgroundColor: '#fff', borderBottom: '1px solid #E8EAF2', zIndex: 10 }}
         >
           {/* Hamburger */}
           <button
@@ -62,10 +62,10 @@ export default function DashboardShell({ children, initials, displayName, roleLa
           {/* PRODUCTION badge */}
           <div
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-full shrink-0"
-            style={{ backgroundColor: '#DCFCE7', border: '1px solid #BBF7D0' }}
+            style={{ backgroundColor: '#DBEAFE', border: '1px solid #93C5FD' }}
           >
-            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#16A34A' }} />
-            <span className="text-xs font-semibold" style={{ color: '#15803D' }}>PRODUCTION</span>
+            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#0154FC' }} />
+            <span className="text-xs font-semibold" style={{ color: '#0154FC' }}>PRODUCTION</span>
           </div>
 
           {/* Search */}
@@ -126,7 +126,7 @@ export default function DashboardShell({ children, initials, displayName, roleLa
               </div>
               <div
                 className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
-                style={{ backgroundColor: '#14B8A6' }}
+                style={{ backgroundColor: '#14265E' }}
               >
                 {initials}
               </div>
@@ -148,7 +148,7 @@ export default function DashboardShell({ children, initials, displayName, roleLa
                 <div className="flex items-center gap-3 px-4 py-3" style={{ borderBottom: '1px solid #F3F4F6' }}>
                   <div
                     className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
-                    style={{ backgroundColor: '#14B8A6' }}
+                    style={{ backgroundColor: '#14265E' }}
                   >
                     {initials}
                   </div>
@@ -194,7 +194,7 @@ export default function DashboardShell({ children, initials, displayName, roleLa
         {/* Universal footer — full width of content area */}
         <div
           className="flex items-center justify-between shrink-0 px-5 py-2.5"
-          style={{ borderTop: '1px solid #E5E7EB', backgroundColor: '#fff', fontSize: 11, color: '#9CA3AF' }}
+          style={{ borderTop: '1px solid #E8EAF2', backgroundColor: '#fff', fontSize: 11, color: '#9AA1B2' }}
         >
           <span>© 2025 XELLABS LIMS. All rights reserved.</span>
           <div className="flex items-center gap-3">

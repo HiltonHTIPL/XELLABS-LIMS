@@ -36,7 +36,7 @@ export default function LoginForm({
       {isTenant && !tenantLogo && (
         <div
           className="mb-6 flex items-center gap-2 px-3 py-2 rounded-lg text-sm"
-          style={{ backgroundColor: '#F0FDFA', border: '1px solid #99F6E4', color: '#0D9488' }}
+          style={{ backgroundColor: '#DBEAFE', border: '1px solid #DBEAFE', color: '#0154FC' }}
         >
           <span style={{ fontSize: 16 }} className="material-icons">business</span>
           <span className="font-medium">{tenantName || tenantSubdomain}</span>

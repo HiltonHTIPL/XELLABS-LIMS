@@ -24,7 +24,7 @@ export default function NotFound() {
           boxShadow: '0 2px 16px rgba(11,30,71,0.06)',
         }}
       >
-        <div style={{ height: 4, background: 'linear-gradient(90deg, #0B1E47 0%, #14B8A6 100%)' }} />
+        <div style={{ height: 4, background: 'linear-gradient(90deg, #0B1E47 0%, #0154FC 100%)' }} />
 
         <div
           style={{
@@ -40,7 +40,7 @@ export default function NotFound() {
               width: 88,
               height: 88,
               borderRadius: '50%',
-              backgroundColor: '#F0FDFA',
+              backgroundColor: '#DBEAFE',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -48,7 +48,7 @@ export default function NotFound() {
               border: '2px dashed rgba(20,184,166,0.30)',
             }}
           >
-            <span className="material-icons" style={{ fontSize: 34, color: '#14B8A6' }}>search_off</span>
+            <span className="material-icons" style={{ fontSize: 34, color: '#0154FC' }}>search_off</span>
           </div>
 
           <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0B1E47', letterSpacing: '-0.3px', marginBottom: 10 }}>
@@ -86,7 +86,7 @@ export default function NotFound() {
             </span>
             <span style={{ fontSize: 13, fontWeight: 700, color: '#0B1E47' }}>
               Hephzibah{' '}
-              <span style={{ color: '#14B8A6' }}>Technologies</span>
+              <span style={{ color: '#0154FC' }}>Technologies</span>
             </span>
           </div>
         </div>

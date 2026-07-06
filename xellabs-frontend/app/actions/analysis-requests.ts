@@ -9,6 +9,7 @@ export type AnalysisRequest = {
   sample_id: string
   tests: number[]
   test_names: string[]
+  tests_detail: { id: number; name: string; code: string; unit: string }[]
   status: string
   priority: string
   due_date: string | null
@@ -26,6 +27,15 @@ export type ARFormState = {
 export async function getAnalysisRequests(): Promise<AnalysisRequest[]> {
   try {
     const res = await djangoFetch('/api/lims/analysis-requests/?ordering=-created_at')
+    if (!res.ok) return []
+    const data = await res.json()
+    return data.results ?? data ?? []
+  } catch { return [] }
+}
+
+export async function getAnalysisRequestsForSample(sampleId: number): Promise<AnalysisRequest[]> {
+  try {
+    const res = await djangoFetch(`/api/lims/analysis-requests/?sample=${sampleId}&ordering=-created_at`)
     if (!res.ok) return []
     const data = await res.json()
     return data.results ?? data ?? []

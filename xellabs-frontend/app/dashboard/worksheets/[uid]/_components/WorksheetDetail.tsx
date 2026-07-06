@@ -13,7 +13,7 @@ const STATE_BADGE: Record<string, { bg: string; color: string; label: string }> 
   unassigned:      { bg: '#F3F4F6', color: '#6B7280',  label: 'Unassigned' },
   assigned:        { bg: '#DBEAFE', color: '#1E40AF',  label: 'Assigned' },
   'to_be_verified':{ bg: '#FEF3C7', color: '#92400E',  label: 'To Be Verified' },
-  verified:        { bg: '#DCFCE7', color: '#166534',  label: 'Verified' },
+  verified:        { bg: '#DBEAFE', color: '#0154FC',  label: 'Verified' },
   rejected:        { bg: '#FEE2E2', color: '#991B1B',  label: 'Rejected' },
 }
 
@@ -63,7 +63,7 @@ export default function WorksheetDetail({ worksheetUid, analyses, unassigned }: 
   }
 
   return (
-    <div style={{ padding: '12px 20px 0', backgroundColor: '#F5F6FA', minHeight: '100%' }}>
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
       {/* Header */}
       <div className="flex items-center gap-2 mb-3">
         <Link href="/dashboard/worksheets" className="flex items-center gap-1 text-xs font-medium" style={{ color: '#6B7280', textDecoration: 'none' }}>
@@ -75,7 +75,7 @@ export default function WorksheetDetail({ worksheetUid, analyses, unassigned }: 
 
       <div className="flex items-center justify-between mb-3">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: '#111827' }}>Worksheet</h1>
+          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Worksheet</h1>
           <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>{analyses.length} analysis/analyses assigned</p>
         </div>
         <button onClick={() => setShowAssign(true)}
@@ -87,8 +87,8 @@ export default function WorksheetDetail({ worksheetUid, analyses, unassigned }: 
 
       {toast && (
         <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
-          style={{ backgroundColor: toast.ok ? '#ECFDF5' : '#FEF2F2', border: `1px solid ${toast.ok ? '#A7F3D0' : '#FECACA'}`, color: toast.ok ? '#065F46' : '#991B1B' }}>
-          <MI name={toast.ok ? 'check_circle' : 'error'} size={13} color={toast.ok ? '#10B981' : '#DC2626'} />
+          style={{ backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', border: toast.ok ? "1px solid #93C5FD" : "1px solid #FECACA", color: toast.ok ? '#0154FC' : '#991B1B' }}>
+          <MI name={toast.ok ? 'check_circle' : 'error'} size={13} color={toast.ok ? '#0154FC' : '#DC2626'} />
           {toast.msg}
         </div>
       )}
@@ -111,7 +111,7 @@ export default function WorksheetDetail({ worksheetUid, analyses, unassigned }: 
               {unassigned.length === 0 ? (
                 <p className="text-xs text-center py-8" style={{ color: '#9CA3AF' }}>No unassigned analyses — register samples with tests to get analyses here.</p>
               ) : (
-                <div style={{ border: '1px solid #E5E7EB', borderRadius: 8, overflow: 'hidden' }}>
+                <div style={{ border: '1px solid #E8EAF2', borderRadius: 8, overflow: 'hidden' }}>
                   {unassigned.map((a, i) => (
                     <label key={a.uid} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50"
                       style={{ borderBottom: i < unassigned.length - 1 ? '1px solid #F9FAFB' : 'none' }}>
@@ -129,7 +129,7 @@ export default function WorksheetDetail({ worksheetUid, analyses, unassigned }: 
             <div className="px-5 py-3 flex items-center justify-between" style={{ borderTop: '1px solid #F3F4F6' }}>
               <span style={{ fontSize: 11, color: '#6B7280' }}>{selected.length} selected</span>
               <div className="flex gap-2">
-                <button onClick={() => setShowAssign(false)} style={{ fontSize: 12, fontWeight: 500, padding: '7px 16px', borderRadius: 8, border: '1px solid #E5E7EB', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>Cancel</button>
+                <button onClick={() => setShowAssign(false)} style={{ fontSize: 12, fontWeight: 500, padding: '7px 16px', borderRadius: 8, border: '1px solid #E8EAF2', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>Cancel</button>
                 <button onClick={handleAssign} disabled={!selected.length || busy}
                   className="flex items-center gap-1.5"
                   style={{ fontSize: 12, fontWeight: 600, padding: '7px 18px', borderRadius: 8, backgroundColor: selected.length ? '#2563EB' : '#9CA3AF', color: '#fff', border: 'none', cursor: selected.length ? 'pointer' : 'not-allowed' }}>
@@ -144,13 +144,13 @@ export default function WorksheetDetail({ worksheetUid, analyses, unassigned }: 
 
       {/* Analyses table with inline result entry */}
       {analyses.length === 0 ? (
-        <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E5E7EB' }}>
+        <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="playlist_add" size={36} color="#D1D5DB" />
           <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No analyses assigned yet</p>
           <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>Click "Add Analyses" to assign from registered samples</p>
         </div>
       ) : (
-        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E5E7EB' }}>
+        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
           <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
             <colgroup>
               <col style={{ width: '18%' }} /><col style={{ width: '12%' }} /><col style={{ width: '18%' }} /><col style={{ width: '10%' }} /><col style={{ width: '15%' }} /><col style={{ width: '18%' }} /><col style={{ width: '9%' }} />
@@ -197,7 +197,7 @@ export default function WorksheetDetail({ worksheetUid, analyses, unassigned }: 
                           onClick={() => handleSubmitResult(a.uid)}
                           disabled={!results[a.uid]?.trim() || isSubmitting}
                           className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium"
-                          style={{ backgroundColor: results[a.uid]?.trim() ? '#14B8A6' : '#E5E7EB', color: results[a.uid]?.trim() ? '#fff' : '#9CA3AF', border: 'none', cursor: results[a.uid]?.trim() ? 'pointer' : 'not-allowed' }}>
+                          style={{ backgroundColor: results[a.uid]?.trim() ? '#0154FC' : '#E5E7EB', color: results[a.uid]?.trim() ? '#fff' : '#9CA3AF', border: 'none', cursor: results[a.uid]?.trim() ? 'pointer' : 'not-allowed' }}>
                           <MI name={isSubmitting ? 'hourglass_top' : 'check'} size={12} color={results[a.uid]?.trim() ? '#fff' : '#9CA3AF'} />
                           {isSubmitting ? '…' : 'Submit'}
                         </button>

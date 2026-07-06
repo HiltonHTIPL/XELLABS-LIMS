@@ -71,8 +71,8 @@ function SampleTypeModal({
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #F3F4F6' }}>
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: isEdit ? '#EFF6FF' : '#F0FDFA' }}>
-              <MI name={isEdit ? 'edit' : 'add'} size={16} color={isEdit ? '#2563EB' : '#14B8A6'} />
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: isEdit ? '#EFF6FF' : '#DBEAFE' }}>
+              <MI name={isEdit ? 'edit' : 'add'} size={16} color={isEdit ? '#2563EB' : '#0154FC'} />
             </div>
             <div>
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>
@@ -119,7 +119,7 @@ function SampleTypeModal({
               type="button"
               onClick={onClose}
               disabled={pending}
-              style={{ fontSize: 12, fontWeight: 500, padding: '7px 16px', borderRadius: 8, border: '1px solid #E5E7EB', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}
+              style={{ fontSize: 12, fontWeight: 500, padding: '7px 16px', borderRadius: 8, border: '1px solid #E8EAF2', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}
             >
               Cancel
             </button>
@@ -127,7 +127,7 @@ function SampleTypeModal({
               type="submit"
               disabled={pending}
               className="flex items-center gap-1.5"
-              style={{ fontSize: 12, fontWeight: 600, padding: '7px 18px', borderRadius: 8, backgroundColor: isEdit ? '#2563EB' : '#14B8A6', color: '#fff', border: 'none', cursor: pending ? 'not-allowed' : 'pointer', opacity: pending ? 0.7 : 1 }}
+              style={{ fontSize: 12, fontWeight: 600, padding: '7px 18px', borderRadius: 8, backgroundColor: isEdit ? '#2563EB' : '#0154FC', color: '#fff', border: 'none', cursor: pending ? 'not-allowed' : 'pointer', opacity: pending ? 0.7 : 1 }}
             >
               <MI name={pending ? 'hourglass_top' : 'check'} size={13} color="#fff" />
               {pending ? (isEdit ? 'Saving…' : 'Creating…') : isEdit ? 'Save Changes' : 'Create'}
@@ -156,18 +156,18 @@ export default function SampleTypesShell({ initialSampleTypes }: { initialSample
   }
 
   return (
-    <div style={{ padding: '12px 20px 0', backgroundColor: '#F5F6FA', minHeight: '100%' }}>
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
 
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: '#111827' }}>Sample Types</h1>
+          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Sample Types</h1>
           <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Manage sample types used across the laboratory</p>
         </div>
         <button
           onClick={openCreate}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white"
-          style={{ backgroundColor: '#14B8A6' }}
+          style={{ backgroundColor: '#0154FC' }}
         >
           <MI name="add" size={15} color="#fff" />
           New Sample Type
@@ -178,11 +178,11 @@ export default function SampleTypesShell({ initialSampleTypes }: { initialSample
       {toast && (
         <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
           style={{
-            backgroundColor: toast.ok ? '#ECFDF5' : '#FEF2F2',
-            border: `1px solid ${toast.ok ? '#A7F3D0' : '#FECACA'}`,
-            color: toast.ok ? '#065F46' : '#991B1B',
+            backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2',
+            border: `1px solid ${toast.ok ? '#93C5FD' : '#FECACA'}`,
+            color: toast.ok ? '#0154FC' : '#991B1B',
           }}>
-          <MI name={toast.ok ? 'check_circle' : 'error'} size={13} color={toast.ok ? '#10B981' : '#DC2626'} />
+          <MI name={toast.ok ? 'check_circle' : 'error'} size={13} color={toast.ok ? '#0154FC' : '#DC2626'} />
           {toast.msg}
         </div>
       )}
@@ -194,21 +194,21 @@ export default function SampleTypesShell({ initialSampleTypes }: { initialSample
 
       {/* Table / empty state */}
       {initialSampleTypes.length === 0 ? (
-        <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E5E7EB' }}>
+        <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="science" size={36} color="#D1D5DB" />
           <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No sample types yet</p>
           <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>Create your first sample type to get started</p>
           <button
             onClick={openCreate}
             className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white"
-            style={{ backgroundColor: '#14B8A6' }}
+            style={{ backgroundColor: '#0154FC' }}
           >
             <MI name="add" size={13} color="#fff" />
             New Sample Type
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E5E7EB' }}>
+        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
           <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
             <colgroup>
               <col style={{ width: '35%' }} />
@@ -235,8 +235,8 @@ export default function SampleTypesShell({ initialSampleTypes }: { initialSample
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-2">
                       <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0"
-                        style={{ backgroundColor: '#F0FDFA' }}>
-                        <MI name="science" size={13} color="#14B8A6" />
+                        style={{ backgroundColor: '#DBEAFE' }}>
+                        <MI name="science" size={13} color="#0154FC" />
                       </div>
                       <span className="text-xs font-medium" style={{ color: '#111827' }}>{st.title}</span>
                     </div>
