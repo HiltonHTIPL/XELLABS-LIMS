@@ -38,6 +38,7 @@ class MethodSerializer(serializers.ModelSerializer):
 
 class TestSerializer(serializers.ModelSerializer):
     method_name = serializers.CharField(source="method.name", read_only=True)
+    method_code = serializers.CharField(source="method.code", read_only=True)
 
     class Meta:
         model = Test
@@ -53,7 +54,14 @@ class SpecificationSerializer(serializers.ModelSerializer):
 class SampleSerializer(RecordLockMixin, serializers.ModelSerializer):
     sample_type_name = serializers.CharField(source="sample_type.name", read_only=True)
     client_name = serializers.CharField(source="client.name", read_only=True)
+    received_by_name = serializers.SerializerMethodField(read_only=True)
     reason_for_change = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
+    def get_received_by_name(self, obj):
+        if obj.received_by:
+            full = f"{obj.received_by.first_name} {obj.received_by.last_name}".strip()
+            return full or obj.received_by.username
+        return ""
     sample_id = serializers.CharField(
         required=False, allow_blank=True,
         validators=[UniqueValidator(queryset=Sample.objects.all())],
@@ -99,6 +107,7 @@ class AnalysisRequestSerializer(serializers.ModelSerializer):
         required=False, allow_blank=True,
         validators=[UniqueValidator(queryset=AnalysisRequest.objects.all())],
     )
+    tests_detail = TestSerializer(source="tests", many=True, read_only=True)
 
     class Meta:
         model = AnalysisRequest
