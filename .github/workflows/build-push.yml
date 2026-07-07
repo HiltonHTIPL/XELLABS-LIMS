@@ -7,7 +7,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  ORG: hephzibahtechnologies
 
 jobs:
   build-backend:
@@ -32,7 +31,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.ORG }}/xellabs-lims-backend
+          images: ${{ env.REGISTRY }}/${{ github.repository }}-backend
           tags: |
             type=sha,prefix=sha-
             type=raw,value=latest
@@ -44,7 +43,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.ORG }}/xellabs-lims-backend:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}-backend:latest
           cache-to: type=inline
 
   build-frontend:
@@ -69,7 +68,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.ORG }}/xellabs-lims-frontend
+          images: ${{ env.REGISTRY }}/${{ github.repository }}-frontend
           tags: |
             type=sha,prefix=sha-
             type=raw,value=latest
@@ -83,7 +82,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             SESSION_SECRET=${{ secrets.SESSION_SECRET }}
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.ORG }}/xellabs-lims-frontend:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}-frontend:latest
           cache-to: type=inline
 
   build-senaite:
@@ -108,7 +107,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.ORG }}/xellabs-lims-senaite
+          images: ${{ env.REGISTRY }}/${{ github.repository }}-senaite
           tags: |
             type=sha,prefix=sha-
             type=raw,value=latest
@@ -120,5 +119,5 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.ORG }}/xellabs-lims-senaite:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}-senaite:latest
           cache-to: type=inline
