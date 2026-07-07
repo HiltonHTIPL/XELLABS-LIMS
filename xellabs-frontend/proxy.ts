@@ -14,7 +14,7 @@ function extractSubdomain(host: string): string {
   return sub
 }
 
-export async function proxy(req: NextRequest) {
+export default async function proxy(req: NextRequest) {
   const path = req.nextUrl.pathname
   const isProtected = protectedRoutes.some(r => path.startsWith(r))
   const isPublic = publicRoutes.includes(path)
