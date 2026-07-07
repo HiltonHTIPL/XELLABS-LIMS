@@ -18,7 +18,7 @@ function extractSubdomain(host: string): string {
   const parts = hostname.split('.')
   if (parts.length === 1) return ''
   const sub = parts[0]
-  if (['www', 'app', 'api', 'admin'].includes(sub)) return ''
+  if (['www', 'app', 'api', 'admin', 'qa'].includes(sub)) return ''
   return sub
 }
 
