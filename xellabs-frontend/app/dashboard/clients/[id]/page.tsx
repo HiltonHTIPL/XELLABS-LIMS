@@ -1,5 +1,4 @@
 import { notFound } from 'next/navigation'
-import Link from 'next/link'
 import { getClient } from '@/app/actions/clients'
 import { getTenant, getTenantUsers } from '@/app/actions/tenants'
 import ClientDetailShell from './_components/ClientDetailShell'

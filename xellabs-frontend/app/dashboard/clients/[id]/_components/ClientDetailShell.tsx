@@ -53,14 +53,6 @@ function AddrBlock({ label, addr }: { label: string; addr: Record<string, string
   )
 }
 
-function SectionHead({ label }: { label: string }) {
-  return (
-    <p className="text-xs font-semibold uppercase tracking-wide pt-3 pb-1" style={{ color: '#374151', letterSpacing: '0.06em', borderTop: '1px solid #F3F4F6' }}>
-      {label}
-    </p>
-  )
-}
-
 function OverviewTab({ client }: { client: DjangoClient }) {
   const contactName = [client.salutation, client.contact_first_name, client.contact_last_name].filter(Boolean).join(' ')
     || client.contact_person
@@ -248,7 +240,7 @@ function UsersTab({ users }: { users: TenantUser[] }) {
 }
 
 // ── Branding Tab ──────────────────────────────────────────────────────────────
-function BrandingTab({ tenant, clientId }: { tenant: TenantDetail | null; clientId: number }) {
+function BrandingTab({ tenant }: { tenant: TenantDetail | null }) {
   const router = useRouter()
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
@@ -660,7 +652,7 @@ export default function ClientDetailShell({
       {tab === 'Overview'        && <OverviewTab client={client} />}
       {tab === 'Domain & Tenant' && <DomainTab tenant={tenant} />}
       {tab === 'Users'           && <UsersTab users={users} />}
-      {tab === 'Branding'        && <BrandingTab tenant={tenant} clientId={client.id} />}
+      {tab === 'Branding'        && <BrandingTab tenant={tenant} />}
     </div>
   )
 }

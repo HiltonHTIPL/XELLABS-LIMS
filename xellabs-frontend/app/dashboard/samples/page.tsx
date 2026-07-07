@@ -1,21 +1,8 @@
-import { getSamples, getSampleTypes, getAnalysisServices } from '@/app/actions/samples'
-import { getClients } from '@/app/actions/clients'
+import { getSamples } from '@/app/actions/samples'
 import SamplesShell from './_components/SamplesShell'
 
 export default async function SamplesPage() {
-  const [samples, clients, sampleTypes, analysisServices] = await Promise.all([
-    getSamples(),
-    getClients(),
-    getSampleTypes(),
-    getAnalysisServices(),
-  ])
+  const samples = await getSamples()
 
-  return (
-    <SamplesShell
-      initialSamples={samples}
-      clients={clients}
-      sampleTypes={sampleTypes}
-      analysisServices={analysisServices}
-    />
-  )
+  return <SamplesShell initialSamples={samples} />
 }

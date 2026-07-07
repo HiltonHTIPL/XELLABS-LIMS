@@ -3,17 +3,12 @@ import { useState, useTransition, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { receiveSample } from '@/app/actions/samples'
-import { SenaiteSample, SenaiteSampleType, SenaiteAnalysisService, mapSenaiteState, mapSenaitePriority } from '@/app/lib/senaite'
-import { DjangoClient } from '@/app/actions/clients'
+import { SenaiteSample, mapSenaiteState, mapSenaitePriority } from '@/app/lib/senaite'
 import { T, MI, PageHeader, StatCard, Chip, StatusChip, Btn, IconBtn, Card, thStyle, tdStyle, linkStyle, Pagination, EmptyState } from '../../_components/ui'
 
 type Props = {
   initialSamples: SenaiteSample[]
-  clients: DjangoClient[]
-  sampleTypes: SenaiteSampleType[]
-  analysisServices: SenaiteAnalysisService[]
 }
-type ClientOption = { uid: string; name: string; client_id: string }
 
 function fmtDate(d: string | null): string {
   if (!d) return '—'
@@ -23,7 +18,7 @@ function fmtDate(d: string | null): string {
 
 const PAGE_SIZE = 25
 
-export default function SamplesShell({ initialSamples, clients, sampleTypes, analysisServices }: Props) {
+export default function SamplesShell({ initialSamples }: Props) {
   const router = useRouter()
   const [samples] = useState(initialSamples)
   const [search, setSearch] = useState('')
@@ -33,14 +28,10 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
   const [filterClient, setFilterClient] = useState('')
   const [page, setPage] = useState(1)
   const [actionMsg, setActionMsg] = useState<{ text: string; ok: boolean } | null>(null)
-  const [isPending, startTransition] = useTransition()
+  const [, startTransition] = useTransition()
   const [kebabOpen, setKebabOpen] = useState<string | null>(null)
   const [kebabPos, setKebabPos] = useState<{ top: number; left: number } | null>(null)
   const kebabRef = useRef<HTMLButtonElement | null>(null)
-
-  const clientOptions: ClientOption[] = clients
-    .filter(c => c.senaite_uid)
-    .map(c => ({ uid: c.senaite_uid!, name: c.name, client_id: c.client_id }))
 
   const allStatuses = [...new Set(samples.map(s => mapSenaiteState(s.review_state)))]
   const allClients  = [...new Set(samples.map(s => s.ClientTitle).filter(Boolean))]

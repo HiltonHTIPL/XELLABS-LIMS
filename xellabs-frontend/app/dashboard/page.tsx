@@ -124,7 +124,7 @@ export default async function DashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {SAMPLES.map((s, i) => {
+                {SAMPLES.map((s) => {
                   const tone = STATUS_TONE[s.status] ?? 'gray'
                   return (
                     <tr key={s.id} className="hover:bg-slate-50">

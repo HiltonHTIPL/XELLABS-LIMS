@@ -149,12 +149,11 @@ type FV = Record<string, string>
 type ClientIdCheck = 'idle' | 'checking' | 'available' | 'taken'
 
 // ── Step panels (all controlled) ──────────────────────────────────────────────
-function Step1({ vals, set, errors, fieldErrors, clientIdCheck, onClientIdBlur, isEditing }: {
+function Step1({ vals, set, errors, fieldErrors, clientIdCheck, onClientIdBlur }: {
   vals: FV; set: (k: string, v: string) => void
   errors?: ClientFormState['errors']; fieldErrors: Record<string, string>
   clientIdCheck: ClientIdCheck
   onClientIdBlur: (v: string) => void
-  isEditing: boolean
 }) {
   const clientIdErr = clientIdCheck === 'taken'
     ? 'This Client ID is already in use — choose a different one.'
@@ -606,7 +605,6 @@ export default function ClientsShell({ initialClients }: { initialClients: Djang
                     const available = await checkClientIdAvailable(trimmed, editingClient?.id)
                     setClientIdCheck(available ? 'available' : 'taken')
                   }}
-                  isEditing={isEditing}
                 />
                 {!isEditing && <div className="mt-3"><LogoUpload /></div>}
               </div>

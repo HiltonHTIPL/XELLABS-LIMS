@@ -93,7 +93,7 @@ type Props = { initialSamples: LabSample[]; sampleTypes: DjangoSampleType[]; sta
 
 export default function SamplesOverviewShell({ initialSamples, sampleTypes, stats, clients }: Props) {
   const router = useRouter()
-  const [samples, setSamples] = useState(initialSamples)
+  const [samples] = useState(initialSamples)
   const [search, setSearch] = useState('')
   const [filterSampleType, setFilterSampleType] = useState('')
   const [filterClient, setFilterClient] = useState('')
@@ -135,7 +135,12 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
     else setSelected(new Set(paginated.map(s => s.id)))
   }
   function toggleRow(id: number) {
-    setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+    setSelected(prev => {
+      const n = new Set(prev)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
   }
   function openActionMenu(e: React.MouseEvent<HTMLButtonElement>, id: number) {
     const rect = e.currentTarget.getBoundingClientRect()
@@ -178,7 +183,8 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
   function toggleCol(key: ColKey) {
     setVisibleCols(prev => {
       const next = new Set(prev)
-      next.has(key) ? next.delete(key) : next.add(key)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
       try { localStorage.setItem(LS_KEY, JSON.stringify([...next])) } catch { /* ignore */ }
       return next
     })
