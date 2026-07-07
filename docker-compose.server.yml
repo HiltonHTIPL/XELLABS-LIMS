@@ -2,13 +2,18 @@
 # Keeps production port mappings separate from developer docker-compose.yml.
 # Deploy with:
 #   docker compose -f docker-compose.yml -f docker-compose.server.yml up -d --build
+#
+# NOTE: `!override` is required — without it compose MERGES port lists
+# (base 8080 + override 9090 both bind), and base ports collide with other
+# projects on the shared server (senaite-original owns 8080, another redis
+# owns 6379).
 services:
   redis:
-    ports:
+    ports: !override
       - "127.0.0.1:6380:6379"
 
   senaite:
-    ports:
+    ports: !override
       - "0.0.0.0:9090:8080"
 
   django:
