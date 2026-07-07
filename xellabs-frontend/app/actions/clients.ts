@@ -354,7 +354,7 @@ export async function createClient(
         }
 
         const logoForm = new FormData()
-        logoForm.append('logo', new Blob([compressed as unknown as ArrayBuffer], { type: 'image/webp' }), 'logo.webp')
+        logoForm.append('logo', new Blob([new Uint8Array(compressed)], { type: 'image/webp' }), 'logo.webp')
 
         const logoRes = await djangoFetch(`/api/tenants/${created.tenant}/logo/`, {
           method: 'POST',

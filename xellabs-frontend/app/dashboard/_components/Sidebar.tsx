@@ -9,7 +9,7 @@ function MI({ name, size = 16 }: { name: string; size?: number }) {
   return <span className="material-icons" style={{ fontSize: size, lineHeight: 1 }}>{name}</span>
 }
 
-type NavItem = { label: string; href: string; icon: string; roles: string[] | null }
+type NavItem = { label: string; href: string; icon: string; roles: string[] | null; exact?: boolean }
 type NavGroup = { group: string; icon: string; roles: string[] | null; children: NavItem[] }
 type NavEntry = NavItem | NavGroup
 
@@ -21,7 +21,15 @@ const NAV: NavEntry[] = [
   { label: 'Dashboard',        href: '/dashboard',                   icon: 'dashboard',               roles: null },
   { label: 'Clients',          href: '/dashboard/clients',           icon: 'business',                roles: ['admin', 'lab_manager', 'receptionist'] },
   // Sample workflow
-  { label: 'Samples',          href: '/dashboard/samples-overview',  icon: 'format_list_bulleted',    roles: ['admin', 'lab_manager', 'receptionist', 'analyst', 'reviewer'] },
+  {
+    group: 'Samples',
+    icon: 'format_list_bulleted',
+    roles: ['admin', 'lab_manager', 'receptionist', 'analyst', 'reviewer'],
+    children: [
+      { label: 'Samples Overview', href: '/dashboard/samples-overview', icon: 'list_alt',      roles: ['admin', 'lab_manager', 'receptionist', 'analyst', 'reviewer'], exact: true },
+      { label: 'New Samples',      href: '/dashboard/samples-overview/new', icon: 'add_circle', roles: ['admin', 'lab_manager', 'receptionist'] },
+    ],
+  },
   { label: 'Sample Receipt',   href: '/dashboard/sample-receipts',   icon: 'receipt_long',            roles: null },
   { label: 'Analysis Requests',href: '/dashboard/analysis-requests', icon: 'assignment_turned_in',    roles: ['admin', 'lab_manager', 'analyst', 'reviewer'] },
   { label: 'Worksheets',       href: '/dashboard/worksheets',        icon: 'table_chart',             roles: ['admin', 'lab_manager', 'analyst'] },
@@ -41,6 +49,9 @@ const NAV: NavEntry[] = [
       { label: 'Sample Types', href: '/dashboard/sample-types', icon: 'category',   roles: ['admin', 'lab_manager'] },
       { label: 'Methods',      href: '/dashboard/methods',      icon: 'biotech',     roles: ['admin', 'lab_manager'] },
       { label: 'Tests',        href: '/dashboard/tests',        icon: 'assignment',  roles: ['admin', 'lab_manager', 'analyst'] },
+      { label: 'Master Data Import', href: '/dashboard/master-data-import', icon: 'upload_file', roles: ['admin', 'lab_manager'] },
+      { label: 'Instrument List', href: '/dashboard/instrument-list', icon: 'precision_manufacturing', roles: ['admin', 'lab_manager'] },
+      { label: 'Storage List', href: '/dashboard/storage-list', icon: 'inventory_2', roles: ['admin', 'lab_manager'] },
     ],
   },
 ]
@@ -53,9 +64,20 @@ interface Props {
 export default function Sidebar({ onToggle, role }: Props) {
   const pathname = usePathname()
 
-  // Auto-open Administration if current path is one of its children
-  const adminPaths = ['/dashboard/sample-types', '/dashboard/methods', '/dashboard/tests']
-  const [adminOpen, setAdminOpen] = useState(() => adminPaths.some(p => pathname.startsWith(p)))
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
+    const open = new Set<string>()
+    if (['/dashboard/sample-types', '/dashboard/methods', '/dashboard/tests', '/dashboard/master-data-import', '/dashboard/instrument-list', '/dashboard/storage-list'].some(p => pathname.startsWith(p))) open.add('Administration')
+    if (['/dashboard/samples-overview', '/dashboard/samples/new'].some(p => pathname.startsWith(p))) open.add('Samples')
+    return open
+  })
+
+  function toggleGroup(name: string) {
+    setOpenGroups(prev => {
+      const next = new Set(prev)
+      next.has(name) ? next.delete(name) : next.add(name)
+      return next
+    })
+  }
 
   function isVisible(roles: string[] | null) {
     return !roles || (!!role && roles.includes(role))
@@ -84,13 +106,14 @@ export default function Sidebar({ onToggle, role }: Props) {
           if (!isVisible(entry.roles)) return null
 
           if (isGroup(entry)) {
-            const anyChildActive = entry.children.some(c => pathname.startsWith(c.href))
+            const anyChildActive = entry.children.some(c => c.exact ? pathname === c.href : pathname.startsWith(c.href))
+            const isOpen = openGroups.has(entry.group)
             return (
               <div key={entry.group}>
                 {/* Group header button */}
                 <button
                   type="button"
-                  onClick={() => setAdminOpen(o => !o)}
+                  onClick={() => toggleGroup(entry.group)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 10, width: '100%',
                     padding: '7px 12px', marginBottom: 2, borderRadius: 10,
@@ -103,16 +126,16 @@ export default function Sidebar({ onToggle, role }: Props) {
                 >
                   <MI name={entry.icon} size={16} />
                   <span style={{ flex: 1, textAlign: 'left' }}>{entry.group}</span>
-                  <span className="material-icons" style={{ fontSize: 16, lineHeight: 1, transition: 'transform 0.2s', transform: adminOpen ? 'rotate(180deg)' : 'rotate(0deg)', opacity: 0.7 }}>
+                  <span className="material-icons" style={{ fontSize: 16, lineHeight: 1, transition: 'transform 0.2s', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)', opacity: 0.7 }}>
                     expand_more
                   </span>
                 </button>
 
                 {/* Children */}
-                {adminOpen && (
+                {isOpen && (
                   <div style={{ marginLeft: 12, borderLeft: '1.5px solid rgba(255,255,255,0.15)', paddingLeft: 8, marginBottom: 4 }}>
                     {entry.children.filter(c => isVisible(c.roles)).map(child => {
-                      const active = pathname.startsWith(child.href)
+                      const active = child.exact ? pathname === child.href : pathname.startsWith(child.href)
                       return (
                         <Link key={child.href} href={child.href} style={linkStyle(active)}>
                           <MI name={child.icon} size={15} />

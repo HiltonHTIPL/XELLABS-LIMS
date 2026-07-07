@@ -338,6 +338,36 @@ export function EmptyState({ icon = 'inbox', title, sub }: { icon?: string; titl
   )
 }
 
+/* ------------------------------------ Confirm modal ------------------------------- */
+
+export function ConfirmModal({
+  title, message, confirmLabel = 'OK', cancelLabel = 'Cancel', danger, onConfirm, onCancel,
+}: {
+  title: string; message: string; confirmLabel?: string; cancelLabel?: string
+  danger?: boolean; onConfirm: () => void; onCancel: () => void
+}) {
+  return (
+    <div
+      onClick={e => { if (e.currentTarget === e.target) onCancel() }}
+      style={{
+        position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 1000,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      <div style={{ backgroundColor: '#fff', borderRadius: 16, width: 400, boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+        <div className="px-5 pt-5 pb-4">
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: T.heading }}>{title}</h3>
+          <p className="mt-2" style={{ fontSize: 13.5, color: T.muted, lineHeight: 1.5 }}>{message}</p>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-5 pb-5">
+          <Btn variant="outline" onClick={onCancel}>{cancelLabel}</Btn>
+          <Btn variant={danger ? 'danger' : 'primary'} onClick={onConfirm}>{confirmLabel}</Btn>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ------------------------------- Avatar (initials) ------------------------------- */
 
 export function Avatar({ name, size = 24 }: { name: string; size?: number }) {

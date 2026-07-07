@@ -12,6 +12,7 @@ import {
   type SenaiteAnalysis,
 } from '@/app/lib/senaite'
 
+
 const SENAITE_USER = process.env.SENAITE_ADMIN_USER ?? 'admin'
 const SENAITE_PASS = process.env.SENAITE_ADMIN_PASS ?? 'admin'
 

@@ -130,6 +130,28 @@ def _find_by_title(portal_type: str, title: str) -> dict | None:
         return None
 
 
+def _find_active_by_title(portal_type: str, title: str) -> dict | None:
+    """
+    Same as _find_by_title, but only matches ACTIVE objects — an inactive (deleted)
+    object with the same title does not count as a duplicate, so it can be re-imported.
+    """
+    if not title:
+        return None
+    s = _session()
+    try:
+        resp = s.get(_api(portal_type), params={"complete": "true", "limit": "1000", "review_state": "active"}, timeout=15)
+        resp.raise_for_status()
+        items = resp.json().get("items") or []
+        needle = title.strip().lower()
+        for item in items:
+            if (item.get("title") or "").strip().lower() == needle:
+                return item
+        return None
+    except requests.RequestException as exc:
+        logger.error("SENAITE active lookup failed for %s '%s': %s", portal_type, title, exc)
+        return None
+
+
 def push_analysis_request(ar) -> str | None:
     """
     Push an AnalysisRequest + its Sample to SENAITE.
@@ -290,3 +312,173 @@ def push_storage_location(location) -> "str | None":
     except Exception as exc:
         logger.error("SENAITE storage sync failed for '%s': %s", title, exc)
         return None
+
+
+# ── Master data import (Instruments / Storage Locations) ─────────────────────
+
+import re
+
+
+def _sanitize_error(message: str) -> str:
+    """
+    Strip any reference to the underlying SENAITE system (hostnames, URLs, the word
+    itself) from an error string before it can reach the frontend/UI. Internal
+    logs may say "SENAITE" freely; anything returned in an API response body may not
+    — the product is white-labeled as XelLabs end-to-end. See CLAUDE.md Section 17b.
+    """
+    sanitized = re.sub(r"https?://senaite[^\s'\"]*", "the lab system", message, flags=re.IGNORECASE)
+    sanitized = re.sub(r"senaite", "the lab system", sanitized, flags=re.IGNORECASE)
+    return sanitized
+
+
+INSTRUMENTS_PARENT_PATH = "/senaite/bika_setup/bika_instruments"
+STORAGE_LOCATIONS_PARENT_PATH = "/senaite/setup/storagelocations"
+
+# SENAITE requires these as UID references on Instrument; auto-created under these
+# setup folders if a matching title doesn't already exist.
+INSTRUMENT_REFERENCE_FIELDS = {
+    "instrumenttype": ("InstrumentType", "/senaite/setup/instrumenttypes"),
+    "manufacturer": ("Manufacturer", "/senaite/setup/manufacturers"),
+    "supplier": ("Supplier", "/senaite/setup/suppliers"),
+}
+
+
+def _find_or_create(portal_type: str, parent_path: str, title: str) -> str:
+    """Look up an existing SENAITE object by title, or create it. Returns its UID."""
+    item = _find_by_title(portal_type, title)
+    if item and item.get("uid"):
+        return item["uid"]
+
+    s = _session()
+    resp = s.post(_api("create"), json={
+        "portal_type": portal_type,
+        "parent_path": parent_path,
+        "title": title,
+    }, timeout=15)
+    resp.raise_for_status()
+    data = resp.json()
+    items = data.get("items") or []
+    if items:
+        return items[0].get("uid") or items[0].get("UID")
+    raise ValueError(f"Could not create {portal_type} '{title}': unexpected response {data}")
+
+
+def import_instrument_row(row: dict) -> dict:
+    """
+    Create a single SENAITE Instrument from a row dict with (case-insensitive-agnostic,
+    caller must lower-case keys) keys: title, instrumenttype, manufacturer, supplier,
+    model, serialno, assetnumber.
+    Returns {"ok": True, "title": ..., "uid": ...} or {"ok": False, "title": ..., "error": ...}.
+    """
+    title = (row.get("title") or "").strip()
+    if not title:
+        return {"ok": False, "title": None, "error": "Missing Title"}
+
+    payload = {
+        "portal_type": "Instrument",
+        "parent_path": INSTRUMENTS_PARENT_PATH,
+        "title": title,
+    }
+    field_map = {"model": "Model", "serialno": "SerialNo", "assetnumber": "AssetNumber"}
+    for field, api_field in field_map.items():
+        value = (row.get(field) or "").strip()
+        if value:
+            payload[api_field] = value
+
+    try:
+        for col, (portal_type, parent_path) in INSTRUMENT_REFERENCE_FIELDS.items():
+            value = (row.get(col) or "").strip()
+            if not value:
+                return {"ok": False, "title": title, "error": f"'{col}' is required"}
+            payload[portal_type] = _find_or_create(portal_type, parent_path, value)
+
+        # Only skip if an active instrument with this exact title AND every field
+        # matches — if even one field differs, this is a distinct record and gets added.
+        existing = _find_active_by_title("Instrument", title)
+        if existing and _instrument_matches(existing, payload):
+            return {"ok": None, "title": title, "error": "Skipped — an identical active instrument already exists"}
+
+        s = _session()
+        resp = s.post(_api("create"), json=payload, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        items = data.get("items") or []
+        if items:
+            uid = items[0].get("uid") or items[0].get("UID")
+            return {"ok": True, "title": title, "uid": uid}
+        return {"ok": False, "title": title, "error": _sanitize_error(f"Unexpected response: {data}")}
+    except Exception as exc:
+        return {"ok": False, "title": title, "error": _sanitize_error(str(exc))}
+
+
+def _instrument_matches(existing: dict, payload: dict) -> bool:
+    """True only if every comparable field on `existing` equals the incoming `payload`."""
+    for field in ("Model", "SerialNo", "AssetNumber"):
+        if (existing.get(field) or "") != (payload.get(field) or ""):
+            return False
+    for field in ("InstrumentType", "Manufacturer", "Supplier"):
+        existing_uid = (existing.get(field) or {}).get("uid") if isinstance(existing.get(field), dict) else None
+        if existing_uid != payload.get(field):
+            return False
+    return True
+
+
+def import_storage_location_row(row: dict) -> dict:
+    """
+    Create a single SENAITE StorageLocation from a row dict with keys: title, description.
+    Returns {"ok": True, "title": ..., "uid": ...} or {"ok": False, "title": ..., "error": ...}.
+    """
+    title = (row.get("title") or "").strip()
+    if not title:
+        return {"ok": False, "title": None, "error": "Missing Title"}
+
+    payload = {
+        "portal_type": "StorageLocation",
+        "parent_path": STORAGE_LOCATIONS_PARENT_PATH,
+        "title": title,
+    }
+    description = (row.get("description") or "").strip()
+    if description:
+        payload["description"] = description
+
+    # Only skip if an active storage location with this exact title AND description
+    # matches — if the description differs, this is a distinct record and gets added.
+    existing = _find_active_by_title("StorageLocation", title)
+    if existing and (existing.get("description") or "") == (payload.get("description") or ""):
+        return {"ok": None, "title": title, "error": "Skipped — an identical active storage location already exists"}
+
+    try:
+        s = _session()
+        resp = s.post(_api("create"), json=payload, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        items = data.get("items") or []
+        if items:
+            uid = items[0].get("uid") or items[0].get("UID")
+            return {"ok": True, "title": title, "uid": uid}
+        return {"ok": False, "title": title, "error": _sanitize_error(f"Unexpected response: {data}")}
+    except Exception as exc:
+        return {"ok": False, "title": title, "error": _sanitize_error(str(exc))}
+
+
+def delete_object(uid: str) -> dict:
+    """
+    Deactivate a SENAITE object by UID (SENAITE's JSON API 'delete' endpoint performs a
+    workflow deactivation, not a hard ZODB delete — confirmed via direct testing: the
+    object's review_state flips to 'inactive' and it disappears from list queries filtered
+    with review_state=active, but the object itself still exists at its original path).
+    This is the correct behavior for lab compliance software — records are never truly
+    destroyed. Returns {"ok": True, "uid": uid} or {"ok": False, "uid": uid, "error": ...}.
+    """
+    if not uid:
+        return {"ok": False, "uid": uid, "error": "Missing uid"}
+    try:
+        s = _session()
+        resp = s.post(_api("delete"), json={"uid": uid}, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("success", True):
+            return {"ok": True, "uid": uid}
+        return {"ok": False, "uid": uid, "error": _sanitize_error(str(data.get("message") or data))}
+    except Exception as exc:
+        return {"ok": False, "uid": uid, "error": _sanitize_error(str(exc))}

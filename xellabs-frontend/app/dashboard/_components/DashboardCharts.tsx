@@ -37,7 +37,7 @@ export function TrendChart() {
           <Tooltip
             contentStyle={{ fontSize: 11, border: '1px solid #E5E7EB', borderRadius: 6 }}
             labelStyle={{ color: '#374151', fontWeight: 600 }}
-            formatter={(v) => [`${v ?? 0} days`, 'Avg TAT']}
+            formatter={(v) => [`${String(v ?? 0)} days`, 'Avg TAT']}
           />
           <Line
             type="monotone" dataKey="tat"
