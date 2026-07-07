@@ -1,13 +1,14 @@
 'use client'
 import { useEffect } from 'react'
-import { refreshSession } from '@/app/actions/auth'
 
-// Refreshes the session cookie on mount and every 30 minutes so users
-// are not logged out during active use.
+async function refresh() {
+  await fetch('/api/refresh-session', { credentials: 'same-origin' })
+}
+
 export default function SessionRefresher() {
   useEffect(() => {
-    refreshSession()
-    const id = setInterval(refreshSession, 30 * 60 * 1000)
+    refresh()
+    const id = setInterval(refresh, 30 * 60 * 1000)
     return () => clearInterval(id)
   }, [])
   return null
