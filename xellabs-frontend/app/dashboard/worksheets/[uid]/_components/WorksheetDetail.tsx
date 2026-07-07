@@ -147,7 +147,7 @@ export default function WorksheetDetail({ worksheetUid, analyses, unassigned }: 
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="playlist_add" size={36} color="#D1D5DB" />
           <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No analyses assigned yet</p>
-          <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>Click "Add Analyses" to assign from registered samples</p>
+          <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>Click &quot;Add Analyses&quot; to assign from registered samples</p>
         </div>
       ) : (
         <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
