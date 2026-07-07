@@ -2,7 +2,7 @@
 import { RateLimiterMemory } from 'rate-limiter-flexible'
 import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
-import { createSession, deleteSession } from '@/app/lib/session'
+import { createSession, deleteSession, getSession } from '@/app/lib/session'
 import { LoginSchema, type LoginFormState } from '@/app/lib/definitions'
 import { senaiteLogin, mapSenaiteRole } from '@/app/lib/senaite'
 import { djangoFetch } from '@/app/lib/django'
@@ -115,4 +115,17 @@ export async function login(
 export async function logout() {
   await deleteSession()
   redirect('/login')
+}
+
+export async function refreshSession() {
+  const session = await getSession()
+  if (!session) return
+  await createSession({
+    userId: session.userId,
+    username: session.username,
+    role: session.role,
+    djangoToken: session.djangoToken,
+    senaiteToken: session.senaiteToken,
+    tenantSubdomain: session.tenantSubdomain,
+  })
 }

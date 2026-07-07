@@ -1,6 +1,7 @@
 import { getSession } from '@/app/lib/session'
 import { redirect } from 'next/navigation'
 import DashboardShell from './_components/DashboardShell'
+import SessionRefresher from './_components/SessionRefresher'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession()
@@ -19,6 +20,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <div className="flex flex-col h-screen overflow-hidden" style={{ backgroundColor: '#F7F8FC' }}>
+      <SessionRefresher />
       <DashboardShell initials={initials} displayName={displayName} roleLabel={roleLabel} role={session.role}>
         {children}
       </DashboardShell>
