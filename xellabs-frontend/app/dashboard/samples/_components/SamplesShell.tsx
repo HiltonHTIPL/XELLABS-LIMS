@@ -82,6 +82,9 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
 
   const [now, setNow] = useState('')
   useEffect(() => {
+    // Client-only timestamp: starts empty so server and client render the same
+    // HTML, then fills in after mount — avoids a hydration mismatch.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setNow(new Date().toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }))
   }, [])
 
