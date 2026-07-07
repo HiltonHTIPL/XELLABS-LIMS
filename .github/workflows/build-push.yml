@@ -3,7 +3,7 @@ name: Build & Push to GHCR
 on:
   push:
     branches:
-      - development-staging
+      - cicd/github-actions
 
 env:
   REGISTRY: ghcr.io
