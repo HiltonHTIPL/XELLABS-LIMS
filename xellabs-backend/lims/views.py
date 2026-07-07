@@ -2,7 +2,7 @@ from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
-from core.permissions import IsReviewerOrAbove, IsLabManagerOrAbove
+from core.permissions import IsReviewerOrAbove, IsLabManagerOrAbove, CanReceiveOrStoreSamples
 from .models import (
     SampleType, Method, Test, Specification,
     Sample, AnalysisRequest, Worksheet, WorksheetAssignment,
@@ -72,7 +72,30 @@ class SampleViewSet(viewsets.ModelViewSet):
             ).exclude(status__in=["published", "disposed", "rejected"]).count(),
         })
 
-    @action(detail=True, methods=["post"])
+    @action(detail=False, methods=["get"])
+    def tat_trend(self, request):
+        from django.utils import timezone
+        import datetime
+        qs = self.get_queryset().filter(status="published", received_date__isnull=False)
+        now = timezone.now()
+        weeks = []
+        for i in range(4, -1, -1):
+            week_start = now - datetime.timedelta(weeks=i + 1)
+            week_end = now - datetime.timedelta(weeks=i)
+            week_qs = qs.filter(received_date__gte=week_start, received_date__lt=week_end)
+            durations = [
+                (s.updated_at - s.received_date).total_seconds() / 86400
+                for s in week_qs
+            ]
+            avg_tat = round(sum(durations) / len(durations), 1) if durations else None
+            weeks.append({
+                "week_start": week_start.date().isoformat(),
+                "avg_tat_days": avg_tat,
+                "sample_count": len(durations),
+            })
+        return Response(weeks)
+
+    @action(detail=True, methods=["post"], permission_classes=[CanReceiveOrStoreSamples])
     def receive(self, request, pk=None):
         from .services import receive_sample
         sample = self.get_object()

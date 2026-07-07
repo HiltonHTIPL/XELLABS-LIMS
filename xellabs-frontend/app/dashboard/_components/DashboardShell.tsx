@@ -196,7 +196,7 @@ export default function DashboardShell({ children, initials, displayName, roleLa
           className="flex items-center justify-between shrink-0 px-5 py-2.5"
           style={{ borderTop: '1px solid #E8EAF2', backgroundColor: '#fff', fontSize: 11, color: '#9AA1B2' }}
         >
-          <span>© 2025 XELLABS LIMS. All rights reserved.</span>
+          <span>© 2026 XELLABS LIMS. All rights reserved.</span>
           <div className="flex items-center gap-3">
             <a href="#" className="hover:text-gray-600">Privacy Policy</a>
             <span>|</span>

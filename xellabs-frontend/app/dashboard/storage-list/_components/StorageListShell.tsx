@@ -151,7 +151,7 @@ export default function StorageListShell({ initialStorageLocations }: { initialS
               </table>
             </div>
             <div className="mt-3">
-              <Pagination page={page} pages={pages} onPage={setPage} />
+              <Pagination page={page} pages={pages} onPage={setPage} showTotal totalItems={filtered.length} />
             </div>
           </>
         )}

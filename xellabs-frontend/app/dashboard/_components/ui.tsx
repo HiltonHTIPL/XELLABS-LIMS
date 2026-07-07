@@ -290,7 +290,7 @@ export const tdStyle: React.CSSProperties = {
 }
 export const linkStyle: React.CSSProperties = { color: T.primary, fontWeight: 600, textDecoration: 'none' }
 
-export function Pagination({ page, pages, onPage }: { page: number; pages: number; onPage: (p: number) => void }) {
+export function Pagination({ page, pages, onPage, showTotal, totalItems }: { page: number; pages: number; onPage: (p: number) => void; showTotal?: boolean; totalItems?: number }) {
   if (pages <= 1) return null
   const nums: number[] = []
   const start = Math.max(1, Math.min(page - 2, pages - 4))
@@ -301,22 +301,29 @@ export function Pagination({ page, pages, onPage }: { page: number; pages: numbe
     backgroundColor: 'transparent', color: T.muted,
   }
   return (
-    <div className="flex items-center gap-1">
-      <button style={circle} disabled={page <= 1} onClick={() => onPage(page - 1)}>
-        <MI name="chevron_left" size={16} color={page <= 1 ? '#D1D5DB' : T.muted} />
-      </button>
-      {nums.map(p => (
-        <button
-          key={p}
-          style={{ ...circle, backgroundColor: p === page ? T.primary : 'transparent', color: p === page ? '#fff' : T.muted }}
-          onClick={() => onPage(p)}
-        >
-          {p}
+    <div className="flex items-center gap-3">
+      {showTotal && (
+        <span style={{ fontSize: 12, color: T.muted }}>
+          Page {page} of {pages}{typeof totalItems === 'number' ? ` · ${totalItems.toLocaleString()} total` : ''}
+        </span>
+      )}
+      <div className="flex items-center gap-1">
+        <button style={circle} disabled={page <= 1} onClick={() => onPage(page - 1)}>
+          <MI name="chevron_left" size={16} color={page <= 1 ? '#D1D5DB' : T.muted} />
         </button>
-      ))}
-      <button style={circle} disabled={page >= pages} onClick={() => onPage(page + 1)}>
-        <MI name="chevron_right" size={16} color={page >= pages ? '#D1D5DB' : T.muted} />
-      </button>
+        {nums.map(p => (
+          <button
+            key={p}
+            style={{ ...circle, backgroundColor: p === page ? T.primary : 'transparent', color: p === page ? '#fff' : T.muted }}
+            onClick={() => onPage(p)}
+          >
+            {p}
+          </button>
+        ))}
+        <button style={circle} disabled={page >= pages} onClick={() => onPage(page + 1)}>
+          <MI name="chevron_right" size={16} color={page >= pages ? '#D1D5DB' : T.muted} />
+        </button>
+      </div>
     </div>
   )
 }

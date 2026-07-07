@@ -83,3 +83,4 @@ xellabs-backend/reset_inventory.py
 # Backup script and backup output (server-side only — not tracked in git)
 backup.sh
 xellabs-backups/
+userscredential.txt

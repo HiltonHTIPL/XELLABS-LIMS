@@ -1,6 +1,7 @@
 'use client'
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { lookupChainOfCustody, type ChainOfCustodyResult, type CocSample, type CocEvent } from '@/app/actions/storage'
+import { STICKER_TEMPLATES, renderSticker, stickerPageCss, type StickerTemplate } from '@/app/lib/stickerTemplates'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -17,93 +18,34 @@ function fmtDateShort(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-// ── Code 39 barcode SVG generator (no external libs) ─────────────────────────
-const C39: Record<string, string> = {
-  '0':'000110100','1':'100100001','2':'001100001','3':'101100000',
-  '4':'000110001','5':'100110000','6':'001110000','7':'000100101',
-  '8':'100100100','9':'001100100','A':'100001001','B':'001001001',
-  'C':'101001000','D':'000011001','E':'100011000','F':'001011000',
-  'G':'000001101','H':'100001100','I':'001001100','J':'000011100',
-  'K':'100000011','L':'001000011','M':'101000010','N':'000010011',
-  'O':'100010010','P':'001010010','Q':'000000111','R':'100000110',
-  'S':'001000110','T':'000010110','U':'110000001','V':'011000001',
-  'W':'111000000','X':'010010001','Y':'110010000','Z':'011010000',
-  '-':'010000101','.':'110000100',' ':'011000100','$':'010101000',
-  '/':'010100010','+':'010001010','%':'000101010','*':'010010100',
-}
-function code39Svg(raw: string, barH = 64): string {
-  const N = 2.4, W = 6, GAP = 3
-  // Code 39 only supports uppercase + limited symbols — filter/uppercase
-  const value = raw.toUpperCase().replace(/[^0-9A-Z\-\. \$\/\+%]/g, '')
-  const full = '*' + value + '*'
-  let x = 10
-  const rects: string[] = []
-  for (const ch of full) {
-    const pat = C39[ch]
-    if (!pat) { x += GAP; continue }
-    for (let j = 0; j < 9; j++) {
-      const w = pat[j] === '1' ? W : N
-      if (j % 2 === 0) rects.push(`<rect x="${x.toFixed(1)}" y="0" width="${w}" height="${barH}" fill="#000"/>`)
-      x += w
-    }
-    x += GAP
-  }
-  const totalW = x + 10
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${barH}" viewBox="0 0 ${totalW} ${barH}">${rects.join('')}</svg>`
-}
-
-// ── Print label ───────────────────────────────────────────────────────────────
-function printLabel(sample: CocSample, loc: ChainOfCustodyResult['current_location']) {
-  const barcode = sample.barcode || sample.sample_id
-  const barcodesvg = code39Svg(barcode)
-  const html = `<!DOCTYPE html><html><head><title>Sample Label — ${sample.sample_id}</title>
+// ── Print sticker ────────────────────────────────────────────────────────────
+async function printSticker(sample: CocSample, template: StickerTemplate, copies: number) {
+  const stickerHtml = await renderSticker(template, sample)
+  const stickers = Array.from({ length: copies }, () => stickerHtml).join('')
+  const html = `<!DOCTYPE html><html><head><title>Sticker — ${sample.sample_id}</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family: Inter, Arial, sans-serif; background:#fff; }
-  @media print { body { margin:0; } @page { margin:6mm; size: 100mm 62mm; } }
-  .label { width:100mm; min-height:62mm; border:1px solid #ccc; padding:5mm; display:flex; flex-direction:column; gap:3mm; }
-  .header { display:flex; align-items:center; justify-content:space-between; border-bottom:0.5px solid #ddd; padding-bottom:2mm; }
-  .lab { font-size:9pt; font-weight:700; color:#0154FC; letter-spacing:0.04em; }
-  .date { font-size:7pt; color:#888; }
-  .bc-wrap { display:flex; flex-direction:column; align-items:center; gap:1.5mm; }
-  .bc-wrap svg { max-width:100%; height:auto; }
-  .bc-val { font-size:9pt; font-weight:700; font-family:monospace; letter-spacing:0.06em; color:#111; }
-  .info { display:grid; grid-template-columns:1fr 1fr; gap:1mm 4mm; }
-  .row { display:flex; flex-direction:column; }
-  .lbl { font-size:6pt; color:#999; text-transform:uppercase; letter-spacing:0.05em; }
-  .val { font-size:7.5pt; font-weight:600; color:#111; }
-  .storage { font-size:7pt; color:#374151; background:#f3f4f6; border-radius:2mm; padding:1.5mm 2mm; margin-top:1mm; }
-  .status { font-size:7pt; font-weight:700; padding:1mm 3mm; border-radius:999px; background:#dbeafe; color:#1d4ed8; display:inline-block; }
+  ${stickerPageCss(template)}
 </style></head><body>
-<div class="label">
-  <div class="header">
-    <span class="lab">XelLabs LIMS</span>
-    <span class="date">Printed: ${new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}</span>
-  </div>
-  <div class="bc-wrap">
-    ${barcodesvg}
-    <span class="bc-val">${barcode}</span>
-  </div>
-  <div class="info">
-    <div class="row"><span class="lbl">Sample ID</span><span class="val">${sample.sample_id}</span></div>
-    <div class="row"><span class="lbl">Sample Type</span><span class="val">${sample.sample_type}</span></div>
-    <div class="row"><span class="lbl">Client</span><span class="val">${sample.client}</span></div>
-    <div class="row"><span class="lbl">Status</span><span class="val"><span class="status">${sample.status_display}</span></span></div>
-    ${sample.received_date ? `<div class="row"><span class="lbl">Received</span><span class="val">${new Date(sample.received_date).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}</span></div>` : ''}
-    ${sample.received_by ? `<div class="row"><span class="lbl">Received By</span><span class="val">${sample.received_by}</span></div>` : ''}
-    ${sample.condition ? `<div class="row"><span class="lbl">Condition</span><span class="val">${sample.condition}</span></div>` : ''}
-    ${sample.priority ? `<div class="row"><span class="lbl">Priority</span><span class="val">${sample.priority}</span></div>` : ''}
-  </div>
-  ${loc ? `<div class="storage">
-    <strong>Storage:</strong> ${loc.storage_path.split(' / ').slice(-3).join(' / ')} &nbsp;•&nbsp; Slot ${loc.slot_id}
-    ${loc.temperature ? `&nbsp;•&nbsp; ${loc.temperature}` : ''}
-    ${loc.capacity ? `&nbsp;•&nbsp; ${loc.capacity.occupied}/${loc.capacity.total} slots used` : ''}
-  </div>` : '<div class="storage" style="color:#999;">Not currently in storage</div>'}
-</div>
+${stickers}
 <script>window.onload = function(){ window.print(); }<\/script>
 </body></html>`
   const w = window.open('', '_blank', 'width=500,height=420')
   if (w) { w.document.write(html); w.document.close() }
+}
+
+// ── Sticker preview ──────────────────────────────────────────────────────────
+const PREVIEW_BOX_PX = 240
+const MM_TO_PX_PREVIEW = 4
+
+function stickerPreviewDoc(stickerHtml: string, template: StickerTemplate): string {
+  return `<!DOCTYPE html><html><head><style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body { background:#fff; }
+    body { font-family: Inter, Arial, sans-serif; }
+    ${stickerPageCss(template)}
+  </style></head><body>${stickerHtml}</body></html>`
 }
 
 function statusStyle(status: string): { bg: string; color: string; label: string } {
@@ -162,6 +104,10 @@ export default function ChainOfCustodyPage() {
   const [result, setResult]           = useState<ChainOfCustodyResult | null>(null)
   const [storageReason, setStorageReason] = useState('Routine Storage')
   const [storageNotes, setStorageNotes]   = useState('')
+  const [stickerPickerOpen, setStickerPickerOpen] = useState(false)
+  const [stickerTemplateId, setStickerTemplateId] = useState(STICKER_TEMPLATES[0].id)
+  const [stickerCopies, setStickerCopies] = useState(1)
+  const [stickerPreviewDocHtml, setStickerPreviewDocHtml] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
   async function handleLookup(id?: string) {
@@ -180,6 +126,22 @@ export default function ChainOfCustodyPage() {
   const st     = sample ? statusStyle(sample.status) : null
   const cap    = loc?.capacity ?? null
 
+  useEffect(() => {
+    if (!stickerPickerOpen || !sample) {
+      // Clear the preview immediately when there's nothing to render, rather
+      // than leaving stale HTML on screen until the next async render below.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setStickerPreviewDocHtml('')
+      return
+    }
+    const template = STICKER_TEMPLATES.find(t => t.id === stickerTemplateId)!
+    let cancelled = false
+    renderSticker(template, sample).then(html => {
+      if (!cancelled) setStickerPreviewDocHtml(stickerPreviewDoc(html, template))
+    })
+    return () => { cancelled = true }
+  }, [stickerPickerOpen, stickerTemplateId, sample])
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 310px', height: '100%', fontFamily: 'Inter, sans-serif', backgroundColor: '#F8F9FB', overflow: 'hidden' }}>
 
@@ -195,14 +157,71 @@ export default function ChainOfCustodyPage() {
             <MI name="chevron_right" size={14} color="#9CA3AF" />
             <span style={{ color: '#374151' }}>Store Sample</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2" style={{ position: 'relative' }}>
             <button
-              onClick={() => sample && printLabel(sample, loc)}
+              onClick={() => sample && setStickerPickerOpen(v => !v)}
               disabled={!sample}
               className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg"
               style={{ border: '1px solid #E5E7EB', color: sample ? '#374151' : '#9CA3AF', backgroundColor: '#fff', cursor: sample ? 'pointer' : 'not-allowed', opacity: sample ? 1 : 0.5 }}>
               <MI name="print" size={14} color={sample ? '#374151' : '#9CA3AF'} /> Print Label
             </button>
+            {stickerPickerOpen && sample && (
+              <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 20, width: 280, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.1)', padding: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 8 }}>Print Sticker</div>
+                <label style={{ fontSize: 11, color: '#6B7280', display: 'block', marginBottom: 4 }}>Template</label>
+                <select
+                  value={stickerTemplateId}
+                  onChange={e => setStickerTemplateId(e.target.value)}
+                  style={{ width: '100%', fontSize: 12, padding: '6px 8px', border: '1px solid #E5E7EB', borderRadius: 6, marginBottom: 10 }}>
+                  {STICKER_TEMPLATES.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+                <label style={{ fontSize: 11, color: '#6B7280', display: 'block', marginBottom: 4 }}>Copies</label>
+                <input
+                  type="number" min={1} max={50} value={stickerCopies}
+                  onChange={e => setStickerCopies(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
+                  style={{ width: '100%', fontSize: 12, padding: '6px 8px', border: '1px solid #E5E7EB', borderRadius: 6, marginBottom: 10 }} />
+
+                <label style={{ fontSize: 11, color: '#6B7280', display: 'block', marginBottom: 4 }}>Preview</label>
+                {(() => {
+                  const template = STICKER_TEMPLATES.find(t => t.id === stickerTemplateId)!
+                  const wPx = template.widthMm * MM_TO_PX_PREVIEW
+                  const hPx = template.heightMm * MM_TO_PX_PREVIEW
+                  const scale = Math.min(PREVIEW_BOX_PX / wPx, (PREVIEW_BOX_PX * 0.7) / hPx, 1)
+                  return (
+                    <div style={{
+                      width: '100%', height: PREVIEW_BOX_PX * 0.7, marginBottom: 12,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      background: '#F3F4F6', border: '1px solid #E5E7EB', borderRadius: 6, overflow: 'hidden',
+                    }}>
+                      {stickerPreviewDocHtml ? (
+                        <iframe
+                          key={stickerTemplateId}
+                          title="Sticker preview"
+                          srcDoc={stickerPreviewDocHtml}
+                          style={{
+                            width: wPx, height: hPx, border: 'none', background: '#fff',
+                            transform: `scale(${scale})`,
+                          }}
+                        />
+                      ) : (
+                        <span style={{ fontSize: 11, color: '#9CA3AF' }}>Loading preview…</span>
+                      )}
+                    </div>
+                  )
+                })()}
+
+                <button
+                  onClick={async () => {
+                    const template = STICKER_TEMPLATES.find(t => t.id === stickerTemplateId)!
+                    await printSticker(sample, template, stickerCopies)
+                    setStickerPickerOpen(false)
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg"
+                  style={{ backgroundColor: '#0154FC', color: '#fff', cursor: 'pointer' }}>
+                  <MI name="print" size={14} color="#fff" /> Print
+                </button>
+              </div>
+            )}
             <button className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg"
               style={{ border: '1px solid #E5E7EB', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
               More Actions <MI name="keyboard_arrow_down" size={14} color="#6B7280" />

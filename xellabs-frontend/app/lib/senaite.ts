@@ -299,7 +299,13 @@ export type SenaiteStorageLocation = {
 
 export async function fetchSenaiteStorageLocations(token: string): Promise<SenaiteStorageLocation[]> {
   try {
-    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/StorageLocation?complete=true&limit=1000&review_state=active`, {
+    // No `complete=true` here: title/description/review_state/id/uid are all standard
+    // catalog brain metadata, so this stays a cheap catalog query instead of resolving
+    // (waking up) all objects, which is what was hanging this page. Single request,
+    // limit=1000 — SENAITE's jsonapi ignores an unsupported `page` param and just
+    // re-returns page 1, so looping on `page` silently duplicated results instead
+    // of paging forward; keep this as one bounded request.
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/StorageLocation?limit=1000&review_state=active`, {
       headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
       cache: 'no-store',
     })

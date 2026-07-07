@@ -151,12 +151,31 @@ export type LabSampleFormState = {
   errors?: Record<string, string[]>
 }
 
+export type TatTrendPoint = { week_start: string; avg_tat_days: number | null; sample_count: number }
+
+export async function getTatTrend(): Promise<TatTrendPoint[]> {
+  try {
+    const res = await djangoFetch('/api/lims/samples/tat_trend/')
+    if (!res.ok) return []
+    return await res.json()
+  } catch { return [] }
+}
+
 export async function getLabSamples(): Promise<LabSample[]> {
   try {
-    const res = await djangoFetch('/api/lims/samples/?ordering=-created_at')
-    if (!res.ok) return []
-    const data = await res.json()
-    return data.results ?? data ?? []
+    // DRF paginates at PAGE_SIZE=50 — page through every page so the list
+    // matches the true total (e.g. the "Logged" stat card), not just page 1.
+    const all: LabSample[] = []
+    let url: string | null = '/api/lims/samples/?ordering=-created_at'
+    while (url) {
+      const res = await djangoFetch(url)
+      if (!res.ok) break
+      const data = await res.json()
+      all.push(...(data.results ?? []))
+      const next: string | null = data.next ?? null
+      url = next ? next.replace(/^https?:\/\/[^/]+/, '') : null
+    }
+    return all
   } catch { return [] }
 }
 

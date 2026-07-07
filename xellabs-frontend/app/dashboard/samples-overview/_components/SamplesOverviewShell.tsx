@@ -428,15 +428,6 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
               </button>
             </div>
           </div>
-
-          <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#9CA3AF' }}>
-            <span>© 2025 XelLabs LIMS. All rights reserved.</span>
-            <div style={{ display: 'flex', gap: 16 }}>
-              <span style={{ cursor: 'pointer', color: '#6B7280' }}>Privacy Policy</span>
-              <span style={{ cursor: 'pointer', color: '#6B7280' }}>Terms of Use</span>
-              <span style={{ cursor: 'pointer', color: '#6B7280' }}>Security</span>
-            </div>
-          </div>
         </div>
         {/* end scrollable */}
       </div>
