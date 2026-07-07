@@ -5,8 +5,11 @@ import { decrypt } from '@/app/lib/session'
 const protectedRoutes = ['/dashboard']
 const publicRoutes = ['/login', '/']
 
+const IPV4_RE = /^\d{1,3}(\.\d{1,3}){3}$/
+
 function extractSubdomain(host: string): string {
   const hostname = host.split(':')[0]
+  if (IPV4_RE.test(hostname)) return ''
   const parts = hostname.split('.')
   if (parts.length === 1) return ''
   const sub = parts[0]
