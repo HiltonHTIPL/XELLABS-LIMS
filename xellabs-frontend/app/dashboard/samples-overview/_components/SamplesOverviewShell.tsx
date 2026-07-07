@@ -1,12 +1,29 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { type LabSample, type SampleStats, type DjangoSampleType, receiveLabSample } from '@/app/actions/lab-samples'
+import { type LabSample, type SampleStats, type DjangoSampleType } from '@/app/actions/lab-samples'
 import { type DjangoClient } from '@/app/actions/clients'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
 }
+
+// ── Column config ─────────────────────────────────────────────────────────────
+const ALL_COLUMNS = [
+  { key: 'client',          label: 'Client',           defaultVisible: true  },
+  { key: 'sample_type',     label: 'Sample Type',      defaultVisible: true  },
+  { key: 'condition',       label: 'Condition',        defaultVisible: false },
+  { key: 'status',          label: 'Status',           defaultVisible: true  },
+  { key: 'priority',        label: 'Priority',         defaultVisible: true  },
+  { key: 'received_date',   label: 'Received Date',    defaultVisible: true  },
+  { key: 'due_date',        label: 'Due Date',         defaultVisible: false },
+  { key: 'tat',             label: 'TAT (Days)',       defaultVisible: false },
+  { key: 'analyst',         label: 'Assigned Analyst', defaultVisible: false },
+  { key: 'storage',         label: 'Storage',          defaultVisible: false },
+] as const
+type ColKey = typeof ALL_COLUMNS[number]['key']
+const DEFAULT_VISIBLE = new Set(ALL_COLUMNS.filter(c => c.defaultVisible).map(c => c.key))
+const LS_KEY = 'xl_samples_cols'
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All Statuses' },
@@ -71,81 +88,6 @@ function fmt(dateStr: string | null): string {
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-// ── Receive Sample Modal ──────────────────────────────────────────────────────
-function ReceiveSampleModal({ sample, onClose, onDone }: { sample: LabSample; onClose: () => void; onDone: () => void }) {
-  const [loading, setLoading] = useState(false)
-  const [err, setErr] = useState('')
-  const [form, setForm] = useState({ condition: 'acceptable', seal_condition: 'intact', seal_number: '', quantity_received: '', quantity_unit: 'tubes', sampling_deviation: 'none', storage_requirement: 'room_temp', priority: sample.priority || 'medium', hold_for_qa: false, collector: '', location: '', notes: '' })
-  const set = (k: string, v: string | boolean) => setForm(f => ({ ...f, [k]: v }))
-  const inp = { border: '1px solid #D1D5DB', color: '#111827', borderRadius: 6, padding: '7px 10px', fontSize: 13, width: '100%', outline: 'none' }
-  const lbl = { fontSize: 12, fontWeight: 600 as const, color: '#374151', marginBottom: 4, display: 'block' as const }
-
-  async function handleSubmit() {
-    setLoading(true); setErr('')
-    const res = await receiveLabSample(sample.id, form)
-    setLoading(false)
-    if (res.success) { onDone(); onClose() } else setErr(res.message ?? 'Failed.')
-  }
-
-  return (
-    <div onClick={e => { if (e.currentTarget === e.target) onClose() }}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ background: '#fff', borderRadius: 12, padding: 28, width: 540, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-          <span style={{ fontSize: 17, fontWeight: 700, color: '#111827' }}>Receive Sample — {sample.sample_id}</span>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><MI name="close" size={20} color="#6B7280" /></button>
-        </div>
-        {err && <div style={{ background: '#FEF2F2', color: '#991B1B', padding: '8px 12px', borderRadius: 6, fontSize: 13, marginBottom: 14 }}>{err}</div>}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <div><label style={lbl}>Condition</label>
-              <select value={form.condition} onChange={e => set('condition', e.target.value)} style={inp}>
-                <option value="good">Good</option><option value="acceptable">Acceptable</option>
-                <option value="compromised">Compromised</option><option value="not_acceptable">Not Acceptable</option>
-              </select></div>
-            <div><label style={lbl}>Seal Condition</label>
-              <select value={form.seal_condition} onChange={e => set('seal_condition', e.target.value)} style={inp}>
-                <option value="intact">Intact</option><option value="broken">Broken</option><option value="missing">Missing</option>
-              </select></div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <div><label style={lbl}>Quantity Received</label>
-              <input type="number" value={form.quantity_received} onChange={e => set('quantity_received', e.target.value)} style={inp} /></div>
-            <div><label style={lbl}>Unit</label>
-              <select value={form.quantity_unit} onChange={e => set('quantity_unit', e.target.value)} style={inp}>
-                <option value="tubes">Tubes</option><option value="vials">Vials</option>
-                <option value="bags">Bags</option><option value="slides">Slides</option>
-              </select></div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <div><label style={lbl}>Priority</label>
-              <select value={form.priority} onChange={e => set('priority', e.target.value)} style={inp}>
-                <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
-              </select></div>
-            <div><label style={lbl}>Storage Requirement</label>
-              <select value={form.storage_requirement} onChange={e => set('storage_requirement', e.target.value)} style={inp}>
-                <option value="room_temp">Room Temperature</option><option value="2_8c">2–8 °C</option>
-                <option value="minus_20c">-20 °C</option><option value="minus_80c">-80 °C</option>
-              </select></div>
-          </div>
-          <div><label style={lbl}>Location</label><input value={form.location} onChange={e => set('location', e.target.value)} style={inp} /></div>
-          <div><label style={lbl}>Notes</label><textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2} style={{ ...inp, resize: 'vertical' as const }} /></div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input type="checkbox" id="holdqa" checked={form.hold_for_qa} onChange={e => set('hold_for_qa', e.target.checked)} />
-            <label htmlFor="holdqa" style={{ fontSize: 13, color: '#374151', cursor: 'pointer' }}>Hold for QA review</label>
-          </div>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-          <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 7, border: '1px solid #D1D5DB', background: '#fff', fontSize: 13, cursor: 'pointer', color: '#374151', fontWeight: 500 }}>Cancel</button>
-          <button onClick={handleSubmit} disabled={loading} style={{ padding: '8px 20px', borderRadius: 7, border: 'none', background: '#0B1E47', color: '#fff', fontSize: 13, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>
-            {loading ? 'Receiving…' : 'Mark as Received'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ── Main Shell ────────────────────────────────────────────────────────────────
 type Props = { initialSamples: LabSample[]; sampleTypes: DjangoSampleType[]; stats: SampleStats; clients: DjangoClient[] }
 
@@ -159,7 +101,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
   const [filterPriority, setFilterPriority] = useState('')
   const [filterFrom, setFilterFrom] = useState('')
   const [filterTo, setFilterTo] = useState('')
-  const [receiveSample, setReceiveSample] = useState<LabSample | null>(null)
+
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [page, setPage] = useState(1)
   const [actionMenu, setActionMenu] = useState<{ id: number; top: number; right: number } | null>(null)
@@ -212,6 +154,34 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setNow(new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }))
   }, [])
+
+  // Column chooser
+  const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(() => {
+    if (typeof window === 'undefined') return DEFAULT_VISIBLE
+    try {
+      const saved = localStorage.getItem(LS_KEY)
+      if (saved) return new Set(JSON.parse(saved) as ColKey[])
+    } catch { /* ignore */ }
+    return DEFAULT_VISIBLE
+  })
+  const [colMenuOpen, setColMenuOpen] = useState(false)
+  const [colMenuPos, setColMenuPos] = useState<{ top: number; right: number } | null>(null)
+  const colBtnRef = useRef<HTMLButtonElement>(null)
+
+  function openColMenu() {
+    const rect = colBtnRef.current!.getBoundingClientRect()
+    setColMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+    setColMenuOpen(o => !o)
+  }
+  function toggleCol(key: ColKey) {
+    setVisibleCols(prev => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      try { localStorage.setItem(LS_KEY, JSON.stringify([...next])) } catch { /* ignore */ }
+      return next
+    })
+  }
+  const vis = (key: ColKey) => visibleCols.has(key)
 
   return (
     // Outer: flex row, full height, no overflow — nothing scrolls here
@@ -293,6 +263,10 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
             <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 7, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
               <MI name="download" size={16} /><span>Export</span>
             </button>
+            <button ref={colBtnRef} onClick={openColMenu}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 7, border: '1px solid #D1D5DB', background: colMenuOpen ? '#F3F4F6' : '#fff', color: '#374151', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+              <MI name="view_column" size={16} /><span>Columns</span>
+            </button>
             {selected.size > 0 && (
               <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 7, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
                 <MI name="checklist" size={16} /><span>Bulk Actions ({selected.size})</span>
@@ -332,14 +306,24 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
                   <th style={{ padding: '10px 12px', width: 36 }}>
                     <input type="checkbox" checked={paginated.length > 0 && selected.size === paginated.length} onChange={toggleAll} />
                   </th>
-                  {['Sample ID', 'Client', 'Sample Type', 'Condition', 'Status', 'Priority', 'Received Date', 'Due Date', 'TAT (Days)', 'Assigned Analyst', 'Storage', 'Actions'].map(h => (
-                    <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
+                  <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>Sample ID</th>
+                  {vis('client')        && <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>Client</th>}
+                  {vis('sample_type')   && <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>Sample Type</th>}
+                  {vis('condition')     && <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>Condition</th>}
+                  {vis('status')        && <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>Status</th>}
+                  {vis('priority')      && <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>Priority</th>}
+                  {vis('received_date') && <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>Received Date</th>}
+                  {vis('due_date')      && <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>Due Date</th>}
+                  {vis('tat')           && <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>TAT (Days)</th>}
+                  {vis('analyst')       && <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>Assigned Analyst</th>}
+                  {vis('storage')       && <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>Storage</th>}
+                  <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>Actions</th>
+                  <th style={{ padding: '10px 12px', width: 36 }} />
                 </tr>
               </thead>
               <tbody>
                 {paginated.length === 0 ? (
-                  <tr><td colSpan={13} style={{ padding: '40px', textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>No samples found.</td></tr>
+                  <tr><td colSpan={14} style={{ padding: '40px', textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>No samples found.</td></tr>
                 ) : paginated.map((s, idx) => {
                   const badge = getSampleStatusDisplay(s)
                   const pBadge = PRIORITY_BADGE[s.priority] ?? { bg: '#F3F4F6', color: '#374151' }
@@ -358,54 +342,54 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
                           {s.sample_id}
                         </span>
                       </td>
-                      <td style={{ padding: '10px 12px', color: '#374151' }}>{s.client_name}</td>
-                      <td style={{ padding: '10px 12px', color: '#374151' }}>{s.sample_type_name}</td>
-                      <td style={{ padding: '10px 12px' }}>
+                      {vis('client')        && <td style={{ padding: '10px 12px', color: '#374151' }}>{s.client_name}</td>}
+                      {vis('sample_type')   && <td style={{ padding: '10px 12px', color: '#374151' }}>{s.sample_type_name}</td>}
+                      {vis('condition')     && <td style={{ padding: '10px 12px' }}>
                         {s.condition ? (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                             <span style={{ width: 6, height: 6, borderRadius: '50%', background: condColor, flexShrink: 0 }} />
                             <span style={{ color: condColor, textTransform: 'capitalize', fontWeight: 500 }}>{s.condition.replace('_', ' ')}</span>
                           </span>
                         ) : <span style={{ color: '#9CA3AF' }}>—</span>}
-                      </td>
-                      <td style={{ padding: '10px 12px' }}>
+                      </td>}
+                      {vis('status')        && <td style={{ padding: '10px 12px' }}>
                         <span style={{ background: badge.bg, color: badge.color, borderRadius: 20, padding: '3px 9px', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>
                           {badge.label}
                         </span>
-                      </td>
-                      <td style={{ padding: '10px 12px' }}>
+                      </td>}
+                      {vis('priority')      && <td style={{ padding: '10px 12px' }}>
                         {s.priority ? (
                           <span style={{ background: pBadge.bg, color: pBadge.color, borderRadius: 20, padding: '3px 9px', fontWeight: 600, fontSize: 11, textTransform: 'capitalize' }}>
                             {s.priority}
                           </span>
                         ) : <span style={{ color: '#9CA3AF' }}>—</span>}
-                      </td>
-                      <td style={{ padding: '10px 12px', color: '#374151', whiteSpace: 'nowrap' }}>{fmt(s.received_date)}</td>
-                      <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
+                      </td>}
+                      {vis('received_date') && <td style={{ padding: '10px 12px', color: '#374151', whiteSpace: 'nowrap' }}>{fmt(s.received_date)}</td>}
+                      {vis('due_date')      && <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
                         <span style={{ color: isOverdue ? '#EF4444' : '#374151', fontWeight: isOverdue ? 600 : 400 }}>{fmt(s.expiry_date)}</span>
-                      </td>
-                      <td style={{ padding: '10px 12px', color: '#374151', textAlign: 'center' }}>
+                      </td>}
+                      {vis('tat')           && <td style={{ padding: '10px 12px', color: '#374151', textAlign: 'center' }}>
                         {tat !== null ? <span style={{ fontWeight: 600, color: tat > 7 ? '#EF4444' : '#374151' }}>{tat}</span> : <span style={{ color: '#9CA3AF' }}>—</span>}
-                      </td>
-                      <td style={{ padding: '10px 12px', color: '#374151' }}>{s.received_by_name || <span style={{ color: '#9CA3AF' }}>—</span>}</td>
-                      <td style={{ padding: '10px 12px', color: '#374151', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      </td>}
+                      {vis('analyst')       && <td style={{ padding: '10px 12px', color: '#374151' }}>{s.received_by_name || <span style={{ color: '#9CA3AF' }}>—</span>}</td>}
+                      {vis('storage')       && <td style={{ padding: '10px 12px', color: '#374151', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {s.storage_location || <span style={{ color: '#9CA3AF' }}>—</span>}
-                      </td>
-                      <td style={{ padding: '10px 12px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          {canReceive && (
-                            <button
-                              onClick={() => setReceiveSample(s)}
-                              title="Receive sample"
-                              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 6, border: '1px solid #0154FC', background: '#DBEAFE', color: '#0154FC', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                              <MI name="move_to_inbox" size={13} color="#0154FC" />
-                              Receive
-                            </button>
-                          )}
-                          <button onClick={e => openActionMenu(e, s.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', borderRadius: 4, color: '#6B7280' }}>
-                            <MI name="more_vert" size={16} />
+                      </td>}
+                      <td style={{ padding: '10px 12px', width: 100, whiteSpace: 'nowrap' }}>
+                        {canReceive ? (
+                          <button
+                            onClick={() => router.push(`/dashboard/sample-receipts?id=${s.id}`)}
+                            title="Receive sample"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 6, border: '1px solid #0154FC', background: '#DBEAFE', color: '#0154FC', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                            <MI name="move_to_inbox" size={13} color="#0154FC" />
+                            Receive
                           </button>
-                        </div>
+                        ) : null}
+                      </td>
+                      <td style={{ padding: '10px 12px', width: 36, textAlign: 'center' }}>
+                        <button onClick={e => openActionMenu(e, s.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', borderRadius: 4, color: '#6B7280' }}>
+                          <MI name="more_vert" size={16} />
+                        </button>
                       </td>
                     </tr>
                   )
@@ -542,6 +526,27 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
         </div>
       </div>
 
+      {/* ── Column chooser dropdown ── */}
+      {colMenuOpen && colMenuPos && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 9990 }} onClick={() => setColMenuOpen(false)} />
+          <div style={{ position: 'fixed', top: colMenuPos.top, right: colMenuPos.right, zIndex: 9999, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 200, padding: '8px 0', overflow: 'hidden' }}>
+            <div style={{ padding: '6px 14px 8px', borderBottom: '1px solid #F3F4F6' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Toggle Columns</span>
+            </div>
+            {ALL_COLUMNS.map(col => (
+              <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', cursor: 'pointer', fontSize: 13, color: '#374151' }}
+                onMouseEnter={e => (e.currentTarget.style.background = '#F9FAFB')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                <input type="checkbox" checked={vis(col.key)} onChange={() => toggleCol(col.key)}
+                  style={{ width: 14, height: 14, accentColor: '#2563EB', cursor: 'pointer' }} />
+                {col.label}
+              </label>
+            ))}
+          </div>
+        </>
+      )}
+
       {/* ── Action menu ── */}
       {actionMenu && (
         <>
@@ -549,7 +554,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
           <div style={{ position: 'fixed', top: actionMenu.top, right: actionMenu.right, zIndex: 9999, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 160, overflow: 'hidden' }}>
             {[
               { icon: 'visibility',     label: 'View Details',   action: () => router.push(`/dashboard/samples-overview/${actionMenu.id}`) },
-              { icon: 'move_to_inbox',  label: 'Receive Sample', action: () => { const s = samples.find(x => x.id === actionMenu.id); if (s) { setReceiveSample(s); setActionMenu(null) } } },
+              { icon: 'move_to_inbox',  label: 'Receive Sample', action: () => { router.push(`/dashboard/sample-receipts?id=${actionMenu.id}`); setActionMenu(null) } },
               { icon: 'edit',           label: 'Edit Sample',    action: () => {} },
               { icon: 'delete_outline', label: 'Delete',         action: () => {}, danger: true },
             ].map(item => (
@@ -563,10 +568,6 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
         </>
       )}
 
-      {receiveSample && (
-        <ReceiveSampleModal sample={receiveSample} onClose={() => setReceiveSample(null)}
-          onDone={() => { setSamples(prev => prev.map(s => s.id === receiveSample.id ? { ...s, status: 'received' } : s)); router.refresh() }} />
-      )}
     </div>
   )
 }

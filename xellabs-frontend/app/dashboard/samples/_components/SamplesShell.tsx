@@ -1,5 +1,5 @@
 'use client'
-import { useState, useTransition, useRef } from 'react'
+import { useState, useTransition, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { receiveSample } from '@/app/actions/samples'
@@ -80,7 +80,10 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
     kebabRef.current = e.currentTarget
   }
 
-  const now = new Date().toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const [now, setNow] = useState('')
+  useEffect(() => {
+    setNow(new Date().toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }))
+  }, [])
 
   const kpis = [
     { label: 'Logged',          value: samples.length,                                                              icon: 'post_add',      iconBg: '#EFF6FF', iconColor: T.primary },

@@ -2,11 +2,13 @@ import 'server-only'
 import { SignJWT, jwtVerify } from 'jose'
 import { cookies } from 'next/headers'
 
-const SESSION_SECRET = process.env.SESSION_SECRET
-if (!SESSION_SECRET || SESSION_SECRET.length < 32) {
-  throw new Error('SESSION_SECRET env var must be set to a string of at least 32 characters')
+function getEncodedKey() {
+  const secret = process.env.SESSION_SECRET
+  if (!secret || secret.length < 32) {
+    throw new Error('SESSION_SECRET env var must be set to a string of at least 32 characters')
+  }
+  return new TextEncoder().encode(secret)
 }
-const encodedKey = new TextEncoder().encode(SESSION_SECRET)
 
 // 8 hours — HIPAA §164.312(a)(2)(iii) automatic logoff
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000
@@ -34,12 +36,12 @@ export async function encrypt(payload: SessionPayload) {
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime('8h')
-    .sign(encodedKey)
+    .sign(getEncodedKey())
 }
 
 export async function decrypt(session: string | undefined = '') {
   try {
-    const { payload } = await jwtVerify(session, encodedKey, {
+    const { payload } = await jwtVerify(session, getEncodedKey(), {
       algorithms: ['HS256'],
     })
     return payload as unknown as SessionPayload

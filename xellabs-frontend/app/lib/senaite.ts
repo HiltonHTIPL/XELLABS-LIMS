@@ -221,6 +221,100 @@ export async function updateSenaiteSampleType(
   } catch (e) { return { success: false, error: String(e) } }
 }
 
+// ─── Instruments & Storage Locations (read-only master data lists) ────────────
+
+export type SenaiteInstrument = {
+  uid: string
+  id: string
+  title: string
+  InstrumentType: string
+  Manufacturer: string
+  Supplier: string
+  Model: string
+  SerialNo: string
+  AssetNumber: string
+  review_state: string
+}
+
+async function fetchSenaiteTitleMap(token: string, portalType: string): Promise<Record<string, string>> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/${portalType}?complete=true&limit=1000`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return {}
+    const data = await res.json()
+    const map: Record<string, string> = {}
+    for (const item of data.items ?? []) {
+      if (item.uid) map[item.uid] = item.title ?? ''
+    }
+    return map
+  } catch { return {} }
+}
+
+export async function fetchSenaiteInstruments(token: string): Promise<SenaiteInstrument[]> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Instrument?complete=true&limit=1000&review_state=active`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    const items = (data.items ?? []) as Record<string, unknown>[]
+
+    // InstrumentType/Manufacturer/Supplier come back as {uid, url, api_url} refs, not titles.
+    const [typeMap, manufacturerMap, supplierMap] = await Promise.all([
+      fetchSenaiteTitleMap(token, 'InstrumentType'),
+      fetchSenaiteTitleMap(token, 'Manufacturer'),
+      fetchSenaiteTitleMap(token, 'Supplier'),
+    ])
+
+    const refTitle = (ref: unknown, map: Record<string, string>) => {
+      const uid = (ref as { uid?: string } | null)?.uid
+      return uid ? (map[uid] ?? '') : ''
+    }
+
+    return items.map(t => ({
+      uid:            (t.uid as string) ?? '',
+      id:             (t.id as string) ?? '',
+      title:          (t.title as string) ?? '',
+      InstrumentType: refTitle(t.InstrumentType, typeMap),
+      Manufacturer:   refTitle(t.Manufacturer, manufacturerMap),
+      Supplier:       refTitle(t.Supplier, supplierMap),
+      Model:          (t.Model as string) ?? '',
+      SerialNo:       (t.SerialNo as string) ?? '',
+      AssetNumber:    (t.AssetNumber as string) ?? '',
+      review_state:   (t.review_state as string) ?? '',
+    }))
+  } catch { return [] }
+}
+
+export type SenaiteStorageLocation = {
+  uid: string
+  id: string
+  title: string
+  description: string
+  review_state: string
+}
+
+export async function fetchSenaiteStorageLocations(token: string): Promise<SenaiteStorageLocation[]> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/StorageLocation?complete=true&limit=1000&review_state=active`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return (data.items ?? []).map((t: Record<string, unknown>) => ({
+      uid:          (t.uid as string) ?? '',
+      id:           (t.id as string) ?? '',
+      title:        (t.title as string) ?? '',
+      description:  (t.description as string) ?? '',
+      review_state: (t.review_state as string) ?? '',
+    }))
+  } catch { return [] }
+}
+
 // ─── Analysis Services ────────────────────────────────────────────────────────
 
 export type SenaiteAnalysisService = {

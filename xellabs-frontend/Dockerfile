@@ -1,14 +1,16 @@
-FROM node:20-alpine
+FROM node:20-alpine AS runner
 WORKDIR /app
 
+ENV NEXT_TELEMETRY_DISABLED=1
+
 COPY package.json package-lock.json ./
-RUN npm ci --prefer-offline
+RUN npm ci --prefer-offline --include=dev
 
 COPY . .
 
-EXPOSE 3000
-ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+
+EXPOSE 3000
 
 # Build then start. Volume-mounted source overrides COPY at runtime,
 # so the build always uses the latest code from the host.

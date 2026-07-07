@@ -13,6 +13,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 from .models import Client, Tenant
 from .serializers import ClientSerializer, UserSerializer, TenantSerializer, TenantLogoSerializer
+from .permissions import IsLabManagerOrAbove
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -281,3 +282,101 @@ class TenantLogoView(APIView):
             if tenant.logo:
                 tenant.logo.delete(save=True)
         return Response({'logo': None})
+
+
+class SenaiteInstrumentImportView(APIView):
+    """POST /api/senaite-import/instruments/ — bulk-create SENAITE Instruments from an uploaded .xlsx file."""
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsLabManagerOrAbove]
+    parser_classes = [MultiPartParser]
+
+    def post(self, request):
+        from .excel_import import read_excel_rows
+        from .senaite_service import import_instrument_row
+
+        file_obj = request.FILES.get('file')
+        if not file_obj:
+            return Response({'detail': 'No file uploaded.'}, status=400)
+
+        try:
+            rows = read_excel_rows(file_obj, required_columns={'title'})
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=400)
+
+        results = []
+        created = failed = skipped = 0
+        for row_num, row in rows:
+            if not (row.get('title') or '').strip():
+                results.append({'row': row_num, 'ok': None, 'title': None, 'error': 'Missing Title'})
+                skipped += 1
+                continue
+            result = import_instrument_row(row)
+            results.append({'row': row_num, **result})
+            if result['ok'] is True:
+                created += 1
+            elif result['ok'] is None:
+                skipped += 1
+            else:
+                failed += 1
+
+        return Response({'created': created, 'failed': failed, 'skipped': skipped, 'rows': results})
+
+
+class SenaiteStorageLocationImportView(APIView):
+    """POST /api/senaite-import/storage-locations/ — bulk-create SENAITE Storage Locations from an uploaded .xlsx file."""
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsLabManagerOrAbove]
+    parser_classes = [MultiPartParser]
+
+    def post(self, request):
+        from .excel_import import read_excel_rows
+        from .senaite_service import import_storage_location_row
+
+        file_obj = request.FILES.get('file')
+        if not file_obj:
+            return Response({'detail': 'No file uploaded.'}, status=400)
+
+        try:
+            rows = read_excel_rows(file_obj, required_columns={'title'})
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=400)
+
+        results = []
+        created = failed = skipped = 0
+        for row_num, row in rows:
+            if not (row.get('title') or '').strip():
+                results.append({'row': row_num, 'ok': None, 'title': None, 'error': 'Missing Title'})
+                skipped += 1
+                continue
+            result = import_storage_location_row(row)
+            results.append({'row': row_num, **result})
+            if result['ok'] is True:
+                created += 1
+            elif result['ok'] is None:
+                skipped += 1
+            else:
+                failed += 1
+
+        return Response({'created': created, 'failed': failed, 'skipped': skipped, 'rows': results})
+
+
+class SenaiteMasterDataDeleteView(APIView):
+    """
+    POST /api/senaite-import/delete/  { "uids": ["uid1", "uid2", ...] }
+    Deactivates one or more SENAITE objects (Instruments, Storage Locations, or any
+    other portal_type) by UID — used by the Instrument List / Storage List delete flow.
+    """
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsLabManagerOrAbove]
+
+    def post(self, request):
+        from .senaite_service import delete_object
+
+        uids = request.data.get('uids')
+        if not uids or not isinstance(uids, list):
+            return Response({'detail': 'Provide a non-empty "uids" list.'}, status=400)
+
+        results = [delete_object(uid) for uid in uids]
+        deleted = sum(1 for r in results if r['ok'])
+        failed = len(results) - deleted
+        return Response({'deleted': deleted, 'failed': failed, 'results': results})
