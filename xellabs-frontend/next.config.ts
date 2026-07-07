@@ -18,18 +18,9 @@ const csp = [
   "form-action 'self'",
 ].join('; ');
 
-const extraOrigins = (process.env.NEXT_PUBLIC_ALLOWED_ORIGINS ?? '')
-  .split(',')
-  .map(o => o.trim())
-  .filter(Boolean)
-
 const nextConfig: NextConfig = {
   experimental: {
     serverActions: {
-      allowedOrigins: [
-        'localhost:3000',
-        ...extraOrigins,
-      ],
       bodySizeLimit: '10mb',
     },
   },
