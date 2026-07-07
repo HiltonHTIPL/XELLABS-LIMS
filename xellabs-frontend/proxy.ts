@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { decrypt, encrypt, SESSION_DURATION_MS, getSessionCookieOptions } from '@/app/lib/session'
+import { decrypt, encrypt, SESSION_DURATION_MS, getSessionCookieOptions } from '@/app/lib/session-edge'
 
 const protectedRoutes = ['/dashboard']
 const publicRoutes = ['/login', '/']
