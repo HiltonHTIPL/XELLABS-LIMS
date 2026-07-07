@@ -1,0 +1,20 @@
+services:
+  django:
+    build: !reset null
+    image: ghcr.io/hephzibahtechnologies/xellabs-lims-backend:latest
+
+  celery:
+    build: !reset null
+    image: ghcr.io/hephzibahtechnologies/xellabs-lims-backend:latest
+
+  celery-beat:
+    build: !reset null
+    image: ghcr.io/hephzibahtechnologies/xellabs-lims-backend:latest
+
+  frontend:
+    build: !reset null
+    image: ghcr.io/hephzibahtechnologies/xellabs-lims-frontend:latest
+
+  senaite:
+    build: !reset null
+    image: ghcr.io/hephzibahtechnologies/xellabs-lims-senaite:latest
