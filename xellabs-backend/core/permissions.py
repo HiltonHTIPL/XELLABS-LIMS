@@ -49,3 +49,15 @@ class AuditReadOnly(BasePermission):
     """Audit trail is read-only for all users (admin can see all)."""
     def has_permission(self, request, view):
         return request.user.is_authenticated and request.method in SAFE_METHODS
+
+
+CAN_RECEIVE_OR_STORE_ROLES = {"admin", "lab_manager", "analyst", "receptionist"}
+
+
+class CanReceiveOrStoreSamples(BasePermission):
+    """Receive a sample and assign/unassign it to storage — not reviewer or client."""
+    def has_permission(self, request, view):
+        return (
+            request.user.is_authenticated
+            and getattr(request.user, "role", None) in CAN_RECEIVE_OR_STORE_ROLES
+        )

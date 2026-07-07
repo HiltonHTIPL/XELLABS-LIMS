@@ -77,6 +77,7 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
   const [forms, setForms] = useState<SampleForm[]>([blankForm()])
   const [activeTab, setActiveTab] = useState(0)
   const [submitting, setSubmitting] = useState(false)
+  const [submitProgress, setSubmitProgress] = useState({ done: 0, total: 0 })
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [showAddAnalysis, setShowAddAnalysis] = useState(false)
@@ -111,6 +112,23 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
     setError('')
   }
 
+  // Submit in small concurrent batches (not all-at-once) so a large sample count
+  // doesn't burst past the API rate limit in a single instant.
+  const SUBMIT_BATCH_SIZE = 8
+  const SUBMIT_BATCH_DELAY_MS = 400
+
+  async function submitInBatches<T>(items: T[], run: (item: T) => Promise<{ success: boolean; message?: string; sample_id?: string }>) {
+    const results: Array<{ success: boolean; message?: string; sample_id?: string }> = []
+    for (let i = 0; i < items.length; i += SUBMIT_BATCH_SIZE) {
+      const batch = items.slice(i, i + SUBMIT_BATCH_SIZE)
+      const batchResults = await Promise.all(batch.map(run))
+      results.push(...batchResults)
+      setSubmitProgress({ done: results.length, total: items.length })
+      if (i + SUBMIT_BATCH_SIZE < items.length) await new Promise(r => setTimeout(r, SUBMIT_BATCH_DELAY_MS))
+    }
+    return results
+  }
+
   async function handleSubmit(asDraft = false) {
     const invalid = forms.findIndex(f => !f.clientId || !f.sampleTypeId)
     if (invalid !== -1) {
@@ -118,28 +136,26 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
       setError(`Sample ${invalid + 1}: Client and Sample Type are required.`)
       return
     }
-    setError(''); setSubmitting(true)
-    const results = await Promise.all(
-      forms.map(f =>
-        createSampleWithAnalyses(
-          {
-            client: Number(f.clientId), sample_type: Number(f.sampleTypeId),
-            priority: f.priority, condition: f.condition,
-            collection_date: f.dateSampled || undefined,
-            description: f.remarks || undefined,
-            storage_location: f.storageLocation || undefined,
-            contact_name: f.contactName || undefined, cc_contact: f.ccContact || undefined,
-            cc_emails: f.ccEmails.join(',') || undefined, batch_id: f.batchId || undefined,
-            batch_sub_group: f.batchSubGroup || undefined, container_type: f.containerType || undefined,
-            preservation: f.preservation || undefined, analysis_specification: f.analysisSpec || undefined,
-            sample_point: f.samplePoint || undefined, environmental_conditions: f.envConditions || undefined,
-            composite: f.composite, internal_use: f.internalUse,
-            client_order_number: f.clientOrderNum || undefined,
-            client_reference: f.clientReference || undefined,
-            client_sample_id: f.clientSampleId || undefined,
-          },
-          asDraft ? [] : f.selectedTests.map(t => t.id),
-        )
+    setError(''); setSubmitting(true); setSubmitProgress({ done: 0, total: forms.length })
+    const results = await submitInBatches(forms, f =>
+      createSampleWithAnalyses(
+        {
+          client: Number(f.clientId), sample_type: Number(f.sampleTypeId),
+          priority: f.priority, condition: f.condition,
+          collection_date: f.dateSampled || undefined,
+          description: f.remarks || undefined,
+          storage_location: f.storageLocation || undefined,
+          contact_name: f.contactName || undefined, cc_contact: f.ccContact || undefined,
+          cc_emails: f.ccEmails.join(',') || undefined, batch_id: f.batchId || undefined,
+          batch_sub_group: f.batchSubGroup || undefined, container_type: f.containerType || undefined,
+          preservation: f.preservation || undefined, analysis_specification: f.analysisSpec || undefined,
+          sample_point: f.samplePoint || undefined, environmental_conditions: f.envConditions || undefined,
+          composite: f.composite, internal_use: f.internalUse,
+          client_order_number: f.clientOrderNum || undefined,
+          client_reference: f.clientReference || undefined,
+          client_sample_id: f.clientSampleId || undefined,
+        },
+        asDraft ? [] : f.selectedTests.map(t => t.id),
       )
     )
     setSubmitting(false)
@@ -533,7 +549,11 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
 
         {/* Bottom actions */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, padding: '14px 0' }}>
-          <span style={{ fontSize: 12, color: '#9CA3AF' }}>* Required fields</span>
+          <span style={{ fontSize: 12, color: '#9CA3AF' }}>
+            {submitting && submitProgress.total > 1
+              ? `Logging sample ${Math.min(submitProgress.done + 1, submitProgress.total)} of ${submitProgress.total}…`
+              : '* Required fields'}
+          </span>
           <div style={{ display: 'flex', gap: 10 }}>
             <button type="button" onClick={clearActiveForm} style={{ padding: '10px 22px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#374151' }}>
               Clear Form

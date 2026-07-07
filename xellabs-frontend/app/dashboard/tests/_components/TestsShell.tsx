@@ -62,8 +62,9 @@ function TestModal({ editing, methods, onClose, onDone }: { editing: LimsTest | 
             <Field label="Test Name" name="name" placeholder="e.g. Total Protein" required error={state.errors?.name?.[0]} defaultValue={editing?.name} />
             <Field label="Code" name="code" placeholder="e.g. TP-001" required error={state.errors?.code?.[0]} defaultValue={editing?.code} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <Field label="Unit" name="unit" placeholder="e.g. g/dL" error={state.errors?.unit?.[0]} defaultValue={editing?.unit} />
+            <Field label="Price" name="price" placeholder="e.g. 25.00" error={state.errors?.price?.[0]} defaultValue={editing?.price ?? undefined} />
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Method</label>
               <select name="method" defaultValue={editing?.method ?? ''} className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={{ border: `1px solid ${state.errors?.method?.[0] ? '#EF4444' : '#D1D5DB'}`, color: '#111827' }}>
@@ -139,11 +140,11 @@ export default function TestsShell({ initialTests, methods }: { initialTests: Li
         <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
           <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
             <colgroup>
-              <col style={{ width: '25%' }} /><col style={{ width: '12%' }} /><col style={{ width: '10%' }} /><col style={{ width: '20%' }} /><col style={{ width: '25%' }} /><col style={{ width: '8%' }} />
+              <col style={{ width: '22%' }} /><col style={{ width: '11%' }} /><col style={{ width: '9%' }} /><col style={{ width: '10%' }} /><col style={{ width: '17%' }} /><col style={{ width: '23%' }} /><col style={{ width: '8%' }} />
             </colgroup>
             <thead>
               <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                {['Name', 'Code', 'Unit', 'Method', 'Description', ''].map(h => (
+                {['Name', 'Code', 'Unit', 'Price', 'Method', 'Description', ''].map(h => (
                   <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
                 ))}
               </tr>
@@ -154,6 +155,7 @@ export default function TestsShell({ initialTests, methods }: { initialTests: Li
                   <td className="px-3 py-2.5 text-xs font-medium" style={{ color: '#111827' }}>{t.name}</td>
                   <td className="px-3 py-2.5"><span className="font-mono text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#EFF6FF', color: '#2563EB', fontWeight: 600 }}>{t.code}</span></td>
                   <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{t.unit || '—'}</td>
+                  <td className="px-3 py-2.5 text-xs font-medium" style={{ color: '#111827' }}>{t.price ? `$${Number(t.price).toFixed(2)}` : '—'}</td>
                   <td className="px-3 py-2.5 text-xs" style={{ color: '#374151' }}>{t.method_name || '—'}</td>
                   <td className="px-3 py-2.5 text-xs truncate" style={{ color: '#6B7280' }}>{t.description || '—'}</td>
                   <td className="px-3 py-2.5">

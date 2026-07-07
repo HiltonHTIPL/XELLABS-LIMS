@@ -58,35 +58,44 @@ def check_sample_expiry(days_ahead=7):
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=30)
-def sync_storage_location_to_senaite(self, location_id: int):
-    """Sync a single StorageLocation to SENAITE and store the returned UID."""
+def sync_storage_location_to_senaite(self, location_id: int, schema_name: str):
+    """Sync a single StorageLocation to SENAITE and store the returned UID.
+
+    StorageLocation is a tenant-app model — the Celery worker has no request
+    context, so without schema_context() this runs against the 'public'
+    schema (where the table doesn't exist) and silently fails every time.
+    """
+    from django_tenants.utils import schema_context
     from inventory.models import StorageLocation
     from core.senaite_service import push_storage_location
 
-    try:
-        location = StorageLocation.objects.get(id=location_id)
-    except StorageLocation.DoesNotExist:
-        logger.warning("sync_storage_location_to_senaite: location %s not found", location_id)
-        return
+    with schema_context(schema_name):
+        try:
+            location = StorageLocation.objects.get(id=location_id)
+        except StorageLocation.DoesNotExist:
+            logger.warning("sync_storage_location_to_senaite: location %s not found in schema %s", location_id, schema_name)
+            return
 
-    uid = push_storage_location(location)
-    if uid:
-        StorageLocation.objects.filter(id=location_id).update(senaite_uid=uid)
-        logger.info("Updated senaite_uid for location %s -> %s", location_id, uid)
-    else:
-        logger.warning("SENAITE sync returned no UID for location %s, retrying...", location_id)
-        raise self.retry(exc=Exception(f"SENAITE sync returned no UID for location {location_id}"), countdown=30)
+        uid = push_storage_location(location)
+        if uid:
+            StorageLocation.objects.filter(id=location_id).update(senaite_uid=uid)
+            logger.info("Updated senaite_uid for location %s -> %s (schema=%s)", location_id, uid, schema_name)
+        else:
+            logger.warning("SENAITE sync returned no UID for location %s, retrying... (schema=%s)", location_id, schema_name)
+            raise self.retry(exc=Exception(f"SENAITE sync returned no UID for location {location_id}"), countdown=30)
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=30)
-def sync_box_slots_to_senaite(self, box_id: int):
-    """Sync all slot children of a box to SENAITE."""
+def sync_box_slots_to_senaite(self, box_id: int, schema_name: str):
+    """Sync all slot children of a box to SENAITE (see schema_context note above)."""
+    from django_tenants.utils import schema_context
     from inventory.models import StorageLocation
     from core.senaite_service import push_storage_location
 
-    slots = StorageLocation.objects.filter(parent_id=box_id, location_type='box_location')
-    for slot in slots:
-        uid = push_storage_location(slot)
-        if uid:
-            StorageLocation.objects.filter(id=slot.id).update(senaite_uid=uid)
-    logger.info("Synced %d slots for box %s to SENAITE", slots.count(), box_id)
+    with schema_context(schema_name):
+        slots = StorageLocation.objects.filter(parent_id=box_id, location_type='box_location')
+        for slot in slots:
+            uid = push_storage_location(slot)
+            if uid:
+                StorageLocation.objects.filter(id=slot.id).update(senaite_uid=uid)
+        logger.info("Synced %d slots for box %s to SENAITE (schema=%s)", slots.count(), box_id, schema_name)

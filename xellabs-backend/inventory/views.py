@@ -5,6 +5,7 @@ from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
+from core.permissions import CAN_RECEIVE_OR_STORE_ROLES
 from .models import StorageLocation, Reagent, Standard, Solvent, Lot, InventoryTransaction, ExpiryAlert
 from .serializers import (
     StorageLocationSerializer, ReagentSerializer, StandardSerializer,
@@ -69,6 +70,12 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
                 sample_obj.received_by.get_full_name() or sample_obj.received_by.username
             ) if sample_obj.received_by else "",
             "receipt_notes": sample_obj.receipt_notes or "",
+            "collector": sample_obj.collector or "",
+            "client_order_number": sample_obj.client_order_number or "",
+            "composite": sample_obj.composite,
+            "container_type": sample_obj.container_type or "",
+            "preservation": sample_obj.preservation or "",
+            "sample_point": sample_obj.sample_point or "",
         }
 
         # Current slot holding this sample
@@ -191,8 +198,7 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
         """Assign a sample to a box_location slot."""
         slot = self.get_object()
 
-        allowed_roles = {'admin', 'lab_manager', 'analyst', 'receptionist'}
-        if not hasattr(request.user, 'role') or request.user.role not in allowed_roles:
+        if not hasattr(request.user, 'role') or request.user.role not in CAN_RECEIVE_OR_STORE_ROLES:
             return Response({"error": "You do not have permission to assign samples to storage."}, status=status.HTTP_403_FORBIDDEN)
 
         if slot.location_type != 'box_location':
@@ -242,8 +248,7 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
         """Release a box_location slot — marks it as free."""
         slot = self.get_object()
 
-        allowed_roles = {'admin', 'lab_manager', 'analyst', 'receptionist'}
-        if not hasattr(request.user, 'role') or request.user.role not in allowed_roles:
+        if not hasattr(request.user, 'role') or request.user.role not in CAN_RECEIVE_OR_STORE_ROLES:
             return Response({"error": "You do not have permission to unassign slots."}, status=status.HTTP_403_FORBIDDEN)
 
         if slot.location_type != 'box_location':
@@ -289,6 +294,7 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
             StorageLocation.objects.filter(parent=box, location_type='box_location')
             .values_list('slot_id', flat=True)
         )
+        inherited = StorageLocation.slot_inherited_fields(box)
         to_create = []
         for r in range(rows):
             row_letter = chr(65 + r)
@@ -301,9 +307,16 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
                         parent=box,
                         slot_id=slot_id,
                         is_occupied=False,
+                        **inherited,
                     ))
         if to_create:
             StorageLocation.objects.bulk_create(to_create)
+            # bulk_create() does not fire post_save, so the auto-sync signal
+            # in inventory/signals.py never runs for these slots — queue it
+            # explicitly here, same schema-aware pattern.
+            from django.db import connection
+            from .tasks import sync_box_slots_to_senaite
+            sync_box_slots_to_senaite.apply_async(args=[box.pk, connection.schema_name], countdown=2)
 
         return Response({"created": len(to_create), "total": rows * cols})
 

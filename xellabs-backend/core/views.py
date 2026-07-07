@@ -12,8 +12,8 @@ from rest_framework.authtoken.models import Token
 from django_filters.rest_framework import DjangoFilterBackend
 
 from .models import Client, Tenant
-from .serializers import ClientSerializer, UserSerializer, TenantSerializer, TenantLogoSerializer
 from .permissions import IsLabManagerOrAbove
+from .serializers import ClientSerializer, UserSerializer, StaffUserSerializer, TenantSerializer, TenantLogoSerializer
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -82,6 +82,53 @@ class UserMeView(APIView):
             'last_name': user.last_name,
             'role': user.role,
         })
+
+
+class UserViewSet(ModelViewSet):
+    """CRUD for staff accounts (admin, lab_manager, analyst, reviewer, receptionist).
+    Client accounts are managed exclusively via ClientViewSet — never through this endpoint."""
+    serializer_class = StaffUserSerializer
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated, IsLabManagerOrAbove]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ['role', 'is_active']
+    search_fields = ['username', 'email', 'first_name', 'last_name']
+    ordering_fields = ['username', 'date_joined']
+    ordering = ['username']
+
+    def get_queryset(self):
+        from .serializers import STAFF_ROLES
+        user = self.request.user
+        qs = User.objects.filter(role__in=STAFF_ROLES)
+        if user.tenant_id:
+            qs = qs.filter(tenant=user.tenant)
+        return qs
+
+    def perform_create(self, serializer):
+        from django.utils.crypto import get_random_string
+        from rest_framework.exceptions import ValidationError as DRFValidationError
+
+        username = serializer.validated_data.get('username', '').strip()
+        if not username:
+            raise DRFValidationError({'username': ['Username is required.']})
+        if User.objects.filter(username__iexact=username).exists():
+            raise DRFValidationError({'username': [f'A user with username "{username}" already exists.']})
+
+        temp_password = get_random_string(20)
+        user = serializer.save(tenant=self.request.user.tenant)
+        user.set_password(temp_password)
+        user.save(update_fields=['password'])
+        logger.info("Created staff user '%s' with role '%s' by '%s'.", user.username, user.role, self.request.user.username)
+        # Surfaced once in the create response, same one-time-reveal pattern as
+        # ClientViewSet.perform_create — never logged, never returned again.
+        self.request._created_staff_password = temp_password
+
+    def create(self, request, *args, **kwargs):
+        response = super().create(request, *args, **kwargs)
+        password = getattr(request, '_created_staff_password', None)
+        if password:
+            response.data['login_password'] = password
+        return response
 
 
 class ClientViewSet(ModelViewSet):

@@ -42,6 +42,24 @@ class UserSerializer(serializers.ModelSerializer):
         return obj.get_full_name() or obj.username
 
 
+STAFF_ROLES = ['admin', 'lab_manager', 'analyst', 'reviewer', 'receptionist']
+
+
+class StaffUserSerializer(serializers.ModelSerializer):
+    """CRUD for staff accounts (admin/lab_manager/analyst/reviewer/receptionist) — excludes 'client' role,
+    which is only created as a side effect of ClientViewSet (see core/views.py ClientViewSet.perform_create)."""
+    full_name = serializers.SerializerMethodField()
+    role = serializers.ChoiceField(choices=[(r, r) for r in STAFF_ROLES])
+
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'full_name', 'role', 'is_active', 'date_joined']
+        read_only_fields = ['date_joined']
+
+    def get_full_name(self, obj):
+        return obj.get_full_name() or obj.username
+
+
 class ClientSerializer(serializers.ModelSerializer):
     tenant_detail = TenantSerializer(source='tenant', read_only=True)
 

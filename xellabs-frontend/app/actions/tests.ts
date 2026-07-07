@@ -36,11 +36,13 @@ export async function createTest(_state: TestFormState, formData: FormData): Pro
   const code = (formData.get('code') as string)?.trim()
   const description = (formData.get('description') as string)?.trim()
   const unit = (formData.get('unit') as string)?.trim()
+  const price = (formData.get('price') as string)?.trim()
   const methodId = (formData.get('method') as string)?.trim()
 
   const errors: Record<string, string[]> = {}
   if (!name) errors.name = ['Name is required']
   if (!code) errors.code = ['Code is required']
+  if (price && Number.isNaN(Number(price))) errors.price = ['Price must be a number']
   if (Object.keys(errors).length) return { errors }
 
   try {
@@ -50,6 +52,7 @@ export async function createTest(_state: TestFormState, formData: FormData): Pro
         name, code,
         description: description || '',
         unit: unit || '',
+        price: price ? Number(price) : null,
         method: methodId ? Number(methodId) : null,
         is_active: true,
       }),
@@ -68,11 +71,13 @@ export async function updateTest(id: number, _state: TestFormState, formData: Fo
   const code = (formData.get('code') as string)?.trim()
   const description = (formData.get('description') as string)?.trim()
   const unit = (formData.get('unit') as string)?.trim()
+  const price = (formData.get('price') as string)?.trim()
   const methodId = (formData.get('method') as string)?.trim()
 
   const errors: Record<string, string[]> = {}
   if (!name) errors.name = ['Name is required']
   if (!code) errors.code = ['Code is required']
+  if (price && Number.isNaN(Number(price))) errors.price = ['Price must be a number']
   if (Object.keys(errors).length) return { errors }
 
   try {
@@ -82,6 +87,7 @@ export async function updateTest(id: number, _state: TestFormState, formData: Fo
         name, code,
         description: description || '',
         unit: unit || '',
+        price: price ? Number(price) : null,
         method: methodId ? Number(methodId) : null,
       }),
     })

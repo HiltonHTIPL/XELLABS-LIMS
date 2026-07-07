@@ -46,6 +46,7 @@ const NAV: NavEntry[] = [
     icon: 'admin_panel_settings',
     roles: ['admin', 'lab_manager'],
     children: [
+      { label: 'Users',        href: '/dashboard/admin',        icon: 'group',       roles: ['admin', 'lab_manager'] },
       { label: 'Sample Types', href: '/dashboard/sample-types', icon: 'category',   roles: ['admin', 'lab_manager'] },
       { label: 'Methods',      href: '/dashboard/methods',      icon: 'biotech',     roles: ['admin', 'lab_manager'] },
       { label: 'Tests',        href: '/dashboard/tests',        icon: 'assignment',  roles: ['admin', 'lab_manager', 'analyst'] },
@@ -66,7 +67,7 @@ export default function Sidebar({ onToggle, role }: Props) {
 
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
     const open = new Set<string>()
-    if (['/dashboard/sample-types', '/dashboard/methods', '/dashboard/tests', '/dashboard/master-data-import', '/dashboard/instrument-list', '/dashboard/storage-list'].some(p => pathname.startsWith(p))) open.add('Administration')
+    if (['/dashboard/admin', '/dashboard/sample-types', '/dashboard/methods', '/dashboard/tests', '/dashboard/master-data-import', '/dashboard/instrument-list', '/dashboard/storage-list'].some(p => pathname.startsWith(p))) open.add('Administration')
     if (['/dashboard/samples-overview', '/dashboard/samples/new'].some(p => pathname.startsWith(p))) open.add('Samples')
     return open
   })

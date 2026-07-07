@@ -211,6 +211,12 @@ export type CocSample = {
   hold_for_qa: boolean
   received_by: string
   receipt_notes: string
+  collector: string
+  client_order_number: string
+  composite: boolean
+  container_type: string
+  preservation: string
+  sample_point: string
 }
 
 export type CocEvent = {

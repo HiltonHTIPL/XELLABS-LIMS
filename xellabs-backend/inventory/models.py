@@ -52,6 +52,75 @@ class StorageLocation(models.Model):
             )
         ]
 
+    def inherit_senaite_fields_from_ancestors(self):
+        """Walk up the parent chain and fill any still-blank site/location/shelf
+        tier this location doesn't own itself — same tier-ownership mapping as
+        StorageModal.tsx's computeSenaiteDefaults() (room->site, fridge/freezer/
+        cabinet->location, shelf->shelf), but applied server-side so it also
+        covers box/box_location records the frontend form never creates directly
+        (auto-generated slots, regenerate-slots) instead of only new-location
+        form defaults."""
+        need_site = not self.site_title
+        need_loc = not self.location_title
+        need_shelf = not self.shelf_title
+        if not (need_site or need_loc or need_shelf):
+            return
+
+        node = self.parent
+        while node and (need_site or need_loc or need_shelf):
+            if need_site and node.location_type == 'room':
+                self.site_title = node.site_title or node.name
+                self.site_code = self.site_code or node.site_code
+                self.site_description = self.site_description or node.site_description
+                need_site = False
+            elif need_loc and node.location_type in ('fridge', 'freezer', 'cabinet'):
+                self.location_title = node.location_title or node.name
+                self.location_code = self.location_code or node.location_code
+                self.location_description = self.location_description or node.location_description
+                self.senaite_location_type = self.senaite_location_type or node.senaite_location_type
+                need_loc = False
+            elif need_shelf and node.location_type == 'shelf':
+                self.shelf_title = node.shelf_title or node.name
+                self.shelf_code = self.shelf_code or node.shelf_code
+                self.shelf_description = self.shelf_description or node.shelf_description
+                need_shelf = False
+            node = node.parent
+
+    @staticmethod
+    def slot_inherited_fields(parent):
+        """Site/Location/Shelf tier fields a box_location slot should copy from
+        its immediate parent box. The parent box will already carry its own
+        owned/inherited tier values by the time this runs (save() populates
+        them before the post_save signal that generates slots fires), so a
+        slot only needs a direct copy — not its own ancestor walk."""
+        return dict(
+            site_title=parent.site_title, site_code=parent.site_code, site_description=parent.site_description,
+            location_title=parent.location_title, location_code=parent.location_code,
+            location_description=parent.location_description, senaite_location_type=parent.senaite_location_type,
+            shelf_title=parent.shelf_title, shelf_code=parent.shelf_code, shelf_description=parent.shelf_description,
+        )
+
+    def save(self, *args, **kwargs):
+        # Default the SENAITE title field this location "owns" to its own
+        # name when left blank — mirrors StorageModal.tsx's ancestor-inherit
+        # logic, but for the location's own record (a room has no ancestor
+        # to inherit a site_title from, so without this it stays blank
+        # forever and SENAITE's Site/Location/Shelf Title columns show empty).
+        if self.location_type == 'room' and not self.site_title:
+            self.site_title = self.name
+        elif self.location_type in ('fridge', 'freezer', 'cabinet') and not self.location_title:
+            self.location_title = self.name
+        elif self.location_type == 'shelf' and not self.shelf_title:
+            self.shelf_title = self.name
+
+        # Types that don't own any tier (box, box_location) — and any location
+        # missing a tier it doesn't own — inherit from the nearest qualifying
+        # ancestor so SENAITE never shows blank Site/Location/Shelf Title.
+        if self.parent_id:
+            self.inherit_senaite_fields_from_ancestors()
+
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return self.name
 

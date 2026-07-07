@@ -49,7 +49,10 @@ export async function createSession(payload: Omit<SessionPayload, 'expiresAt'>) 
 
   cookieStore.set('session', token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    // Secure requires HTTPS — this deployment serves plain HTTP behind Docker,
+    // so gate on an explicit flag rather than NODE_ENV (which is always
+    // 'production' here). Set FORCE_SECURE_COOKIES=true once TLS is in front.
+    secure: process.env.FORCE_SECURE_COOKIES === 'true',
     expires: expiresAt,
     sameSite: 'strict',
     path: '/',

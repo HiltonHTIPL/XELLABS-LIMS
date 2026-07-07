@@ -25,11 +25,17 @@ function buildStoragePath(location: StorageLocation, all: StorageLocation[]): st
 export default function SlotGrid({
   box,
   allLocations,
+  selectedSlotId,
   onAssigned,
+  onSlotClick,
+  onSlotSelect,
 }: {
   box: StorageLocation
   allLocations: StorageLocation[]
+  selectedSlotId?: number | null
   onAssigned: (msg: string) => void
+  onSlotClick?: (slot: StorageLocation) => void
+  onSlotSelect?: (id: number | null) => void
 }) {
   const [assigningSlot, setAssigningSlot] = useState<StorageLocation | null>(null)
   const [inspectingSlot, setInspectingSlot] = useState<StorageLocation | null>(null)
@@ -46,52 +52,46 @@ export default function SlotGrid({
 
   const rows = box.rows ?? 1
   const cols = box.columns ?? 1
-
   const totalSlots   = rows * cols
   const usedSlots    = slots.filter(s =>
     (s.is_occupied || optimisticOccupied.has(s.id)) && !optimisticFree.has(s.id)
   ).length
-  const freeSlots    = totalSlots - usedSlots
   const missingSlots = totalSlots - slots.length
 
   if (slots.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12">
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 200 }}>
         <MI name="grid_view" size={32} color="#D1D5DB" />
-        <p className="mt-2 text-sm" style={{ color: '#9CA3AF' }}>No slots found for this box</p>
-        <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>Slots are auto-generated when a box is created</p>
+        <p style={{ marginTop: 8, fontSize: 12, color: '#9CA3AF' }}>No slots found for this box</p>
+        <p style={{ fontSize: 11, color: '#9CA3AF' }}>Slots are auto-generated when a box is created</p>
       </div>
     )
   }
-  const slotMap = new Map(slots.map(s => [s.slot_id, s]))
 
-  // Cell size: compact enough to show a 10×10 grid comfortably
-  const CELL = 28
+  const slotMap = new Map(slots.map(s => [s.slot_id, s]))
+  const CELL = cols > 12 ? 28 : cols > 8 ? 32 : 38
   const LABEL_W = 22
-  const GAP = 3
+  const GAP = 4
 
   return (
     <div>
       {/* Stats */}
-      <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs"
-          style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 8, backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', fontSize: 11 }}>
           <MI name="check_circle" size={12} color="#10B981" />
-          <span style={{ color: '#065F46', fontWeight: 600 }}>{freeSlots}</span>
-          <span style={{ color: '#6B7280' }}>free</span>
+          <strong style={{ color: '#065F46' }}>{totalSlots - usedSlots}</strong>
+          <span style={{ color: '#6B7280' }}>empty</span>
         </div>
         {usedSlots > 0 && (
-          <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs"
-            style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 8, backgroundColor: '#FEF2F2', border: '1px solid #FECACA', fontSize: 11 }}>
             <MI name="cancel" size={12} color="#EF4444" />
-            <span style={{ color: '#991B1B', fontWeight: 600 }}>{usedSlots}</span>
+            <strong style={{ color: '#991B1B' }}>{usedSlots}</strong>
             <span style={{ color: '#6B7280' }}>occupied</span>
           </div>
         )}
-        <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs"
-          style={{ backgroundColor: '#F3F4F6', border: '1px solid #E5E7EB' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 8, backgroundColor: '#F3F4F6', border: '1px solid #E5E7EB', fontSize: 11 }}>
           <MI name="grid_view" size={12} color="#6B7280" />
-          <span style={{ color: '#374151', fontWeight: 600 }}>{totalSlots}</span>
+          <strong style={{ color: '#374151' }}>{totalSlots}</strong>
           <span style={{ color: '#6B7280' }}>total</span>
         </div>
         {missingSlots > 0 && (
@@ -103,15 +103,10 @@ export default function SlotGrid({
               setFixingSlots(false)
               onAssigned(result.message)
             }}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs"
-            style={{
-              backgroundColor: '#FFFBEB', border: '1px solid #FCD34D',
-              color: '#92400E', cursor: fixingSlots ? 'not-allowed' : 'pointer',
-              opacity: fixingSlots ? 0.7 : 1,
-            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 8, backgroundColor: '#FFFBEB', border: '1px solid #FCD34D', color: '#92400E', cursor: fixingSlots ? 'not-allowed' : 'pointer', fontSize: 11, opacity: fixingSlots ? 0.7 : 1 }}
           >
             <MI name={fixingSlots ? 'hourglass_top' : 'build'} size={12} color="#D97706" />
-            {fixingSlots ? 'Fixing…' : `Fix ${missingSlots} missing slot${missingSlots !== 1 ? 's' : ''}`}
+            {fixingSlots ? 'Fixing…' : `Fix ${missingSlots} missing`}
           </button>
         )}
       </div>
@@ -124,26 +119,17 @@ export default function SlotGrid({
           gap: GAP,
           width: 'fit-content',
         }}>
-          {/* Top-left corner */}
           <div />
-          {/* Column headers */}
           {Array.from({ length: cols }, (_, i) => (
-            <div key={i} style={{
-              textAlign: 'center', fontSize: 9, fontWeight: 600,
-              color: '#9CA3AF', paddingBottom: 2, width: CELL,
-            }}>
-              {i + 1}
+            <div key={i} style={{ textAlign: 'center', fontSize: 9, fontWeight: 600, color: '#9CA3AF', paddingBottom: 2, width: CELL }}>
+              {String(i + 1).padStart(2, '0')}
             </div>
           ))}
 
-          {/* Rows */}
           {Array.from({ length: rows }, (_, r) => {
             const rowLetter = String.fromCharCode(65 + r)
             return [
-              <div key={`label-${r}`} style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 9, fontWeight: 600, color: '#9CA3AF', width: LABEL_W, height: CELL,
-              }}>
+              <div key={`label-${r}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 600, color: '#9CA3AF', width: LABEL_W, height: CELL }}>
                 {rowLetter}
               </div>,
               ...Array.from({ length: cols }, (_, c) => {
@@ -151,34 +137,41 @@ export default function SlotGrid({
                 const slot     = slotMap.get(slotId)
                 const occupied = ((slot?.is_occupied ?? false) || (slot ? optimisticOccupied.has(slot.id) : false))
                                && !(slot ? optimisticFree.has(slot.id) : false)
+                const missing  = !slot
+                const isSelected = slot?.id === selectedSlotId
 
-                const missing = !slot
+                let bg = '#FAFAFA'
+                let border = '1px solid #E5E7EB'
+
+                if (missing)      { bg = '#F9FAFB'; border = '1px dashed #E5E7EB' }
+                else if (isSelected) { bg = '#EFF6FF'; border = '2px solid #0154FC' }
+                else if (occupied)   { bg = '#FEF9F9'; border = '1px solid #FECACA' }
+
                 return (
                   <button
                     key={slotId}
                     onClick={() => {
                       if (missing) return
-                      if (occupied) setInspectingSlot(slot!)
-                      else setAssigningSlot(slot!)
+                      const newSelected = slot!.id === selectedSlotId ? null : slot!.id
+                      onSlotSelect?.(newSelected)
+                      onSlotClick?.(slot!)
+                      if (!onSlotClick) {
+                        if (occupied) setInspectingSlot(slot!)
+                        else setAssigningSlot(slot!)
+                      }
                     }}
                     disabled={missing}
-                    title={
-                      occupied ? `${slotId} — Occupied (click to view)`
-                      : missing ? `${slotId} — Not registered (click Fix to repair)`
-                      : `${slotId} — Click to assign`
-                    }
+                    title={occupied ? `${slotId} — ${slot?.assigned_sample_id ?? 'Occupied'}` : missing ? `${slotId} — Not registered` : `${slotId} — Empty`}
                     style={{
-                      width: CELL, height: CELL, borderRadius: 4,
-                      border: `1px solid ${occupied ? '#FECACA' : missing ? '#E5E7EB' : '#BBF7D0'}`,
-                      backgroundColor: occupied ? '#FEF2F2' : missing ? '#F9FAFB' : '#F0FDF4',
-                      color: occupied ? '#EF4444' : missing ? '#D1D5DB' : '#10B981',
-                      fontSize: 8, fontWeight: 700,
+                      width: CELL, height: CELL, borderRadius: 5,
+                      border, backgroundColor: bg,
                       cursor: missing ? 'not-allowed' : 'pointer',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       padding: 0,
                     }}
                   >
-                    {slotId}
+                    {occupied && <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#9CA3AF' }} />}
+                    {isSelected && !occupied && <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#0154FC', opacity: 0.6 }} />}
                   </button>
                 )
               }),
@@ -188,21 +181,20 @@ export default function SlotGrid({
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-4 mt-3 flex-wrap">
-        <div className="flex items-center gap-1.5 text-xs" style={{ color: '#6B7280' }}>
-          <div style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0' }} />
-          Free
-        </div>
-        <div className="flex items-center gap-1.5 text-xs" style={{ color: '#6B7280' }}>
-          <div style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#FEF2F2', border: '1px solid #FECACA' }} />
-          Occupied
-        </div>
-        {missingSlots > 0 && (
-          <div className="flex items-center gap-1.5 text-xs" style={{ color: '#6B7280' }}>
-            <div style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#F9FAFB', border: '1px solid #E5E7EB' }} />
-            Not registered
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 12, flexWrap: 'wrap' }}>
+        {[
+          { bg: '#FAFAFA',  border: '1px solid #E5E7EB',  label: 'Empty' },
+          { bg: '#FEF9F9',  border: '1px solid #FECACA',  label: 'Occupied', dot: '#9CA3AF' },
+          { bg: '#EFF6FF',  border: '2px solid #0154FC',  label: 'Selected' },
+          { bg: '#FFFBEB',  border: '1px solid #FCD34D',  label: 'Warning' },
+        ].map(item => (
+          <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#6B7280' }}>
+            <div style={{ width: 14, height: 14, borderRadius: 3, backgroundColor: item.bg, border: item.border, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {item.dot && <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: item.dot }} />}
+            </div>
+            {item.label}
           </div>
-        )}
+        ))}
       </div>
 
       {assigningSlot && (
