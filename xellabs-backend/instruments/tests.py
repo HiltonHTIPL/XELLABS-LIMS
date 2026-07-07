@@ -7,6 +7,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
+from core.test_utils import TenantAPITestCase
 
 from instruments.models import Instrument
 from instruments.importers import parse_csv, parse_xml, map_results
@@ -20,7 +21,7 @@ def make_user(username, role="analyst"):
     return u, token.key
 
 
-class InstrumentDueAlertsTest(APITestCase):
+class InstrumentDueAlertsTest(TenantAPITestCase):
     def setUp(self):
         _, key = make_user("inst_analyst")
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {key}")

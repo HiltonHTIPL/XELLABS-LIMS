@@ -6,7 +6,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.authtoken.models import Token
-from rest_framework.test import APITestCase
+from core.test_utils import TenantAPITestCase
 
 from inventory.models import StorageLocation, Reagent, Lot, InventoryTransaction, ExpiryAlert
 
@@ -19,7 +19,7 @@ def make_user(username, role="analyst"):
     return u, token.key
 
 
-class InventoryTransactionTest(APITestCase):
+class InventoryTransactionTest(TenantAPITestCase):
     def setUp(self):
         self.user, key = make_user("inv_analyst")
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {key}")
@@ -66,7 +66,7 @@ class InventoryTransactionTest(APITestCase):
         self.assertNotIn("HCl", names)
 
 
-class ExpiryAlertTest(APITestCase):
+class ExpiryAlertTest(TenantAPITestCase):
     def setUp(self):
         self.user, key = make_user("exp_analyst")
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {key}")
