@@ -8,8 +8,18 @@ if (!SESSION_SECRET || SESSION_SECRET.length < 32) {
 }
 const encodedKey = new TextEncoder().encode(SESSION_SECRET)
 
-// 8 hours — HIPAA §164.312(a)(2)(iii) automatic logoff
-const SESSION_DURATION_MS = 8 * 60 * 60 * 1000
+// 8 hours — HIPAA §164.312(a)(2)(iii) automatic logoff; resets on each request (sliding window)
+export const SESSION_DURATION_MS = 8 * 60 * 60 * 1000
+
+export function getSessionCookieOptions(expiresAt: Date) {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    expires: expiresAt,
+    sameSite: 'strict' as const,
+    path: '/',
+  }
+}
 
 export type SessionPayload = {
   userId: string
@@ -25,7 +35,7 @@ export async function encrypt(payload: SessionPayload) {
   return new SignJWT({ ...payload })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
-    .setExpirationTime('8h')
+    .setExpirationTime(new Date(payload.expiresAt))
     .sign(encodedKey)
 }
 
@@ -45,13 +55,7 @@ export async function createSession(payload: Omit<SessionPayload, 'expiresAt'>) 
   const token = await encrypt({ ...payload, expiresAt })
   const cookieStore = await cookies()
 
-  cookieStore.set('session', token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    expires: expiresAt,
-    sameSite: 'strict',
-    path: '/',
-  })
+  cookieStore.set('session', token, getSessionCookieOptions(expiresAt))
 }
 
 export async function deleteSession() {
