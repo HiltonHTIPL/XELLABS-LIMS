@@ -102,7 +102,7 @@ jobs:
             cd /opt/xellabs-lims
             git fetch origin CICD-QA
             git reset --hard origin/CICD-QA
-            docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d --build
+            docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.proxy.yml up -d --build
             timeout 300 bash -c '
               until [ "$(docker ps --filter name=xellabs -q | wc -l)" -ge 9 ] && \
                     [ "$(docker ps --filter name=xellabs --filter health=unhealthy -q | wc -l)" -eq 0 ]; do
