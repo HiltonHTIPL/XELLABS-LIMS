@@ -9,7 +9,7 @@ function MI({ name, size = 16 }: { name: string; size?: number }) {
   return <span className="material-icons" style={{ fontSize: size, lineHeight: 1 }}>{name}</span>
 }
 
-type NavItem = { label: string; href: string; icon: string; roles: string[] | null; exact?: boolean }
+type NavItem = { label: string; href: string; icon: string; roles: string[] | null; exact?: boolean; superuserOnly?: boolean }
 type NavGroup = { group: string; icon: string; roles: string[] | null; children: NavItem[] }
 type NavEntry = NavItem | NavGroup
 
@@ -30,16 +30,36 @@ const NAV: NavEntry[] = [
       { label: 'New Samples',      href: '/dashboard/samples-overview/new', icon: 'add_circle', roles: ['admin', 'lab_manager', 'receptionist'] },
     ],
   },
-  { label: 'Sample Receipt',   href: '/dashboard/sample-receipts',   icon: 'receipt_long',            roles: null },
   { label: 'Analysis Requests',href: '/dashboard/analysis-requests', icon: 'assignment_turned_in',    roles: ['admin', 'lab_manager', 'analyst', 'reviewer'] },
   { label: 'Worksheets',       href: '/dashboard/worksheets',        icon: 'table_chart',             roles: ['admin', 'lab_manager', 'analyst'] },
+  { label: 'Results',          href: '/dashboard/results',           icon: 'science',                 roles: ['admin', 'lab_manager', 'analyst', 'reviewer'] },
+  { label: 'Tasks',            href: '/dashboard/tasks',             icon: 'checklist',                roles: null },
   // Storage & tracking
   { label: 'Storage',          href: '/dashboard/storage',           icon: 'inventory_2',             roles: ['admin', 'lab_manager', 'analyst', 'client'] },
   { label: 'Chain of Custody', href: '/dashboard/chain-of-custody',  icon: 'link',                    roles: ['admin', 'lab_manager', 'analyst', 'reviewer', 'client'] },
-  // Lab operations
-  { label: 'Instruments',      href: '/dashboard/instruments',       icon: 'precision_manufacturing', roles: ['admin', 'lab_manager', 'analyst', 'client'] },
+  // Inventory
+  {
+    group: 'Inventory',
+    icon: 'science',
+    roles: ['admin', 'lab_manager', 'analyst'],
+    children: [
+      { label: 'Reagents & Standards', href: '/dashboard/inventory-items', icon: 'biotech', roles: ['admin', 'lab_manager', 'analyst'] },
+      { label: 'Lots & Transactions', href: '/dashboard/inventory-lots', icon: 'inventory', roles: ['admin', 'lab_manager', 'analyst'] },
+      { label: 'Instrument Maintenance', href: '/dashboard/instrument-maintenance', icon: 'build', roles: ['admin', 'lab_manager', 'analyst'] },
+    ],
+  },
   { label: 'Quality',          href: '/dashboard/quality',           icon: 'verified',                roles: ['admin', 'lab_manager', 'analyst', 'reviewer', 'client'] },
   { label: 'Reports',          href: '/dashboard/reports',           icon: 'bar_chart',               roles: null },
+  // Compliance
+  {
+    group: 'Compliance',
+    icon: 'gavel',
+    roles: ['admin', 'lab_manager', 'reviewer'],
+    children: [
+      { label: 'Approvals', href: '/dashboard/approvals', icon: 'fact_check', roles: ['admin', 'lab_manager', 'reviewer'] },
+      { label: 'Audit Trail', href: '/dashboard/audit-trail', icon: 'history', roles: ['admin', 'lab_manager'] },
+    ],
+  },
   // Administration group
   {
     group: 'Administration',
@@ -50,9 +70,12 @@ const NAV: NavEntry[] = [
       { label: 'Sample Types', href: '/dashboard/sample-types', icon: 'category',   roles: ['admin', 'lab_manager'] },
       { label: 'Methods',      href: '/dashboard/methods',      icon: 'biotech',     roles: ['admin', 'lab_manager'] },
       { label: 'Tests',        href: '/dashboard/tests',        icon: 'assignment',  roles: ['admin', 'lab_manager', 'analyst'] },
+      { label: 'Specifications', href: '/dashboard/specifications', icon: 'rule',    roles: ['admin', 'lab_manager'] },
       { label: 'Master Data Import', href: '/dashboard/master-data-import', icon: 'upload_file', roles: ['admin', 'lab_manager'] },
       { label: 'Instrument List', href: '/dashboard/instrument-list', icon: 'precision_manufacturing', roles: ['admin', 'lab_manager'] },
       { label: 'Storage List', href: '/dashboard/storage-list', icon: 'inventory_2', roles: ['admin', 'lab_manager'] },
+      { label: 'Report Templates', href: '/dashboard/settings/report-templates', icon: 'description', roles: ['admin'] },
+      { label: 'Tenant Management', href: '/dashboard/tenant-management', icon: 'corporate_fare', roles: ['admin'], superuserOnly: true },
     ],
   },
 ]
@@ -60,15 +83,19 @@ const NAV: NavEntry[] = [
 interface Props {
   onToggle?: () => void
   role?: string
+  reportDraftCount?: number
+  isSuperuser?: boolean
 }
 
-export default function Sidebar({ onToggle, role }: Props) {
+export default function Sidebar({ onToggle, role, reportDraftCount, isSuperuser }: Props) {
   const pathname = usePathname()
 
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
     const open = new Set<string>()
-    if (['/dashboard/admin', '/dashboard/sample-types', '/dashboard/methods', '/dashboard/tests', '/dashboard/master-data-import', '/dashboard/instrument-list', '/dashboard/storage-list'].some(p => pathname.startsWith(p))) open.add('Administration')
+    if (['/dashboard/admin', '/dashboard/sample-types', '/dashboard/methods', '/dashboard/tests', '/dashboard/specifications', '/dashboard/master-data-import', '/dashboard/instrument-list', '/dashboard/storage-list', '/dashboard/settings', '/dashboard/tenant-management'].some(p => pathname.startsWith(p))) open.add('Administration')
     if (['/dashboard/samples-overview', '/dashboard/samples/new'].some(p => pathname.startsWith(p))) open.add('Samples')
+    if (['/dashboard/inventory-items', '/dashboard/inventory-lots', '/dashboard/instrument-maintenance'].some(p => pathname.startsWith(p))) open.add('Inventory')
+    if (['/dashboard/approvals', '/dashboard/audit-trail'].some(p => pathname.startsWith(p))) open.add('Compliance')
     return open
   })
 
@@ -81,7 +108,8 @@ export default function Sidebar({ onToggle, role }: Props) {
     })
   }
 
-  function isVisible(roles: string[] | null) {
+  function isVisible(roles: string[] | null, superuserOnly?: boolean) {
+    if (superuserOnly && !isSuperuser) return false
     return !roles || (!!role && roles.includes(role))
   }
 
@@ -108,7 +136,7 @@ export default function Sidebar({ onToggle, role }: Props) {
           if (!isVisible(entry.roles)) return null
 
           if (isGroup(entry)) {
-            const anyChildActive = entry.children.some(c => c.exact ? pathname === c.href : pathname.startsWith(c.href))
+            const anyChildActive = entry.children.some(c => c.exact ? pathname === c.href : (pathname === c.href || pathname.startsWith(c.href + '/')))
             const isOpen = openGroups.has(entry.group)
             return (
               <div key={entry.group}>
@@ -136,8 +164,8 @@ export default function Sidebar({ onToggle, role }: Props) {
                 {/* Children */}
                 {isOpen && (
                   <div style={{ marginLeft: 12, borderLeft: '1.5px solid rgba(255,255,255,0.15)', paddingLeft: 8, marginBottom: 4 }}>
-                    {entry.children.filter(c => isVisible(c.roles)).map(child => {
-                      const active = child.exact ? pathname === child.href : pathname.startsWith(child.href)
+                    {entry.children.filter(c => isVisible(c.roles, c.superuserOnly)).map(child => {
+                      const active = child.exact ? pathname === child.href : (pathname === child.href || pathname.startsWith(child.href + '/'))
                       return (
                         <Link key={child.href} href={child.href} style={linkStyle(active)}>
                           <MI name={child.icon} size={15} />
@@ -154,7 +182,7 @@ export default function Sidebar({ onToggle, role }: Props) {
           // Regular flat item
           const active = entry.href === '/dashboard'
             ? pathname === '/dashboard'
-            : pathname.startsWith(entry.href)
+            : pathname === entry.href || pathname.startsWith(entry.href + '/')
           return (
             <Link key={entry.href} href={entry.href} style={linkStyle(active)}>
               <MI name={entry.icon} size={16} />

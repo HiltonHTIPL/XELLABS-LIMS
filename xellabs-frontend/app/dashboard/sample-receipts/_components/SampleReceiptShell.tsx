@@ -2,6 +2,9 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { receiveLabSample, type LabSample } from '@/app/actions/lab-samples'
+import { assignSampleByLabel } from '@/app/actions/storage'
+import StorageLocationInput, { type SelectedStorage } from '@/app/dashboard/_components/StorageLocationInput'
+import LiveBarcode from '@/app/dashboard/_components/LiveBarcode'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -41,15 +44,9 @@ function StepBar({ active }: { active: number }) {
 }
 
 function Barcode({ label }: { label?: string }) {
-  const bars = [3,1,2,1,3,2,1,2,1,3,1,1,2,3,1,2,1,1,3,2,1,2,3,1,2,1,3,1,2,2,1,3,1,2,1,2,3,1,1,2,3,1,2,1,2,1,3,2,1,3,1,1,2,1,3,2,1,2,1,3]
-  let x = 0
-  const rects: { x: number; w: number; fill: string }[] = []
-  bars.forEach((w, i) => { rects.push({ x, w: w * 2.2, fill: i % 2 === 0 ? '#111827' : '#fff' }); x += w * 2.2 })
   return (
     <>
-      <svg width="100%" viewBox={`0 0 ${x} 60`} preserveAspectRatio="none" style={{ height: 56 }}>
-        {rects.map((r, i) => <rect key={i} x={r.x} y={0} width={r.w} height={60} fill={r.fill} />)}
-      </svg>
+      {label ? <LiveBarcode value={label} height={56} /> : <div style={{ height: 56 }} />}
       <p style={{ fontSize: 15, fontWeight: 700, color: '#111827', textAlign: 'center', marginTop: 4 }}>{label ?? '—'}</p>
     </>
   )
@@ -110,6 +107,11 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
   const [holdQA, setHoldQA]         = useState(false)
   const [collector, setCollector]   = useState('')
   const [notes, setNotes]           = useState('')
+  const [storageSel, setStorageSel] = useState<SelectedStorage | null>(
+    sample?.preferred_storage_location
+      ? { labelCode: sample.preferred_storage_label_code, display: sample.preferred_storage_location }
+      : null
+  )
 
   async function handleReceive() {
     if (!sample) return
@@ -120,15 +122,37 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
       quantity_received: qty, quantity_unit: qtyUnit,
       sampling_deviation: deviation, storage_requirement: storage,
       priority, hold_for_qa: holdQA, collector,
-      location: '', notes,
+      location: storageSel?.display ?? '', notes,
     })
-    setSubmitting(false)
-    if (result.success) {
-      setSuccess(result.message ?? 'Sample received.')
-      setTimeout(() => router.push('/dashboard/lab-samples'), 1500)
-    } else {
+    if (!result.success) {
+      setSubmitting(false)
       setError(result.message ?? 'Failed to receive sample.')
+      return
     }
+    // Physical storage assignment — reuses the same audited assign flow as the
+    // Storage page (scanned/selected label code → exact slot or first free slot).
+    if (storageSel) {
+      const stored = await assignSampleByLabel(storageSel.labelCode, sample.sample_id)
+      setSubmitting(false)
+      if (!stored.success) {
+        setError(`Sample received, but storage assignment failed: ${stored.message}`)
+        return
+      }
+      // The previewed slot (shown before submit) can go stale if another
+      // receipt claimed it first — the backend always assigns the actual
+      // first-free slot at submit time, so surface it if it differs from
+      // what was previewed (e.g. previewed A1, actually assigned A2).
+      const actualSlot = stored.slot?.slot_id
+      const previewedSlot = storageSel.autoSlot
+      const driftNote = actualSlot && previewedSlot && actualSlot !== previewedSlot
+        ? ` Note: ${previewedSlot} was taken in the meantime — assigned ${actualSlot} instead.`
+        : ''
+      setSuccess(`${result.message ?? 'Sample received.'} ${stored.message}${driftNote}`)
+    } else {
+      setSubmitting(false)
+      setSuccess(result.message ?? 'Sample received.')
+    }
+    setTimeout(() => router.push('/dashboard/lab-samples'), 1500)
   }
 
   const canSubmit = !!sample && !submitting && !success
@@ -142,7 +166,7 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em', margin: 0 }}>Sample Receipt</h1>
             <p style={{ fontSize: 12, color: '#9CA3AF', marginTop: 3 }}>
-              {sample ? `Receiving sample ${sample.sample_id}` : 'Select a registered sample from Lab Samples to begin.'}
+              {sample ? `Receiving sample ${sample.sample_id}` : 'Select a registered sample from Samples Overview to begin.'}
             </p>
           </div>
         </div>
@@ -162,7 +186,7 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
         {!hasId && (
           <div className="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#FEF3C7', border: '1px solid #FDE68A', color: '#92400E' }}>
             <MI name="info" size={14} color="#F59E0B" />
-            No sample selected. Go to <strong style={{ margin: '0 3px' }}>Lab Samples</strong> and click the teal <strong style={{ margin: '0 3px' }}>Receive</strong> icon on a registered sample.
+            No sample selected. Go to <strong style={{ margin: '0 3px' }}>Samples Overview</strong> and click the <strong style={{ margin: '0 3px' }}>Receive</strong> icon on a registered sample.
           </div>
         )}
         {hasId && !sample && (
@@ -271,6 +295,19 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
                 <input type="checkbox" checked={holdQA} onChange={e => setHoldQA(e.target.checked)} style={{ accentColor: '#2563EB', width: 14, height: 14, cursor: 'pointer' }} />
                 <span style={{ fontSize: 11, color: '#374151' }}>Place on QA Hold</span>
               </label>
+            </div>
+          </div>
+
+          {/* Storage Location — scan QR label or search a box; auto-assigns first free slot */}
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, marginBottom: 20 }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 5 }}>Storage Location</label>
+              <StorageLocationInput value={storageSel} onChange={setStorageSel} disabled={submitting || !!success} />
+              <p style={{ fontSize: 10, color: '#9CA3AF', marginTop: 4 }}>
+                {sample?.preferred_storage_location
+                  ? 'Pre-filled from the location chosen at registration — change it if the sample is going elsewhere.'
+                  : 'Scan a location QR label or search a box — the sample is stored there on receipt.'}
+              </p>
             </div>
           </div>
 

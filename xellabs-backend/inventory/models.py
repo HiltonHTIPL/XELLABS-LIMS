@@ -42,6 +42,10 @@ class StorageLocation(models.Model):
     slot_id            = models.CharField(max_length=20, blank=True)
     is_occupied        = models.BooleanField(default=False)
     assigned_sample_id = models.CharField(max_length=200, blank=True)
+    # Hidden system-generated scannable code (QR content). Never derived from the
+    # user-editable name — names can duplicate across locations; this cannot.
+    # Boxes: "BX-<pk>", slots: "<box label_code>-<slot_id>". Null for other types.
+    label_code         = models.CharField(max_length=40, null=True, blank=True, unique=True)
 
     class Meta:
         db_table = "storage_locations"
@@ -50,6 +54,12 @@ class StorageLocation(models.Model):
                 condition=~models.Q(parent=models.F('id')),
                 name='storage_location_no_self_parent',
             )
+        ]
+        indexes = [
+            models.Index(fields=["parent"], name="storage_parent_idx"),
+            models.Index(fields=["location_type"], name="storage_type_idx"),
+            models.Index(fields=["is_occupied"], name="storage_occupied_idx"),
+            models.Index(fields=["assigned_sample_id"], name="storage_sample_id_idx"),
         ]
 
     def inherit_senaite_fields_from_ancestors(self):
@@ -120,6 +130,11 @@ class StorageLocation(models.Model):
             self.inherit_senaite_fields_from_ancestors()
 
         super().save(*args, **kwargs)
+
+    @staticmethod
+    def slot_label_code(box, slot_id):
+        """Scannable code for a box_location slot, derived from its box's code."""
+        return f"{box.label_code}-{slot_id}" if box.label_code else None
 
     def __str__(self):
         return self.name

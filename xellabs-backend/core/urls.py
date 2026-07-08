@@ -2,13 +2,14 @@ from rest_framework.routers import DefaultRouter
 from django.urls import path
 from .views import (
     ClientViewSet, UserViewSet, TenantListView, TenantUsersView, TenantDetailView, TenantLogoView,
-    ClientResetPasswordView, SenaiteInstrumentImportView, SenaiteStorageLocationImportView,
-    SenaiteMasterDataDeleteView,
+    TenantManagementViewSet, ClientResetPasswordView, SenaiteInstrumentImportView,
+    SenaiteStorageLocationImportView, SenaiteMasterDataDeleteView,
 )
 
 router = DefaultRouter()
 router.register(r'clients', ClientViewSet, basename='client')
 router.register(r'users', UserViewSet, basename='staff-user')
+router.register(r'tenant-management', TenantManagementViewSet, basename='tenant-management')
 
 urlpatterns = router.urls + [
     path('tenants/', TenantListView.as_view(), name='tenant-list'),

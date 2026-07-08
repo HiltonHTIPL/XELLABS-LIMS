@@ -2,9 +2,9 @@ name: Deploy to GCP QA
 
 on:
   push:
-    branches: [CICD-QA]
+    branches: [CICD-QA, staging-development]
   pull_request:
-    branches: [CICD-QA]
+    branches: [CICD-QA, staging-development]
 
 jobs:
   build-test:
@@ -86,7 +86,7 @@ jobs:
 
   deploy:
     needs: build-test
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/CICD-QA'
     runs-on: ubuntu-latest
     environment: CICD-QA
     steps:

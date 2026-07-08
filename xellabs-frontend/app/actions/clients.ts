@@ -16,7 +16,8 @@ export type DjangoClient = {
   id: number
   name: string
   client_id: string
-  tenant_detail?: { id: number; name: string; slug: string; schema_name: string } | null
+  tenant_detail?: { id: number; name: string; slug: string; schema_name: string; logo?: string | null } | null
+  logo_url?: string | null
   email: string
   phone: string
   fax: string
@@ -53,8 +54,6 @@ export type DjangoClient = {
 export type ClientFormState = {
   success?: boolean
   message?: string
-  login_username?: string
-  login_password?: string
   errors?: {
     name?: string[]
     client_id?: string[]
@@ -297,8 +296,6 @@ export async function createClient(
   if (!client_id) errors.client_id = ['Client ID is required']
   if (Object.keys(errors).length > 0) return { errors }
 
-  const logoFile = formData.get('logo') as File | null
-
   const payload = {
     name, client_id,
     email:  g('email'), phone: g('phone'), fax: g('fax'), mobile: g('mobile'),
@@ -332,47 +329,10 @@ export async function createClient(
       return { message: msg }
     }
 
-    const created: DjangoClient = await res.json()
-
-    // Upload logo if provided — compress to <30 KB with sharp
-    let logoWarning = ''
-    if (logoFile && logoFile.size > 0 && created.tenant) {
-      try {
-        const sharp = (await import('sharp')).default
-        const buffer = Buffer.from(await logoFile.arrayBuffer())
-
-        let compressed = await sharp(buffer)
-          .resize({ width: 400, withoutEnlargement: true })
-          .webp({ quality: 80 })
-          .toBuffer()
-
-        if (compressed.byteLength > 30 * 1024) {
-          compressed = await sharp(buffer)
-            .resize({ width: 200, withoutEnlargement: true })
-            .webp({ quality: 50 })
-            .toBuffer()
-        }
-
-        const logoForm = new FormData()
-        logoForm.append('logo', new Blob([new Uint8Array(compressed)], { type: 'image/webp' }), 'logo.webp')
-
-        const logoRes = await djangoFetch(`/api/tenants/${created.tenant}/logo/`, {
-          method: 'POST',
-          body: logoForm,
-        })
-        if (!logoRes.ok) logoWarning = ' (logo upload failed — you can retry it from the client detail page)'
-      } catch {
-        logoWarning = ' (logo upload failed — you can retry it from the client detail page)'
-      }
-    }
-
     revalidatePath('/dashboard/clients')
-    const createdWithCreds = created as DjangoClient & { login_username?: string; login_password?: string }
     return {
       success: true,
-      message: `Client "${name}" created successfully.${logoWarning}`,
-      login_username: createdWithCreds.login_username ?? '',
-      login_password: createdWithCreds.login_password ?? '',
+      message: `Client "${name}" created successfully.`,
     }
   } catch {
     return { message: 'Could not reach the server. Please try again.' }

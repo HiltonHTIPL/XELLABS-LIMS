@@ -89,10 +89,12 @@ export default function SampleInfoPanel({
   result,
   capacity,
   onClose,
+  onViewAll,
 }: {
   result: ChainOfCustodyResult | null
   capacity: { total: number; occupied: number; free: number } | null
   onClose: () => void
+  onViewAll?: () => void
 }) {
   const sample = result?.sample ?? null
   const loc    = result?.current_location ?? null
@@ -172,7 +174,11 @@ export default function SampleInfoPanel({
             <MI name="timeline" size={14} color="#6B7280" />
             <span style={{ fontSize: 12, fontWeight: 700, color: '#111827' }}>Activity / Audit Trail</span>
           </div>
-          <span style={{ fontSize: 11, color: '#0154FC', cursor: 'pointer', fontWeight: 500 }}>View All</span>
+          {events.length > 0 && onViewAll && (
+            <button onClick={onViewAll} style={{ fontSize: 11, color: '#0154FC', cursor: 'pointer', fontWeight: 500, background: 'none', border: 'none', padding: 0 }}>
+              View All
+            </button>
+          )}
         </div>
 
         <div style={{ maxHeight: 220, overflowY: 'auto' }}>

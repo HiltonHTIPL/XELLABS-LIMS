@@ -55,7 +55,7 @@ class ReportCRUDTest(TenantAPITestCase):
 
     def test_create_report_record(self):
         from reporting.models import Report
-        r = self.client.post("/api/reports/reports/", {
+        r = self.client.post("/api/reports/", {
             "report_type": "coa",
             "title": "COA for RPT-001",
             "sample": self.sample.pk,
@@ -64,5 +64,5 @@ class ReportCRUDTest(TenantAPITestCase):
         self.assertIn("report_id", r.data)
 
     def test_list_reports(self):
-        r = self.client.get("/api/reports/reports/")
+        r = self.client.get("/api/reports/")
         self.assertEqual(r.status_code, status.HTTP_200_OK)

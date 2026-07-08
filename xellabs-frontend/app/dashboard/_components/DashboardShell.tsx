@@ -9,9 +9,11 @@ interface Props {
   displayName: string
   roleLabel: string
   role: string
+  reportDraftCount?: number
+  isSuperuser?: boolean
 }
 
-export default function DashboardShell({ children, initials, displayName, roleLabel, role }: Props) {
+export default function DashboardShell({ children, initials, displayName, roleLabel, role, reportDraftCount, isSuperuser }: Props) {
   const [open, setOpen] = useState(true)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const userMenuRef = useRef<HTMLDivElement>(null)
@@ -38,7 +40,7 @@ export default function DashboardShell({ children, initials, displayName, roleLa
         }}
       >
         <div style={{ width: 210, height: '100%' }}>
-          <Sidebar onToggle={() => setOpen(false)} role={role} />
+          <Sidebar onToggle={() => setOpen(false)} role={role} reportDraftCount={reportDraftCount} isSuperuser={isSuperuser} />
         </div>
       </div>
 
@@ -59,14 +61,25 @@ export default function DashboardShell({ children, initials, displayName, roleLa
             <span className="material-icons" style={{ fontSize: 20, color: '#6B7280' }}>menu</span>
           </button>
 
-          {/* PRODUCTION badge */}
-          <div
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full shrink-0"
-            style={{ backgroundColor: '#DBEAFE', border: '1px solid #93C5FD' }}
-          >
-            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#0154FC' }} />
-            <span className="text-xs font-semibold" style={{ color: '#0154FC' }}>PRODUCTION</span>
-          </div>
+          {/* Environment badge — reads NEXT_PUBLIC_APP_ENV; defaults to DEVELOPMENT */}
+          {(() => {
+            const env = (process.env.NEXT_PUBLIC_APP_ENV ?? 'development').toLowerCase()
+            const isProd = env === 'production'
+            return (
+              <div
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full shrink-0"
+                style={{
+                  backgroundColor: isProd ? '#DBEAFE' : '#DCFCE7',
+                  border: `1px solid ${isProd ? '#93C5FD' : '#86EFAC'}`,
+                }}
+              >
+                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: isProd ? '#0154FC' : '#16A34A' }} />
+                <span className="text-xs font-semibold" style={{ color: isProd ? '#0154FC' : '#16A34A' }}>
+                  {isProd ? 'PRODUCTION' : 'DEVELOPMENT'}
+                </span>
+              </div>
+            )
+          })()}
 
           {/* Search */}
           <div

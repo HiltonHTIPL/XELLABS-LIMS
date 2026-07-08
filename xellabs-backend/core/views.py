@@ -1,3 +1,4 @@
+import json
 import logging
 from django.contrib.auth import get_user_model, authenticate
 from rest_framework.views import APIView
@@ -12,7 +13,7 @@ from rest_framework.authtoken.models import Token
 from django_filters.rest_framework import DjangoFilterBackend
 
 from .models import Client, Tenant
-from .permissions import IsLabManagerOrAbove
+from .permissions import IsLabManagerOrAbove, IsSuperAdmin
 from .serializers import ClientSerializer, UserSerializer, StaffUserSerializer, TenantSerializer, TenantLogoSerializer
 
 User = get_user_model()
@@ -81,6 +82,7 @@ class UserMeView(APIView):
             'first_name': user.first_name,
             'last_name': user.last_name,
             'role': user.role,
+            'is_superuser': user.is_superuser,
         })
 
 
@@ -149,72 +151,20 @@ class ClientViewSet(ModelViewSet):
         return Client.objects.all()
 
     def perform_create(self, serializer):
-        from django.utils.text import slugify
-        from django_tenants.utils import schema_context
         from rest_framework.exceptions import ValidationError as DRFValidationError
 
-        name = serializer.validated_data.get('name', '')
         # Normalise client_id to uppercase so "hl-01" and "HL-01" are the same
         client_id_val = serializer.validated_data.get('client_id', '').upper()
-        email = serializer.validated_data.get('email', '')
 
         # Check uniqueness before hitting the DB so we return a clean 400, not a 500
         if client_id_val and Client.objects.filter(client_id=client_id_val).exists():
             raise DRFValidationError({'client_id': [f'A client with ID "{client_id_val}" already exists.']})
 
-        # Derive a unique slug from client_id (preferred) or name
-        raw = client_id_val or name
-        slug = slugify(raw) or 'client'
-
-        # Tenant and User live in the public schema — must switch context before creating them.
-        # The request arrives scoped to a tenant schema (e.g. hl-01); without this wrapper
-        # django-tenants raises "Can't create tenant outside the public schema."
-        with schema_context('public'):
-            from django.db import IntegrityError as DBIntegrityError
-            try:
-                tenant, _ = Tenant.objects.get_or_create(
-                    slug=slug,
-                    defaults={'name': name, 'schema_name': slug},
-                )
-            except DBIntegrityError:
-                # Tenant name collision (another tenant already has this name).
-                # Fall back to slug as the tenant name — it is always unique.
-                tenant, _ = Tenant.objects.get_or_create(
-                    slug=slug,
-                    defaults={'name': slug, 'schema_name': slug},
-                )
-
-            username = client_id_val or slug.upper()
-            if not User.objects.filter(username=username).exists():
-                from django.utils.crypto import get_random_string
-                temp_password = get_random_string(20)
-                User.objects.create_user(
-                    username=username,
-                    email=email,
-                    password=temp_password,
-                    role='client',
-                    tenant=tenant,
-                )
-                logger.info("Created client user '%s' with a temporary password.", username)
-                # Surfaced once in the create response so an admin can hand it to the
-                # client immediately — there is no email flow yet to deliver it another
-                # way. Never logged, never stored anywhere, never returned again after
-                # this response (a fresh GET/list call never includes it).
-                self.request._created_client_password = temp_password
-
-        # Attach the username to the request so the view can surface it in the response
-        self.request._created_client_username = username
-        serializer.save(tenant=tenant, client_id=client_id_val)
-
-    def create(self, request, *args, **kwargs):
-        response = super().create(request, *args, **kwargs)
-        username = getattr(request, '_created_client_username', None)
-        password = getattr(request, '_created_client_password', None)
-        if username:
-            response.data['login_username'] = username
-        if password:
-            response.data['login_password'] = password
-        return response
+        # A client is a customer record of the current lab — it belongs to the
+        # logged-in user's tenant. No login account is created here: credentials
+        # only exist for tenant admins (TenantManagementViewSet). Legacy client
+        # logins created by the old flow keep working via ClientResetPasswordView.
+        serializer.save(tenant=self.request.user.tenant, client_id=client_id_val)
 
 
 class ClientResetPasswordView(APIView):
@@ -267,10 +217,10 @@ class TenantListView(ListAPIView):
 
 
 class TenantUsersView(ListAPIView):
-    """List all users belonging to a specific tenant."""
+    """List all users belonging to a specific tenant. Superadmin only."""
     serializer_class = UserSerializer
     authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsSuperAdmin]
     filter_backends = [SearchFilter, OrderingFilter]
     search_fields = ['username', 'email', 'first_name', 'last_name']
     ordering_fields = ['username', 'date_joined']
@@ -282,10 +232,10 @@ class TenantUsersView(ListAPIView):
 
 
 class TenantDetailView(RetrieveUpdateAPIView):
-    """Retrieve or update a tenant (includes nested domains)."""
+    """Retrieve or update a tenant (includes nested domains). Superadmin only."""
     serializer_class = TenantSerializer
     authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsSuperAdmin]
     queryset = Tenant.objects.prefetch_related('domains').all()
 
     def get_object(self):
@@ -300,9 +250,9 @@ class TenantDetailView(RetrieveUpdateAPIView):
 
 
 class TenantLogoView(APIView):
-    """Upload or delete the tenant logo."""
+    """Upload or delete the tenant logo. Superadmin only."""
     authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsSuperAdmin]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_object(self, tenant_id):
@@ -331,13 +281,140 @@ class TenantLogoView(APIView):
         return Response({'logo': None})
 
 
+def _stream_import(rows, row_importer):
+    """
+    Shared NDJSON generator for the streaming import endpoints. Yields one JSON line
+    per row as {"type": "progress", ...} while processing, then a final
+    {"type": "done", ...} line with the aggregate counts and full row log.
+    Each line is newline-terminated so the client can split on '\\n' as chunks arrive.
+    """
+    total = len(rows)
+    results = []
+    created = failed = skipped = 0
+
+    for i, (row_num, row) in enumerate(rows, start=1):
+        if not (row.get('title') or '').strip():
+            result = {'row': row_num, 'ok': None, 'title': None, 'error': 'Missing Title'}
+        else:
+            result = {'row': row_num, **row_importer(row)}
+
+        results.append(result)
+        if result['ok'] is True:
+            created += 1
+        elif result['ok'] is None:
+            skipped += 1
+        else:
+            failed += 1
+
+        yield json.dumps({
+            'type': 'progress', 'processed': i, 'total': total, 'row': result,
+        }) + '\n'
+
+    yield json.dumps({
+        'type': 'done', 'created': created, 'failed': failed, 'skipped': skipped, 'rows': results,
+    }) + '\n'
+
+
+def _log_tenant_audit(request, action, tenant, extra=None):
+    """AuditEvent for tenant lifecycle actions — never blocks the operation itself."""
+    try:
+        from django.contrib.contenttypes.models import ContentType
+        from audittrail.models import AuditEvent
+        AuditEvent.objects.create(
+            user=request.user,
+            action=action,
+            content_type=ContentType.objects.get_for_model(Tenant),
+            object_id=tenant.pk,
+            object_repr=f"Tenant: {tenant.name} ({tenant.slug})",
+            ip_address=request.META.get('REMOTE_ADDR'),
+            extra_data=extra or {},
+        )
+    except Exception:
+        logger.exception("Failed to write tenant audit event for '%s'.", tenant.slug)
+
+
+class TenantManagementViewSet(ModelViewSet):
+    """
+    Superadmin-only tenant lifecycle: /api/tenant-management/
+    Creating a tenant provisions its schema + domains (Tenant.save) and a
+    tenant-admin account whose temporary password is returned once in the
+    create response — same one-time-reveal pattern as ClientViewSet.
+    No destroy: tenants are deactivated (is_active=False), never deleted,
+    because dropping a schema is irreversible.
+    """
+    serializer_class = TenantSerializer
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated, IsSuperAdmin]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ['is_active']
+    search_fields = ['name', 'slug', 'email']
+    ordering_fields = ['name', 'created_at']
+    ordering = ['name']
+    http_method_names = ['get', 'post', 'patch', 'head', 'options']  # no PUT/DELETE
+
+    def get_queryset(self):
+        return Tenant.objects.prefetch_related('domains').all()
+
+    def perform_create(self, serializer):
+        from django.utils.crypto import get_random_string
+        from django.utils.text import slugify
+        from django_tenants.utils import schema_context
+        from rest_framework.exceptions import ValidationError as DRFValidationError
+
+        with schema_context('public'):
+            name = serializer.validated_data.get('name', '').strip()
+            slug = slugify(serializer.validated_data.get('slug', '') or name)
+            if not slug:
+                raise DRFValidationError({'slug': ['A valid slug is required.']})
+            if Tenant.objects.filter(slug=slug).exists():
+                raise DRFValidationError({'slug': [f'A tenant with slug "{slug}" already exists.']})
+
+            tenant = serializer.save(slug=slug, schema_name=slug)
+
+            admin_username = f"{slug}-admin"
+            temp_password = get_random_string(20)
+            if not User.objects.filter(username__iexact=admin_username).exists():
+                User.objects.create_user(
+                    username=admin_username,
+                    email=serializer.validated_data.get('email', ''),
+                    password=temp_password,
+                    role='admin',
+                    tenant=tenant,
+                )
+                # One-time reveal in the create response — never logged or stored.
+                self.request._created_tenant_admin_username = admin_username
+                self.request._created_tenant_admin_password = temp_password
+
+            _log_tenant_audit(self.request, 'create', tenant,
+                              extra={'admin_account': admin_username})
+
+    def create(self, request, *args, **kwargs):
+        response = super().create(request, *args, **kwargs)
+        username = getattr(request, '_created_tenant_admin_username', None)
+        password = getattr(request, '_created_tenant_admin_password', None)
+        if username:
+            response.data['admin_username'] = username
+            response.data['admin_password'] = password
+        return response
+
+    def perform_update(self, serializer):
+        from django_tenants.utils import schema_context
+        with schema_context('public'):
+            was_active = serializer.instance.is_active
+            tenant = serializer.save()
+            if was_active != tenant.is_active:
+                _log_tenant_audit(self.request, 'update', tenant,
+                                  extra={'is_active': tenant.is_active})
+
+
 class SenaiteInstrumentImportView(APIView):
-    """POST /api/senaite-import/instruments/ — bulk-create SENAITE Instruments from an uploaded .xlsx file."""
+    """POST /api/senaite-import/instruments/ — bulk-create SENAITE Instruments from an uploaded .xlsx/.csv file."""
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsLabManagerOrAbove]
     parser_classes = [MultiPartParser]
 
     def post(self, request):
+        from django.http import StreamingHttpResponse
         from .excel_import import read_excel_rows
         from .senaite_service import import_instrument_row
 
@@ -350,32 +427,23 @@ class SenaiteInstrumentImportView(APIView):
         except ValueError as exc:
             return Response({'detail': str(exc)}, status=400)
 
-        results = []
-        created = failed = skipped = 0
-        for row_num, row in rows:
-            if not (row.get('title') or '').strip():
-                results.append({'row': row_num, 'ok': None, 'title': None, 'error': 'Missing Title'})
-                skipped += 1
-                continue
-            result = import_instrument_row(row)
-            results.append({'row': row_num, **result})
-            if result['ok'] is True:
-                created += 1
-            elif result['ok'] is None:
-                skipped += 1
-            else:
-                failed += 1
-
-        return Response({'created': created, 'failed': failed, 'skipped': skipped, 'rows': results})
+        response = StreamingHttpResponse(
+            _stream_import(rows, import_instrument_row),
+            content_type='application/x-ndjson',
+        )
+        response['Cache-Control'] = 'no-cache'
+        response['X-Accel-Buffering'] = 'no'
+        return response
 
 
 class SenaiteStorageLocationImportView(APIView):
-    """POST /api/senaite-import/storage-locations/ — bulk-create SENAITE Storage Locations from an uploaded .xlsx file."""
+    """POST /api/senaite-import/storage-locations/ — bulk-create SENAITE Storage Locations from an uploaded .xlsx/.csv file."""
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsLabManagerOrAbove]
     parser_classes = [MultiPartParser]
 
     def post(self, request):
+        from django.http import StreamingHttpResponse
         from .excel_import import read_excel_rows
         from .senaite_service import import_storage_location_row
 
@@ -388,23 +456,13 @@ class SenaiteStorageLocationImportView(APIView):
         except ValueError as exc:
             return Response({'detail': str(exc)}, status=400)
 
-        results = []
-        created = failed = skipped = 0
-        for row_num, row in rows:
-            if not (row.get('title') or '').strip():
-                results.append({'row': row_num, 'ok': None, 'title': None, 'error': 'Missing Title'})
-                skipped += 1
-                continue
-            result = import_storage_location_row(row)
-            results.append({'row': row_num, **result})
-            if result['ok'] is True:
-                created += 1
-            elif result['ok'] is None:
-                skipped += 1
-            else:
-                failed += 1
-
-        return Response({'created': created, 'failed': failed, 'skipped': skipped, 'rows': results})
+        response = StreamingHttpResponse(
+            _stream_import(rows, import_storage_location_row),
+            content_type='application/x-ndjson',
+        )
+        response['Cache-Control'] = 'no-cache'
+        response['X-Accel-Buffering'] = 'no'
+        return response
 
 
 class SenaiteMasterDataDeleteView(APIView):

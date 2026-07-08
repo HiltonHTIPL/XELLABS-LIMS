@@ -12,6 +12,7 @@
 | `next` | 16.2.9 | Framework | Next.js App Router — pages, API routes, middleware, SSR/SSG |
 | `react` | 19.2.4 | Framework | UI component model |
 | `react-dom` | 19.2.4 | Framework | React DOM renderer |
+| `jsqr` | 1.4.0 | Barcode/QR | Client-side QR code decoding from device camera frames (getUserMedia + canvas) — storage location label scanning in New Sample / Sample Receipt |
 
 ---
 

@@ -22,56 +22,12 @@ export async function getStorageLocationsList(): Promise<SenaiteStorageLocation[
   return fetchSenaiteStorageLocations(serverToken())
 }
 
-export type ImportRowResult = {
-  row: number
-  ok: boolean | null
-  title: string | null
-  uid?: string
-  error?: string
-}
-
-export type ImportState = {
-  message?: string
-  success?: boolean
-  result?: {
-    created: number
-    failed: number
-    skipped: number
-    rows: ImportRowResult[]
-  }
-}
-
-async function runImport(endpoint: string, formData: FormData): Promise<ImportState> {
-  const file = formData.get('file') as File | null
-  if (!file || file.size === 0) {
-    return { message: 'Please select an .xlsx file to import.' }
-  }
-  if (!file.name.toLowerCase().endsWith('.xlsx')) {
-    return { message: 'Only .xlsx files are supported.' }
-  }
-
-  const fd = new FormData()
-  fd.append('file', file, file.name)
-
-  try {
-    const res = await djangoFetch(endpoint, { method: 'POST', body: fd })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) {
-      return { message: data.detail ?? 'Import failed.' }
-    }
-    return { success: true, result: data }
-  } catch (e) {
-    return { message: String(e) }
-  }
-}
-
-export async function importInstruments(_state: ImportState, formData: FormData): Promise<ImportState> {
-  return runImport('/api/senaite-import/instruments/', formData)
-}
-
-export async function importStorageLocations(_state: ImportState, formData: FormData): Promise<ImportState> {
-  return runImport('/api/senaite-import/storage-locations/', formData)
-}
+// Note: the upload flow itself does NOT go through a server action — Server Actions
+// can't stream a response back to the client, and the streaming NDJSON progress from
+// Django is the whole point (see MasterDataImportShell's useStreamingImport hook,
+// which POSTs directly to /api/senaite-import/<x>/, a same-origin Next.js Route
+// Handler at app/api/senaite-import/<x>/route.ts that attaches the auth token
+// server-side via djangoFetch and pipes Django's streaming response straight back).
 
 export type DeleteResult = {
   success: boolean

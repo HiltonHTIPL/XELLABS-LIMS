@@ -15,6 +15,13 @@ def _rank(user):
     return ROLE_HIERARCHY.get(getattr(user, "role", ""), -1)
 
 
+class IsSuperAdmin(BasePermission):
+    """Platform-level superadmin only (Django is_superuser) — tenant admins
+    (role='admin' but not superuser) are excluded. Guards tenant management."""
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.is_superuser
+
+
 class IsAdminRole(BasePermission):
     def has_permission(self, request, view):
         return request.user.is_authenticated and request.user.role == "admin"

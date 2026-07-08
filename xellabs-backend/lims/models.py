@@ -116,7 +116,14 @@ class Sample(models.Model):
     received_date = models.DateTimeField(null=True, blank=True)
     expiry_date = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS, default="registered")
+    # Authoritative only when a real StorageLocation slot is occupied — written
+    # exclusively by inventory._assign_sample_to_slot / unassign. Never set at
+    # registration time, so "Active" never means "merely intended".
     storage_location = models.CharField(max_length=200, blank=True)
+    # Informational hint chosen at registration (New Sample), before the sample
+    # physically exists — surfaced as a pre-fill suggestion on Sample Receipt.
+    preferred_storage_location = models.CharField(max_length=200, blank=True)
+    preferred_storage_label_code = models.CharField(max_length=40, blank=True)
     barcode = models.CharField(max_length=100, blank=True)
     # Receipt intake fields
     condition = models.CharField(max_length=20, choices=CONDITION, blank=True)
@@ -148,6 +155,7 @@ class Sample(models.Model):
     client_order_number = models.CharField(max_length=100, blank=True)
     client_reference = models.CharField(max_length=200, blank=True)
     client_sample_id = models.CharField(max_length=100, blank=True)
+    attachment = models.FileField(upload_to="sample_attachments/", null=True, blank=True)
     senaite_uid = models.CharField(max_length=100, blank=True, db_index=True)
     senaite_ar_id = models.CharField(max_length=100, blank=True)
     last_synced_from_senaite = models.DateTimeField(null=True, blank=True)
@@ -163,6 +171,12 @@ class Sample(models.Model):
     class Meta:
         db_table = "samples"
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["status"], name="sample_status_idx"),
+            models.Index(fields=["client"], name="sample_client_idx"),
+            models.Index(fields=["created_at"], name="sample_created_at_idx"),
+            models.Index(fields=["status", "client"], name="sample_status_client_idx"),
+        ]
 
     def __str__(self):
         return self.sample_id
@@ -191,6 +205,10 @@ class AnalysisRequest(models.Model):
     class Meta:
         db_table = "analysis_requests"
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["sample"], name="ar_sample_idx"),
+            models.Index(fields=["status"], name="ar_status_idx"),
+        ]
 
     def __str__(self):
         return self.ar_id
@@ -226,6 +244,10 @@ class WorksheetAssignment(models.Model):
 
     class Meta:
         db_table = "worksheet_items"
+        indexes = [
+            models.Index(fields=["worksheet"], name="wa_worksheet_idx"),
+            models.Index(fields=["analysis_request"], name="wa_ar_idx"),
+        ]
 
 
 class Result(models.Model):
@@ -251,6 +273,9 @@ class Result(models.Model):
 
     class Meta:
         db_table = "results"
+        indexes = [
+            models.Index(fields=["status"], name="result_status_idx"),
+        ]
 
 
 class QCSample(models.Model):

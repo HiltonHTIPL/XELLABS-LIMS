@@ -1,9 +1,29 @@
 'use client'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useEffect, useState, type CSSProperties } from 'react'
-import { type LabSample } from '@/app/actions/lab-samples'
+import { useEffect, useState, useTransition, type CSSProperties } from 'react'
+import { type LabSample, patchLabSample } from '@/app/actions/lab-samples'
 import { type AnalysisRequest } from '@/app/actions/analysis-requests'
+import LiveBarcode from '@/app/dashboard/_components/LiveBarcode'
+import { STICKER_TEMPLATES, printSticker, type StickerTemplate } from '@/app/lib/stickerTemplates'
+import { type CocSample } from '@/app/actions/storage'
+
+// renderSticker/printSticker were built for the chain-of-custody lookup shape
+// (CocSample) — adapt LabSample into it rather than writing a second sticker
+// renderer, so both pages print from the exact same templates/logic.
+function toCocSample(s: LabSample): CocSample {
+  return {
+    sample_id: s.sample_id, status: s.status, status_display: s.status,
+    sample_type: s.sample_type_name, client: s.client_name, barcode: s.barcode,
+    collection_date: s.collection_date, received_date: s.received_date, expiry_date: s.expiry_date,
+    condition: s.condition, seal_condition: '', priority: s.priority,
+    storage_requirement: '', sampling_deviation: '',
+    quantity_received: '', quantity_unit: '', hold_for_qa: s.hold_for_qa,
+    received_by: s.received_by_name, receipt_notes: '', collector: s.contact_name,
+    client_order_number: s.client_order_number, composite: s.composite,
+    container_type: s.container_type, preservation: s.preservation, sample_point: s.sample_point,
+  }
+}
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -59,6 +79,138 @@ function Row({ label, value }: { label: string; value: string }) {
 const th: CSSProperties = { padding: '9px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.03em', borderBottom: '1px solid #E5E7EB', whiteSpace: 'nowrap' }
 const td: CSSProperties = { padding: '10px 12px', fontSize: 12, color: '#374151', borderBottom: '1px solid #F3F4F6', whiteSpace: 'nowrap' }
 
+const inp: CSSProperties = { border: '1px solid #D1D5DB', borderRadius: 7, padding: '8px 10px', fontSize: 12, color: '#111827', background: '#fff', width: '100%', outline: 'none', boxSizing: 'border-box' }
+const lbl: CSSProperties = { fontSize: 11, fontWeight: 600, color: '#374151', marginBottom: 4, display: 'block' }
+
+function EditDrawer({ sample, onClose, onSaved }: { sample: LabSample; onClose: () => void; onSaved: () => void }) {
+  const [busy, startTransition] = useTransition()
+  const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [vals, setVals] = useState({
+    description:     sample.description ?? '',
+    collection_date: sample.collection_date ? sample.collection_date.slice(0, 16) : '',
+    expiry_date:     sample.expiry_date ? sample.expiry_date.slice(0, 16) : '',
+    storage_location: sample.storage_location ?? '',
+    priority:        sample.priority ?? 'medium',
+    condition:       sample.condition ?? 'good',
+    contact_name:    sample.contact_name ?? '',
+    client_order_number: sample.client_order_number ?? '',
+    client_reference:    sample.client_reference ?? '',
+    client_sample_id:    sample.client_sample_id ?? '',
+    batch_id:        sample.batch_id ?? '',
+  })
+
+  function set(k: string, v: string) { setVals(prev => ({ ...prev, [k]: v })) }
+
+  function handleSave() {
+    startTransition(async () => {
+      const patch: Record<string, unknown> = {}
+      for (const [k, v] of Object.entries(vals)) {
+        if (v !== '') patch[k] = v
+      }
+      const res = await patchLabSample(sample.id, patch)
+      setToast({ ok: res.ok, msg: res.ok ? 'Changes saved.' : (res.message ?? 'Save failed.') })
+      if (res.ok) setTimeout(() => { onSaved(); onClose() }, 800)
+    })
+  }
+
+  // Date.now() is impure — capture it after mount rather than during render.
+  const [nowLocal, setNowLocal] = useState<string | null>(null)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNowLocal(new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16))
+  }, [])
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 400, backgroundColor: 'rgba(0,0,0,0.28)' }} />
+      <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 460, zIndex: 401, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.12)', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+          <div>
+            <h3 style={{ fontSize: 15, fontWeight: 700, color: '#14265E', margin: 0 }}>Edit Sample</h3>
+            <p style={{ fontSize: 11, color: '#9CA3AF', margin: '2px 0 0' }}>{sample.sample_id}</p>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+            <MI name="close" size={18} color="#9CA3AF" />
+          </button>
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {sample.is_locked && (
+            <div style={{ background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#92400E', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <MI name="lock" size={14} color="#92400E" />
+              This sample is locked. Only admins and lab managers can make changes.
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div><label style={lbl}>Date Sampled</label>
+              <input type="datetime-local" value={vals.collection_date} max={nowLocal}
+                onChange={e => set('collection_date', e.target.value)} style={inp} /></div>
+            <div><label style={lbl}>Due Date</label>
+              <input type="datetime-local" value={vals.expiry_date}
+                onChange={e => set('expiry_date', e.target.value)} style={inp} /></div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div><label style={lbl}>Priority</label>
+              <select value={vals.priority} onChange={e => set('priority', e.target.value)} style={inp}>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select></div>
+            <div><label style={lbl}>Sample Condition</label>
+              <select value={vals.condition} onChange={e => set('condition', e.target.value)} style={inp}>
+                <option value="good">Good</option>
+                <option value="acceptable">Acceptable</option>
+                <option value="compromised">Compromised</option>
+                <option value="not_acceptable">Not Acceptable</option>
+              </select></div>
+          </div>
+
+          <div><label style={lbl}>Storage Location</label>
+            <input value={vals.storage_location} onChange={e => set('storage_location', e.target.value)} placeholder="e.g. Refrigerator 2" style={inp} /></div>
+
+          <div><label style={lbl}>Contact Name</label>
+            <input value={vals.contact_name} onChange={e => set('contact_name', e.target.value)} placeholder="Contact person" style={inp} /></div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div><label style={lbl}>Batch ID</label>
+              <input value={vals.batch_id} onChange={e => set('batch_id', e.target.value)} placeholder="e.g. B-001" style={inp} /></div>
+            <div><label style={lbl}>Client Order No.</label>
+              <input value={vals.client_order_number} onChange={e => set('client_order_number', e.target.value)} placeholder="e.g. CO-001" style={inp} /></div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div><label style={lbl}>Client Reference</label>
+              <input value={vals.client_reference} onChange={e => set('client_reference', e.target.value)} placeholder="Reference" style={inp} /></div>
+            <div><label style={lbl}>Client Sample ID</label>
+              <input value={vals.client_sample_id} onChange={e => set('client_sample_id', e.target.value)} placeholder="e.g. SMP-001" style={inp} /></div>
+          </div>
+
+          <div><label style={lbl}>Sample Notes</label>
+            <textarea value={vals.description} onChange={e => set('description', e.target.value)} rows={3}
+              placeholder="Any notes about this sample..." style={{ ...inp, resize: 'none' }} /></div>
+        </div>
+
+        {toast && (
+          <div style={{ margin: '0 20px 8px', padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 500,
+            backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', color: toast.ok ? '#0154FC' : '#991B1B',
+            border: `1px solid ${toast.ok ? '#93C5FD' : '#FECACA'}` }}>
+            {toast.msg}
+          </div>
+        )}
+
+        <div style={{ padding: '14px 20px', borderTop: '1px solid #F3F4F6', display: 'flex', gap: 8, flexShrink: 0 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: '9px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#374151' }}>Cancel</button>
+          <button onClick={handleSave} disabled={busy} style={{ flex: 2, padding: '9px', borderRadius: 8, border: 'none', background: busy ? '#93C5FD' : '#0154FC', color: '#fff', fontSize: 13, fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer' }}>
+            {busy ? 'Saving…' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </>
+  )
+}
+
 export default function SampleOverviewDetail({ sample, id, analysisRequests }: { sample: LabSample | null; id: string; analysisRequests: AnalysisRequest[] }) {
   const router = useRouter()
   // Date.now() is impure — capture it after mount rather than during render.
@@ -67,6 +219,10 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setNowMs(Date.now())
   }, [])
+  const [showEdit, setShowEdit] = useState(false)
+  const [printOpen, setPrintOpen] = useState(false)
+  const [templateId, setTemplateId] = useState(STICKER_TEMPLATES[0].id)
+  const [copies, setCopies] = useState(1)
 
   if (!sample) {
     return (
@@ -97,10 +253,16 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
         <span style={{ fontWeight: 600, color: '#111827' }}>Sample Detail</span>
       </div>
 
+      {showEdit && <EditDrawer sample={sample} onClose={() => setShowEdit(false)} onSaved={() => router.refresh()} />}
+
       {/* Title row */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
         <h1 style={{ fontSize: 24, fontWeight: 800, color: '#14265E', margin: 0 }}>Sample Detail</h1>
         <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => setShowEdit(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: 'none', background: '#0154FC', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            <MI name="edit" size={16} color="#fff" /><span>Edit Sample</span>
+          </button>
           <button onClick={() => document.getElementById('storage-info')?.scrollIntoView({ behavior: 'smooth' })}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             <MI name="inventory_2" size={16} /><span>Storage History</span>
@@ -109,10 +271,35 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             <MI name="shield" size={16} /><span>Audit Trail</span>
           </button>
-          <button onClick={() => window.print()}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            <MI name="print" size={16} /><span>Print</span>
-          </button>
+          <div style={{ position: 'relative' }}>
+            <button onClick={() => setPrintOpen(v => !v)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              <MI name="print" size={16} /><span>Print Label</span>
+            </button>
+            {printOpen && (
+              <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 20, width: 260, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.1)', padding: 14 }}>
+                <label style={{ fontSize: 11, color: '#6B7280', display: 'block', marginBottom: 4 }}>Template</label>
+                <select value={templateId} onChange={e => setTemplateId(e.target.value)}
+                  style={{ width: '100%', fontSize: 12, padding: '6px 8px', border: '1px solid #E5E7EB', borderRadius: 6, marginBottom: 10 }}>
+                  {STICKER_TEMPLATES.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+                <label style={{ fontSize: 11, color: '#6B7280', display: 'block', marginBottom: 4 }}>Copies</label>
+                <input type="number" min={1} max={50} value={copies}
+                  onChange={e => setCopies(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
+                  style={{ width: '100%', fontSize: 12, padding: '6px 8px', border: '1px solid #E5E7EB', borderRadius: 6, marginBottom: 10 }} />
+                <button
+                  onClick={async () => {
+                    const template = STICKER_TEMPLATES.find((t: StickerTemplate) => t.id === templateId)!
+                    await printSticker(toCocSample(sample), template, copies)
+                    setPrintOpen(false)
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg"
+                  style={{ backgroundColor: '#0154FC', color: '#fff', cursor: 'pointer', border: 'none' }}>
+                  <MI name="print" size={14} color="#fff" /> Print
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -158,7 +345,7 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
           {/* Barcode */}
           <div style={{ textAlign: 'center', paddingLeft: 20, borderLeft: '1px solid #E8EAF2' }}>
             <p style={{ fontSize: 11, color: '#9CA3AF', margin: '0 0 6px' }}>Sample Bar Code</p>
-            <div className="xl-barcode" style={{ height: 32, width: 160 }} />
+            <div style={{ height: 32, width: 160 }}><LiveBarcode value={sample.barcode || sample.sample_id} height={32} /></div>
             <p style={{ fontSize: 11, fontWeight: 600, color: '#14265E', margin: '4px 0 0', letterSpacing: '0.05em' }}>{sample.sample_id}</p>
           </div>
         </div>
@@ -193,7 +380,8 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
           <Row label="Received By" value={sample.received_by_name} />
           <Row label="Receipt Condition" value={sample.condition} />
           <Row label="Barcode / Accession" value={sample.barcode} />
-          <Row label="Storage Location" value={sample.storage_location} />
+          <Row label="Current Storage Location" value={sample.storage_location || 'Not stored yet'} />
+          <Row label="Preferred Storage Location" value={sample.preferred_storage_location} />
           <Row label="Preservation" value={sample.preservation} />
           <Row label="Sample Notes" value={sample.description} />
         </div>

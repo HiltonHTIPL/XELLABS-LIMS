@@ -1,9 +1,10 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createSampleWithAnalyses, type DjangoSampleType } from '@/app/actions/lab-samples'
 import { type DjangoClient } from '@/app/actions/clients'
 import { type LimsTest } from '@/app/actions/tests'
+import StorageLocationInput from '@/app/dashboard/_components/StorageLocationInput'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -53,7 +54,7 @@ type SampleForm = {
   ccEmails: string[]; batchId: string; batchSubGroup: string; sampleTemplate: string
   analysisProfiles: string[]; dateSampled: string; sampleTypeId: string
   containerType: string; preservation: string; analysisSpec: string; samplePoint: string
-  storageLocation: string; samplingDeviation: string; condition: string; priority: string
+  storageLocation: string; storageLabelCode: string; samplingDeviation: string; condition: string; priority: string
   envConditions: string; composite: boolean; internalUse: boolean; clientOrderNum: string
   clientReference: string; clientSampleId: string; remarks: string; selectedTests: LimsTest[]
 }
@@ -63,7 +64,7 @@ function blankForm(): SampleForm {
     primarySample: 'yes', clientId: '', contactName: '', ccContact: '', ccEmails: [],
     batchId: '', batchSubGroup: '', sampleTemplate: '', analysisProfiles: [],
     dateSampled: '', sampleTypeId: '', containerType: '', preservation: '',
-    analysisSpec: '', samplePoint: '', storageLocation: '', samplingDeviation: 'none',
+    analysisSpec: '', samplePoint: '', storageLocation: '', storageLabelCode: '', samplingDeviation: 'none',
     condition: 'good', priority: 'medium', envConditions: 'room_temp',
     composite: false, internalUse: false, clientOrderNum: '', clientReference: '',
     clientSampleId: '', remarks: '', selectedTests: [],
@@ -82,6 +83,13 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
   const [success, setSuccess] = useState('')
   const [showAddAnalysis, setShowAddAnalysis] = useState(false)
   const [analysisSearch, setAnalysisSearch] = useState('')
+  const [attachments, setAttachments] = useState<File[]>([])
+  // Date.now() is impure — capture it after mount rather than during render.
+  const [nowLocal, setNowLocal] = useState<string | null>(null)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNowLocal(new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16))
+  }, [])
 
   const f = forms[activeTab]
   const sampleCount = forms.length
@@ -144,7 +152,8 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
           priority: f.priority, condition: f.condition,
           collection_date: f.dateSampled || undefined,
           description: f.remarks || undefined,
-          storage_location: f.storageLocation || undefined,
+          preferred_storage_location: f.storageLocation || undefined,
+          preferred_storage_label_code: f.storageLabelCode || undefined,
           contact_name: f.contactName || undefined, cc_contact: f.ccContact || undefined,
           cc_emails: f.ccEmails.join(',') || undefined, batch_id: f.batchId || undefined,
           batch_sub_group: f.batchSubGroup || undefined, container_type: f.containerType || undefined,
@@ -163,6 +172,15 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
     if (failed.length > 0) {
       setError(failed.map(r => r.message).join(' | '))
     } else {
+      // Upload attachments to the first created sample if files were added
+      const firstId = results[0]?.sample_id
+      if (firstId && attachments.length > 0) {
+        const { uploadSampleAttachment } = await import('@/app/actions/lab-samples')
+        for (const file of attachments) {
+          const fd = new FormData(); fd.append('attachment', file)
+          await uploadSampleAttachment(firstId, fd).catch(() => null)
+        }
+      }
       const ids = results.map(r => r.sample_id).filter(Boolean).join(', ')
       setSuccess(`${forms.length} sample${forms.length > 1 ? 's' : ''} logged: ${ids}`)
       setTimeout(() => router.push('/dashboard/samples-overview'), 1800)
@@ -427,7 +445,8 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
           <SectionHeader num={2} title="Sampling Details" />
           <div style={{ ...grid4, marginBottom: 16 }}>
             <div style={field}><label style={lbl}>Date Sampled *</label>
-              <input type="datetime-local" value={f.dateSampled} onChange={e => set('dateSampled', e.target.value)} style={inp} /></div>
+              <input type="datetime-local" value={f.dateSampled} max={nowLocal}
+                onChange={e => set('dateSampled', e.target.value)} style={inp} /></div>
             <div style={field}><label style={lbl}>Sample Type *</label>
               <select value={f.sampleTypeId} onChange={e => set('sampleTypeId', e.target.value)} style={{ ...inp, borderColor: !f.sampleTypeId && error ? '#EF4444' : '#D1D5DB' }}>
                 <option value="">— select —</option>
@@ -464,7 +483,14 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
             <div style={field}><label style={lbl}>Sample Point</label>
               <input value={f.samplePoint} onChange={e => set('samplePoint', e.target.value)} placeholder="e.g. Site A - Building 25" style={inp} /></div>
             <div style={field}><label style={lbl}>Storage Location</label>
-              <input value={f.storageLocation} onChange={e => set('storageLocation', e.target.value)} placeholder="e.g. Refrigerator 2" style={inp} /></div>
+              <StorageLocationInput
+                value={f.storageLocation ? { labelCode: f.storageLabelCode, display: f.storageLocation } : null}
+                onChange={sel => {
+                  setForms(prev => prev.map((form, i) => i === activeTab
+                    ? { ...form, storageLocation: sel?.display ?? '', storageLabelCode: sel?.labelCode ?? '' }
+                    : form))
+                }}
+              /></div>
             <div style={field}><label style={lbl}>Sampling Deviation</label>
               <select value={f.samplingDeviation} onChange={e => set('samplingDeviation', e.target.value)} style={inp}>
                 <option value="none">None</option>
@@ -527,13 +553,33 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
           <SectionHeader num={4} title="Additional Content" />
           <div style={grid2}>
             <div style={field}>
-              <label style={lbl}>Attachment</label>
-              <label style={{ border: '2px dashed #D1D5DB', borderRadius: 8, padding: '24px 16px', textAlign: 'center', cursor: 'pointer', background: '#FAFAFA', display: 'block' }}>
-                <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} />
-                <MI name="cloud_upload" size={32} color="#D1D5DB" />
-                <p style={{ margin: '8px 0 4px', fontSize: 13, color: '#374151' }}>Drag and drop files here<br /><span style={{ color: '#2563EB', fontWeight: 600 }}>or browse</span></p>
-                <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>Accepted files: PDF, JPG, PNG (Max 10MB each)</p>
+              <label style={lbl}>Attachments</label>
+              <label style={{ border: `2px dashed ${attachments.length ? '#2563EB' : '#D1D5DB'}`, borderRadius: 8, padding: '20px 16px', textAlign: 'center', cursor: 'pointer', background: attachments.length ? '#EFF6FF' : '#FAFAFA', display: 'block', transition: 'all 0.15s' }}>
+                <input type="file" accept=".pdf,.jpg,.jpeg,.png" multiple style={{ display: 'none' }}
+                  onChange={e => { if (e.target.files) setAttachments(prev => [...prev, ...Array.from(e.target.files!)]) }} />
+                <MI name="cloud_upload" size={28} color={attachments.length ? '#2563EB' : '#D1D5DB'} />
+                <p style={{ margin: '6px 0 3px', fontSize: 13, color: '#374151' }}>
+                  {attachments.length ? `${attachments.length} file${attachments.length > 1 ? 's' : ''} selected` : <>Drag and drop files here<br /><span style={{ color: '#2563EB', fontWeight: 600 }}>or browse</span></>}
+                </p>
+                <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>PDF, JPG, PNG · max 10 MB each</p>
               </label>
+              {attachments.length > 0 && (
+                <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {attachments.map((file, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 10px', background: '#F0F7FF', borderRadius: 6, fontSize: 12 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                        <MI name="description" size={14} color="#2563EB" />
+                        <span style={{ color: '#1D4ED8', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+                        <span style={{ color: '#9CA3AF', flexShrink: 0 }}>({(file.size / 1024).toFixed(0)} KB)</span>
+                      </div>
+                      <button type="button" onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', padding: 2 }}>
+                        <MI name="close" size={14} color="#9CA3AF" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div style={field}>
               <label style={lbl}>Remarks</label>

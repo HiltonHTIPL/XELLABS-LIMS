@@ -64,52 +64,6 @@ function AddressBlock({ prefix, label, vals, set }: {
   )
 }
 
-// ── Logo upload ───────────────────────────────────────────────────────────────
-function LogoUpload() {
-  const [preview, setPreview] = useState<string | null>(null)
-  const [fileName, setFileName] = useState<string | null>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  function handleFile(f: File) { setFileName(f.name); setPreview(URL.createObjectURL(f)) }
-  function clear(e: React.MouseEvent) {
-    e.preventDefault(); setPreview(null); setFileName(null)
-    if (inputRef.current) inputRef.current.value = ''
-  }
-
-  return (
-    <div>
-      <label className="block text-xs font-medium mb-1.5" style={{ color: '#374151' }}>
-        Client Logo <span className="ml-1 font-normal" style={{ color: '#9CA3AF' }}>(optional · compressed to &lt;30 KB)</span>
-      </label>
-      <div className="flex items-center gap-3">
-        {preview
-          ? <div className="w-14 h-14 rounded-xl overflow-hidden shrink-0 flex items-center justify-center" style={{ border: '1px solid #E8EAF2', backgroundColor: '#F9FAFB' }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={preview} alt="Logo preview" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
-            </div>
-          : <div className="w-14 h-14 rounded-xl shrink-0 flex items-center justify-center" style={{ border: '1px dashed #D1D5DB', backgroundColor: '#F9FAFB' }}>
-              <MI name="add_photo_alternate" size={22} color="#D1D5DB" />
-            </div>}
-        <div className="flex-1 min-w-0">
-          {fileName && <p className="text-xs truncate mb-1" style={{ color: '#6B7280' }}>{fileName}</p>}
-          <div className="flex gap-2">
-            <label className="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium" style={{ border: '1px solid #D1D5DB', color: '#374151', backgroundColor: '#fff' }}>
-              <MI name="upload" size={12} color="#6B7280" />
-              {preview ? 'Change' : 'Upload'}
-              <input ref={inputRef} type="file" name="logo" accept="image/*" className="hidden"
-                onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
-            </label>
-            {preview && (
-              <button onClick={clear} type="button" className="px-3 py-1.5 rounded-lg text-xs font-medium"
-                style={{ border: '1px solid #FECACA', color: '#DC2626', backgroundColor: '#FEF2F2' }}>Remove</button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ── Step definitions ──────────────────────────────────────────────────────────
 const STEPS = [
   { label: 'Basic Info',  icon: 'business'       },
@@ -157,14 +111,14 @@ function Step1({ vals, set, errors, fieldErrors, clientIdCheck, onClientIdBlur }
 }) {
   const clientIdErr = clientIdCheck === 'taken'
     ? 'This Client ID is already in use — choose a different one.'
-    : (fieldErrors.client_id ?? errors?.client_id?.[0])
+    : fieldErrors.client_id
 
   return (
     <div className="space-y-3">
       <Row>
         <Field label="Client Name" name="name" placeholder="e.g. Green Valley Farms" required
           value={vals.name ?? ''} onChange={v => set('name', v)}
-          error={fieldErrors.name ?? errors?.name?.[0]} />
+          error={fieldErrors.name} />
         <div className="flex-1 min-w-0">
           <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
             Client ID<span style={{ color: '#EF4444' }}> *</span>
@@ -190,7 +144,7 @@ function Step1({ vals, set, errors, fieldErrors, clientIdCheck, onClientIdBlur }
       </Row>
       <Row>
         <Field label="Email Address" name="email"  type="email" placeholder="contact@client.com"
-          value={vals.email ?? ''} onChange={v => set('email', v)} error={fieldErrors.email ?? errors?.email?.[0]} />
+          value={vals.email ?? ''} onChange={v => set('email', v)} error={fieldErrors.email} />
         <Field label="Phone" name="phone" placeholder="+1 555 000 0000"
           value={vals.phone ?? ''} onChange={v => set('phone', v)} />
       </Row>
@@ -220,14 +174,14 @@ function Step2({ vals, set, errors, fieldErrors }: { vals: FV; set: (k: string, 
         </div>
         <Field label="First Name" name="contact_first_name" placeholder="First name"
           value={vals.contact_first_name ?? ''} onChange={v => set('contact_first_name', v)}
-          error={fieldErrors.contact_first_name ?? errors?.contact_first_name?.[0]} />
+          error={fieldErrors.contact_first_name} />
         <Field label="Last Name"  name="contact_last_name"  placeholder="Last name"
           value={vals.contact_last_name ?? ''} onChange={v => set('contact_last_name', v)} />
       </Row>
       <Row>
         <Field label="Contact Email" name="contact_email" type="email" placeholder="person@client.com"
           value={vals.contact_email ?? ''} onChange={v => set('contact_email', v)}
-          error={fieldErrors.contact_email ?? errors?.contact_email?.[0]} />
+          error={fieldErrors.contact_email} />
         <Field label="Contact Phone" name="contact_phone" placeholder="+1 555 000 0003"
           value={vals.contact_phone ?? ''} onChange={v => set('contact_phone', v)} />
       </Row>
@@ -265,9 +219,9 @@ function Step4({ vals, set, errors, fieldErrors }: { vals: FV; set: (k: string, 
       <Row>
         <Field label="NIB"                  name="nib"           placeholder="Bank account NIB" value={vals.nib           ?? ''} onChange={v => set('nib',           v)} />
         <Field label="Bulk Discount (%)"   name="bulk_discount"   type="number" placeholder="0" value={vals.bulk_discount   ?? ''} onChange={v => set('bulk_discount',   v)}
-          error={fieldErrors.bulk_discount ?? errors?.bulk_discount?.[0]} />
+          error={fieldErrors.bulk_discount} />
         <Field label="Member Discount (%)" name="member_discount" type="number" placeholder="0" value={vals.member_discount ?? ''} onChange={v => set('member_discount', v)}
-          error={fieldErrors.member_discount ?? errors?.member_discount?.[0]} />
+          error={fieldErrors.member_discount} />
       </Row>
     </div>
   )
@@ -606,7 +560,7 @@ export default function ClientsShell({ initialClients }: { initialClients: Djang
                     setClientIdCheck(available ? 'available' : 'taken')
                   }}
                 />
-                {!isEditing && <div className="mt-3"><LogoUpload /></div>}
+                {/* Logo lives on the organisation (tenant) — managed in Administration → Tenant Management */}
               </div>
               <div style={{ display: step === 1 ? 'block' : 'none' }}>
                 <Step2 vals={vals} set={setVal} errors={state.errors} fieldErrors={fieldErrors} />
@@ -657,21 +611,6 @@ export default function ClientsShell({ initialClients }: { initialClients: Djang
           <div className="flex items-center gap-2">
             <MI name="check_circle" size={13} color="#0154FC" /><span>{state.message}</span>
           </div>
-          {state.login_username && (
-            <div className="mt-1.5 flex flex-col gap-1 px-2 py-1.5 rounded-md" style={{ backgroundColor: '#BFDBFE', color: '#0154FC' }}>
-              <div className="flex items-center gap-2">
-                <MI name="person" size={13} color="#0154FC" />
-                <span>Username: <strong style={{ fontFamily: 'monospace', letterSpacing: '0.03em' }}>{state.login_username}</strong></span>
-              </div>
-              {state.login_password && (
-                <div className="flex items-center gap-2">
-                  <MI name="key" size={13} color="#0154FC" />
-                  <span>Temp password: <strong style={{ fontFamily: 'monospace', letterSpacing: '0.03em' }}>{state.login_password}</strong></span>
-                </div>
-              )}
-              <span style={{ color: '#0154FC', fontSize: 10, marginTop: 2 }}>Share these with the client now — the password is shown only once.</span>
-            </div>
-          )}
         </div>
       )}
 
@@ -706,9 +645,14 @@ export default function ClientsShell({ initialClients }: { initialClients: Djang
                 <tr key={c.id} style={{ borderBottom: i < initialClients.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50 cursor-pointer">
                   <td className="px-3 py-2">
                     <Link href={`/dashboard/clients/${c.id}`} className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 10, backgroundColor: '#0154FC' }}>
-                        {c.name.slice(0, 1).toUpperCase()}
-                      </div>
+                      {c.logo_url
+                        ? <div className="w-6 h-6 rounded-full shrink-0 overflow-hidden flex items-center justify-center" style={{ border: '1px solid #E8EAF2' }}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={c.logo_url} alt={c.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                          </div>
+                        : <div className="w-6 h-6 rounded-full flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 10, backgroundColor: '#0154FC' }}>
+                            {c.name.slice(0, 1).toUpperCase()}
+                          </div>}
                       <span className="text-xs font-medium truncate" style={{ color: '#0154FC' }}>{c.name}</span>
                     </Link>
                   </td>
