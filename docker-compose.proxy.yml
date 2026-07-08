@@ -1,0 +1,56 @@
+# Reverse proxy + TLS overlay — deploy alongside the base compose file:
+#   docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d --build
+#
+# Routes a single public domain (DOMAIN_NAME) to the frontend/django/senaite
+# services over HTTPS, terminating TLS with a Let's Encrypt certificate that
+# Certbot renews automatically. Requires DOMAIN_NAME and CERTBOT_EMAIL in the
+# top-level .env next to this file. First-time cert issuance needs
+# nginx/init-letsencrypt.sh run once — see that script for why.
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN_NAME=${DOMAIN_NAME}
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - certbot_conf:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    # Certbot only renews the cert files on disk — nginx has to be told to
+    # pick them up. A daily reload is cheap and comfortably covers renewal
+    # (Let's Encrypt certs are renewed ~30 days before their 90-day expiry).
+    command: >
+      sh -c "while :; do sleep 24h & wait $$!; nginx -s reload; done & nginx -g 'daemon off;'"
+    depends_on:
+      - frontend
+      - django
+      - senaite
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  certbot:
+    image: certbot/certbot
+    restart: unless-stopped
+    volumes:
+      - certbot_conf:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    entrypoint: >
+      sh -c "trap exit TERM; while :; do
+        certbot renew --webroot -w /var/www/certbot;
+        sleep 12h & wait $$!;
+      done"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  certbot_conf:
+  certbot_www:
