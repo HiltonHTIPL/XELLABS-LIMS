@@ -45,20 +45,15 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # SENAITE runs on Zope/Plone, which generates absolute URLs/redirects
-    # internally. A plain proxy_pass here produces broken links (they'd point
-    # at senaite:8080 or drop the /senaite prefix) — Zope's VirtualHostBase
-    # convention is required to tell it the real external scheme/host/path.
-    location /senaite {
-        return 301 /senaite/;
-    }
-    location /senaite/ {
-        proxy_pass http://senaite:8080/VirtualHostBase/https/${DOMAIN_NAME}:443/senaite/VirtualHostRoot/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
+    # SENAITE (Zope/Plone) is NOT proxied here. It generates absolute URLs and
+    # its login-challenge redirect relative to the domain root, ignoring the
+    # standard VirtualHostBase/VirtualHostRoot sub-path convention entirely —
+    # confirmed by testing directly against the app (both static asset URLs
+    # and the /login redirect came back missing the /senaite prefix even with
+    # the site path repeated after VirtualHostRoot/, which is the usual fix
+    # for exactly this case). Serving it correctly needs either a dedicated
+    # subdomain or a deeper Zope/Plone-level fix — for now it stays reachable
+    # directly at http://<host>:8080/senaite.
 
     # Next.js frontend — catch-all.
     location / {

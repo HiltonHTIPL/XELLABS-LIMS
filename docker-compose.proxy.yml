@@ -1,11 +1,14 @@
 # Reverse proxy + TLS overlay — deploy alongside the base compose file:
 #   docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d --build
 #
-# Routes a single public domain (DOMAIN_NAME) to the frontend/django/senaite
+# Routes a single public domain (DOMAIN_NAME) to the frontend and django
 # services over HTTPS, terminating TLS with a Let's Encrypt certificate that
 # Certbot renews automatically. Requires DOMAIN_NAME and CERTBOT_EMAIL in the
 # top-level .env next to this file. First-time cert issuance needs
 # nginx/init-letsencrypt.sh run once — see that script for why.
+#
+# SENAITE is intentionally not routed here — see the comment in
+# nginx/templates/app.conf.template for why (Zope/Plone sub-path proxying).
 services:
   nginx:
     image: nginx:1.27-alpine
