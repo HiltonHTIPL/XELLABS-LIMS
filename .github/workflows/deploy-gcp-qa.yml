@@ -103,10 +103,21 @@ jobs:
             git fetch origin CICD-QA
             git reset --hard origin/CICD-QA
             docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.proxy.yml up -d --build
+            # django/frontend specifically: force a fresh container + anonymous volume
+            # every deploy, scoped to just these two so postgres/redis/senaite/celery
+            # aren't disrupted. --force-recreate: don't rely on Compose's own diffing
+            # to decide a recreate is needed. --renew-anon-volumes: defensive; both
+            # services persist what --build installs (node_modules, pip site-packages)
+            # in an anonymous volume, and a stale one can mask a newly-added dependency.
+            docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.proxy.yml up -d --build --force-recreate --renew-anon-volumes django frontend
             timeout 300 bash -c '
               until [ "$(docker ps --filter name=xellabs -q | wc -l)" -ge 9 ] && \
                     [ "$(docker ps --filter name=xellabs --filter health=unhealthy -q | wc -l)" -eq 0 ]; do
                 sleep 5
               done
             '
+            # nginx resolves upstream container IPs once at startup and does not notice
+            # when docker compose recreates django/frontend with a new IP, so every
+            # deploy that recreates either of them needs an nginx restart or it 502s.
+            docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.proxy.yml restart nginx
             docker ps --filter "name=xellabs" --format "table {{.Names}}\t{{.Status}}"
