@@ -7,6 +7,45 @@
 ================================================================================
 
 --------------------------------------------------------------------------------
+ 0. FRESH MACHINE SETUP (new developer clone — do this FIRST or django is
+    "unhealthy" and the whole stack refuses to start)
+--------------------------------------------------------------------------------
+ Two .env files are gitignored, so a fresh clone doesn't have them:
+
+   a) Backend env — WITHOUT THIS DJANGO CRASHES ON BOOT:
+      settings.py defaults DEBUG=False, and with DEBUG=False + no SECRET_KEY
+      it raises RuntimeError -> container unhealthy -> compose aborts with
+      "dependency failed to start: django-1 is unhealthy".
+        PowerShell : Copy-Item xellabs-backend\.env.example xellabs-backend\.env
+        Bash       : cp xellabs-backend/.env.example xellabs-backend/.env
+
+   b) Project-root env (compose variables: SESSION_SECRET, passwords, etc.):
+        PowerShell : Copy-Item .env.example .env
+        Bash       : cp .env.example .env
+      SESSION_SECRET must be >= 32 chars or frontend login throws.
+
+   c) Start:  docker compose up -d --build
+
+   d) ONE-TIME after first boot (fresh empty DB): create the public tenant,
+      localhost domains, and superuser — without these every request 404s
+      and login is impossible:
+
+      docker exec <django-container> python manage.py shell -c "
+      from core.models import Tenant, Domain
+      t, _ = Tenant.objects.get_or_create(schema_name='public', defaults={'name':'Public','slug':'public'})
+      Domain.objects.get_or_create(domain='localhost', defaults={'tenant':t,'is_primary':True})
+      Domain.objects.get_or_create(domain='127.0.0.1', defaults={'tenant':t,'is_primary':False})
+      print('Done')"
+
+      docker exec <django-container> python manage.py shell -c "
+      from django.contrib.auth import get_user_model
+      User = get_user_model()
+      User.objects.filter(username='admin').exists() or User.objects.create_superuser('admin','admin@xellabs.com','admin')"
+
+      (<django-container> = e.g. xellabs-lims-django-1; run `docker ps` to
+       get the exact name — it varies with the clone's folder name.)
+
+--------------------------------------------------------------------------------
  1. REQUIRED PORTS (shared server — other projects own the default ports!)
 --------------------------------------------------------------------------------
  | Service  | Host port | Why not the default                            |
