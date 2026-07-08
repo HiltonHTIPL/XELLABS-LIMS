@@ -13,6 +13,7 @@ export type StorageLocation = {
   rows: number | null
   columns: number | null
   slot_id: string
+  label_code: string | null
   is_occupied: boolean
   assigned_sample_id: string
   description: string
@@ -285,6 +286,8 @@ export async function releaseSampleFromSlot(
     return { success: false, message: err.error ?? 'Failed to release slot.' }
   }
   revalidatePath('/dashboard/storage')
+  revalidatePath('/dashboard/samples-overview')
+  revalidatePath('/dashboard/lab-samples')
   return { success: true, message: 'Slot released.' }
 }
 
@@ -302,5 +305,62 @@ export async function assignSampleToSlot(
   }
   revalidatePath('/dashboard/storage')
   revalidatePath('/dashboard/chain-of-custody')
+  revalidatePath('/dashboard/samples-overview')
+  revalidatePath('/dashboard/lab-samples')
   return { success: true, message: `Sample ${sampleId} assigned to slot.` }
+}
+
+export type ResolvedLabel = {
+  id: number
+  label_code: string
+  location_type: string
+  path: string[]
+  is_occupied?: boolean
+  capacity?: { total: number; free: number }
+  next_free_slot?: { id: number; slot_id: string; label_code: string }
+  error?: string
+}
+
+export async function resolveStorageLabel(
+  code: string
+): Promise<{ success: boolean; message?: string; data?: ResolvedLabel }> {
+  try {
+    const res = await djangoFetch(
+      `/api/inventory/storage-locations/resolve-label/?code=${encodeURIComponent(code.trim())}`
+    )
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) return { success: false, message: data.error ?? 'Location not found.' }
+    return { success: true, data }
+  } catch { return { success: false, message: 'Network error.' } }
+}
+
+export async function searchStorageBoxes(query: string): Promise<StorageLocation[]> {
+  try {
+    const res = await djangoFetch(
+      `/api/inventory/storage-locations/?location_type=box&search=${encodeURIComponent(query.trim())}`
+    )
+    if (!res.ok) return []
+    const data = await res.json()
+    const list: StorageLocation[] = Array.isArray(data) ? data : (data.results ?? [])
+    return list.slice(0, 20)
+  } catch { return [] }
+}
+
+export async function assignSampleByLabel(
+  labelCode: string,
+  sampleId: string
+): Promise<{ success: boolean; message: string; slot?: StorageLocation }> {
+  try {
+    const res = await djangoFetch('/api/inventory/storage-locations/assign-by-label/', {
+      method: 'POST',
+      body: JSON.stringify({ label_code: labelCode.trim(), sample_id: sampleId }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) return { success: false, message: data.error ?? 'Failed to assign sample.' }
+    revalidatePath('/dashboard/storage')
+    revalidatePath('/dashboard/chain-of-custody')
+    revalidatePath('/dashboard/samples-overview')
+    revalidatePath('/dashboard/lab-samples')
+    return { success: true, message: `Sample ${sampleId} stored in slot ${data.slot_id}.`, slot: data }
+  } catch { return { success: false, message: 'Network error.' } }
 }

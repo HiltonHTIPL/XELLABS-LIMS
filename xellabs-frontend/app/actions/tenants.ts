@@ -30,47 +30,79 @@ export type TenantUser = {
   date_joined: string
 }
 
-export async function getTenants(): Promise<TenantDetail[]> {
-  try {
-    const res = await djangoFetch('/api/tenants/')
-    if (!res.ok) return []
-    const data = await res.json()
-    return data.results ?? data ?? []
-  } catch { return [] }
-}
-
 export type TenantFormState = {
   success?: boolean
   message?: string
-  errors?: Record<string, string[]>
+  admin_username?: string
+  admin_password?: string
+  errors?: Record<string, string[] | undefined>
 }
 
-export async function updateTenant(tenantId: number, _state: TenantFormState, formData: FormData): Promise<TenantFormState> {
-  const name = (formData.get('name') as string)?.trim()
-  const email = (formData.get('email') as string)?.trim()
-  const phone = (formData.get('phone') as string)?.trim()
-  const address = (formData.get('address') as string)?.trim()
-  const is_active = formData.get('is_active') === 'true'
+export async function getTenants(): Promise<TenantDetail[]> {
+  try {
+    const res = await djangoFetch('/api/tenant-management/?page_size=500')
+    if (!res.ok) return []
+    const data = await res.json()
+    return data.results ?? data
+  } catch {
+    return []
+  }
+}
 
-  const errors: Record<string, string[]> = {}
-  if (!name) errors.name = ['Name is required']
-  if (Object.keys(errors).length) return { errors }
+export async function createTenant(
+  _state: TenantFormState,
+  formData: FormData
+): Promise<TenantFormState> {
+  const g = (key: string) => (formData.get(key) as string)?.trim() ?? ''
+  const name = g('name')
+  const slug = g('slug').toLowerCase()
+
+  const errors: TenantFormState['errors'] = {}
+  if (!name) errors.name = ['Organisation name is required']
+  if (!slug) errors.slug = ['Slug is required']
+  else if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) errors.slug = ['Use lowercase letters, numbers and hyphens only']
+  if (Object.keys(errors).length > 0) return { errors }
 
   try {
-    const res = await djangoFetch(`/api/tenants/${tenantId}/`, {
-      method: 'PATCH',
-      body: JSON.stringify({ name, email: email || '', phone: phone || '', address: address || '', is_active }),
+    const res = await djangoFetch('/api/tenant-management/', {
+      method: 'POST',
+      body: JSON.stringify({
+        name, slug,
+        email: g('email'), phone: g('phone'), address: g('address'),
+      }),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) {
-      return {
-        message: (data as Record<string, string[]>).name?.[0] ?? (data as { detail?: string }).detail ?? 'Failed to update tenant.',
-        errors: data as Record<string, string[]>,
-      }
+      const parts = Object.values(data as Record<string, unknown>).flat() as string[]
+      return { message: parts.length ? parts.join(' ') : `Error ${res.status}` }
     }
-    revalidatePath('/dashboard/tenants')
-    return { success: true, message: `Tenant "${name}" updated.` }
-  } catch (e) { return { message: String(e) } }
+    revalidatePath('/dashboard/tenant-management')
+    return {
+      success: true,
+      message: `Organisation "${name}" created successfully.`,
+      admin_username: (data as { admin_username?: string }).admin_username ?? '',
+      admin_password: (data as { admin_password?: string }).admin_password ?? '',
+    }
+  } catch {
+    return { message: 'Could not reach the server. Please try again.' }
+  }
+}
+
+export async function toggleTenantActive(
+  tenantId: number,
+  is_active: boolean
+): Promise<{ success: boolean; message: string }> {
+  try {
+    const res = await djangoFetch(`/api/tenant-management/${tenantId}/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_active }),
+    })
+    if (!res.ok) return { success: false, message: `Server error ${res.status}` }
+    revalidatePath('/dashboard/tenant-management')
+    return { success: true, message: is_active ? 'Organisation activated.' : 'Organisation deactivated.' }
+  } catch {
+    return { success: false, message: 'Could not reach the server.' }
+  }
 }
 
 export async function getTenant(tenantId: number): Promise<TenantDetail | null> {
@@ -106,7 +138,7 @@ export async function uploadTenantLogo(
     if (!res.ok) return { logo: null, error: `Upload failed (${res.status})` }
     const data = await res.json()
     revalidatePath('/dashboard/clients')
-    revalidatePath('/dashboard/tenants')
+    revalidatePath('/dashboard/tenant-management')
     return { logo: data.logo }
   } catch {
     return { logo: null, error: 'Could not reach server' }
@@ -116,6 +148,6 @@ export async function uploadTenantLogo(
 export async function removeTenantLogo(tenantId: number): Promise<void> {
   try {
     await djangoFetch(`/api/tenants/${tenantId}/logo/`, { method: 'DELETE' })
-    revalidatePath('/dashboard/clients')
+    revalidatePath('/dashboard/tenant-management')
   } catch { /* ignore */ }
 }

@@ -5,6 +5,26 @@ import { useState, useTransition } from 'react'
 import type { CSSProperties } from 'react'
 import { type LabSample, patchLabSample } from '@/app/actions/lab-samples'
 import { type AnalysisRequest } from '@/app/actions/analysis-requests'
+import LiveBarcode from '@/app/dashboard/_components/LiveBarcode'
+import { STICKER_TEMPLATES, printSticker, type StickerTemplate } from '@/app/lib/stickerTemplates'
+import { type CocSample } from '@/app/actions/storage'
+
+// renderSticker/printSticker were built for the chain-of-custody lookup shape
+// (CocSample) — adapt LabSample into it rather than writing a second sticker
+// renderer, so both pages print from the exact same templates/logic.
+function toCocSample(s: LabSample): CocSample {
+  return {
+    sample_id: s.sample_id, status: s.status, status_display: s.status,
+    sample_type: s.sample_type_name, client: s.client_name, barcode: s.barcode,
+    collection_date: s.collection_date, received_date: s.received_date, expiry_date: s.expiry_date,
+    condition: s.condition, seal_condition: '', priority: s.priority,
+    storage_requirement: '', sampling_deviation: '',
+    quantity_received: '', quantity_unit: '', hold_for_qa: s.hold_for_qa,
+    received_by: s.received_by_name, receipt_notes: '', collector: s.contact_name,
+    client_order_number: s.client_order_number, composite: s.composite,
+    container_type: s.container_type, preservation: s.preservation, sample_point: s.sample_point,
+  }
+}
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -190,6 +210,9 @@ function EditDrawer({ sample, onClose, onSaved }: { sample: LabSample; onClose: 
 export default function SampleOverviewDetail({ sample, id, analysisRequests }: { sample: LabSample | null; id: string; analysisRequests: AnalysisRequest[] }) {
   const router = useRouter()
   const [showEdit, setShowEdit] = useState(false)
+  const [printOpen, setPrintOpen] = useState(false)
+  const [templateId, setTemplateId] = useState(STICKER_TEMPLATES[0].id)
+  const [copies, setCopies] = useState(1)
 
   if (!sample) {
     return (
@@ -238,10 +261,35 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             <MI name="shield" size={16} /><span>Audit Trail</span>
           </button>
-          <button onClick={() => window.print()}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            <MI name="print" size={16} /><span>Print</span>
-          </button>
+          <div style={{ position: 'relative' }}>
+            <button onClick={() => setPrintOpen(v => !v)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              <MI name="print" size={16} /><span>Print Label</span>
+            </button>
+            {printOpen && (
+              <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 20, width: 260, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.1)', padding: 14 }}>
+                <label style={{ fontSize: 11, color: '#6B7280', display: 'block', marginBottom: 4 }}>Template</label>
+                <select value={templateId} onChange={e => setTemplateId(e.target.value)}
+                  style={{ width: '100%', fontSize: 12, padding: '6px 8px', border: '1px solid #E5E7EB', borderRadius: 6, marginBottom: 10 }}>
+                  {STICKER_TEMPLATES.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+                <label style={{ fontSize: 11, color: '#6B7280', display: 'block', marginBottom: 4 }}>Copies</label>
+                <input type="number" min={1} max={50} value={copies}
+                  onChange={e => setCopies(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
+                  style={{ width: '100%', fontSize: 12, padding: '6px 8px', border: '1px solid #E5E7EB', borderRadius: 6, marginBottom: 10 }} />
+                <button
+                  onClick={async () => {
+                    const template = STICKER_TEMPLATES.find((t: StickerTemplate) => t.id === templateId)!
+                    await printSticker(toCocSample(sample), template, copies)
+                    setPrintOpen(false)
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg"
+                  style={{ backgroundColor: '#0154FC', color: '#fff', cursor: 'pointer', border: 'none' }}>
+                  <MI name="print" size={14} color="#fff" /> Print
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -287,7 +335,7 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
           {/* Barcode */}
           <div style={{ textAlign: 'center', paddingLeft: 20, borderLeft: '1px solid #E8EAF2' }}>
             <p style={{ fontSize: 11, color: '#9CA3AF', margin: '0 0 6px' }}>Sample Bar Code</p>
-            <div className="xl-barcode" style={{ height: 32, width: 160 }} />
+            <div style={{ height: 32, width: 160 }}><LiveBarcode value={sample.barcode || sample.sample_id} height={32} /></div>
             <p style={{ fontSize: 11, fontWeight: 600, color: '#14265E', margin: '4px 0 0', letterSpacing: '0.05em' }}>{sample.sample_id}</p>
           </div>
         </div>
@@ -322,7 +370,8 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
           <Row label="Received By" value={sample.received_by_name} />
           <Row label="Receipt Condition" value={sample.condition} />
           <Row label="Barcode / Accession" value={sample.barcode} />
-          <Row label="Storage Location" value={sample.storage_location} />
+          <Row label="Current Storage Location" value={sample.storage_location || 'Not stored yet'} />
+          <Row label="Preferred Storage Location" value={sample.preferred_storage_location} />
           <Row label="Preservation" value={sample.preservation} />
           <Row label="Sample Notes" value={sample.description} />
         </div>

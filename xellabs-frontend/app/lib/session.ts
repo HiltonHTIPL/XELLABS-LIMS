@@ -17,6 +17,7 @@ export type SessionPayload = {
   userId: string
   username: string
   role: string
+  isSuperuser?: boolean   // platform superadmin — gates Tenant Management
   djangoToken: string
   senaiteToken?: string
   tenantSubdomain?: string   // e.g. "greenvalley" — empty/absent = public schema

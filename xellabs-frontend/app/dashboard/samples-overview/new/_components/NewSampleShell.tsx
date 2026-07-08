@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { createSampleWithAnalyses, type DjangoSampleType } from '@/app/actions/lab-samples'
 import { type DjangoClient } from '@/app/actions/clients'
 import { type LimsTest } from '@/app/actions/tests'
+import StorageLocationInput from '@/app/dashboard/_components/StorageLocationInput'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -53,7 +54,7 @@ type SampleForm = {
   ccEmails: string[]; batchId: string; batchSubGroup: string; sampleTemplate: string
   analysisProfiles: string[]; dateSampled: string; sampleTypeId: string
   containerType: string; preservation: string; analysisSpec: string; samplePoint: string
-  storageLocation: string; samplingDeviation: string; condition: string; priority: string
+  storageLocation: string; storageLabelCode: string; samplingDeviation: string; condition: string; priority: string
   envConditions: string; composite: boolean; internalUse: boolean; clientOrderNum: string
   clientReference: string; clientSampleId: string; remarks: string; selectedTests: LimsTest[]
 }
@@ -63,7 +64,7 @@ function blankForm(): SampleForm {
     primarySample: 'yes', clientId: '', contactName: '', ccContact: '', ccEmails: [],
     batchId: '', batchSubGroup: '', sampleTemplate: '', analysisProfiles: [],
     dateSampled: '', sampleTypeId: '', containerType: '', preservation: '',
-    analysisSpec: '', samplePoint: '', storageLocation: '', samplingDeviation: 'none',
+    analysisSpec: '', samplePoint: '', storageLocation: '', storageLabelCode: '', samplingDeviation: 'none',
     condition: 'good', priority: 'medium', envConditions: 'room_temp',
     composite: false, internalUse: false, clientOrderNum: '', clientReference: '',
     clientSampleId: '', remarks: '', selectedTests: [],
@@ -146,7 +147,8 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
           priority: f.priority, condition: f.condition,
           collection_date: f.dateSampled || undefined,
           description: f.remarks || undefined,
-          storage_location: f.storageLocation || undefined,
+          preferred_storage_location: f.storageLocation || undefined,
+          preferred_storage_label_code: f.storageLabelCode || undefined,
           contact_name: f.contactName || undefined, cc_contact: f.ccContact || undefined,
           cc_emails: f.ccEmails.join(',') || undefined, batch_id: f.batchId || undefined,
           batch_sub_group: f.batchSubGroup || undefined, container_type: f.containerType || undefined,
@@ -476,7 +478,14 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
             <div style={field}><label style={lbl}>Sample Point</label>
               <input value={f.samplePoint} onChange={e => set('samplePoint', e.target.value)} placeholder="e.g. Site A - Building 25" style={inp} /></div>
             <div style={field}><label style={lbl}>Storage Location</label>
-              <input value={f.storageLocation} onChange={e => set('storageLocation', e.target.value)} placeholder="e.g. Refrigerator 2" style={inp} /></div>
+              <StorageLocationInput
+                value={f.storageLocation ? { labelCode: f.storageLabelCode, display: f.storageLocation } : null}
+                onChange={sel => {
+                  setForms(prev => prev.map((form, i) => i === activeTab
+                    ? { ...form, storageLocation: sel?.display ?? '', storageLabelCode: sel?.labelCode ?? '' }
+                    : form))
+                }}
+              /></div>
             <div style={field}><label style={lbl}>Sampling Deviation</label>
               <select value={f.samplingDeviation} onChange={e => set('samplingDeviation', e.target.value)} style={inp}>
                 <option value="none">None</option>

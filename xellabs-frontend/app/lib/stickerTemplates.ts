@@ -116,6 +116,22 @@ export async function renderSticker(template: StickerTemplate, sample: CocSample
   return `<div class="sticker sticker--${template.id}">${bodyHtml}</div>`
 }
 
+export async function printSticker(sample: CocSample, template: StickerTemplate, copies: number) {
+  const stickerHtml = await renderSticker(template, sample)
+  const stickers = Array.from({ length: copies }, () => stickerHtml).join('')
+  const html = `<!DOCTYPE html><html><head><title>Sticker — ${sample.sample_id}</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: Inter, Arial, sans-serif; background:#fff; }
+  ${stickerPageCss(template)}
+</style></head><body>
+${stickers}
+<script>window.onload = function(){ window.print(); }<\/script>
+</body></html>`
+  const w = window.open('', '_blank', 'width=500,height=420')
+  if (w) { w.document.write(html); w.document.close() }
+}
+
 export function stickerPageCss(template: StickerTemplate): string {
   return `
     @page { size: ${template.widthMm}mm ${template.heightMm}mm; margin: 0; }

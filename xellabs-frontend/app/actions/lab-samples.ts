@@ -33,6 +33,8 @@ export type LabSample = {
   priority: string
   hold_for_qa: boolean
   storage_location: string
+  preferred_storage_location: string
+  preferred_storage_label_code: string
   barcode: string
   is_locked: boolean
   received_by_name: string
@@ -63,7 +65,8 @@ export type NewSamplePayload = {
   collection_date?: string
   expiry_date?: string
   description?: string
-  storage_location?: string
+  preferred_storage_location?: string
+  preferred_storage_label_code?: string
   contact_name?: string
   cc_contact?: string
   cc_emails?: string

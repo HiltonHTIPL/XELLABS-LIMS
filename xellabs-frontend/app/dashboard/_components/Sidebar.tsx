@@ -9,7 +9,7 @@ function MI({ name, size = 16 }: { name: string; size?: number }) {
   return <span className="material-icons" style={{ fontSize: size, lineHeight: 1 }}>{name}</span>
 }
 
-type NavItem = { label: string; href: string; icon: string; roles: string[] | null; exact?: boolean }
+type NavItem = { label: string; href: string; icon: string; roles: string[] | null; exact?: boolean; superuserOnly?: boolean }
 type NavGroup = { group: string; icon: string; roles: string[] | null; children: NavItem[] }
 type NavEntry = NavItem | NavGroup
 
@@ -45,11 +45,9 @@ const NAV: NavEntry[] = [
     children: [
       { label: 'Reagents & Standards', href: '/dashboard/inventory-items', icon: 'biotech', roles: ['admin', 'lab_manager', 'analyst'] },
       { label: 'Lots & Transactions', href: '/dashboard/inventory-lots', icon: 'inventory', roles: ['admin', 'lab_manager', 'analyst'] },
+      { label: 'Instrument Maintenance', href: '/dashboard/instrument-maintenance', icon: 'build', roles: ['admin', 'lab_manager', 'analyst'] },
     ],
   },
-  // Lab operations
-  { label: 'Instruments',      href: '/dashboard/instruments',       icon: 'precision_manufacturing', roles: ['admin', 'lab_manager', 'analyst', 'client'] },
-  { label: 'Instrument Maintenance', href: '/dashboard/instrument-maintenance', icon: 'build',         roles: ['admin', 'lab_manager', 'analyst'] },
   { label: 'Quality',          href: '/dashboard/quality',           icon: 'verified',                roles: ['admin', 'lab_manager', 'analyst', 'reviewer', 'client'] },
   { label: 'Reports',          href: '/dashboard/reports',           icon: 'bar_chart',               roles: null },
   // Compliance
@@ -77,7 +75,7 @@ const NAV: NavEntry[] = [
       { label: 'Instrument List', href: '/dashboard/instrument-list', icon: 'precision_manufacturing', roles: ['admin', 'lab_manager'] },
       { label: 'Storage List', href: '/dashboard/storage-list', icon: 'inventory_2', roles: ['admin', 'lab_manager'] },
       { label: 'Report Templates', href: '/dashboard/settings/report-templates', icon: 'description', roles: ['admin'] },
-      { label: 'Tenants',      href: '/dashboard/tenants',      icon: 'domain',      roles: ['admin'] },
+      { label: 'Tenant Management', href: '/dashboard/tenant-management', icon: 'corporate_fare', roles: ['admin'], superuserOnly: true },
     ],
   },
 ]
@@ -86,16 +84,17 @@ interface Props {
   onToggle?: () => void
   role?: string
   reportDraftCount?: number
+  isSuperuser?: boolean
 }
 
-export default function Sidebar({ onToggle, role, reportDraftCount }: Props) {
+export default function Sidebar({ onToggle, role, reportDraftCount, isSuperuser }: Props) {
   const pathname = usePathname()
 
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
     const open = new Set<string>()
-    if (['/dashboard/admin', '/dashboard/sample-types', '/dashboard/methods', '/dashboard/tests', '/dashboard/specifications', '/dashboard/master-data-import', '/dashboard/instrument-list', '/dashboard/storage-list', '/dashboard/settings', '/dashboard/tenants'].some(p => pathname.startsWith(p))) open.add('Administration')
+    if (['/dashboard/admin', '/dashboard/sample-types', '/dashboard/methods', '/dashboard/tests', '/dashboard/specifications', '/dashboard/master-data-import', '/dashboard/instrument-list', '/dashboard/storage-list', '/dashboard/settings', '/dashboard/tenant-management'].some(p => pathname.startsWith(p))) open.add('Administration')
     if (['/dashboard/samples-overview', '/dashboard/samples/new'].some(p => pathname.startsWith(p))) open.add('Samples')
-    if (['/dashboard/inventory-items', '/dashboard/inventory-lots'].some(p => pathname.startsWith(p))) open.add('Inventory')
+    if (['/dashboard/inventory-items', '/dashboard/inventory-lots', '/dashboard/instrument-maintenance'].some(p => pathname.startsWith(p))) open.add('Inventory')
     if (['/dashboard/approvals', '/dashboard/audit-trail'].some(p => pathname.startsWith(p))) open.add('Compliance')
     return open
   })
@@ -108,7 +107,8 @@ export default function Sidebar({ onToggle, role, reportDraftCount }: Props) {
     })
   }
 
-  function isVisible(roles: string[] | null) {
+  function isVisible(roles: string[] | null, superuserOnly?: boolean) {
+    if (superuserOnly && !isSuperuser) return false
     return !roles || (!!role && roles.includes(role))
   }
 
@@ -163,7 +163,7 @@ export default function Sidebar({ onToggle, role, reportDraftCount }: Props) {
                 {/* Children */}
                 {isOpen && (
                   <div style={{ marginLeft: 12, borderLeft: '1.5px solid rgba(255,255,255,0.15)', paddingLeft: 8, marginBottom: 4 }}>
-                    {entry.children.filter(c => isVisible(c.roles)).map(child => {
+                    {entry.children.filter(c => isVisible(c.roles, c.superuserOnly)).map(child => {
                       const active = child.exact ? pathname === child.href : (pathname === child.href || pathname.startsWith(child.href + '/'))
                       return (
                         <Link key={child.href} href={child.href} style={linkStyle(active)}>
