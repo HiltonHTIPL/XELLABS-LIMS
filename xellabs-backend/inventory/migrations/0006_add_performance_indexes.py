@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('inventory', '0007_backfill_label_codes'),
+        ('inventory', '0005_assigned_sample_id'),
     ]
 
     operations = [

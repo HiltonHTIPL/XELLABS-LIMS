@@ -238,27 +238,13 @@ services:
     logging: *default-logging
     mem_limit: 2g
 
-  pgbouncer:
-    image: bitnami/pgbouncer:latest
-    restart: unless-stopped
-    environment:
-      POSTGRESQL_HOST: postgres
-      POSTGRESQL_PORT: 5432
-      POSTGRESQL_USERNAME: xellabs_user
-      POSTGRESQL_PASSWORD: "${DB_PASSWORD:-3333}"
-      POSTGRESQL_DATABASE: xellabs_lims
-      PGBOUNCER_DATABASE: xellabs_lims
-      PGBOUNCER_POOL_MODE: transaction
-      PGBOUNCER_MAX_CLIENT_CONN: 200
-      PGBOUNCER_DEFAULT_POOL_SIZE: 20
-      PGBOUNCER_PORT: 6432
-    ports:
-      - "127.0.0.1:6432:6432"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    logging: *default-logging
-    mem_limit: 64m
+  # pgbouncer: intentionally removed (2026-07-08) — `bitnami/pgbouncer` no longer resolves
+  # on Docker Hub under any tag (Bitnami restructured their image catalog); nothing in this
+  # compose file was actually wired to use it yet (every service's DB_HOST is still `postgres`
+  # directly), so it was dead, non-functional weight blocking `docker compose up --build`
+  # entirely. Re-add with a working pgbouncer image (e.g. `edoburu/pgbouncer`) if connection
+  # pooling is needed later — remember to also update DB_HOST/DB_PORT on django/celery/
+  # celery-reports/celery-beat to point at it.
 
 volumes:
   postgres_data:

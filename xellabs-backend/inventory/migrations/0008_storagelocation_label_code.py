@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('inventory', '0005_assigned_sample_id'),
+        ('inventory', '0006_add_performance_indexes'),
     ]
 
     operations = [

@@ -27,7 +27,7 @@ def backfill(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ('inventory', '0006_storagelocation_label_code'),
+        ('inventory', '0008_storagelocation_label_code'),
     ]
     operations = [
         migrations.RunPython(backfill, migrations.RunPython.noop),
