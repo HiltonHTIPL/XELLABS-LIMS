@@ -28,8 +28,14 @@ services:
     # (and every other /docker-entrypoint.d/ script) when it sees "nginx" or
     # "nginx-debug" as the first argument; anything else skips templating
     # entirely and nginx falls back to serving its stock default page.
+    #
+    # The reload loop is backgrounded and nginx is `exec`'d as PID 1 (not
+    # the other way around) so that if nginx dies, the container actually
+    # exits and `restart: unless-stopped` can act on it — backgrounding
+    # nginx instead would leave the loop running forever as PID 1 with a
+    # dead nginx underneath, and `docker ps` would keep reporting "Up".
     command: >
-      sh -c "/docker-entrypoint.sh nginx -g 'daemon off;' & pid=$$!; while :; do sleep 24h & wait $$!; nginx -s reload; done; wait $$pid"
+      sh -c "( while :; do sleep 24h & wait $$!; nginx -s reload; done ) & exec /docker-entrypoint.sh nginx -g 'daemon off;'"
     depends_on:
       - frontend
       - django
