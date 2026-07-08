@@ -1,0 +1,128 @@
+================================================================================
+ XELLABS LIMS — SERVER DEPLOYMENT CHECKLIST (GCP: 34.30.6.247)
+================================================================================
+ Project path on server : /home/hephzibahtech2/xellabs-lims
+ SSH                    : ssh -i frappecrm.pem hephzibahtech2@34.30.6.247
+ Last verified working  : 2026-07-07
+================================================================================
+
+--------------------------------------------------------------------------------
+ 1. REQUIRED PORTS (shared server — other projects own the default ports!)
+--------------------------------------------------------------------------------
+ | Service  | Host port | Why not the default                            |
+ |----------|-----------|------------------------------------------------|
+ | Postgres | 15432     | 5432 in use elsewhere                          |
+ | Redis    | 6380      | 6379 in use elsewhere                          |
+ | Django   | 8001      | (default, OK)                                  |
+ | Senaite  | 9090      | 8080 owned by "senaite-original" container     |
+ | Frontend | 3000      | (default, OK)                                  |
+
+ These live in docker-compose.server.yml (tracked in git). DO NOT hand-edit
+ docker-compose.yml on the server — that causes git pull conflicts every deploy.
+
+--------------------------------------------------------------------------------
+ 2. THE DEPLOY COMMAND (always both -f files, in this order)
+--------------------------------------------------------------------------------
+   cd /home/hephzibahtech2/xellabs-lims
+   docker compose -f docker-compose.yml -f docker-compose.server.yml up -d --build
+
+ CRITICAL: docker-compose.server.yml uses the `!override` YAML tag on ports.
+ Without `!override`, Compose MERGES port lists (base 8080 + override 9090
+ both bind) and senaite crashes with "port is already allocated" because
+ another project owns 8080. Never remove the !override tags.
+
+--------------------------------------------------------------------------------
+ 3. KNOWN ISSUE #1 — NODE_ENV must be "production" in the server .env
+--------------------------------------------------------------------------------
+ SYMPTOM : Frontend container crash-loops. Build fails with:
+             TypeError: Cannot read properties of null (reading 'useContext')
+             Error occurred prerendering page "/_global-error" (or /_not-found)
+           And this warning appears in the log:
+             "You are using a non-standard NODE_ENV value"
+
+ CAUSE   : /home/hephzibahtech2/xellabs-lims/.env contained NODE_ENV=development.
+           Compose injects it into the frontend container, and `next build`
+           under development mode loads mismatched React bundles -> the
+           useContext crash on Next's internal pages. Works locally because
+           local .env never sets NODE_ENV.
+
+ FIX     : In the server's project-root .env:
+             NODE_ENV=production
+           (or delete the NODE_ENV line entirely — compose defaults to
+           production). Then recreate the frontend:
+             docker compose -f docker-compose.yml -f docker-compose.server.yml \
+               up -d --no-build --force-recreate frontend
+
+ CHECK BEFORE EVERY DEPLOY:
+   grep NODE_ENV /home/hephzibahtech2/xellabs-lims/.env
+   -> must print NODE_ENV=production (or nothing)
+
+--------------------------------------------------------------------------------
+ 4. KNOWN ISSUE #2 — untracked files on the server break the build
+--------------------------------------------------------------------------------
+ SYMPTOM : Build fails on the server but the same code builds locally.
+ CAUSE   : Files added directly on the server (never committed) get picked up
+           by the volume-mounted build, e.g. a stray app/global-error.tsx or
+           .env.local inside xellabs-frontend/.
+ FIX     : Check for drift before deploying:
+             cd /home/hephzibahtech2/xellabs-lims && git status --short
+           Anything untracked inside xellabs-frontend/app should be treated
+           as suspect. Either commit it properly via a branch or remove it.
+
+--------------------------------------------------------------------------------
+ 5. KNOWN ISSUE #3 — git pull fails: "could not read Username"
+--------------------------------------------------------------------------------
+ The server has NO GitHub credentials. Deploys use a git bundle instead:
+   # On your machine:
+   git bundle create /tmp/staging-dev.bundle staging-development
+   scp -i frappecrm.pem /tmp/staging-dev.bundle hephzibahtech2@34.30.6.247:/tmp/
+   # On the server:
+   cd /home/hephzibahtech2/xellabs-lims
+   git fetch bundle staging-development
+   git merge bundle/staging-development --ff-only
+
+--------------------------------------------------------------------------------
+ 6. KNOWN ISSUE #4 — builds hang / containers stuck at "Created"
+--------------------------------------------------------------------------------
+ The box is shared (dataxpulse, superset, senaite-original, rmt-blazor...)
+ and has NO SWAP configured with ~8GB RAM. Under load, docker builds can
+ hang, and interrupted compose runs leave containers stuck in "Created".
+
+ IF A BUILD HANGS:
+   - Check for stray processes:  ps aux | grep -E 'buildx|compose'
+   - Check disk:                 df -h /   (build cache piles up: docker
+                                 buildkit GC will churn the disk when full)
+   - Stuck "Created" containers: docker rm -f <name> then re-run compose up
+   - The docker daemon itself is fine if `docker run --rm hello-world` works.
+
+ RECOMMENDED ONE-TIME FIX (needs sudo): add 4GB swap
+   sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile
+   sudo mkswap /swapfile && sudo swapon /swapfile
+   echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
+--------------------------------------------------------------------------------
+ 7. POST-DEPLOY VERIFICATION (run every time)
+--------------------------------------------------------------------------------
+   docker ps --filter name=xellabs-lims \
+     --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
+   -> expect 7 containers, the 5 health-checked ones "healthy"
+      (postgres, redis, django, senaite, frontend; celery + beat just "Up")
+
+   curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/login
+   -> expect 200
+
+   docker logs xellabs-lims-frontend-1 --tail 5
+   -> expect "Ready in ..." and NO "non-standard NODE_ENV" warning
+
+ App URL: http://34.30.6.247:3000   Senaite: http://34.30.6.247:9090/senaite
+
+--------------------------------------------------------------------------------
+ 8. THINGS TO NEVER DO ON THIS SERVER
+--------------------------------------------------------------------------------
+ - NEVER `docker compose down -v`            -> deletes postgres/senaite data
+ - NEVER hand-edit docker-compose.yml        -> use docker-compose.server.yml
+ - NEVER set NODE_ENV=development in .env    -> breaks the frontend build
+ - NEVER `docker system prune --volumes`     -> can destroy other projects' data
+ - NEVER assume the box is idle              -> 4+ other projects run here;
+                                                check before killing processes
+================================================================================
