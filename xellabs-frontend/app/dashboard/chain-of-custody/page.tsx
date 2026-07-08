@@ -1,7 +1,7 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
 import { lookupChainOfCustody, type ChainOfCustodyResult, type CocSample, type CocEvent } from '@/app/actions/storage'
-import { STICKER_TEMPLATES, renderSticker, stickerPageCss, type StickerTemplate } from '@/app/lib/stickerTemplates'
+import { STICKER_TEMPLATES, renderSticker, stickerPageCss, printSticker, type StickerTemplate } from '@/app/lib/stickerTemplates'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -16,23 +16,6 @@ function fmtTime(iso: string) {
 }
 function fmtDateShort(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-// ── Print sticker ────────────────────────────────────────────────────────────
-async function printSticker(sample: CocSample, template: StickerTemplate, copies: number) {
-  const stickerHtml = await renderSticker(template, sample)
-  const stickers = Array.from({ length: copies }, () => stickerHtml).join('')
-  const html = `<!DOCTYPE html><html><head><title>Sticker — ${sample.sample_id}</title>
-<style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family: Inter, Arial, sans-serif; background:#fff; }
-  ${stickerPageCss(template)}
-</style></head><body>
-${stickers}
-<script>window.onload = function(){ window.print(); }<\/script>
-</body></html>`
-  const w = window.open('', '_blank', 'width=500,height=420')
-  if (w) { w.document.write(html); w.document.close() }
 }
 
 // ── Sticker preview ──────────────────────────────────────────────────────────

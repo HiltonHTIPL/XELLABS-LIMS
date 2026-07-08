@@ -13,12 +13,79 @@ from .serializers import (
 )
 
 
+def _assign_sample_to_slot(slot, sample_id, user):
+    """Single owner of "a sample enters a slot": race-guarded occupy + audit log.
+
+    Used by both the direct `assign` action and `assign-by-label` so the
+    audit trail and conflict handling are identical regardless of entry path.
+    Returns (slot, None) on success or (None, (message, http_status)) on failure.
+    """
+    if slot.is_occupied:
+        return None, (f"Slot {slot.slot_id} is already occupied.", status.HTTP_400_BAD_REQUEST)
+
+    # Release any slot this sample already occupies elsewhere first — otherwise
+    # re-receiving/moving a sample into a new slot leaves the old one falsely
+    # marked occupied forever (an orphan).
+    StorageLocation.objects.filter(
+        location_type='box_location', assigned_sample_id=sample_id, is_occupied=True
+    ).exclude(pk=slot.pk).update(is_occupied=False, assigned_sample_id='')
+
+    # Atomic update — only succeeds if currently free (prevents race condition)
+    updated = StorageLocation.objects.filter(id=slot.pk, is_occupied=False).update(
+        is_occupied=True, assigned_sample_id=sample_id
+    )
+    if updated == 0:
+        return None, (f"Slot {slot.slot_id} was just occupied by another request.", status.HTTP_409_CONFLICT)
+
+    slot.refresh_from_db()
+
+    from core.senaite_service import _build_storage_path
+    storage_path = _build_storage_path(slot)
+
+    # StorageLocation.assigned_sample_id is the authoritative record, but the
+    # Sample list/detail pages display the denormalized Sample.storage_location
+    # text field — sync it here, the single place a sample enters a slot, so
+    # those pages never go stale regardless of which entry path (direct assign
+    # or scanned assign-by-label) was used.
+    from lims.models import Sample
+    Sample.objects.filter(sample_id=sample_id).update(storage_location=storage_path)
+
+    from django.contrib.contenttypes.models import ContentType
+    from audittrail.models import AuditEvent
+    AuditEvent.objects.create(
+        user=user,
+        action="store",
+        content_type=ContentType.objects.get_for_model(slot),
+        object_id=slot.pk,
+        object_repr=f"Sample {sample_id} -> {storage_path}",
+        extra_data={
+            "sample_id": sample_id,
+            "storage_path": storage_path,
+            "slot_id": slot.slot_id,
+            "storage_location_id": slot.pk,
+            # senaite_uid intentionally excluded — internal field
+        },
+    )
+    return slot, None
+
+
+def _location_path_parts(location):
+    """Ancestor names root-first, e.g. ['Roy Collection Point', ..., 'Box 1', 'A1'].
+    Slots use their slot_id as the leaf (their name repeats the box name)."""
+    parts = []
+    node = location
+    while node:
+        parts.insert(0, node.slot_id if node.location_type == 'box_location' and node.slot_id else node.name)
+        node = node.parent
+    return parts
+
+
 class StorageLocationViewSet(viewsets.ModelViewSet):
     queryset = StorageLocation.objects.all()
     serializer_class = StorageLocationSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ["location_type", "parent", "is_occupied", "assigned_sample_id"]
-    search_fields = ["name"]
+    search_fields = ["name", "slot_id", "label_code"]
     pagination_class = None  # return all locations in one response — client builds the tree
 
     @action(detail=False, methods=["get"], url_path="chain-of-custody")
@@ -208,40 +275,98 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
         if not sample_id:
             return Response({"error": "sample_id is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if slot.is_occupied:
-            return Response({"error": f"Slot {slot.slot_id} is already occupied."}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Atomic update — only succeeds if currently free (prevents race condition)
-        updated = StorageLocation.objects.filter(id=slot.pk, is_occupied=False).update(
-            is_occupied=True, assigned_sample_id=sample_id
-        )
-        if updated == 0:
-            return Response({"error": f"Slot {slot.slot_id} was just occupied by another request."}, status=status.HTTP_409_CONFLICT)
-
-        # Refresh from DB so serializer returns correct state
-        slot.refresh_from_db()
-
-        from core.senaite_service import _build_storage_path
-        storage_path = _build_storage_path(slot)
-
-        from django.contrib.contenttypes.models import ContentType
-        from audittrail.models import AuditEvent
-        AuditEvent.objects.create(
-            user=request.user,
-            action="store",
-            content_type=ContentType.objects.get_for_model(slot),
-            object_id=slot.pk,
-            object_repr=f"Sample {sample_id} -> {storage_path}",
-            extra_data={
-                "sample_id": sample_id,
-                "storage_path": storage_path,
-                "slot_id": slot.slot_id,
-                "storage_location_id": slot.pk,
-                # senaite_uid intentionally excluded — internal field
-            },
-        )
+        slot, err = _assign_sample_to_slot(slot, sample_id, request.user)
+        if err:
+            message, http_status = err
+            return Response({"error": message}, status=http_status)
 
         return Response(self.get_serializer(slot).data)
+
+    @action(detail=False, methods=["get"], url_path="resolve-label")
+    def resolve_label(self, request):
+        """Resolve a scanned/typed label code (box 'BX-0001' or slot 'BX-0001-A1')
+        to its location, readable path, and availability. Single indexed lookup."""
+        code = (request.query_params.get("code") or "").strip().upper()
+        if not code:
+            return Response({"error": "code is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        loc = StorageLocation.objects.filter(label_code=code).select_related(
+            "parent__parent__parent__parent"
+        ).first()
+        if not loc:
+            return Response({"error": f"No storage location found for code '{code}'."},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        data = {
+            "id": loc.pk,
+            "label_code": loc.label_code,
+            "location_type": loc.location_type,
+            "path": _location_path_parts(loc),
+        }
+        if loc.location_type == "box_location":
+            data["is_occupied"] = loc.is_occupied
+            if loc.is_occupied:
+                data["error"] = f"Slot {loc.slot_id} is already occupied."
+        elif loc.location_type == "box":
+            slots = StorageLocation.objects.filter(parent=loc, location_type="box_location")
+            total = slots.count()
+            free = slots.filter(is_occupied=False).count()
+            data["capacity"] = {"total": total, "free": free}
+            if free == 0:
+                data["error"] = f"Box {loc.name} is full."
+            else:
+                # pk order == creation order == A1..A10, B1.. — correct natural order
+                first_free = slots.filter(is_occupied=False).order_by("pk").first()
+                data["next_free_slot"] = {"id": first_free.pk, "slot_id": first_free.slot_id,
+                                          "label_code": first_free.label_code}
+        else:
+            data["error"] = "Only box or slot labels can be used for sample storage."
+        return Response(data)
+
+    @action(detail=False, methods=["post"], url_path="assign-by-label")
+    def assign_by_label(self, request):
+        """Assign a sample by scanned label code. Slot code → that exact slot;
+        box code → first free slot in the box (400 'Box is full' if none)."""
+        if not hasattr(request.user, 'role') or request.user.role not in CAN_RECEIVE_OR_STORE_ROLES:
+            return Response({"error": "You do not have permission to assign samples to storage."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        code = (request.data.get("label_code") or "").strip().upper()
+        sample_id = (request.data.get("sample_id") or "").strip()
+        if not code or not sample_id:
+            return Response({"error": "label_code and sample_id are required."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        loc = StorageLocation.objects.filter(label_code=code).first()
+        if not loc:
+            return Response({"error": f"No storage location found for code '{code}'."},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        if loc.location_type == "box_location":
+            slot, err = _assign_sample_to_slot(loc, sample_id, request.user)
+            if err:
+                return Response({"error": err[0]}, status=err[1])
+            return Response(self.get_serializer(slot).data)
+
+        if loc.location_type == "box":
+            # Retry over free slots in natural order — if a concurrent scan takes
+            # the first one, fall through to the next instead of failing.
+            free_slots = list(
+                StorageLocation.objects.filter(parent=loc, location_type="box_location", is_occupied=False)
+                .order_by("pk")[:5]
+            )
+            if not free_slots:
+                return Response({"error": f"Box {loc.name} is full."}, status=status.HTTP_400_BAD_REQUEST)
+            last_err = None
+            for candidate in free_slots:
+                slot, err = _assign_sample_to_slot(candidate, sample_id, request.user)
+                if not err:
+                    return Response(self.get_serializer(slot).data)
+                last_err = err
+            return Response({"error": last_err[0]}, status=last_err[1])
+
+        return Response({"error": "Only box or slot labels can be used for sample storage."},
+                        status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=["post"], url_path="unassign")
     def unassign(self, request, pk=None):
@@ -257,6 +382,8 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
         if not slot.is_occupied:
             return Response({"error": "Slot is already free."}, status=status.HTTP_400_BAD_REQUEST)
 
+        released_sample_id = slot.assigned_sample_id
+
         updated = StorageLocation.objects.filter(id=slot.pk, is_occupied=True).update(
             is_occupied=False, assigned_sample_id=''
         )
@@ -264,6 +391,13 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
             return Response({"error": "Slot was already freed by another request."}, status=status.HTTP_409_CONFLICT)
 
         slot.refresh_from_db()
+
+        # Mirror the sync in _assign_sample_to_slot — clear the denormalized
+        # Sample.storage_location so list/detail pages don't keep showing a
+        # slot the sample no longer occupies.
+        if released_sample_id:
+            from lims.models import Sample
+            Sample.objects.filter(sample_id=released_sample_id).update(storage_location='')
 
         from django.contrib.contenttypes.models import ContentType
         from audittrail.models import AuditEvent
@@ -307,6 +441,7 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
                         parent=box,
                         slot_id=slot_id,
                         is_occupied=False,
+                        label_code=StorageLocation.slot_label_code(box, slot_id),
                         **inherited,
                     ))
         if to_create:

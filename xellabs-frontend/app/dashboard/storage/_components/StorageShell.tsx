@@ -1,7 +1,9 @@
 'use client'
 import { useState, useCallback, useMemo } from 'react'
+import QRCode from 'qrcode'
 import {
   deleteStorageLocation, getStorageLocations, lookupChainOfCustody, assignSampleToSlot,
+  releaseSampleFromSlot, resolveStorageLabel,
   type StorageLocation, type ChainOfCustodyResult,
 } from '@/app/actions/storage'
 import StorageTree from './StorageTree'
@@ -9,6 +11,19 @@ import SlotGrid from './SlotGrid'
 import StorageModal from './StorageModal'
 import SampleInfoPanel from './SampleInfoPanel'
 import SlotAssignModal from './SlotAssignModal'
+import HistoryModal from './HistoryModal'
+import BulkStoreModal from './BulkStoreModal'
+import QrScanModal from '@/app/dashboard/_components/QrScanModal'
+
+type Mode = 'store' | 'move' | 'retrieve'
+
+// Strategy map: per-mode copy + button label, so the scan bar / action bar
+// read behavior from one place instead of branching with if/else everywhere.
+const MODE_STRATEGY: Record<Mode, { helper: string; actionLabel: string; actionIcon: string }> = {
+  store:    { helper: 'Select an empty slot, then scan or confirm the sample', actionLabel: 'Store Sample', actionIcon: 'inventory_2' },
+  move:     { helper: 'Scan a stored sample, select its new slot',              actionLabel: 'Move Sample',  actionIcon: 'swap_horiz' },
+  retrieve: { helper: 'Scan a stored sample to release it from its slot',       actionLabel: 'Retrieve Sample', actionIcon: 'upload' },
+}
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -26,10 +41,13 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
   const [modal, setModal]                   = useState<{ editing: StorageLocation | null; defaultParentId?: number | null } | null>(null)
   const [toast, setToast]                   = useState<{ ok: boolean; msg: string } | null>(null)
   const [barcodeInput, setBarcodeInput]     = useState('')
-  const [mode, setMode]                     = useState<'store' | 'move' | 'retrieve'>('store')
+  const [mode, setMode]                     = useState<Mode>('store')
   const [scannedResult, setScannedResult]   = useState<ChainOfCustodyResult | null>(null)
   const [scanLoading, setScanLoading]       = useState(false)
   const [assigningSlot, setAssigningSlot]   = useState<StorageLocation | null>(null)
+  const [cameraScanOpen, setCameraScanOpen] = useState(false)
+  const [showHistory, setShowHistory]       = useState(false)
+  const [showBulkStore, setShowBulkStore]   = useState(false)
 
   const selected    = locations.find(l => l.id === selectedId) ?? null
   const selectedBox = selected?.location_type === 'box' ? selected : null
@@ -68,25 +86,47 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
     setLocations(fresh)
   }, [])
 
-  async function handleScan(e: React.FormEvent) {
-    e.preventDefault()
-    const val = barcodeInput.trim()
-    if (!val) return
+  function findSlotForSample(sampleId: string) {
+    return locations.find(l => l.location_type === 'box_location' && l.assigned_sample_id === sampleId) ?? null
+  }
+
+  // Single entry point for a scanned/typed value, regardless of source
+  // (keyboard-wedge scanner, typed + Enter, or the camera QR scanner).
+  // Tries a sample/container lookup first, then falls back to a location label.
+  async function handleScanValue(raw: string): Promise<boolean> {
+    const val = raw.trim()
+    if (!val) return false
     setScanLoading(true)
     const res = await lookupChainOfCustody(val)
     setScanLoading(false)
     if (res.success && res.data) {
       setScannedResult(res.data)
-      setBarcodeInput('')
-      // Navigate to the box holding this sample
-      const matchSlot = locations.find(l =>
-        l.location_type === 'box_location' && l.assigned_sample_id === res.data!.sample_id
-      )
+      const matchSlot = findSlotForSample(res.data.sample_id)
       if (matchSlot?.parent) setSelectedId(matchSlot.parent)
-    } else {
-      showToast(false, res.message ?? 'Sample not found')
-      setScannedResult(null)
+      return true
     }
+    // Not a known sample — try it as a location label (BX-0001 / BX-0001-A1)
+    const loc = await resolveStorageLabel(val)
+    if (loc.success && loc.data && !loc.data.error) {
+      const target = locations.find(l => l.label_code === loc.data!.label_code)
+      if (target) {
+        const boxId = target.location_type === 'box' ? target.id : target.parent
+        if (boxId) setSelectedId(boxId)
+        if (target.location_type === 'box_location') setSelectedSlotId(target.id)
+        return true
+      }
+    }
+    showToast(false, res.message ?? 'Sample or location not found')
+    setScannedResult(null)
+    return false
+  }
+
+  async function handleScan(e: React.FormEvent) {
+    e.preventDefault()
+    const val = barcodeInput.trim()
+    if (!val) return
+    const ok = await handleScanValue(val)
+    if (ok) setBarcodeInput('')
   }
 
   async function handleSlotClick(slot: StorageLocation) {
@@ -113,9 +153,87 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
     }
   }
 
-  const selectedSlot = locations.find(l => l.id === selectedSlotId) ?? null
-  const canStore     = !!(selectedSlot && !selectedSlot.is_occupied)
-  const children     = locations.filter(l => l.parent === selectedId && l.location_type !== 'box_location')
+  async function handleMoveSample() {
+    const targetSlot = locations.find(l => l.id === selectedSlotId)
+    if (!targetSlot || targetSlot.is_occupied) return
+    const sampleId = scannedResult?.sample?.sample_id
+    if (!sampleId) { showToast(false, 'Scan a stored sample first.'); return }
+    const currentSlot = findSlotForSample(sampleId)
+    if (!currentSlot) { showToast(false, 'That sample is not currently stored — use Store instead.'); return }
+    if (currentSlot.id === targetSlot.id) { showToast(false, 'Sample is already in that slot.'); return }
+    const res = await assignSampleToSlot(targetSlot.id, sampleId)
+    showToast(res.success, res.success ? `Moved ${sampleId} to slot ${targetSlot.slot_id}.` : res.message)
+    if (res.success) {
+      await refreshLocations()
+      setSelectedSlotId(null)
+      const fresh = await lookupChainOfCustody(sampleId)
+      if (fresh.success && fresh.data) setScannedResult(fresh.data)
+    }
+  }
+
+  async function handleRetrieveSample() {
+    const sampleId = scannedResult?.sample?.sample_id
+    if (!sampleId) { showToast(false, 'Scan a stored sample first.'); return }
+    const currentSlot = findSlotForSample(sampleId)
+    if (!currentSlot) { showToast(false, 'That sample is not currently stored.'); return }
+    const res = await releaseSampleFromSlot(currentSlot.id)
+    showToast(res.success, res.success ? `Retrieved ${sampleId} from slot ${currentSlot.slot_id}.` : res.message)
+    if (res.success) {
+      await refreshLocations()
+      const fresh = await lookupChainOfCustody(sampleId)
+      if (fresh.success && fresh.data) setScannedResult(fresh.data)
+    }
+  }
+
+  async function handlePrimaryAction() {
+    if (mode === 'retrieve') return handleRetrieveSample()
+    if (mode === 'move') return handleMoveSample()
+    return handleStoreSample()
+  }
+
+  async function handleBulkAssign(sampleId: string): Promise<{ success: boolean; message: string }> {
+    if (!selectedBox) return { success: false, message: 'No box selected.' }
+    const freeSlot = boxSlots.find(s => !s.is_occupied)
+    if (!freeSlot) return { success: false, message: 'Box is full.' }
+    const res = await assignSampleToSlot(freeSlot.id, sampleId)
+    if (res.success) await refreshLocations()
+    return { success: res.success, message: res.success ? `Stored in slot ${freeSlot.slot_id}` : res.message }
+  }
+
+  async function handlePrintLabel() {
+    // Slot selected → slot label; otherwise the selected box. The QR encodes the
+    // hidden system label_code (BX-0001 / BX-0001-A1) — never the user-editable name.
+    const slot = locations.find(l => l.id === selectedSlotId) ?? null
+    const target = slot ?? selectedBox
+    if (!target?.label_code) {
+      showToast(false, 'Select a box (or slot) to print its location label.')
+      return
+    }
+    const qr = await QRCode.toDataURL(target.label_code, { width: 260, margin: 1 })
+    const pathText = [...breadcrumb, ...(slot ? [slot.slot_id] : [])].join(' › ')
+    const title = slot ? `${selectedBox?.name ?? ''} · ${slot.slot_id}` : target.name
+    const w = window.open('', '_blank', 'width=420,height=520')
+    if (!w) { showToast(false, 'Pop-up blocked — allow pop-ups to print labels.'); return }
+    w.document.write(`<!doctype html><html><head><title>Location Label</title>
+      <style>body{font-family:Arial,sans-serif;text-align:center;padding:24px}img{width:220px;height:220px}
+      h2{margin:8px 0 2px;font-size:18px}p{margin:2px 0;color:#444;font-size:12px}.code{font-size:14px;font-weight:700;letter-spacing:1px;margin-top:6px}</style>
+      </head><body>
+      <img src="${qr}" alt="QR" />
+      <h2>${title}</h2>
+      <p>${pathText}</p>
+      <div class="code">${target.label_code}</div>
+      <script>window.onload=function(){window.print()}</script>
+      </body></html>`)
+    w.document.close()
+  }
+
+  const selectedSlot   = locations.find(l => l.id === selectedSlotId) ?? null
+  const canStore       = !!(selectedSlot && !selectedSlot.is_occupied)
+  const scannedSlot    = scannedResult?.sample?.sample_id ? findSlotForSample(scannedResult.sample.sample_id) : null
+  const canMove        = canStore && !!scannedSlot && scannedSlot.id !== selectedSlotId
+  const canRetrieve    = !!scannedSlot
+  const canDoPrimary   = mode === 'retrieve' ? canRetrieve : mode === 'move' ? canMove : canStore
+  const children       = locations.filter(l => l.parent === selectedId && l.location_type !== 'box_location')
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: '#F5F6FA', fontFamily: 'Inter, sans-serif' }}>
@@ -132,7 +250,10 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
               style={{ flex: 1, outline: 'none', fontSize: 13, color: '#111827', backgroundColor: 'transparent', border: 'none' }}
             />
             {scanLoading && <MI name="hourglass_top" size={14} color="#9CA3AF" />}
-            <MI name="crop_free" size={16} color="#9CA3AF" />
+            <button type="button" onClick={() => setCameraScanOpen(true)} title="Scan with camera"
+              style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
+              <MI name="crop_free" size={16} color="#9CA3AF" />
+            </button>
           </div>
         </form>
 
@@ -140,7 +261,7 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
           <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 500 }}>Mode</span>
           <select
             value={mode}
-            onChange={e => setMode(e.target.value as 'store' | 'move' | 'retrieve')}
+            onChange={e => setMode(e.target.value as Mode)}
             style={{ fontSize: 12, fontWeight: 600, color: '#111827', border: '1px solid #D1D5DB', borderRadius: 8, padding: '6px 10px', cursor: 'pointer', backgroundColor: '#fff' }}
           >
             <option value="store">Store Sample</option>
@@ -150,13 +271,19 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
         </div>
 
         <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-          {[
-            { icon: 'swap_horiz', label: 'Move Sample' },
-            { icon: 'inventory',  label: 'Bulk Store' },
-            { icon: 'upload',     label: 'Retrieve' },
-          ].map(btn => (
-            <button key={btn.label} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 500, padding: '6px 12px', borderRadius: 8, border: '1px solid #E5E7EB', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
-              <MI name={btn.icon} size={13} color="#374151" />
+          {([
+            { icon: 'swap_horiz', label: 'Move Sample', onClick: () => setMode('move'), active: mode === 'move' },
+            { icon: 'inventory',  label: 'Bulk Store',  onClick: () => {
+                if (!selectedBox) { showToast(false, 'Select a box first.'); return }
+                setShowBulkStore(true)
+              }, active: showBulkStore },
+            { icon: 'upload',     label: 'Retrieve', onClick: () => setMode('retrieve'), active: mode === 'retrieve' },
+          ] as const).map(btn => (
+            <button key={btn.label} onClick={btn.onClick}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 500, padding: '6px 12px', borderRadius: 8,
+                border: `1px solid ${btn.active ? '#0154FC' : '#E5E7EB'}`, color: btn.active ? '#0154FC' : '#374151',
+                backgroundColor: btn.active ? '#EFF6FF' : '#fff', cursor: 'pointer' }}>
+              <MI name={btn.icon} size={13} color={btn.active ? '#0154FC' : '#374151'} />
               {btn.label}
             </button>
           ))}
@@ -254,11 +381,14 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
 
             <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
               {[
-                { icon: 'grid_view',   label: 'Grid View',  active: true },
-                { icon: 'view_agenda', label: 'Shelf View', active: false },
-                { icon: 'view_week',   label: 'Rack View',  active: false },
+                { icon: 'grid_view',   label: 'Grid View',  active: true,  disabled: false },
+                { icon: 'view_agenda', label: 'Shelf View', active: false, disabled: true },
+                { icon: 'view_week',   label: 'Rack View',  active: false, disabled: true },
               ].map(v => (
-                <button key={v.label} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 500, padding: '5px 10px', borderRadius: 7, border: `1px solid ${v.active ? '#0154FC' : '#E5E7EB'}`, backgroundColor: v.active ? '#EFF6FF' : '#fff', color: v.active ? '#0154FC' : '#6B7280', cursor: 'pointer' }}>
+                <button key={v.label} disabled={v.disabled} title={v.disabled ? 'Coming soon' : undefined}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 500, padding: '5px 10px', borderRadius: 7,
+                    border: `1px solid ${v.active ? '#0154FC' : '#E5E7EB'}`, backgroundColor: v.active ? '#EFF6FF' : '#fff',
+                    color: v.active ? '#0154FC' : '#6B7280', cursor: v.disabled ? 'not-allowed' : 'pointer', opacity: v.disabled ? 0.5 : 1 }}>
                   <MI name={v.icon} size={13} color={v.active ? '#0154FC' : '#6B7280'} />
                   {v.label}
                 </button>
@@ -316,32 +446,31 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
           </div>
 
           {/* Bottom action bar */}
-          {selectedBox && (
+          {(selectedBox || mode === 'retrieve') && (
             <div style={{ borderTop: '1px solid #F3F4F6', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#9CA3AF' }}>
                 <MI name="drag_indicator" size={14} color="#9CA3AF" />
-                <span>Drag sample to a target slot</span>
-                <span style={{ fontWeight: 700 }}>OR</span>
-                <span>Scan a destination barcode</span>
+                <span>{MODE_STRATEGY[mode].helper}</span>
               </div>
               <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                 <button
-                  onClick={handleStoreSample}
-                  disabled={!canStore}
-                  style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, padding: '7px 14px', borderRadius: 8, backgroundColor: canStore ? '#0154FC' : '#9CA3AF', color: '#fff', border: 'none', cursor: canStore ? 'pointer' : 'not-allowed' }}>
-                  <MI name="inventory_2" size={13} color="#fff" />
-                  Store Sample
+                  onClick={handlePrimaryAction}
+                  disabled={!canDoPrimary}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, padding: '7px 14px', borderRadius: 8, backgroundColor: canDoPrimary ? '#0154FC' : '#9CA3AF', color: '#fff', border: 'none', cursor: canDoPrimary ? 'pointer' : 'not-allowed' }}>
+                  <MI name={MODE_STRATEGY[mode].actionIcon} size={13} color="#fff" />
+                  {MODE_STRATEGY[mode].actionLabel}
                 </button>
-                <button style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 500, padding: '7px 12px', borderRadius: 8, border: '1px solid #E5E7EB', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
-                  <MI name="swap_horiz" size={13} color="#374151" />
-                  Move Sample
-                </button>
-                <button style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 500, padding: '7px 12px', borderRadius: 8, border: '1px solid #E5E7EB', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
-                  <MI name="print" size={13} color="#374151" />
-                  Print Location Label
-                </button>
-                <button style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 500, padding: '7px 12px', borderRadius: 8, border: '1px solid #E5E7EB', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
-                  <MI name="history" size={13} color="#374151" />
+                {selectedBox && (
+                  <button onClick={handlePrintLabel} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 500, padding: '7px 12px', borderRadius: 8, border: '1px solid #E5E7EB', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
+                    <MI name="print" size={13} color="#374151" />
+                    Print Location Label
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowHistory(true)}
+                  disabled={!scannedResult}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 500, padding: '7px 12px', borderRadius: 8, border: '1px solid #E5E7EB', color: scannedResult ? '#374151' : '#D1D5DB', backgroundColor: '#fff', cursor: scannedResult ? 'pointer' : 'not-allowed' }}>
+                  <MI name="history" size={13} color={scannedResult ? '#374151' : '#D1D5DB'} />
                   View History
                 </button>
               </div>
@@ -354,6 +483,7 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
           result={scannedResult}
           capacity={capacity}
           onClose={() => setScannedResult(null)}
+          onViewAll={() => setShowHistory(true)}
         />
       </div>
 
@@ -372,6 +502,32 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
           storagePath={assigningSlot.name}
           onClose={() => setAssigningSlot(null)}
           onDone={async (msg) => { showToast(true, msg); await refreshLocations(); setAssigningSlot(null) }}
+        />
+      )}
+      {showHistory && scannedResult && (
+        <HistoryModal
+          sampleId={scannedResult.sample_id}
+          events={scannedResult.history}
+          onClose={() => setShowHistory(false)}
+        />
+      )}
+      {showBulkStore && selectedBox && (
+        <BulkStoreModal
+          box={selectedBox}
+          onAssign={handleBulkAssign}
+          onClose={() => setShowBulkStore(false)}
+        />
+      )}
+      {cameraScanOpen && (
+        <QrScanModal
+          title="Scan Sample / Container / Location Barcode"
+          hint="Point the camera at a sample, container, or location label."
+          onClose={() => setCameraScanOpen(false)}
+          onDecode={async code => {
+            const ok = await handleScanValue(code)
+            if (ok) setCameraScanOpen(false)
+            return ok
+          }}
         />
       )}
     </div>

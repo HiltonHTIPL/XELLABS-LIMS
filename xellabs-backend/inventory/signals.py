@@ -12,6 +12,25 @@ from django.dispatch import receiver
 logger = logging.getLogger(__name__)
 
 
+def _register_label_code_signal():
+    """Assign the hidden scannable label_code to new boxes.
+
+    Registered BEFORE the slot-autogenerate receiver so the box's code exists
+    by the time its slots are bulk_created (receivers run in connection order).
+    pk-derived → unique, race-free, immutable across renames (printed stickers
+    stay valid even if the user-editable name changes or duplicates).
+    """
+    from inventory.models import StorageLocation
+
+    @receiver(post_save, sender=StorageLocation, dispatch_uid="inventory_box_label_code")
+    def on_box_label_code(sender, instance, created, **kwargs):
+        if not created or instance.location_type != 'box' or instance.label_code:
+            return
+        instance.label_code = f"BX-{instance.pk:04d}"
+        # .update() — avoid recursive save()/signals
+        StorageLocation.objects.filter(pk=instance.pk).update(label_code=instance.label_code)
+
+
 def _register_box_slot_signal():
     from django.db import connection
     from inventory.models import StorageLocation
@@ -38,6 +57,7 @@ def _register_box_slot_signal():
                     parent=instance,
                     slot_id=slot_id,
                     is_occupied=False,
+                    label_code=StorageLocation.slot_label_code(instance, slot_id),
                     **inherited,
                 ))
 
@@ -69,5 +89,6 @@ def _register_senaite_sync_signal():
 
 
 def register_all():
+    _register_label_code_signal()   # must connect before the slot signal
     _register_box_slot_signal()
     _register_senaite_sync_signal()

@@ -19,7 +19,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <div className="flex flex-col h-screen overflow-hidden" style={{ backgroundColor: '#F7F8FC' }}>
-      <DashboardShell initials={initials} displayName={displayName} roleLabel={roleLabel} role={session.role}>
+      <DashboardShell initials={initials} displayName={displayName} roleLabel={roleLabel} role={session.role} isSuperuser={Boolean(session.isSuperuser)}>
         {children}
       </DashboardShell>
 

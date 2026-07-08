@@ -9,9 +9,10 @@ interface Props {
   displayName: string
   roleLabel: string
   role: string
+  isSuperuser?: boolean
 }
 
-export default function DashboardShell({ children, initials, displayName, roleLabel, role }: Props) {
+export default function DashboardShell({ children, initials, displayName, roleLabel, role, isSuperuser }: Props) {
   const [open, setOpen] = useState(true)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const userMenuRef = useRef<HTMLDivElement>(null)
@@ -38,7 +39,7 @@ export default function DashboardShell({ children, initials, displayName, roleLa
         }}
       >
         <div style={{ width: 210, height: '100%' }}>
-          <Sidebar onToggle={() => setOpen(false)} role={role} />
+          <Sidebar onToggle={() => setOpen(false)} role={role} isSuperuser={isSuperuser} />
         </div>
       </div>
 
