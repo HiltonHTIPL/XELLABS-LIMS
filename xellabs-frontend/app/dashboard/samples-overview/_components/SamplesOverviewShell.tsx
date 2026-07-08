@@ -149,6 +149,8 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
   const sel = { border: '1px solid #D1D5DB', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: '#374151', background: '#fff', outline: 'none', cursor: 'pointer' as const }
   const [now, setNow] = useState('')
   useEffect(() => {
+    // Date.now()-derived value captured after mount rather than during render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setNow(new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }))
   }, [])
 

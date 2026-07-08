@@ -4,11 +4,13 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from core.views import UserMeView, FlexibleTokenView
+from core.dashboard import DashboardView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/auth/login/", FlexibleTokenView.as_view()),
     path("api/auth/me/", UserMeView.as_view()),
+    path("api/dashboard/", DashboardView.as_view()),
     path("api/", include("core.urls")),
     path("api/lims/", include("lims.urls")),
     path("api/inventory/", include("inventory.urls")),

@@ -80,7 +80,7 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
               {users.length === 0 ? (
                 <tr>
                   <td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: '#9CA3AF' }}>
-                    No staff users yet — click "New User" to create one.
+                    No staff users yet — click &quot;New User&quot; to create one.
                   </td>
                 </tr>
               ) : (

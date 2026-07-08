@@ -4,7 +4,7 @@ Functional tests for reporting — COA generation and dashboard.
 from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.authtoken.models import Token
-from rest_framework.test import APITestCase
+from core.test_utils import TenantAPITestCase
 
 User = get_user_model()
 
@@ -15,7 +15,7 @@ def make_user(username, role="analyst"):
     return u, token.key
 
 
-class DashboardTest(APITestCase):
+class DashboardTest(TenantAPITestCase):
     def setUp(self):
         _, key = make_user("dash_analyst")
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {key}")
@@ -37,7 +37,7 @@ class DashboardTest(APITestCase):
         self.assertEqual(r.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
-class ReportCRUDTest(APITestCase):
+class ReportCRUDTest(TenantAPITestCase):
     def setUp(self):
         self.manager, self.key = make_user("rpt_manager", "lab_manager")
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.key}")
@@ -51,7 +51,7 @@ class ReportCRUDTest(APITestCase):
 
     def test_create_report_record(self):
         from reporting.models import Report
-        r = self.client.post("/api/reports/reports/", {
+        r = self.client.post("/api/reports/", {
             "report_type": "coa",
             "title": "COA for RPT-001",
             "sample": self.sample.pk,
@@ -60,5 +60,5 @@ class ReportCRUDTest(APITestCase):
         self.assertIn("report_id", r.data)
 
     def test_list_reports(self):
-        r = self.client.get("/api/reports/reports/")
+        r = self.client.get("/api/reports/")
         self.assertEqual(r.status_code, status.HTTP_200_OK)

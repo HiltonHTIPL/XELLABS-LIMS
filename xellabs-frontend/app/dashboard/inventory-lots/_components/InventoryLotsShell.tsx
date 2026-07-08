@@ -81,6 +81,8 @@ function LotModal({ editing, itemsByKind, contentTypes, onClose, onDone }: {
     if (state.errors) {
       const fe: Record<string, string> = {}
       for (const [k, msgs] of Object.entries(state.errors)) { if (msgs?.length) fe[k] = msgs[0] }
+      // fieldErrors also has an independent per-field clear path (onClearError), so it can't be derived inline.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFieldErrors(fe)
     }
   }, [state])
@@ -156,6 +158,8 @@ function TransactionModal({ lots, onClose, onDone }: { lots: Lot[]; onClose: () 
     if (state.errors) {
       const fe: Record<string, string> = {}
       for (const [k, msgs] of Object.entries(state.errors)) { if (msgs?.length) fe[k] = msgs[0] }
+      // fieldErrors also has an independent per-field clear path (onClearError), so it can't be derived inline.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFieldErrors(fe)
     }
   }, [state])
@@ -210,6 +214,8 @@ function AlertModal({ lots, onClose, onDone }: { lots: Lot[]; onClose: () => voi
     if (state.errors) {
       const fe: Record<string, string> = {}
       for (const [k, msgs] of Object.entries(state.errors)) { if (msgs?.length) fe[k] = msgs[0] }
+      // fieldErrors also has an independent per-field clear path (onClearError), so it can't be derived inline.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFieldErrors(fe)
     }
   }, [state])

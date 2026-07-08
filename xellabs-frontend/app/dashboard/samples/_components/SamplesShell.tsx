@@ -82,6 +82,8 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
 
   const [now, setNow] = useState('')
   useEffect(() => {
+    // Date.now()-derived value captured after mount rather than during render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setNow(new Date().toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }))
   }, [])
 

@@ -1,5 +1,5 @@
 'use client'
-import { useMemo, useState, useActionState, useTransition, useEffect } from 'react'
+import { useMemo, useState, useActionState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   PageHeader, Card, StatCard, Btn, Field, ConfirmModal, EmptyState, Pagination,
@@ -47,7 +47,6 @@ function QCModal({
   onClose: () => void; onDone: () => void
 }) {
   const isEdit = editing !== null
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   const createAction = async (prev: QCSampleFormState, fd: FormData) => {
     const result = await createQCSample(prev, fd)
@@ -61,13 +60,10 @@ function QCModal({
   }
   const [state, action, pending] = useActionState(isEdit ? editAction : createAction, {})
 
-  useEffect(() => {
-    if (state.errors) {
-      const fe: Record<string, string> = {}
-      for (const [k, msgs] of Object.entries(state.errors)) { if (msgs?.length) fe[k] = msgs[0] }
-      setFieldErrors(fe)
-    }
-  }, [state])
+  const fieldErrors: Record<string, string> = {}
+  if (state.errors) {
+    for (const [k, msgs] of Object.entries(state.errors)) { if (msgs?.length) fieldErrors[k] = msgs[0] }
+  }
 
   return (
     <div onClick={e => { if (e.currentTarget === e.target) onClose() }}

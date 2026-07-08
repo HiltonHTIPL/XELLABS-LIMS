@@ -5,7 +5,7 @@ Covers: sample registration, analysis request, worksheet, result entry, review/a
 from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.authtoken.models import Token
-from rest_framework.test import APITestCase
+from core.test_utils import TenantAPITestCase
 
 from core.models import Client
 from lims.models import (
@@ -22,7 +22,7 @@ def make_user(username, role="analyst"):
     return u, token.key
 
 
-class SampleRegistrationTest(APITestCase):
+class SampleRegistrationTest(TenantAPITestCase):
     def setUp(self):
         self.analyst, self.key = make_user("lims_analyst", "analyst")
         self.client_obj = Client.objects.create(name="Test Client")
@@ -30,7 +30,7 @@ class SampleRegistrationTest(APITestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.key}")
 
     def test_create_sample_auto_generates_id(self):
-        r = self.client.post("/api/samples/", {
+        r = self.client.post("/api/lims/samples/", {
             "client": self.client_obj.pk,
             "sample_type": self.st.pk,
         }, format="json")
@@ -41,7 +41,7 @@ class SampleRegistrationTest(APITestCase):
         Sample.objects.create(
             sample_id="BLD-DUP", client=self.client_obj, sample_type=self.st, created_by=self.analyst
         )
-        r = self.client.post("/api/samples/", {
+        r = self.client.post("/api/lims/samples/", {
             "client": self.client_obj.pk,
             "sample_type": self.st.pk,
             "sample_id": "BLD-DUP",
@@ -52,7 +52,7 @@ class SampleRegistrationTest(APITestCase):
         sample = Sample.objects.create(
             sample_id="BLD-RCV", client=self.client_obj, sample_type=self.st, created_by=self.analyst
         )
-        r = self.client.post(f"/api/samples/{sample.pk}/receive/", {
+        r = self.client.post(f"/api/lims/samples/{sample.pk}/receive/", {
             "location": "Fridge A", "notes": "Received on time"
         }, format="json")
         self.assertEqual(r.status_code, status.HTTP_200_OK)
@@ -63,11 +63,11 @@ class SampleRegistrationTest(APITestCase):
             sample_id="BLD-RCV2", client=self.client_obj, sample_type=self.st,
             created_by=self.analyst, status="received"
         )
-        r = self.client.post(f"/api/samples/{sample.pk}/receive/")
+        r = self.client.post(f"/api/lims/samples/{sample.pk}/receive/")
         self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
 
 
-class ResultWorkflowTest(APITestCase):
+class ResultWorkflowTest(TenantAPITestCase):
     def setUp(self):
         self.analyst, self.analyst_key = make_user("res_analyst", "analyst")
         self.reviewer, self.reviewer_key = make_user("res_reviewer", "reviewer")
@@ -89,7 +89,7 @@ class ResultWorkflowTest(APITestCase):
 
     def test_analyst_submits_result(self):
         self._auth(self.analyst_key)
-        r = self.client.post(f"/api/results/{self.result.pk}/submit/")
+        r = self.client.post(f"/api/lims/results/{self.result.pk}/submit/")
         self.assertEqual(r.status_code, status.HTTP_200_OK)
         self.assertEqual(r.data["status"], "submitted")
 
@@ -97,14 +97,14 @@ class ResultWorkflowTest(APITestCase):
         self.result.value = ""
         self.result.save()
         self._auth(self.analyst_key)
-        r = self.client.post(f"/api/results/{self.result.pk}/submit/")
+        r = self.client.post(f"/api/lims/results/{self.result.pk}/submit/")
         self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_reviewer_verifies_submitted_result(self):
         self.result.status = "submitted"
         self.result.save()
         self._auth(self.reviewer_key)
-        r = self.client.post(f"/api/results/{self.result.pk}/verify/")
+        r = self.client.post(f"/api/lims/results/{self.result.pk}/verify/")
         self.assertEqual(r.status_code, status.HTTP_200_OK)
         self.assertEqual(r.data["status"], "verified")
         self.assertTrue(r.data["is_locked"])
@@ -113,7 +113,7 @@ class ResultWorkflowTest(APITestCase):
         self.result.status = "submitted"
         self.result.save()
         self._auth(self.reviewer_key)
-        r = self.client.post(f"/api/results/{self.result.pk}/reject/", {"remarks": "Value out of expected range"})
+        r = self.client.post(f"/api/lims/results/{self.result.pk}/reject/", {"remarks": "Value out of expected range"})
         self.assertEqual(r.status_code, status.HTTP_200_OK)
         self.assertEqual(r.data["status"], "rejected")
 
@@ -122,11 +122,11 @@ class ResultWorkflowTest(APITestCase):
         self.result.is_locked = True
         self.result.save()
         self._auth(self.analyst_key)
-        r = self.client.patch(f"/api/results/{self.result.pk}/", {"value": "9.9"}, format="json")
+        r = self.client.patch(f"/api/lims/results/{self.result.pk}/", {"value": "9.9"}, format="json")
         self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
 
 
-class WorksheetWorkflowTest(APITestCase):
+class WorksheetWorkflowTest(TenantAPITestCase):
     def setUp(self):
         self.analyst, self.analyst_key = make_user("ws_analyst", "analyst")
         self.manager, self.manager_key = make_user("ws_manager", "lab_manager")
@@ -137,7 +137,7 @@ class WorksheetWorkflowTest(APITestCase):
 
     def test_submit_for_review(self):
         self._auth(self.analyst_key)
-        r = self.client.post(f"/api/worksheets/{self.ws.pk}/submit_for_review/")
+        r = self.client.post(f"/api/lims/worksheets/{self.ws.pk}/submit_for_review/")
         self.assertEqual(r.status_code, status.HTTP_200_OK)
         self.assertEqual(r.data["status"], "to_be_verified")
 
@@ -145,7 +145,7 @@ class WorksheetWorkflowTest(APITestCase):
         self.ws.status = "to_be_verified"
         self.ws.save()
         self._auth(self.manager_key)
-        r = self.client.post(f"/api/worksheets/{self.ws.pk}/verify/")
+        r = self.client.post(f"/api/lims/worksheets/{self.ws.pk}/verify/")
         self.assertEqual(r.status_code, status.HTTP_200_OK)
         self.assertEqual(r.data["status"], "verified")
 
@@ -153,11 +153,11 @@ class WorksheetWorkflowTest(APITestCase):
         self.ws.status = "to_be_verified"
         self.ws.save()
         self._auth(self.analyst_key)
-        r = self.client.post(f"/api/worksheets/{self.ws.pk}/verify/")
+        r = self.client.post(f"/api/lims/worksheets/{self.ws.pk}/verify/")
         self.assertEqual(r.status_code, status.HTTP_403_FORBIDDEN)
 
 
-class IDGenerationTest(APITestCase):
+class IDGenerationTest(TenantAPITestCase):
     """Verify sequential auto-ID generation."""
 
     def setUp(self):
@@ -167,8 +167,8 @@ class IDGenerationTest(APITestCase):
         self.st = SampleType.objects.create(name="Serum", prefix="SRM")
 
     def test_sequential_ids_same_day(self):
-        r1 = self.client.post("/api/samples/", {"client": self.client_obj.pk, "sample_type": self.st.pk}, format="json")
-        r2 = self.client.post("/api/samples/", {"client": self.client_obj.pk, "sample_type": self.st.pk}, format="json")
+        r1 = self.client.post("/api/lims/samples/", {"client": self.client_obj.pk, "sample_type": self.st.pk}, format="json")
+        r2 = self.client.post("/api/lims/samples/", {"client": self.client_obj.pk, "sample_type": self.st.pk}, format="json")
         self.assertEqual(r1.status_code, status.HTTP_201_CREATED)
         self.assertEqual(r2.status_code, status.HTTP_201_CREATED)
         seq1 = int(r1.data["sample_id"].split("-")[-1])

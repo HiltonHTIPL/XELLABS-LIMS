@@ -4,7 +4,7 @@ Functional tests for workflow: tasks, approvals, electronic signatures.
 from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.authtoken.models import Token
-from rest_framework.test import APITestCase
+from core.test_utils import TenantAPITestCase
 
 from workflow.models import Task, TaskAssignment
 
@@ -17,7 +17,7 @@ def make_user(username, role="analyst"):
     return u, token.key
 
 
-class TaskAssignmentTest(APITestCase):
+class TaskAssignmentTest(TenantAPITestCase):
     def setUp(self):
         self.manager, self.manager_key = make_user("wf_manager", "lab_manager")
         self.analyst, self.analyst_key = make_user("wf_analyst", "analyst")
@@ -61,7 +61,7 @@ class TaskAssignmentTest(APITestCase):
         self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
 
 
-class ElectronicSignatureTest(APITestCase):
+class ElectronicSignatureTest(TenantAPITestCase):
     def setUp(self):
         self.reviewer, self.key = make_user("wf_reviewer", "reviewer")
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.key}")

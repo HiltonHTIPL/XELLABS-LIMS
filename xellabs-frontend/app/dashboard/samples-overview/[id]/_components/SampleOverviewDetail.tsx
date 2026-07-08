@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useState, useTransition } from 'react'
+import { useState, useEffect, useTransition } from 'react'
 import type { CSSProperties } from 'react'
 import { type LabSample, patchLabSample } from '@/app/actions/lab-samples'
 import { type AnalysisRequest } from '@/app/actions/analysis-requests'
@@ -114,7 +114,12 @@ function EditDrawer({ sample, onClose, onSaved }: { sample: LabSample; onClose: 
     })
   }
 
-  const nowLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+  // Date.now() is impure — capture it after mount rather than during render.
+  const [nowLocal, setNowLocal] = useState<string | null>(null)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNowLocal(new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16))
+  }, [])
 
   return (
     <>
@@ -140,7 +145,7 @@ function EditDrawer({ sample, onClose, onSaved }: { sample: LabSample; onClose: 
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div><label style={lbl}>Date Sampled</label>
-              <input type="datetime-local" value={vals.collection_date} max={nowLocal}
+              <input type="datetime-local" value={vals.collection_date} max={nowLocal ?? undefined}
                 onChange={e => set('collection_date', e.target.value)} style={inp} /></div>
             <div><label style={lbl}>Due Date</label>
               <input type="datetime-local" value={vals.expiry_date}
@@ -213,6 +218,12 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
   const [printOpen, setPrintOpen] = useState(false)
   const [templateId, setTemplateId] = useState(STICKER_TEMPLATES[0].id)
   const [copies, setCopies] = useState(1)
+  // Date.now() is impure — capture it after mount rather than during render.
+  const [nowMs, setNowMs] = useState<number | null>(null)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNowMs(Date.now())
+  }, [])
 
   if (!sample) {
     return (
@@ -347,7 +358,7 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
             { label: 'Received On', value: fmt(sample.received_date) },
             { label: 'Due Date', value: fmtShort(sample.expiry_date), icon: 'event' },
             { label: 'Received By', value: sample.received_by_name },
-            { label: 'TAT (Days)', value: sample.collection_date ? String(Math.max(0, Math.floor((Date.now() - new Date(sample.collection_date).getTime()) / (1000 * 60 * 60 * 24)))) : '—' },
+            { label: 'TAT (Days)', value: sample.collection_date && nowMs !== null ? String(Math.max(0, Math.floor((nowMs - new Date(sample.collection_date).getTime()) / (1000 * 60 * 60 * 24)))) : '—' },
           ].map((m, i, arr) => (
             <div key={m.label} style={{ flex: 1, minWidth: 130, textAlign: 'center', borderRight: i < arr.length - 1 ? '1px solid #E8EAF2' : 'none' }}>
               <p style={{ fontSize: 11, color: '#9CA3AF', margin: '0 0 4px' }}>{m.label}</p>
