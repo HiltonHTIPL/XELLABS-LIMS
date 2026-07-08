@@ -1,8 +1,6 @@
 """
 Functional + security tests for authentication and RBAC.
 """
-import unittest
-
 from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.authtoken.models import Token
@@ -49,7 +47,6 @@ class RBACTest(TenantAPITestCase):
         _, key = make_user(f"rbac_{role}", role=role)
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {key}")
 
-    @unittest.skip("TODO: /api/dashboard/ aggregation endpoint doesn't exist yet")
     def test_client_cannot_access_dashboard(self):
         self._auth("client")
         r = self.client.get("/api/dashboard/")
@@ -134,7 +131,6 @@ class SecurityTest(TenantAPITestCase):
         # Token endpoint only accepts POST
         self.assertEqual(r.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
 
-    @unittest.skip("TODO: /api/dashboard/ aggregation endpoint doesn't exist yet")
     def test_force_browsing_other_user_record(self):
         _, other_key = make_user("sec_other", role="client")
         # Both are authenticated — separation is enforced at role level, not object-level here.

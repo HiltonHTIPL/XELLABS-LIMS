@@ -65,6 +65,7 @@ export default function ReportTemplateShell({ initialTemplates, defaultFields }:
   // When type changes, auto-load first template of that type
   useEffect(() => {
     const first = templates.find(t => t.report_type === selectedType)
+    // Loads a different record into the editable form — not simple derived data.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (first) loadTemplate(first)
     else startNew()
@@ -86,6 +87,7 @@ export default function ReportTemplateShell({ initialTemplates, defaultFields }:
     if (state.success) {
       showToast(state.message ?? 'Saved.', true)
       if (state.template) {
+        // Responds to a completed async save, not simple derived data.
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setSelectedId(state.template.id)
         setIsNew(false)

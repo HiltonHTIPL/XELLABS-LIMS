@@ -340,6 +340,7 @@ function ReportRow({
 
   useEffect(() => {
     if (!polling) return
+    // Resets the timeout flag each time polling (re)starts.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setTimedOut(false)
     const controller = new AbortController()

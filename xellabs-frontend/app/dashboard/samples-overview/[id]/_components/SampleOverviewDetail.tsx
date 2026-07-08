@@ -144,7 +144,7 @@ function EditDrawer({ sample, onClose, onSaved }: { sample: LabSample; onClose: 
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div><label style={lbl}>Date Sampled</label>
-              <input type="datetime-local" value={vals.collection_date} max={nowLocal}
+              <input type="datetime-local" value={vals.collection_date} max={nowLocal ?? undefined}
                 onChange={e => set('collection_date', e.target.value)} style={inp} /></div>
             <div><label style={lbl}>Due Date</label>
               <input type="datetime-local" value={vals.expiry_date}

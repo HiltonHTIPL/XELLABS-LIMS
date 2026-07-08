@@ -1,8 +1,6 @@
 """
 Functional tests for reporting — COA generation and dashboard.
 """
-import unittest
-
 from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.authtoken.models import Token
@@ -18,7 +16,6 @@ def make_user(username, role="analyst"):
     return u, token.key
 
 
-@unittest.skip("TODO: /api/dashboard/ aggregation endpoint doesn't exist yet")
 class DashboardTest(TenantAPITestCase):
     def setUp(self):
         _, key = make_user("dash_analyst")

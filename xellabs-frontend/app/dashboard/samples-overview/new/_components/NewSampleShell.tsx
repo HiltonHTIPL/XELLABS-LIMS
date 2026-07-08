@@ -445,7 +445,7 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
           <SectionHeader num={2} title="Sampling Details" />
           <div style={{ ...grid4, marginBottom: 16 }}>
             <div style={field}><label style={lbl}>Date Sampled *</label>
-              <input type="datetime-local" value={f.dateSampled} max={nowLocal}
+              <input type="datetime-local" value={f.dateSampled} max={nowLocal ?? undefined}
                 onChange={e => set('dateSampled', e.target.value)} style={inp} /></div>
             <div style={field}><label style={lbl}>Sample Type *</label>
               <select value={f.sampleTypeId} onChange={e => set('sampleTypeId', e.target.value)} style={{ ...inp, borderColor: !f.sampleTypeId && error ? '#EF4444' : '#D1D5DB' }}>

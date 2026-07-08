@@ -6,7 +6,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.authtoken.models import Token
-from rest_framework.test import APITestCase
+
 from core.test_utils import TenantAPITestCase
 
 from instruments.models import Instrument
@@ -59,7 +59,7 @@ class InstrumentDueAlertsTest(TenantAPITestCase):
         self.assertNotIn("OLD-001", ids)
 
 
-class CSVParserTest(APITestCase):
+class CSVParserTest(TenantAPITestCase):
     def test_valid_csv_parsed(self):
         csv_data = b"sample_id,test_code,value,unit,flags\nS-001,PH01,7.4,pH,\nS-002,PH01,8.1,pH,H\n"
         rows, errors = parse_csv(csv_data)
@@ -81,7 +81,7 @@ class CSVParserTest(APITestCase):
         self.assertEqual(len(errors), 1)
 
 
-class XMLParserTest(APITestCase):
+class XMLParserTest(TenantAPITestCase):
     def test_valid_xml_parsed(self):
         xml_data = b"""<Results>
             <Result><SampleId>S-001</SampleId><TestCode>PH01</TestCode><Value>7.4</Value><Unit>pH</Unit><Flags></Flags></Result>
