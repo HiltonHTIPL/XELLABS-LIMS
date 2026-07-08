@@ -18,6 +18,13 @@ if not SECRET_KEY:
 _allowed_hosts_default = "localhost,127.0.0.1,django" if DEBUG else ""
 ALLOWED_HOSTS = [h.strip() for h in os.getenv("ALLOWED_HOSTS", _allowed_hosts_default).split(",") if h.strip()]
 
+# Behind nginx, the connection to Django itself is plain HTTP — this tells Django
+# to trust nginx's X-Forwarded-Proto header so request.is_secure() and the CSRF
+# origin check see the real (https) scheme instead of concluding every request
+# is insecure.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",") if o.strip()]
+
 # ── Multi-tenant: shared apps live in the public schema ──────────────────────
 SHARED_APPS = [
     "django_tenants",
