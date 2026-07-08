@@ -14,4 +14,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 EXPOSE 8001
 
-CMD ["python", "manage.py", "runserver", "--noreload", "0.0.0.0:8001"]
+CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8001", "--workers", "2", "--timeout", "120", "--access-logfile", "-"]

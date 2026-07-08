@@ -85,7 +85,7 @@ export async function updateSampleType(
   const result = await updateSenaiteSampleType(serverToken(), uid, {
     title,
     Prefix: prefix,
-    ...(minimumVolume ? { MinimumVolume: minimumVolume } : {}),
+    ...(minimumVolume ? { MinimumVolume: minimumVolume, min_volume: minimumVolume } : {}),
   })
 
   if (!result.success) {

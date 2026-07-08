@@ -1,3 +1,4 @@
+import json
 import logging
 from django.contrib.auth import get_user_model, authenticate
 from rest_framework.views import APIView
@@ -331,13 +332,48 @@ class TenantLogoView(APIView):
         return Response({'logo': None})
 
 
+def _stream_import(rows, row_importer):
+    """
+    Shared NDJSON generator for the streaming import endpoints. Yields one JSON line
+    per row as {"type": "progress", ...} while processing, then a final
+    {"type": "done", ...} line with the aggregate counts and full row log.
+    Each line is newline-terminated so the client can split on '\\n' as chunks arrive.
+    """
+    total = len(rows)
+    results = []
+    created = failed = skipped = 0
+
+    for i, (row_num, row) in enumerate(rows, start=1):
+        if not (row.get('title') or '').strip():
+            result = {'row': row_num, 'ok': None, 'title': None, 'error': 'Missing Title'}
+        else:
+            result = {'row': row_num, **row_importer(row)}
+
+        results.append(result)
+        if result['ok'] is True:
+            created += 1
+        elif result['ok'] is None:
+            skipped += 1
+        else:
+            failed += 1
+
+        yield json.dumps({
+            'type': 'progress', 'processed': i, 'total': total, 'row': result,
+        }) + '\n'
+
+    yield json.dumps({
+        'type': 'done', 'created': created, 'failed': failed, 'skipped': skipped, 'rows': results,
+    }) + '\n'
+
+
 class SenaiteInstrumentImportView(APIView):
-    """POST /api/senaite-import/instruments/ — bulk-create SENAITE Instruments from an uploaded .xlsx file."""
+    """POST /api/senaite-import/instruments/ — bulk-create SENAITE Instruments from an uploaded .xlsx/.csv file."""
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsLabManagerOrAbove]
     parser_classes = [MultiPartParser]
 
     def post(self, request):
+        from django.http import StreamingHttpResponse
         from .excel_import import read_excel_rows
         from .senaite_service import import_instrument_row
 
@@ -350,32 +386,23 @@ class SenaiteInstrumentImportView(APIView):
         except ValueError as exc:
             return Response({'detail': str(exc)}, status=400)
 
-        results = []
-        created = failed = skipped = 0
-        for row_num, row in rows:
-            if not (row.get('title') or '').strip():
-                results.append({'row': row_num, 'ok': None, 'title': None, 'error': 'Missing Title'})
-                skipped += 1
-                continue
-            result = import_instrument_row(row)
-            results.append({'row': row_num, **result})
-            if result['ok'] is True:
-                created += 1
-            elif result['ok'] is None:
-                skipped += 1
-            else:
-                failed += 1
-
-        return Response({'created': created, 'failed': failed, 'skipped': skipped, 'rows': results})
+        response = StreamingHttpResponse(
+            _stream_import(rows, import_instrument_row),
+            content_type='application/x-ndjson',
+        )
+        response['Cache-Control'] = 'no-cache'
+        response['X-Accel-Buffering'] = 'no'
+        return response
 
 
 class SenaiteStorageLocationImportView(APIView):
-    """POST /api/senaite-import/storage-locations/ — bulk-create SENAITE Storage Locations from an uploaded .xlsx file."""
+    """POST /api/senaite-import/storage-locations/ — bulk-create SENAITE Storage Locations from an uploaded .xlsx/.csv file."""
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsLabManagerOrAbove]
     parser_classes = [MultiPartParser]
 
     def post(self, request):
+        from django.http import StreamingHttpResponse
         from .excel_import import read_excel_rows
         from .senaite_service import import_storage_location_row
 
@@ -388,23 +415,13 @@ class SenaiteStorageLocationImportView(APIView):
         except ValueError as exc:
             return Response({'detail': str(exc)}, status=400)
 
-        results = []
-        created = failed = skipped = 0
-        for row_num, row in rows:
-            if not (row.get('title') or '').strip():
-                results.append({'row': row_num, 'ok': None, 'title': None, 'error': 'Missing Title'})
-                skipped += 1
-                continue
-            result = import_storage_location_row(row)
-            results.append({'row': row_num, **result})
-            if result['ok'] is True:
-                created += 1
-            elif result['ok'] is None:
-                skipped += 1
-            else:
-                failed += 1
-
-        return Response({'created': created, 'failed': failed, 'skipped': skipped, 'rows': results})
+        response = StreamingHttpResponse(
+            _stream_import(rows, import_storage_location_row),
+            content_type='application/x-ndjson',
+        )
+        response['Cache-Control'] = 'no-cache'
+        response['X-Accel-Buffering'] = 'no'
+        return response
 
 
 class SenaiteMasterDataDeleteView(APIView):

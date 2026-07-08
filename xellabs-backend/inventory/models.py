@@ -51,6 +51,12 @@ class StorageLocation(models.Model):
                 name='storage_location_no_self_parent',
             )
         ]
+        indexes = [
+            models.Index(fields=["parent"], name="storage_parent_idx"),
+            models.Index(fields=["location_type"], name="storage_type_idx"),
+            models.Index(fields=["is_occupied"], name="storage_occupied_idx"),
+            models.Index(fields=["assigned_sample_id"], name="storage_sample_id_idx"),
+        ]
 
     def inherit_senaite_fields_from_ancestors(self):
         """Walk up the parent chain and fill any still-blank site/location/shelf

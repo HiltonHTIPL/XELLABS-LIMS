@@ -69,7 +69,7 @@ services:
     command: >
       sh -c "python manage.py migrate_schemas --shared --noinput &&
              python manage.py migrate_schemas --noinput &&
-             python manage.py runserver 0.0.0.0:8001"
+             gunicorn config.wsgi:application --bind 0.0.0.0:8001 --workers 2 --timeout 120 --access-logfile -"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys,urllib.error;\ntry:\n  urllib.request.urlopen('http://localhost:8001/admin/login/', timeout=3)\n  sys.exit(0)\nexcept urllib.error.HTTPError as e:\n  sys.exit(0 if e.code < 500 else 1)\nexcept Exception:\n  sys.exit(1)"]
       interval: 10s
@@ -113,6 +113,46 @@ services:
         --recursive
         --
         celery -A config worker --loglevel=info --concurrency=4
+    logging: *default-logging
+    mem_limit: 1g
+
+  # Dedicated worker for report generation (queue="reports" in reporting/tasks.py) so a
+  # report request is never stuck waiting behind the periodic SENAITE sync sweep, which
+  # runs on the default queue every 5 minutes across every tenant schema.
+  celery-reports:
+    build:
+      context: ./xellabs-backend
+    restart: unless-stopped
+    env_file:
+      - path: ./xellabs-backend/.env
+        required: false
+    environment:
+      DB_NAME: xellabs_lims
+      DB_USER: xellabs_user
+      DB_PASSWORD: "${DB_PASSWORD:-3333}"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-3333}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-3333}@redis:6379/0
+      SENAITE_URL: http://senaite:8080/senaite
+      SENAITE_USER: admin
+      SENAITE_PASSWORD: "${SENAITE_ADMIN_PASSWORD:-admin}"
+    volumes:
+      - ./xellabs-backend:/app
+    depends_on:
+      django:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      watchmedo auto-restart
+        --directory=/app
+        --pattern=*.py
+        --recursive
+        --
+        celery -A config worker --loglevel=info --concurrency=2 --queues=reports -n reports@%h
     logging: *default-logging
     mem_limit: 1g
 
@@ -182,6 +222,7 @@ services:
       - DJANGO_SERVICE_TOKEN=${DJANGO_SERVICE_TOKEN}
       - DEFAULT_TENANT_SCHEMA=hl-01
       - NODE_ENV=${NODE_ENV:-production}
+      - NEXT_PUBLIC_APP_ENV=${NEXT_PUBLIC_APP_ENV:-development}
     volumes:
       - ./xellabs-frontend:/app   # source mount — build runs against latest code on every container start
       - /app/node_modules         # preserve packages installed during image build
@@ -196,6 +237,28 @@ services:
       start_period: 120s
     logging: *default-logging
     mem_limit: 2g
+
+  pgbouncer:
+    image: bitnami/pgbouncer:latest
+    restart: unless-stopped
+    environment:
+      POSTGRESQL_HOST: postgres
+      POSTGRESQL_PORT: 5432
+      POSTGRESQL_USERNAME: xellabs_user
+      POSTGRESQL_PASSWORD: "${DB_PASSWORD:-3333}"
+      POSTGRESQL_DATABASE: xellabs_lims
+      PGBOUNCER_DATABASE: xellabs_lims
+      PGBOUNCER_POOL_MODE: transaction
+      PGBOUNCER_MAX_CLIENT_CONN: 200
+      PGBOUNCER_DEFAULT_POOL_SIZE: 20
+      PGBOUNCER_PORT: 6432
+    ports:
+      - "127.0.0.1:6432:6432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging: *default-logging
+    mem_limit: 64m
 
 volumes:
   postgres_data:

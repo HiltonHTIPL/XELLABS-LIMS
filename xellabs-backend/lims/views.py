@@ -1,5 +1,6 @@
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from core.permissions import IsReviewerOrAbove, IsLabManagerOrAbove, CanReceiveOrStoreSamples
@@ -19,9 +20,49 @@ from .serializers import (
 class SampleTypeViewSet(viewsets.ModelViewSet):
     queryset = SampleType.objects.all()
     serializer_class = SampleTypeSerializer
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ["is_active"]
     search_fields = ["name"]
     ordering_fields = ["name", "created_at"]
+
+    @action(detail=False, methods=["post"], url_path="sync-from-senaite")
+    def sync_from_senaite(self, request):
+        """Create any SENAITE sample types missing from Django. Called by the frontend on New Sample page load."""
+        import os, base64, requests as http_requests
+        senaite_url = os.environ.get("SENAITE_URL", "http://senaite:8080/senaite")
+        user = os.environ.get("SENAITE_ADMIN_USER", "admin")
+        pw = os.environ.get("SENAITE_ADMIN_PASS", "admin")
+        token = base64.b64encode(f"{user}:{pw}".encode()).decode()
+        try:
+            resp = http_requests.get(
+                f"{senaite_url}/@@API/senaite/v1/SampleType",
+                headers={"Authorization": f"Basic {token}"},
+                params={"complete": "yes", "b_size": 200},
+                timeout=8,
+            )
+            resp.raise_for_status()
+            senaite_types = resp.json().get("items", [])
+        except Exception as e:
+            return Response({"detail": f"SENAITE unreachable: {e}"}, status=status.HTTP_502_BAD_GATEWAY)
+
+        created_names = []
+        for st in senaite_types:
+            uid = st.get("uid", "")
+            name = (st.get("title") or st.get("Title") or "").strip()
+            prefix = (st.get("Prefix") or name[:4].upper() or "XX").strip()
+            if not name:
+                continue
+            # Skip if already exists by uid or name
+            if SampleType.objects.filter(senaite_uid=uid).exists():
+                continue
+            if SampleType.objects.filter(name=name).exists():
+                # Update missing uid if name matches
+                SampleType.objects.filter(name=name, senaite_uid="").update(senaite_uid=uid)
+                continue
+            SampleType.objects.create(name=name, prefix=prefix, senaite_uid=uid, is_active=True)
+            created_names.append(name)
+
+        return Response({"synced": len(created_names), "created": created_names})
 
 
 class MethodViewSet(viewsets.ModelViewSet):
@@ -94,6 +135,20 @@ class SampleViewSet(viewsets.ModelViewSet):
                 "sample_count": len(durations),
             })
         return Response(weeks)
+
+    @action(detail=True, methods=["patch"], url_path="upload-attachment",
+            parser_classes=[MultiPartParser, FormParser])
+    def upload_attachment(self, request, pk=None):
+        sample = self.get_object()
+        file = request.FILES.get("attachment")
+        if not file:
+            return Response({"detail": "No file provided."}, status=status.HTTP_400_BAD_REQUEST)
+        if sample.attachment:
+            sample.attachment.delete(save=False)
+        sample.attachment = file
+        sample.save(update_fields=["attachment"])
+        url = request.build_absolute_uri(sample.attachment.url) if sample.attachment else None
+        return Response({"attachment_url": url})
 
     @action(detail=True, methods=["post"], permission_classes=[CanReceiveOrStoreSamples])
     def receive(self, request, pk=None):

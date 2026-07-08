@@ -157,6 +157,16 @@ CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
 CELERY_TIMEZONE = "UTC"
 
+_redis_cache_url = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0").rsplit("/", 1)[0] + "/1"
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": _redis_cache_url,  # Redis DB 1 — separate from Celery's DB 0
+        "KEY_PREFIX": "xellabs",
+        "TIMEOUT": 300,
+    }
+}
+
 SENAITE_URL      = os.getenv("SENAITE_URL",      "http://senaite:8080/senaite")
 SENAITE_USER     = os.getenv("SENAITE_USER",     "admin")
 SENAITE_PASSWORD = os.getenv("SENAITE_PASSWORD", "admin")

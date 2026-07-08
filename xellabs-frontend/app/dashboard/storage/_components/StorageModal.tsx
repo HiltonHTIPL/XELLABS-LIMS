@@ -1,5 +1,5 @@
 'use client'
-import { useActionState, useState, useMemo } from 'react'
+import { useActionState, useState, useMemo, useEffect } from 'react'
 import {
   createStorageLocation,
   updateStorageLocation,
@@ -12,10 +12,10 @@ function MI({ name, size = 16, color }: { name: string; size?: number; color?: s
 }
 
 function Field({
-  label, name, placeholder, required, error, defaultValue, hint, type = 'text',
+  label, name, placeholder, required, error, defaultValue, hint, type = 'text', onClearError,
 }: {
   label: string; name: string; placeholder?: string; required?: boolean
-  error?: string; defaultValue?: string; hint?: string; type?: string
+  error?: string; defaultValue?: string; hint?: string; type?: string; onClearError?: () => void
 }) {
   return (
     <div>
@@ -29,6 +29,7 @@ function Field({
         placeholder={placeholder}
         required={required}
         defaultValue={defaultValue}
+        onChange={onClearError}
         className="w-full px-3 py-2 text-xs rounded-lg outline-none"
         style={{ border: `1px solid ${error ? '#EF4444' : '#D1D5DB'}`, color: '#111827' }}
       />
@@ -109,12 +110,14 @@ const SENAITE_LOCATION_TYPES = [
 ]
 
 export default function StorageModal({
+  open,
   editing,
   defaultParentId,
   allLocations,
   onClose,
   onDone,
 }: {
+  open: boolean
   editing: StorageLocation | null
   defaultParentId?: number | null
   allLocations: StorageLocation[]
@@ -152,18 +155,24 @@ export default function StorageModal({
   }
 
   const [state, action, pending] = useActionState(isEdit ? editAction : createAction, {})
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  useEffect(() => {
+    if (state.errors) {
+      const fe: Record<string, string> = {}
+      for (const [k, msgs] of Object.entries(state.errors)) { if (msgs?.length) fe[k] = msgs[0] }
+      setFieldErrors(fe)
+    }
+  }, [state])
 
   // Exclude self and descendants from parent options to avoid cycles
   const parentOptions = allLocations.filter(l => !editing || l.id !== editing.id)
 
   return (
-    <div
-      onClick={e => { if (e.currentTarget === e.target) onClose() }}
-      style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-    >
-      <div style={{ backgroundColor: '#fff', borderRadius: 16, width: 460, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+    <div style={{ position: 'fixed', top: 0, bottom: 0, left: 0, right: 0, zIndex: 200, pointerEvents: open ? 'auto' : 'none' }}>
+      <div onClick={onClose} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.30)', opacity: open ? 1 : 0, transition: 'opacity 0.25s ease' }} />
+      <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 480, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.12)', transform: open ? 'translateX(0)' : 'translateX(100%)', transition: 'transform 0.28s cubic-bezier(0.4,0,0.2,1)', display: 'flex', flexDirection: 'column' }}>
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #F3F4F6' }}>
+        <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ borderBottom: '1px solid #F3F4F6' }}>
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#EFF6FF' }}>
               <MI name={isEdit ? 'edit' : 'add_location'} size={16} color="#0154FC" />
@@ -182,10 +191,11 @@ export default function StorageModal({
           </button>
         </div>
 
-        <form action={action} className="px-5 py-4 flex flex-col gap-3">
+        <form action={action} className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
           <Field
             label="Name" name="name" placeholder="e.g. Fridge A" required
-            error={state.errors?.name?.[0]} defaultValue={editing?.name}
+            error={fieldErrors.name} defaultValue={editing?.name}
+            onClearError={() => setFieldErrors(p => { const n={...p}; delete n.name; return n })}
           />
 
           {/* Type select */}
@@ -198,14 +208,14 @@ export default function StorageModal({
               value={selectedType}
               onChange={e => setSelectedType(e.target.value)}
               className="w-full px-3 py-2 text-xs rounded-lg outline-none"
-              style={{ border: `1px solid ${state.errors?.location_type ? '#EF4444' : '#D1D5DB'}`, color: '#111827' }}
+              style={{ border: `1px solid ${fieldErrors.location_type ? '#EF4444' : '#D1D5DB'}`, color: '#111827' }}
             >
               {TYPE_OPTIONS.map(o => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
-            {state.errors?.location_type && (
-              <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{state.errors.location_type[0]}</p>
+            {fieldErrors.location_type && (
+              <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{fieldErrors.location_type}</p>
             )}
           </div>
 
@@ -443,7 +453,7 @@ export default function StorageModal({
             </p>
           )}
 
-          <div className="flex items-center justify-end gap-2 pt-1" style={{ borderTop: '1px solid #F3F4F6' }}>
+        <div className="flex items-center justify-end gap-2 shrink-0 px-5 py-4" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#fff' }}>
             <button
               type="button" onClick={onClose} disabled={pending}
               style={{ fontSize: 12, fontWeight: 500, padding: '7px 16px', borderRadius: 8, border: '1px solid #E5E7EB', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}

@@ -16,7 +16,8 @@ export type DjangoClient = {
   id: number
   name: string
   client_id: string
-  tenant_detail?: { id: number; name: string; slug: string; schema_name: string } | null
+  tenant_detail?: { id: number; name: string; slug: string; schema_name: string; logo?: string | null } | null
+  logo_url?: string | null
   email: string
   phone: string
   fax: string

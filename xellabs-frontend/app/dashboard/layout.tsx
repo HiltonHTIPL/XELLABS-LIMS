@@ -1,6 +1,7 @@
 import { getSession } from '@/app/lib/session'
 import { redirect } from 'next/navigation'
 import DashboardShell from './_components/DashboardShell'
+import { getReportDraftCount } from '@/app/actions/reports'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession()
@@ -17,9 +18,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ')
 
+  const reportDraftCount = await getReportDraftCount()
+
   return (
     <div className="flex flex-col h-screen overflow-hidden" style={{ backgroundColor: '#F7F8FC' }}>
-      <DashboardShell initials={initials} displayName={displayName} roleLabel={roleLabel} role={session.role}>
+      <DashboardShell initials={initials} displayName={displayName} roleLabel={roleLabel} role={session.role} reportDraftCount={reportDraftCount}>
         {children}
       </DashboardShell>
 

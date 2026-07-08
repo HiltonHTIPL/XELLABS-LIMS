@@ -158,9 +158,9 @@ export async function fetchSenaiteSampleTypes(token: string): Promise<SenaiteSam
       uid:           (t.uid as string) ?? '',
       id:            (t.id as string) ?? '',
       title:         (t.title as string) ?? '',
-      Prefix:        (t.Prefix as string) ?? '',
-      MinimumVolume: (t.MinimumVolume as string) ?? '',
-      RetentionPeriod: (t.RetentionPeriod as Record<string, unknown>) ?? {},
+      Prefix:        (t.Prefix as string) ?? (t.prefix as string) ?? '',
+      MinimumVolume: (t.MinimumVolume as string) ?? (t.min_volume as string) ?? '',
+      RetentionPeriod: (t.RetentionPeriod as Record<string, unknown>) ?? (t.retention_period as Record<string, unknown>) ?? {},
     }))
   } catch { return [] }
 }
@@ -204,7 +204,7 @@ export async function createSenaiteSampleType(
 export async function updateSenaiteSampleType(
   token: string,
   uid: string,
-  payload: { title?: string; Prefix?: string; MinimumVolume?: string }
+  payload: { title?: string; Prefix?: string; MinimumVolume?: string; min_volume?: string }
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update`, {

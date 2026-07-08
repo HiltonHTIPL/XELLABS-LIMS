@@ -280,6 +280,40 @@ export async function receiveLabSample(id: number, data: {
   } catch (e) { return { message: String(e) } }
 }
 
+export async function uploadSampleAttachment(sampleId: string, formData: FormData): Promise<{ ok: boolean; attachment_url?: string }> {
+  try {
+    const res = await djangoFetch(`/api/lims/samples/${sampleId}/upload-attachment/`, {
+      method: 'PATCH',
+      body: formData,
+    })
+    if (!res.ok) return { ok: false }
+    const data = await res.json().catch(() => ({})) as { attachment_url?: string }
+    revalidatePath('/dashboard/samples-overview')
+    return { ok: true, attachment_url: data.attachment_url }
+  } catch { return { ok: false } }
+}
+
+export async function syncSampleTypesFromSenaite(): Promise<void> {
+  try {
+    await djangoFetch('/api/lims/sample-types/sync-from-senaite/', { method: 'POST' })
+  } catch { /* non-fatal — new sample page still loads */ }
+}
+
+export async function patchLabSample(id: number, patch: Record<string, unknown>): Promise<{ ok: boolean; message?: string }> {
+  try {
+    const res = await djangoFetch(`/api/lims/samples/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    })
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({})) as { detail?: string }
+      return { ok: false, message: d.detail ?? `Error ${res.status}` }
+    }
+    revalidatePath('/dashboard/samples-overview')
+    return { ok: true }
+  } catch (e) { return { ok: false, message: String(e) } }
+}
+
 export async function updateLabSample(id: number, _state: LabSampleFormState, formData: FormData): Promise<LabSampleFormState> {
   const description      = (formData.get('description') as string)?.trim()
   const collection_date  = (formData.get('collection_date') as string)?.trim()

@@ -142,7 +142,7 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em', margin: 0 }}>Sample Receipt</h1>
             <p style={{ fontSize: 12, color: '#9CA3AF', marginTop: 3 }}>
-              {sample ? `Receiving sample ${sample.sample_id}` : 'Select a registered sample from Lab Samples to begin.'}
+              {sample ? `Receiving sample ${sample.sample_id}` : 'Select a registered sample from Samples Overview to begin.'}
             </p>
           </div>
         </div>
@@ -162,7 +162,7 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
         {!hasId && (
           <div className="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#FEF3C7', border: '1px solid #FDE68A', color: '#92400E' }}>
             <MI name="info" size={14} color="#F59E0B" />
-            No sample selected. Go to <strong style={{ margin: '0 3px' }}>Lab Samples</strong> and click the teal <strong style={{ margin: '0 3px' }}>Receive</strong> icon on a registered sample.
+            No sample selected. Go to <strong style={{ margin: '0 3px' }}>Samples Overview</strong> and click the <strong style={{ margin: '0 3px' }}>Receive</strong> icon on a registered sample.
           </div>
         )}
         {hasId && !sample && (

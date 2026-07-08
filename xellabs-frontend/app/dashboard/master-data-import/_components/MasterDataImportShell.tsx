@@ -1,22 +1,39 @@
 'use client'
-import { useActionState, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
+import Link from 'next/link'
 import { PageHeader, Card, Btn, MI, StatCard, thStyle, tdStyle, T } from '../../_components/ui'
-import { importInstruments, importStorageLocations, type ImportState } from '@/app/actions/senaite-import'
-
-const initialState: ImportState = {}
+import { useStreamingImport } from './useStreamingImport'
 
 function ImportPanel({
-  title, icon, description, columns, action,
+  title, icon, description, columns, endpoint, viewListHref, viewListLabel,
 }: {
   title: string
   icon: string
   description: string
   columns: { name: string; required: boolean }[]
-  action: (state: ImportState, formData: FormData) => Promise<ImportState>
+  endpoint: string
+  viewListHref: string
+  viewListLabel: string
 }) {
-  const [state, formAction, pending] = useActionState(action, initialState)
+  const { state, run, reset } = useStreamingImport(endpoint)
   const [fileName, setFileName] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const pending = state.status === 'uploading' || state.status === 'processing'
+
+  function pickFile() {
+    inputRef.current?.click()
+  }
+
+  function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null
+    setFileName(file?.name ?? null)
+    reset()
+  }
+
+  function submit() {
+    const file = inputRef.current?.files?.[0]
+    if (file) run(file)
+  }
 
   return (
     <Card title={title} icon={icon}>
@@ -38,24 +55,37 @@ function ImportPanel({
         ))}
       </div>
 
-      <form action={formAction} className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap">
         <input
           ref={inputRef}
           type="file"
-          name="file"
-          accept=".xlsx"
-          onChange={e => setFileName(e.target.files?.[0]?.name ?? null)}
+          accept=".xlsx,.csv"
+          onChange={onFileChange}
           style={{ display: 'none' }}
         />
-        <Btn type="button" variant="outline" icon="attach_file" onClick={() => inputRef.current?.click()}>
-          {fileName ?? 'Choose .xlsx file'}
+        <Btn type="button" variant="outline" icon="attach_file" onClick={pickFile} disabled={pending}>
+          {fileName ?? 'Choose .xlsx or .csv file'}
         </Btn>
-        <Btn type="submit" variant="primary" icon="upload_file" disabled={pending || !fileName}>
-          {pending ? 'Importing…' : 'Import'}
+        <Btn type="button" variant="primary" icon="upload_file" disabled={pending || !fileName} onClick={submit}>
+          {state.status === 'uploading' ? 'Uploading…'
+            : state.status === 'processing' ? `Processing ${state.processed ?? 0}/${state.total ?? '?'}…`
+            : 'Import'}
         </Btn>
-      </form>
+      </div>
 
-      {state.message && (
+      {state.status === 'processing' && state.total ? (
+        <div className="mt-3" style={{ height: 6, borderRadius: 999, backgroundColor: '#F3F4F6', overflow: 'hidden' }}>
+          <div
+            style={{
+              height: '100%', borderRadius: 999, backgroundColor: T.primary,
+              width: `${Math.round(((state.processed ?? 0) / state.total) * 100)}%`,
+              transition: 'width .2s',
+            }}
+          />
+        </div>
+      ) : null}
+
+      {state.status === 'error' && (
         <div
           className="mt-3 flex items-center gap-2"
           style={{ fontSize: 13, color: T.danger, padding: '8px 12px', borderRadius: 8, backgroundColor: '#FEF2F2' }}
@@ -65,7 +95,7 @@ function ImportPanel({
         </div>
       )}
 
-      {state.result && (
+      {state.status === 'done' && state.result && (
         <div className="mt-4">
           <div className="grid grid-cols-3 gap-3 mb-3">
             <StatCard icon="check_circle" iconColor={T.success} iconBg="#ECFDF5" label="Created" value={state.result.created} />
@@ -73,8 +103,22 @@ function ImportPanel({
             <StatCard icon="remove_circle_outline" iconColor={T.muted} iconBg="#F3F4F6" label="Skipped" value={state.result.skipped} />
           </div>
 
+          {state.result.created > 0 && (
+            <Link
+              href={viewListHref}
+              className="mb-3"
+              style={{
+                fontSize: 13, fontWeight: 600, color: T.primary, textDecoration: 'none',
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              <MI name="arrow_forward" size={16} color={T.primary} />
+              {state.result.created} created — View {viewListLabel}
+            </Link>
+          )}
+
           {state.result.rows.length > 0 && (
-            <div style={{ maxHeight: 320, overflowY: 'auto', border: `1px solid ${T.cardBorder}`, borderRadius: 10 }}>
+            <div style={{ maxHeight: 320, overflowY: 'auto', border: `1px solid ${T.cardBorder}`, borderRadius: 10, marginTop: 8 }}>
               <table className="w-full" style={{ borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
@@ -112,7 +156,7 @@ export default function MasterDataImportShell() {
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
       <PageHeader
         title="Master Data Import"
-        subtitle="Bulk-import Instruments and Storage Locations from an Excel (.xlsx) file"
+        subtitle="Bulk-import Instruments and Storage Locations from an Excel (.xlsx) or CSV file"
       />
       <div className="flex flex-col gap-4">
         <ImportPanel
@@ -128,7 +172,9 @@ export default function MasterDataImportShell() {
             { name: 'SerialNo', required: false },
             { name: 'AssetNumber', required: false },
           ]}
-          action={importInstruments}
+          endpoint="/api/senaite-import/instruments"
+          viewListHref="/dashboard/instrument-list"
+          viewListLabel="Instrument List"
         />
         <ImportPanel
           title="Storage Locations"
@@ -138,7 +184,9 @@ export default function MasterDataImportShell() {
             { name: 'Title', required: true },
             { name: 'Description', required: false },
           ]}
-          action={importStorageLocations}
+          endpoint="/api/senaite-import/storage-locations"
+          viewListHref="/dashboard/storage-list"
+          viewListLabel="Storage List"
         />
       </div>
     </div>

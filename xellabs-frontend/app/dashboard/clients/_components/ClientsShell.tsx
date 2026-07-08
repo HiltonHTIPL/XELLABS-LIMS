@@ -158,14 +158,14 @@ function Step1({ vals, set, errors, fieldErrors, clientIdCheck, onClientIdBlur, 
 }) {
   const clientIdErr = clientIdCheck === 'taken'
     ? 'This Client ID is already in use — choose a different one.'
-    : (fieldErrors.client_id ?? errors?.client_id?.[0])
+    : fieldErrors.client_id
 
   return (
     <div className="space-y-3">
       <Row>
         <Field label="Client Name" name="name" placeholder="e.g. Green Valley Farms" required
           value={vals.name ?? ''} onChange={v => set('name', v)}
-          error={fieldErrors.name ?? errors?.name?.[0]} />
+          error={fieldErrors.name} />
         <div className="flex-1 min-w-0">
           <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
             Client ID<span style={{ color: '#EF4444' }}> *</span>
@@ -191,7 +191,7 @@ function Step1({ vals, set, errors, fieldErrors, clientIdCheck, onClientIdBlur, 
       </Row>
       <Row>
         <Field label="Email Address" name="email"  type="email" placeholder="contact@client.com"
-          value={vals.email ?? ''} onChange={v => set('email', v)} error={fieldErrors.email ?? errors?.email?.[0]} />
+          value={vals.email ?? ''} onChange={v => set('email', v)} error={fieldErrors.email} />
         <Field label="Phone" name="phone" placeholder="+1 555 000 0000"
           value={vals.phone ?? ''} onChange={v => set('phone', v)} />
       </Row>
@@ -221,14 +221,14 @@ function Step2({ vals, set, errors, fieldErrors }: { vals: FV; set: (k: string, 
         </div>
         <Field label="First Name" name="contact_first_name" placeholder="First name"
           value={vals.contact_first_name ?? ''} onChange={v => set('contact_first_name', v)}
-          error={fieldErrors.contact_first_name ?? errors?.contact_first_name?.[0]} />
+          error={fieldErrors.contact_first_name} />
         <Field label="Last Name"  name="contact_last_name"  placeholder="Last name"
           value={vals.contact_last_name ?? ''} onChange={v => set('contact_last_name', v)} />
       </Row>
       <Row>
         <Field label="Contact Email" name="contact_email" type="email" placeholder="person@client.com"
           value={vals.contact_email ?? ''} onChange={v => set('contact_email', v)}
-          error={fieldErrors.contact_email ?? errors?.contact_email?.[0]} />
+          error={fieldErrors.contact_email} />
         <Field label="Contact Phone" name="contact_phone" placeholder="+1 555 000 0003"
           value={vals.contact_phone ?? ''} onChange={v => set('contact_phone', v)} />
       </Row>
@@ -266,9 +266,9 @@ function Step4({ vals, set, errors, fieldErrors }: { vals: FV; set: (k: string, 
       <Row>
         <Field label="NIB"                  name="nib"           placeholder="Bank account NIB" value={vals.nib           ?? ''} onChange={v => set('nib',           v)} />
         <Field label="Bulk Discount (%)"   name="bulk_discount"   type="number" placeholder="0" value={vals.bulk_discount   ?? ''} onChange={v => set('bulk_discount',   v)}
-          error={fieldErrors.bulk_discount ?? errors?.bulk_discount?.[0]} />
+          error={fieldErrors.bulk_discount} />
         <Field label="Member Discount (%)" name="member_discount" type="number" placeholder="0" value={vals.member_discount ?? ''} onChange={v => set('member_discount', v)}
-          error={fieldErrors.member_discount ?? errors?.member_discount?.[0]} />
+          error={fieldErrors.member_discount} />
       </Row>
     </div>
   )
@@ -708,9 +708,14 @@ export default function ClientsShell({ initialClients }: { initialClients: Djang
                 <tr key={c.id} style={{ borderBottom: i < initialClients.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50 cursor-pointer">
                   <td className="px-3 py-2">
                     <Link href={`/dashboard/clients/${c.id}`} className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 10, backgroundColor: '#0154FC' }}>
-                        {c.name.slice(0, 1).toUpperCase()}
-                      </div>
+                      {c.logo_url
+                        ? <div className="w-6 h-6 rounded-full shrink-0 overflow-hidden flex items-center justify-center" style={{ border: '1px solid #E8EAF2' }}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={c.logo_url} alt={c.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                          </div>
+                        : <div className="w-6 h-6 rounded-full flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 10, backgroundColor: '#0154FC' }}>
+                            {c.name.slice(0, 1).toUpperCase()}
+                          </div>}
                       <span className="text-xs font-medium truncate" style={{ color: '#0154FC' }}>{c.name}</span>
                     </Link>
                   </td>

@@ -357,15 +357,14 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
         />
       </div>
 
-      {modal && (
-        <StorageModal
-          editing={modal.editing}
-          defaultParentId={modal.defaultParentId}
-          allLocations={locations}
-          onClose={() => setModal(null)}
-          onDone={async (msg) => { showToast(true, msg); await refreshLocations(); setModal(null) }}
-        />
-      )}
+      <StorageModal
+        open={!!modal}
+        editing={modal?.editing ?? null}
+        defaultParentId={modal?.defaultParentId}
+        allLocations={locations}
+        onClose={() => setModal(null)}
+        onDone={async (msg) => { showToast(true, msg); await refreshLocations(); setModal(null) }}
+      />
       {assigningSlot && (
         <SlotAssignModal
           slot={assigningSlot}

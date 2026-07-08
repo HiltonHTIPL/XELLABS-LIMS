@@ -8,6 +8,9 @@ start-commands.txt
 # Local change tracking (cleared after every push — never commit)
 pending-changes.md
 
+# Bug backlog (local only — worked from directly, never committed)
+needtofixbugs.md
+
 # Local scratch / handoff notes — not project source
 qa-admin-handoff.html
 serversideerrorfixes.md
