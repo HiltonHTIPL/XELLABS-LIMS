@@ -22,8 +22,14 @@ services:
     # Certbot only renews the cert files on disk — nginx has to be told to
     # pick them up. A daily reload is cheap and comfortably covers renewal
     # (Let's Encrypt certs are renewed ~30 days before their 90-day expiry).
+    #
+    # Must invoke /docker-entrypoint.sh with "nginx" as $1 (not a bare `sh`)
+    # — the image's own entrypoint only runs its envsubst-on-templates step
+    # (and every other /docker-entrypoint.d/ script) when it sees "nginx" or
+    # "nginx-debug" as the first argument; anything else skips templating
+    # entirely and nginx falls back to serving its stock default page.
     command: >
-      sh -c "while :; do sleep 24h & wait $$!; nginx -s reload; done & nginx -g 'daemon off;'"
+      sh -c "/docker-entrypoint.sh nginx -g 'daemon off;' & pid=$$!; while :; do sleep 24h & wait $$!; nginx -s reload; done; wait $$pid"
     depends_on:
       - frontend
       - django
