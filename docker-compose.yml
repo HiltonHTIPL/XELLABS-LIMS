@@ -57,6 +57,11 @@ services:
       SENAITE_URL: http://senaite:8080/senaite
       SENAITE_USER: admin
       SENAITE_PASSWORD: "${SENAITE_ADMIN_PASSWORD:-admin}"
+      # Platform superadmin — created/re-synced on every start by ensure_superuser.
+      # Set real values in the project-root .env; never commit them.
+      DJANGO_SUPERUSER_USERNAME: "${DJANGO_SUPERUSER_USERNAME:-admin}"
+      DJANGO_SUPERUSER_PASSWORD: "${DJANGO_SUPERUSER_PASSWORD:-}"
+      DJANGO_SUPERUSER_EMAIL: "${DJANGO_SUPERUSER_EMAIL:-admin@xellabs.com}"
     ports:
       - "127.0.0.1:8001:8001"
     volumes:
@@ -69,6 +74,7 @@ services:
     command: >
       sh -c "python manage.py migrate_schemas --shared --noinput &&
              python manage.py migrate_schemas --noinput &&
+             python manage.py ensure_superuser &&
              gunicorn config.wsgi:application --bind 0.0.0.0:8001 --workers 2 --timeout 120 --access-logfile -"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys,urllib.error;\ntry:\n  urllib.request.urlopen('http://localhost:8001/admin/login/', timeout=3)\n  sys.exit(0)\nexcept urllib.error.HTTPError as e:\n  sys.exit(0 if e.code < 500 else 1)\nexcept Exception:\n  sys.exit(1)"]
@@ -196,8 +202,7 @@ services:
       - "127.0.0.1:8080:8080"
     environment:
       - SITE=senaite
-      - ADMIN_USER=admin
-      - ADMIN_PASSWORD=${SENAITE_ADMIN_PASSWORD:-admin}
+      - PASSWORD=${SENAITE_ADMIN_PASSWORD:-admin}
     volumes:
       - senaite_data:/data
     healthcheck:
@@ -218,9 +223,10 @@ services:
     environment:
       - DJANGO_API_URL=http://django:8001
       - SENAITE_URL=http://senaite:8080/senaite
+      - SENAITE_ADMIN_USER=admin
+      - SENAITE_ADMIN_PASS=${SENAITE_ADMIN_PASSWORD:-admin}
       - SESSION_SECRET=${SESSION_SECRET}
       - DJANGO_SERVICE_TOKEN=${DJANGO_SERVICE_TOKEN}
-      - DEFAULT_TENANT_SCHEMA=hl-01
       - NODE_ENV=${NODE_ENV:-production}
       - NEXT_PUBLIC_APP_ENV=${NEXT_PUBLIC_APP_ENV:-development}
     volumes:

@@ -183,7 +183,11 @@ export async function createSenaiteSampleType(
       cache: 'no-store',
     })
     const data = await res.json().catch(() => ({})) as Record<string, unknown>
-    if (!res.ok) return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    // SENAITE's JSON API returns HTTP 200 even on failure (e.g. bad credentials,
+    // permission denied) — the real outcome is the body's own `success` flag.
+    if (!res.ok || data.success === false) {
+      return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    }
     const items = (data.items as Record<string, unknown>[]) ?? []
     if (!items.length) return { success: false, error: 'No sample type returned from SENAITE' }
     const t = items[0]
@@ -213,9 +217,9 @@ export async function updateSenaiteSampleType(
       body: JSON.stringify([{ uid, ...payload }]),
       cache: 'no-store',
     })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({})) as Record<string, unknown>
-      return { success: false, error: (err.message as string) ?? `HTTP ${res.status}` }
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok || data.success === false) {
+      return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
     }
     return { success: true }
   } catch (e) { return { success: false, error: String(e) } }
@@ -492,7 +496,9 @@ export async function createSenaiteSample(
       cache: 'no-store',
     })
     const data = await res.json().catch(() => ({})) as Record<string, unknown>
-    if (!res.ok) {
+    // SENAITE's JSON API returns HTTP 200 even on failure (e.g. bad credentials,
+    // permission denied) — the real outcome is the body's own `success` flag.
+    if (!res.ok || data.success === false) {
       return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
     }
     const items = (data.items as Record<string, unknown>[]) ?? []
@@ -731,7 +737,7 @@ export async function createSenaiteWorksheet(
     let data: Record<string, unknown> = {}
     try { data = JSON.parse(rawText) } catch { /* non-JSON */ }
 
-    if (!res.ok) {
+    if (!res.ok || data.success === false) {
       const msg = (data.message as string) ?? (data.error as string) ?? rawText ?? `HTTP ${res.status}`
       return { success: false, error: msg }
     }
@@ -799,9 +805,9 @@ export async function assignAnalysesToWorksheet(
       body: JSON.stringify([{ uid: worksheetUid, Analyses: analysisUids.map(uid => ({ uid })) }]),
       cache: 'no-store',
     })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({})) as Record<string, unknown>
-      return { success: false, error: (err.message as string) ?? `HTTP ${res.status}` }
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok || data.success === false) {
+      return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
     }
     return { success: true }
   } catch (e) { return { success: false, error: String(e) } }
@@ -819,7 +825,10 @@ export async function submitAnalysisResult(
       body: JSON.stringify([{ uid: analysisUid, Result: result }]),
       cache: 'no-store',
     })
-    if (!updateRes.ok) return { success: false, error: `Update failed: HTTP ${updateRes.status}` }
+    const updateData = await updateRes.json().catch(() => ({})) as Record<string, unknown>
+    if (!updateRes.ok || updateData.success === false) {
+      return { success: false, error: (updateData.message as string) ?? `Update failed: HTTP ${updateRes.status}` }
+    }
 
     // See senaiteWorkflowAction for why content_status_modify is used instead of
     // the nonexistent `/workflow_action` REST route.

@@ -89,6 +89,13 @@ def push_client(client) -> str | None:
         resp.raise_for_status()
         data = resp.json()
 
+        # SENAITE's JSON API returns HTTP 200 even on failure (e.g. bad
+        # credentials, permission denied) — the real outcome is the body's
+        # own `success` flag, not the HTTP status.
+        if data.get("success") is False:
+            logger.error("SENAITE client sync failed for '%s': %s", client.name, data.get("message") or data)
+            return None
+
         # SENAITE wraps results in {"items": [...]}
         items = data.get("items") or []
         if items:
@@ -234,6 +241,14 @@ def push_analysis_request(ar) -> str | None:
         resp = s.post(_api("create"), json=payload, timeout=15)
         resp.raise_for_status()
         data = resp.json()
+
+        # SENAITE's JSON API returns HTTP 200 even on failure (e.g. bad
+        # credentials, permission denied) — the real outcome is the body's
+        # own `success` flag, not the HTTP status.
+        if data.get("success") is False:
+            logger.error("SENAITE AR sync failed for '%s': %s", ar.ar_id, data.get("message") or data)
+            return None
+
         items = data.get("items") or []
         if items:
             uid = items[0].get("uid") or items[0].get("UID")
@@ -300,13 +315,22 @@ def push_storage_location(location) -> "str | None":
             resp = s.post(_api("create"), json=payload, timeout=15)
 
         resp.raise_for_status()
-        items = resp.json().get("items") or []
+        data = resp.json()
+
+        # SENAITE's JSON API returns HTTP 200 even on failure (e.g. bad
+        # credentials, permission denied) — the real outcome is the body's
+        # own `success` flag, not the HTTP status.
+        if data.get("success") is False:
+            logger.error("SENAITE storage sync failed for '%s': %s", title, data.get("message") or data)
+            return None
+
+        items = data.get("items") or []
         if items:
             uid = items[0].get("uid") or items[0].get("UID")
             logger.info("SENAITE storage sync OK: '%s' -> uid=%s", title, uid)
             return uid
 
-        logger.warning("SENAITE storage sync: unexpected response for '%s': %s", title, resp.json())
+        logger.warning("SENAITE storage sync: unexpected response for '%s': %s", title, data)
         return None
 
     except Exception as exc:
@@ -357,6 +381,8 @@ def _find_or_create(portal_type: str, parent_path: str, title: str) -> str:
     }, timeout=15)
     resp.raise_for_status()
     data = resp.json()
+    if data.get("success") is False:
+        raise ValueError(f"Could not create {portal_type} '{title}': {data.get('message') or data}")
     items = data.get("items") or []
     if items:
         return items[0].get("uid") or items[0].get("UID")
@@ -402,6 +428,8 @@ def import_instrument_row(row: dict) -> dict:
         resp = s.post(_api("create"), json=payload, timeout=15)
         resp.raise_for_status()
         data = resp.json()
+        if data.get("success") is False:
+            return {"ok": False, "title": title, "error": _sanitize_error(str(data.get("message") or data))}
         items = data.get("items") or []
         if items:
             uid = items[0].get("uid") or items[0].get("UID")
@@ -452,6 +480,8 @@ def import_storage_location_row(row: dict) -> dict:
         resp = s.post(_api("create"), json=payload, timeout=15)
         resp.raise_for_status()
         data = resp.json()
+        if data.get("success") is False:
+            return {"ok": False, "title": title, "error": _sanitize_error(str(data.get("message") or data))}
         items = data.get("items") or []
         if items:
             uid = items[0].get("uid") or items[0].get("UID")
