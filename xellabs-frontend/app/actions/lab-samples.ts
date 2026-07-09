@@ -1,11 +1,26 @@
 'use server'
 import { revalidatePath } from 'next/cache'
 import { djangoFetch } from '@/app/lib/django'
+import { createSenaiteSample, senaiteWorkflowAction } from '@/app/lib/senaite'
+import { getSession } from '@/app/lib/session'
+
+const SENAITE_USER = process.env.SENAITE_ADMIN_USER ?? 'admin'
+const SENAITE_PASS = process.env.SENAITE_ADMIN_PASS ?? 'admin'
+
+function serverToken(): string {
+  return Buffer.from(`${SENAITE_USER}:${SENAITE_PASS}`).toString('base64')
+}
+
+async function senaiteToken(): Promise<string> {
+  const session = await getSession()
+  return session?.senaiteToken ?? serverToken()
+}
 
 export type DjangoSampleType = {
   id: number
   name: string
   prefix: string
+  senaite_uid?: string
 }
 
 export async function getDjangoSampleTypes(): Promise<DjangoSampleType[]> {
@@ -82,17 +97,26 @@ export type NewSamplePayload = {
   client_order_number?: string
   client_reference?: string
   client_sample_id?: string
+  client_senaite_uid?: string
+  sample_type_senaite_uid?: string
+}
+
+function senaitePriority(priority: string): string {
+  if (priority === 'high') return '2'
+  if (priority === 'low') return '4'
+  return '3'
 }
 
 export async function createSampleWithAnalyses(
   payload: NewSamplePayload,
   testIds: number[],
+  testSenaiteUids: string[] = [],
 ): Promise<{ success: boolean; message: string; sample_id?: string }> {
   try {
     // Step 1: Create the sample
     const sampleRes = await djangoFetch('/api/lims/samples/', {
       method: 'POST',
-      body: JSON.stringify({ ...payload, status: 'registered', is_active: true }),
+      body: JSON.stringify({ ...payload, client_senaite_uid: undefined, sample_type_senaite_uid: undefined, status: 'registered', is_active: true }),
     })
     const sampleData = await sampleRes.json().catch(() => ({})) as Record<string, unknown>
     if (!sampleRes.ok) {
@@ -120,6 +144,31 @@ export async function createSampleWithAnalyses(
         // Sample created but AR failed — return partial success
         return { success: true, message: `Sample ${sampleDisplayId} created. Note: analysis request could not be created.`, sample_id: sampleDisplayId }
       }
+    }
+
+    // Step 3: Mirror the sample into SENAITE so it becomes visible to Worksheets.
+    // Registration only creates it in SENAITE's not-yet-received state ("sample_due") —
+    // it is transitioned to "received" in SENAITE only when the sample is physically
+    // received (see receiveLabSample below), matching the same registered→received gate
+    // this app already enforces on the Django side.
+    if (payload.client_senaite_uid && payload.sample_type_senaite_uid && testSenaiteUids.length > 0) {
+      try {
+        const token = await senaiteToken()
+        const result = await createSenaiteSample(token, {
+          Client: payload.client_senaite_uid,
+          SampleType: payload.sample_type_senaite_uid,
+          DateSampled: payload.collection_date ?? new Date().toISOString(),
+          Analyses: testSenaiteUids,
+          Priority: senaitePriority(payload.priority),
+          ClientSampleID: sampleDisplayId,
+        })
+        if (result.success && result.sample) {
+          await djangoFetch(`/api/lims/samples/${sampleId}/`, {
+            method: 'PATCH',
+            body: JSON.stringify({ senaite_uid: result.sample.uid, senaite_ar_id: result.sample.id }),
+          })
+        }
+      } catch { /* non-fatal — sample is still fully registered in Django */ }
     }
 
     revalidatePath('/dashboard/samples-overview')
@@ -273,10 +322,21 @@ export async function receiveLabSample(id: number, data: {
       method: 'POST',
       body: JSON.stringify(body),
     })
-    const resData = await res.json().catch(() => ({})) as { detail?: string; sample_id?: string }
+    const resData = await res.json().catch(() => ({})) as { detail?: string; sample_id?: string; senaite_uid?: string }
     if (!res.ok) {
       return { message: resData.detail ?? 'Failed to receive sample.' }
     }
+
+    // If this sample has a SENAITE mirror (created at registration time), transition
+    // it to "received" now — the exact physical-receipt moment — so its analyses
+    // move from "sample_due" into "unassigned" and become visible to Worksheets.
+    if (resData.senaite_uid) {
+      try {
+        const token = await senaiteToken()
+        await senaiteWorkflowAction(token, resData.senaite_uid, 'receive')
+      } catch { /* non-fatal — Django receipt already succeeded */ }
+    }
+
     revalidatePath('/dashboard/lab-samples')
     revalidatePath('/dashboard/sample-receipts')
     return { success: true, message: `Sample ${resData.sample_id ?? ''} marked as received.` }

@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 from .models import (
-    SampleType, Method, Test, Specification,
+    SampleType, SampleTemplate, AnalysisProfile, Method, Test, Specification,
     Sample, AnalysisRequest, Worksheet, WorksheetAssignment,
     Result, QCSample, ChainOfCustody,
 )
@@ -28,6 +28,18 @@ class SampleTypeSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'prefix': {'required': True, 'allow_blank': False},
         }
+
+
+class SampleTemplateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SampleTemplate
+        fields = "__all__"
+
+
+class AnalysisProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AnalysisProfile
+        fields = "__all__"
 
 
 class MethodSerializer(serializers.ModelSerializer):
@@ -180,10 +192,13 @@ class ResultSerializer(RecordLockMixin, serializers.ModelSerializer):
 
 
 class QCSampleSerializer(serializers.ModelSerializer):
+    reviewed_by_name = serializers.CharField(source="reviewed_by.username", read_only=True, default=None)
+    run_by_name = serializers.CharField(source="run_by.username", read_only=True, default=None)
+
     class Meta:
         model = QCSample
         fields = "__all__"
-        read_only_fields = ("run_by", "created_at", "updated_at")
+        read_only_fields = ("run_by", "reviewed_by", "reviewed_at", "is_reviewed", "created_at", "updated_at")
 
     def create(self, validated_data):
         validated_data["run_by"] = self.context["request"].user

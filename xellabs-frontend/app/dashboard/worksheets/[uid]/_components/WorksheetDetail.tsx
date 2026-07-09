@@ -96,8 +96,8 @@ export default function WorksheetDetail({ worksheetUid, analyses, unassigned }: 
       {/* Assign modal */}
       {showAssign && (
         <div onClick={e => { if (e.currentTarget === e.target) setShowAssign(false) }}
-          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ backgroundColor: '#fff', borderRadius: 16, width: 540, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', zIndex: 1000 }}>
+          <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 540, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.15)', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
             <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #F3F4F6' }}>
               <div>
                 <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>Add Analyses to Worksheet</h2>

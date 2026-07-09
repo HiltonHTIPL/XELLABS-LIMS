@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { type LabSample, type SampleStats, type DjangoSampleType } from '@/app/actions/lab-samples'
+import { type LabSample, type SampleStats, type DjangoSampleType, patchLabSample } from '@/app/actions/lab-samples'
 import { type DjangoClient } from '@/app/actions/clients'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
@@ -24,6 +24,13 @@ const ALL_COLUMNS = [
 type ColKey = typeof ALL_COLUMNS[number]['key']
 const DEFAULT_VISIBLE = new Set(ALL_COLUMNS.filter(c => c.defaultVisible).map(c => c.key))
 const LS_KEY = 'xl_samples_cols'
+const SAVED_FILTERS_LS_KEY = 'xl_samples_saved_filters'
+
+type FilterSnapshot = {
+  search: string; sampleType: string; client: string; status: string
+  priority: string; from: string; to: string; overdue: boolean
+}
+type SavedFilter = { name: string; filters: FilterSnapshot }
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All Statuses' },
@@ -31,6 +38,7 @@ const STATUS_OPTIONS = [
   { value: 'received',        label: 'Received' },
   { value: 'in_progress',     label: 'In Process' },
   { value: 'results_pending', label: 'To Be Verified' },
+  { value: 'on_hold_for_qa',  label: 'On Hold for QA' },
   { value: 'published',       label: 'Completed' },
   { value: 'rejected',        label: 'Rejected' },
   { value: 'disposed',        label: 'Disposed' },
@@ -69,6 +77,7 @@ const CONDITION_BADGE: Record<string, { color: string }> = {
 }
 
 const STAT_CARDS = [
+  { key: 'all',            label: 'All',              icon: 'view_list',       iconColor: '#6B7280', iconBg: '#F3F4F6' },
   { key: 'logged',         label: 'Logged',           icon: 'inbox',           iconColor: '#3B82F6', iconBg: '#EFF6FF' },
   { key: 'received',       label: 'Received',         icon: 'move_to_inbox',   iconColor: '#0154FC', iconBg: '#DBEAFE' },
   { key: 'in_process',     label: 'In Process',       icon: 'autorenew',       iconColor: '#6366F1', iconBg: '#EEF2FF' },
@@ -83,6 +92,20 @@ function tatDays(receivedDate: string | null, nowMs: number | null): number | nu
   return Math.floor((nowMs - new Date(receivedDate).getTime()) / (1000 * 60 * 60 * 24))
 }
 
+function isOverdueSample(s: LabSample): boolean {
+  return Boolean(s.expiry_date && new Date(s.expiry_date) < new Date() && !['published', 'disposed', 'rejected'].includes(s.status))
+}
+
+// Maps a stat card key to the status filter value it represents (or 'overdue' as a special case)
+const STAT_CARD_STATUS: Record<string, string> = {
+  logged: 'registered',
+  received: 'received',
+  in_process: 'in_progress',
+  to_be_verified: 'results_pending',
+  on_hold_for_qa: 'on_hold_for_qa',
+  completed: 'published',
+}
+
 function fmt(dateStr: string | null): string {
   if (!dateStr) return '—'
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -93,7 +116,14 @@ type Props = { initialSamples: LabSample[]; sampleTypes: DjangoSampleType[]; sta
 
 export default function SamplesOverviewShell({ initialSamples, sampleTypes, stats, clients }: Props) {
   const router = useRouter()
-  const [samples] = useState(initialSamples)
+  const [samples, setSamples] = useState(initialSamples)
+  const [nowMs, setNowMs] = useState<number | null>(null)
+  useEffect(() => {
+    // Client-only timestamp: starts empty so server and client render the same
+    // HTML, then fills in after mount — avoids a hydration mismatch.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNowMs(Date.now())
+  }, [])
   const [search, setSearch] = useState('')
   const [filterSampleType, setFilterSampleType] = useState('')
   const [filterClient, setFilterClient] = useState('')
@@ -101,6 +131,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
   const [filterPriority, setFilterPriority] = useState('')
   const [filterFrom, setFilterFrom] = useState('')
   const [filterTo, setFilterTo] = useState('')
+  const [filterOverdue, setFilterOverdue] = useState(false)
 
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [page, setPage] = useState(1)
@@ -119,6 +150,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
     if (filterPriority && s.priority !== filterPriority) return false
     if (filterFrom && s.received_date && new Date(s.received_date) < new Date(filterFrom)) return false
     if (filterTo && s.received_date && new Date(s.received_date) > new Date(filterTo)) return false
+    if (filterOverdue && !isOverdueSample(s)) return false
     return true
   })
 
@@ -128,19 +160,32 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
   function clearFilters() {
     setSearch(''); setFilterSampleType(''); setFilterClient('')
     setFilterStatus(''); setFilterPriority(''); setFilterFrom(''); setFilterTo('')
+    setFilterOverdue(false)
     setPage(1)
+  }
+  function handleStatCardClick(cardKey: string) {
+    setPage(1)
+    if (cardKey === 'all') {
+      setFilterStatus('')
+      setFilterOverdue(false)
+      return
+    }
+    if (cardKey === 'overdue') {
+      const next = !filterOverdue
+      setFilterOverdue(next)
+      if (next) setFilterStatus('')
+      return
+    }
+    const statusValue = STAT_CARD_STATUS[cardKey]
+    setFilterOverdue(false)
+    setFilterStatus(prev => (prev === statusValue ? '' : statusValue))
   }
   function toggleAll() {
     if (selected.size === paginated.length) setSelected(new Set())
     else setSelected(new Set(paginated.map(s => s.id)))
   }
   function toggleRow(id: number) {
-    setSelected(prev => {
-      const n = new Set(prev)
-      if (n.has(id)) n.delete(id)
-      else n.add(id)
-      return n
-    })
+    setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   }
   function openActionMenu(e: React.MouseEvent<HTMLButtonElement>, id: number) {
     const rect = e.currentTarget.getBoundingClientRect()
@@ -151,15 +196,118 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
     return STATUS_BADGE[s.status] ?? { bg: '#F3F4F6', color: '#374151', label: s.status }
   }
 
-  const sel = { border: '1px solid #D1D5DB', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: '#374151', background: '#fff', outline: 'none', cursor: 'pointer' as const }
+  // ── Export to CSV ──
+  function handleExport() {
+    const headers = ['Sample ID', 'Client', 'Sample Type', 'Condition', 'Status', 'Priority', 'Received Date', 'Due Date', 'Storage']
+    const rows = filtered.map(s => [
+      s.sample_id, s.client_name, s.sample_type_name, s.condition || '',
+      getSampleStatusDisplay(s).label, s.priority || '', fmt(s.received_date), fmt(s.expiry_date), s.storage_location || '',
+    ])
+    const esc = (v: string) => (v.includes(',') || v.includes('"') ? `"${v.replace(/"/g, '""')}"` : v)
+    const csv = [headers.join(','), ...rows.map(r => r.map(esc).join(','))].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `samples-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // ── Saved Filters ──
+  const [savedFilters, setSavedFilters] = useState<SavedFilter[]>(() => {
+    if (typeof window === 'undefined') return []
+    try {
+      const raw = localStorage.getItem(SAVED_FILTERS_LS_KEY)
+      return raw ? (JSON.parse(raw) as SavedFilter[]) : []
+    } catch { return [] }
+  })
+  const [savedFiltersOpen, setSavedFiltersOpen] = useState(false)
+  const [savedFiltersPos, setSavedFiltersPos] = useState<{ top: number; right: number } | null>(null)
+  const savedFiltersBtnRef = useRef<HTMLButtonElement>(null)
+  const [saveFilterModalOpen, setSaveFilterModalOpen] = useState(false)
+  const [newFilterName, setNewFilterName] = useState('')
+
+  function currentFilterSnapshot(): FilterSnapshot {
+    return { search, sampleType: filterSampleType, client: filterClient, status: filterStatus, priority: filterPriority, from: filterFrom, to: filterTo, overdue: filterOverdue }
+  }
+  function persistSavedFilters(next: SavedFilter[]) {
+    setSavedFilters(next)
+    try { localStorage.setItem(SAVED_FILTERS_LS_KEY, JSON.stringify(next)) } catch { /* ignore */ }
+  }
+  function openSavedFilters() {
+    const rect = savedFiltersBtnRef.current!.getBoundingClientRect()
+    setSavedFiltersPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+    setSavedFiltersOpen(o => !o)
+  }
+  function saveCurrentFilters() {
+    setNewFilterName('')
+    setSaveFilterModalOpen(true)
+  }
+  function confirmSaveFilter() {
+    const name = newFilterName.trim()
+    if (!name) return
+    const snapshot = currentFilterSnapshot()
+    const next = [...savedFilters.filter(f => f.name !== name), { name, filters: snapshot }]
+    persistSavedFilters(next)
+    setSaveFilterModalOpen(false)
+    setSavedFiltersOpen(false)
+  }
+  function applySavedFilter(f: SavedFilter) {
+    setSearch(f.filters.search); setFilterSampleType(f.filters.sampleType); setFilterClient(f.filters.client)
+    setFilterStatus(f.filters.status); setFilterPriority(f.filters.priority)
+    setFilterFrom(f.filters.from); setFilterTo(f.filters.to); setFilterOverdue(f.filters.overdue)
+    setPage(1)
+    setSavedFiltersOpen(false)
+  }
+  function deleteSavedFilter(name: string) {
+    persistSavedFilters(savedFilters.filter(f => f.name !== name))
+  }
+
+  // ── Bulk Actions ──
+  const [bulkMenuOpen, setBulkMenuOpen] = useState(false)
+  const [bulkMenuPos, setBulkMenuPos] = useState<{ top: number; right: number } | null>(null)
+  const [bulkPending, setBulkPending] = useState(false)
+  const bulkBtnRef = useRef<HTMLButtonElement>(null)
+
+  function openBulkMenu() {
+    if (selected.size === 0) return
+    const rect = bulkBtnRef.current!.getBoundingClientRect()
+    setBulkMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+    setBulkMenuOpen(o => !o)
+  }
+  async function runBulkPatch(patch: Record<string, unknown>) {
+    setBulkPending(true)
+    setBulkMenuOpen(false)
+    try {
+      await Promise.all([...selected].map(id => patchLabSample(id, patch)))
+      setSamples(prev => prev.map(s => (selected.has(s.id) ? { ...s, ...patch } : s)))
+      setSelected(new Set())
+    } finally {
+      setBulkPending(false)
+    }
+  }
+
+  // ── Delete (soft — marks as disposed, never hard-deletes for audit/compliance reasons) ──
+  const [deletingId, setDeletingId] = useState<number | null>(null)
+  async function handleDeleteSample(id: number) {
+    const sample = samples.find(s => s.id === id)
+    if (!sample) return
+    if (!window.confirm(`Mark sample "${sample.sample_id}" as disposed? This cannot be undone and the record will move to the Disposed status.`)) return
+    setDeletingId(id)
+    try {
+      const result = await patchLabSample(id, { status: 'disposed' })
+      if (result.ok) setSamples(prev => prev.map(s => (s.id === id ? { ...s, status: 'disposed' } : s)))
+      else window.alert(result.message ?? 'Failed to update sample.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  const sel ={ border: '1px solid #D1D5DB', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: '#374151', background: '#fff', outline: 'none', cursor: 'pointer' as const }
   const [now, setNow] = useState('')
-  const [nowMs, setNowMs] = useState<number | null>(null)
   useEffect(() => {
-    // Client-only timestamp: starts empty so server and client render the same
-    // HTML, then fills in after mount — avoids a hydration mismatch.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setNow(new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }))
-    setNowMs(Date.now())
   }, [])
 
   // Column chooser
@@ -183,8 +331,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
   function toggleCol(key: ColKey) {
     setVisibleCols(prev => {
       const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
+      next.has(key) ? next.delete(key) : next.add(key)
       try { localStorage.setItem(LS_KEY, JSON.stringify([...next])) } catch { /* ignore */ }
       return next
     })
@@ -213,11 +360,21 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
         </div>
 
         {/* ── STATIC: stat cards ── */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 10, marginBottom: 20, flexShrink: 0 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 10, marginBottom: 20, flexShrink: 0 }}>
           {STAT_CARDS.map(card => {
-            const count = stats[card.key as keyof SampleStats]
+            const count = card.key === 'all' ? samples.length : stats[card.key as keyof SampleStats]
+            const isActive = card.key === 'all'
+              ? (filterStatus === '' && !filterOverdue)
+              : card.key === 'overdue' ? filterOverdue : (filterStatus !== '' && filterStatus === STAT_CARD_STATUS[card.key])
             return (
-              <div key={card.key} style={{ background: '#fff', borderRadius: 10, padding: '14px 12px', boxShadow: '0 1px 3px rgba(0,0,0,0.07)', border: '1px solid #E5E7EB' }}>
+              <button key={card.key} onClick={() => handleStatCardClick(card.key)}
+                style={{
+                  background: isActive ? card.iconBg : '#fff',
+                  borderRadius: 10, padding: '14px 12px',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.07)',
+                  border: isActive ? `1px solid ${card.iconColor}` : '1px solid #E5E7EB',
+                  cursor: 'pointer', textAlign: 'left', font: 'inherit',
+                }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                   <div style={{ width: 28, height: 28, borderRadius: 6, background: card.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <MI name={card.icon} size={14} color={card.iconColor} />
@@ -225,7 +382,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
                   <span style={{ fontSize: 11, color: '#6B7280', fontWeight: 500, lineHeight: 1.2 }}>{card.label}</span>
                 </div>
                 <div style={{ fontSize: 22, fontWeight: 700, color: card.key === 'overdue' ? '#EF4444' : '#111827' }}>{count.toLocaleString()}</div>
-              </div>
+              </button>
             )
           })}
         </div>
@@ -268,18 +425,22 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 7, border: 'none', background: '#2563EB', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
               <MI name="add" size={16} /><span>New Sample</span>
             </button>
-            <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 7, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+            <button onClick={handleExport}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 7, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
               <MI name="download" size={16} /><span>Export</span>
             </button>
             <button ref={colBtnRef} onClick={openColMenu}
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 7, border: '1px solid #D1D5DB', background: colMenuOpen ? '#F3F4F6' : '#fff', color: '#374151', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
               <MI name="view_column" size={16} /><span>Columns</span>
             </button>
-            {selected.size > 0 && (
-              <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 7, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
-                <MI name="checklist" size={16} /><span>Bulk Actions ({selected.size})</span>
-              </button>
-            )}
+            <button ref={bulkBtnRef} onClick={openBulkMenu} disabled={selected.size === 0 || bulkPending}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 7, border: '1px solid #D1D5DB', background: bulkMenuOpen ? '#F3F4F6' : '#fff', color: selected.size === 0 ? '#9CA3AF' : '#374151', fontSize: 13, fontWeight: 500, cursor: selected.size === 0 ? 'default' : 'pointer', opacity: bulkPending ? 0.6 : 1 }}>
+              <MI name="checklist" size={16} color={selected.size === 0 ? '#9CA3AF' : undefined} /><span>Bulk Actions{selected.size > 0 ? ` (${selected.size})` : ''}</span>
+            </button>
+            <button ref={savedFiltersBtnRef} onClick={openSavedFilters}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 7, border: '1px solid #D1D5DB', background: savedFiltersOpen ? '#F3F4F6' : '#fff', color: '#374151', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+              <MI name="filter_list" size={16} /><span>Saved Filters</span>
+            </button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <span style={{ fontSize: 12, color: '#6B7280' }}>
@@ -337,7 +498,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
                   const pBadge = PRIORITY_BADGE[s.priority] ?? { bg: '#F3F4F6', color: '#374151' }
                   const condColor = CONDITION_BADGE[s.condition]?.color ?? '#6B7280'
                   const tat = tatDays(s.received_date, nowMs)
-                  const isOverdue = s.expiry_date && new Date(s.expiry_date) < new Date() && !['published', 'disposed', 'rejected'].includes(s.status)
+                  const isOverdue = isOverdueSample(s)
                   const canReceive = s.status === 'registered'
                   return (
                     <tr key={s.id} style={{ borderBottom: '1px solid #F3F4F6', background: idx % 2 === 0 ? '#fff' : '#FAFAFA' }}>
@@ -432,99 +593,6 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
         {/* end scrollable */}
       </div>
 
-      {/* ── Right sidebar (its own scroll) ── */}
-      <div style={{ width: 240, flexShrink: 0, overflowY: 'auto', padding: '24px 16px 24px 0', display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-        <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #E5E7EB', padding: '14px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-          <p style={{ fontSize: 12, fontWeight: 700, color: '#374151', margin: '0 0 10px' }}>Quick Actions</p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            {[
-              { icon: 'add_circle',    label: 'New Sample',      color: '#2563EB', action: () => router.push('/dashboard/samples-overview/new') },
-              { icon: 'download',      label: 'Export Samples',  color: '#7C3AED', action: () => {} },
-              { icon: 'checklist',     label: 'Bulk Actions',    color: '#D97706', action: () => {} },
-              { icon: 'filter_list',   label: 'Saved Filters',   color: '#0154FC', action: () => {} },
-            ].map(qa => (
-              <button key={qa.label} onClick={qa.action}
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '10px 6px', borderRadius: 8, border: '1px solid #E5E7EB', background: '#F9FAFB', cursor: 'pointer' }}>
-                <MI name={qa.icon} size={20} color={qa.color} />
-                <span style={{ fontSize: 10, color: '#374151', fontWeight: 500, textAlign: 'center', lineHeight: 1.2 }}>{qa.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #E5E7EB', padding: '14px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <p style={{ fontSize: 12, fontWeight: 700, color: '#374151', margin: 0 }}>Recent Alerts</p>
-            <span style={{ fontSize: 11, color: '#2563EB', cursor: 'pointer' }}>View all</span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {stats.overdue > 0 && (
-              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                <div style={{ width: 28, height: 28, borderRadius: 6, background: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <MI name="schedule" size={14} color="#EF4444" />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <p style={{ fontSize: 11, fontWeight: 600, color: '#374151', margin: '0 0 2px' }}>{stats.overdue} samples are overdue</p>
-                  <p style={{ fontSize: 10, color: '#9CA3AF', margin: 0 }}>Requires immediate review</p>
-                </div>
-                <span style={{ fontSize: 9, background: '#FEE2E2', color: '#991B1B', borderRadius: 10, padding: '2px 6px', fontWeight: 600 }}>High</span>
-              </div>
-            )}
-            {stats.on_hold_for_qa > 0 && (
-              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                <div style={{ width: 28, height: 28, borderRadius: 6, background: '#FFF7ED', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <MI name="pause_circle" size={14} color="#F97316" />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <p style={{ fontSize: 11, fontWeight: 600, color: '#374151', margin: '0 0 2px' }}>{stats.on_hold_for_qa} on hold for QA</p>
-                  <p style={{ fontSize: 10, color: '#9CA3AF', margin: 0 }}>Awaiting quality review</p>
-                </div>
-                <span style={{ fontSize: 9, background: '#FEF3C7', color: '#92400E', borderRadius: 10, padding: '2px 6px', fontWeight: 600 }}>Medium</span>
-              </div>
-            )}
-            {stats.to_be_verified > 0 && (
-              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                <div style={{ width: 28, height: 28, borderRadius: 6, background: '#FFFBEB', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <MI name="pending_actions" size={14} color="#F59E0B" />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <p style={{ fontSize: 11, fontWeight: 600, color: '#374151', margin: '0 0 2px' }}>{stats.to_be_verified} to be verified</p>
-                  <p style={{ fontSize: 10, color: '#9CA3AF', margin: 0 }}>Pending verification step</p>
-                </div>
-                <span style={{ fontSize: 9, background: '#DBEAFE', color: '#1E40AF', borderRadius: 10, padding: '2px 6px', fontWeight: 600 }}>Info</span>
-              </div>
-            )}
-            {stats.overdue === 0 && stats.on_hold_for_qa === 0 && stats.to_be_verified === 0 && (
-              <p style={{ fontSize: 12, color: '#9CA3AF', textAlign: 'center', padding: '10px 0' }}>No active alerts</p>
-            )}
-          </div>
-        </div>
-
-        <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #E5E7EB', padding: '14px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <p style={{ fontSize: 12, fontWeight: 700, color: '#374151', margin: 0 }}>Saved Views</p>
-            <span style={{ fontSize: 11, color: '#2563EB', cursor: 'pointer' }}>View all</span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {[
-              { label: 'My Samples',           count: filtered.filter(s => s.received_by_name).length },
-              { label: 'High Priority Samples', count: filtered.filter(s => s.priority === 'high').length },
-              { label: 'Overdue Samples',       count: stats.overdue },
-              { label: 'Samples by Client',     count: samples.length },
-            ].map(v => (
-              <div key={v.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', borderRadius: 6, cursor: 'pointer', background: '#F9FAFB' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <MI name="bookmarks" size={12} color="#6B7280" />
-                  <span style={{ fontSize: 11, color: '#374151' }}>{v.label}</span>
-                </div>
-                <span style={{ fontSize: 11, fontWeight: 600, color: '#2563EB' }}>{v.count}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
       {/* ── Column chooser dropdown ── */}
       {colMenuOpen && colMenuPos && (
         <>
@@ -546,6 +614,94 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
         </>
       )}
 
+      {/* ── Bulk actions dropdown ── */}
+      {bulkMenuOpen && bulkMenuPos && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 9990 }} onClick={() => setBulkMenuOpen(false)} />
+          <div style={{ position: 'fixed', top: bulkMenuPos.top, right: bulkMenuPos.right, zIndex: 9999, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 220, padding: '8px 0', overflow: 'hidden' }}>
+            <div style={{ padding: '6px 14px 8px', borderBottom: '1px solid #F3F4F6' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', letterSpacing: '0.05em', textTransform: 'uppercase' }}>{selected.size} Selected</span>
+            </div>
+            <button onClick={() => runBulkPatch({ hold_for_qa: true })}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#374151', textAlign: 'left' }}>
+              <MI name="pause_circle" size={15} color="#F97316" /> Put On Hold for QA
+            </button>
+            <button onClick={() => runBulkPatch({ hold_for_qa: false })}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#374151', textAlign: 'left' }}>
+              <MI name="play_circle" size={15} color="#10B981" /> Release Hold
+            </button>
+            <div style={{ borderTop: '1px solid #F3F4F6', margin: '4px 0' }} />
+            {PRIORITY_OPTIONS.filter(o => o.value).map(o => (
+              <button key={o.value} onClick={() => runBulkPatch({ priority: o.value })}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#374151', textAlign: 'left' }}>
+                <MI name="flag" size={15} color={PRIORITY_BADGE[o.value]?.color ?? '#6B7280'} /> Set Priority: {o.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* ── Saved filters dropdown ── */}
+      {savedFiltersOpen && savedFiltersPos && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 9990 }} onClick={() => setSavedFiltersOpen(false)} />
+          <div style={{ position: 'fixed', top: savedFiltersPos.top, right: savedFiltersPos.right, zIndex: 9999, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 240, padding: '8px 0', overflow: 'hidden' }}>
+            <div style={{ padding: '6px 14px 8px', borderBottom: '1px solid #F3F4F6' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Saved Filters</span>
+            </div>
+            {savedFilters.length === 0 ? (
+              <p style={{ padding: '10px 14px', fontSize: 12, color: '#9CA3AF' }}>No saved filters yet.</p>
+            ) : savedFilters.map(f => (
+              <div key={f.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 6px' }}>
+                <button onClick={() => applySavedFilter(f)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, padding: '9px 8px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#374151', textAlign: 'left' }}>
+                  <MI name="bookmark" size={15} color="#2563EB" /> {f.name}
+                </button>
+                <button onClick={() => deleteSavedFilter(f.name)} title="Delete"
+                  style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 6, borderRadius: 4, color: '#9CA3AF' }}>
+                  <MI name="close" size={14} />
+                </button>
+              </div>
+            ))}
+            <div style={{ borderTop: '1px solid #F3F4F6', marginTop: 4 }}>
+              <button onClick={saveCurrentFilters}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#2563EB', fontWeight: 600, textAlign: 'left' }}>
+                <MI name="add" size={15} color="#2563EB" /> Save Current Filters
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Save filter view modal ── */}
+      {saveFilterModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div onClick={() => setSaveFilterModalOpen(false)} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)' }} />
+          <div style={{ position: 'relative', width: 360, backgroundColor: '#fff', borderRadius: 14, boxShadow: '0 12px 40px rgba(0,0,0,0.18)', padding: 20 }}>
+            <h3 className="text-sm font-semibold mb-3" style={{ color: '#111827' }}>Name this filter view</h3>
+            <input
+              autoFocus
+              value={newFilterName}
+              onChange={e => setNewFilterName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') confirmSaveFilter() }}
+              placeholder="e.g. My Overdue Samples"
+              className="w-full px-3 py-2 text-sm rounded-lg outline-none mb-4"
+              style={{ border: '1px solid #D1D5DB', color: '#111827' }}
+            />
+            <div className="flex items-center justify-end gap-2">
+              <button onClick={() => setSaveFilterModalOpen(false)}
+                style={{ fontSize: 12, fontWeight: 500, padding: '7px 16px', borderRadius: 8, border: '1px solid #E8EAF2', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button onClick={confirmSaveFilter} disabled={!newFilterName.trim()}
+                style={{ fontSize: 12, fontWeight: 600, padding: '7px 18px', borderRadius: 8, backgroundColor: '#0154FC', color: '#fff', border: 'none', cursor: newFilterName.trim() ? 'pointer' : 'not-allowed', opacity: newFilterName.trim() ? 1 : 0.5 }}>
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Action menu ── */}
       {actionMenu && (
         <>
@@ -554,8 +710,8 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
             {[
               { icon: 'visibility',     label: 'View Details',   action: () => router.push(`/dashboard/samples-overview/${actionMenu.id}`) },
               { icon: 'move_to_inbox',  label: 'Receive Sample', action: () => { router.push(`/dashboard/sample-receipts?id=${actionMenu.id}`); setActionMenu(null) } },
-              { icon: 'edit',           label: 'Edit Sample',    action: () => {} },
-              { icon: 'delete_outline', label: 'Delete',         action: () => {}, danger: true },
+              { icon: 'edit',           label: 'Edit Sample',    action: () => router.push(`/dashboard/samples-overview/${actionMenu.id}?edit=1`) },
+              { icon: 'delete_outline', label: 'Delete',         action: () => handleDeleteSample(actionMenu.id), danger: true },
             ].map(item => (
               <button key={item.label} onClick={() => { item.action(); setActionMenu(null) }}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: (item as { danger?: boolean }).danger ? '#EF4444' : '#374151', textAlign: 'left' }}>

@@ -87,3 +87,8 @@ xellabs-backend/reset_inventory.py
 backup.sh
 xellabs-backups/
 userscredential.txt
+
+# Superset Data (Do not commit)
+*.db
+imm_data/
+superset_home/

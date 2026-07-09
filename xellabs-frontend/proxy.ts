@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { decrypt } from '@/app/lib/session'
+import { decrypt, encrypt, SESSION_DURATION_MS, getSessionCookieOptions } from '@/app/lib/session-edge'
 
 const protectedRoutes = ['/dashboard']
 const publicRoutes = ['/login', '/']
@@ -22,7 +22,7 @@ function extractSubdomain(host: string): string {
   return sub
 }
 
-export async function proxy(req: NextRequest) {
+export default async function proxy(req: NextRequest) {
   const path = req.nextUrl.pathname
   const isProtected = protectedRoutes.some(r => path.startsWith(r))
   const isPublic = publicRoutes.includes(path)
@@ -48,9 +48,16 @@ export async function proxy(req: NextRequest) {
     requestHeaders.delete('x-tenant-subdomain')
   }
 
-  return NextResponse.next({
-    request: { headers: requestHeaders },
-  })
+  const response = NextResponse.next({ request: { headers: requestHeaders } })
+
+  // Sliding session: refresh the cookie on every authenticated request
+  if (isProtected && session) {
+    const expiresAt = new Date(Date.now() + SESSION_DURATION_MS)
+    const refreshed = await encrypt({ ...session, expiresAt })
+    response.cookies.set('session', refreshed, getSessionCookieOptions(expiresAt))
+  }
+
+  return response
 }
 
 export const config = {

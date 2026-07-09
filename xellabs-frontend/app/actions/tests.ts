@@ -14,6 +14,7 @@ export type LimsTest = {
   method_code: string
   is_active: boolean
   created_at: string
+  senaite_uid?: string
 }
 
 export type TestFormState = {

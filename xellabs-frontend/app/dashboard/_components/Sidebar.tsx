@@ -28,18 +28,18 @@ const NAV: NavEntry[] = [
     children: [
       { label: 'Samples Overview', href: '/dashboard/samples-overview', icon: 'list_alt',      roles: ['admin', 'lab_manager', 'receptionist', 'analyst', 'reviewer'], exact: true },
       { label: 'New Samples',      href: '/dashboard/samples-overview/new', icon: 'add_circle', roles: ['admin', 'lab_manager', 'receptionist'] },
+      { label: 'Lab Samples',      href: '/dashboard/lab-samples', icon: 'science', roles: ['admin', 'lab_manager', 'receptionist', 'analyst', 'reviewer'] },
+      { label: 'Lab Worksheets',   href: '/dashboard/lab-worksheets', icon: 'assignment', roles: ['admin', 'lab_manager', 'analyst', 'reviewer'] },
     ],
   },
-  { label: 'Analysis Requests',href: '/dashboard/analysis-requests', icon: 'assignment_turned_in',    roles: ['admin', 'lab_manager', 'analyst', 'reviewer'] },
-  { label: 'Worksheets',       href: '/dashboard/worksheets',        icon: 'table_chart',             roles: ['admin', 'lab_manager', 'analyst'] },
-  { label: 'Results',          href: '/dashboard/results',           icon: 'science',                 roles: ['admin', 'lab_manager', 'analyst', 'reviewer'] },
-  { label: 'Tasks',            href: '/dashboard/tasks',             icon: 'checklist',                roles: null },
-  // Storage & tracking
-  { label: 'Storage',          href: '/dashboard/storage',           icon: 'inventory_2',             roles: ['admin', 'lab_manager', 'analyst', 'client'] },
-  { label: 'Chain of Custody', href: '/dashboard/chain-of-custody',  icon: 'link',                    roles: ['admin', 'lab_manager', 'analyst', 'reviewer', 'client'] },
+  { label: 'Methods',           href: '/dashboard/methods',           icon: 'biotech',     roles: ['admin', 'lab_manager', 'analyst'] },
+  { label: 'Batches',           href: '/dashboard/batches',           icon: 'layers',      roles: null },
+  { label: 'Worksheet',         href: '/dashboard/worksheets',        icon: 'table_chart', roles: ['admin', 'lab_manager', 'analyst'] },
+  { label: 'Quality',           href: '/dashboard/quality',           icon: 'verified',    roles: ['admin', 'lab_manager', 'analyst', 'reviewer', 'client'] },
+  { label: 'Storage Manager',   href: '/dashboard/storage',           icon: 'inventory_2', roles: ['admin', 'lab_manager', 'analyst', 'client'] },
   // Inventory
   {
-    group: 'Inventory',
+    group: 'Instruments',
     icon: 'science',
     roles: ['admin', 'lab_manager', 'analyst'],
     children: [
@@ -48,8 +48,8 @@ const NAV: NavEntry[] = [
       { label: 'Instrument Maintenance', href: '/dashboard/instrument-maintenance', icon: 'build', roles: ['admin', 'lab_manager', 'analyst'] },
     ],
   },
-  { label: 'Quality',          href: '/dashboard/quality',           icon: 'verified',                roles: ['admin', 'lab_manager', 'analyst', 'reviewer', 'client'] },
   { label: 'Reports',          href: '/dashboard/reports',           icon: 'bar_chart',               roles: null },
+  { label: 'XELPulse',     href: '/dashboard/analytics',         icon: 'insights',                roles: ['admin', 'lab_manager', 'analyst'] },
   // Compliance
   {
     group: 'Compliance',
@@ -60,17 +60,28 @@ const NAV: NavEntry[] = [
       { label: 'Audit Trail', href: '/dashboard/audit-trail', icon: 'history', roles: ['admin', 'lab_manager'] },
     ],
   },
-  // Administration group
+  // Administration group — visibility is intentionally wide open (null) because
+  // several children below (Tasks, Results, Chain of Custody, Analysis Requests)
+  // are visible to roles (analyst/reviewer/client/receptionist) narrower than the
+  // classic admin/lab_manager set. Each child still gates itself via its own
+  // `roles` — this group-level gate must stay at least as wide as the widest child.
   {
     group: 'Administration',
     icon: 'admin_panel_settings',
-    roles: ['admin', 'lab_manager'],
+    roles: null,
     children: [
       { label: 'Users',        href: '/dashboard/admin',        icon: 'group',       roles: ['admin', 'lab_manager'] },
       { label: 'Sample Types', href: '/dashboard/sample-types', icon: 'category',   roles: ['admin', 'lab_manager'] },
-      { label: 'Methods',      href: '/dashboard/methods',      icon: 'biotech',     roles: ['admin', 'lab_manager'] },
+      { label: 'Sample Templates', href: '/dashboard/sample-templates', icon: 'view_list', roles: ['admin', 'lab_manager'] },
+      { label: 'Analysis Profiles', href: '/dashboard/analysis-profiles', icon: 'science', roles: ['admin', 'lab_manager'] },
       { label: 'Tests',        href: '/dashboard/tests',        icon: 'assignment',  roles: ['admin', 'lab_manager', 'analyst'] },
       { label: 'Specifications', href: '/dashboard/specifications', icon: 'rule',    roles: ['admin', 'lab_manager'] },
+      { label: 'Analysis Requests', href: '/dashboard/analysis-requests', icon: 'assignment_turned_in', roles: ['admin', 'lab_manager', 'analyst', 'reviewer'] },
+      { label: 'Results',      href: '/dashboard/results',      icon: 'science',     roles: ['admin', 'lab_manager', 'analyst', 'reviewer'] },
+      { label: 'Tasks',        href: '/dashboard/tasks',        icon: 'checklist',   roles: null },
+      { label: 'Chain of Custody', href: '/dashboard/chain-of-custody', icon: 'link', roles: ['admin', 'lab_manager', 'analyst', 'reviewer', 'client'] },
+      { label: 'Approvals',    href: '/dashboard/approvals',    icon: 'fact_check',  roles: ['admin', 'lab_manager', 'reviewer'] },
+      { label: 'Audit Trail',  href: '/dashboard/audit-trail',  icon: 'history',     roles: ['admin', 'lab_manager'] },
       { label: 'Master Data Import', href: '/dashboard/master-data-import', icon: 'upload_file', roles: ['admin', 'lab_manager'] },
       { label: 'Instrument List', href: '/dashboard/instrument-list', icon: 'precision_manufacturing', roles: ['admin', 'lab_manager'] },
       { label: 'Storage List', href: '/dashboard/storage-list', icon: 'inventory_2', roles: ['admin', 'lab_manager'] },
@@ -92,10 +103,14 @@ export default function Sidebar({ onToggle, role, reportDraftCount, isSuperuser 
 
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
     const open = new Set<string>()
-    if (['/dashboard/admin', '/dashboard/sample-types', '/dashboard/methods', '/dashboard/tests', '/dashboard/specifications', '/dashboard/master-data-import', '/dashboard/instrument-list', '/dashboard/storage-list', '/dashboard/settings', '/dashboard/tenant-management'].some(p => pathname.startsWith(p))) open.add('Administration')
-    if (['/dashboard/samples-overview', '/dashboard/samples/new'].some(p => pathname.startsWith(p))) open.add('Samples')
-    if (['/dashboard/inventory-items', '/dashboard/inventory-lots', '/dashboard/instrument-maintenance'].some(p => pathname.startsWith(p))) open.add('Inventory')
-    if (['/dashboard/approvals', '/dashboard/audit-trail'].some(p => pathname.startsWith(p))) open.add('Compliance')
+    if ([
+      '/dashboard/admin', '/dashboard/sample-types', '/dashboard/sample-templates', '/dashboard/analysis-profiles',
+      '/dashboard/tests', '/dashboard/specifications', '/dashboard/analysis-requests', '/dashboard/results',
+      '/dashboard/tasks', '/dashboard/chain-of-custody', '/dashboard/approvals', '/dashboard/audit-trail',
+      '/dashboard/master-data-import', '/dashboard/instrument-list', '/dashboard/storage-list', '/dashboard/settings', '/dashboard/tenant-management',
+    ].some(p => pathname.startsWith(p))) open.add('Administration')
+    if (['/dashboard/samples-overview', '/dashboard/samples/new', '/dashboard/lab-samples', '/dashboard/lab-worksheets'].some(p => pathname.startsWith(p))) open.add('Samples')
+    if (['/dashboard/inventory-items', '/dashboard/inventory-lots', '/dashboard/instrument-maintenance'].some(p => pathname.startsWith(p))) open.add('Instruments')
     return open
   })
 

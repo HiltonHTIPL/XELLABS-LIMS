@@ -1,6 +1,6 @@
 from rest_framework.routers import DefaultRouter
 from .views import (
-    SampleTypeViewSet, MethodViewSet, TestViewSet, SpecificationViewSet,
+    SampleTypeViewSet, SampleTemplateViewSet, AnalysisProfileViewSet, MethodViewSet, TestViewSet, SpecificationViewSet,
     SampleViewSet, AnalysisRequestViewSet, WorksheetViewSet,
     WorksheetAssignmentViewSet, ResultViewSet, QCSampleViewSet,
     ChainOfCustodyViewSet,
@@ -8,6 +8,8 @@ from .views import (
 
 router = DefaultRouter()
 router.register("sample-types", SampleTypeViewSet)
+router.register("sample-templates", SampleTemplateViewSet)
+router.register("analysis-profiles", AnalysisProfileViewSet)
 router.register("methods", MethodViewSet)
 router.register("tests", TestViewSet)
 router.register("specifications", SpecificationViewSet)

@@ -71,7 +71,6 @@ export default function SampleDetailClient({ sample, uid }: Props) {
       <div className="flex items-center justify-between gap-4 mb-5 flex-wrap">
         <h1 style={{ fontSize: 26, fontWeight: 800, color: T.heading, letterSpacing: '-0.02em', margin: 0 }}>Sample Detail</h1>
         <div className="flex items-center gap-2">
-          <Btn variant="outline" icon="inventory" onClick={() => setActiveTab('Overview')}>Storage History</Btn>
           <Btn variant="outline" icon="shield" onClick={() => setActiveTab('Audit Trail')}>Audit Trail</Btn>
           <Btn variant="outline" icon="print" onClick={() => window.print()}>Print</Btn>
           {canReceive && <Btn variant="success" icon="move_to_inbox" onClick={() => doAction(receiveSample)} disabled={isPending}>Receive</Btn>}
