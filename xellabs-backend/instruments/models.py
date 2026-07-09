@@ -26,6 +26,10 @@ class Instrument(models.Model):
 
     class Meta:
         db_table = "instruments"
+        indexes = [
+            models.Index(fields=["status"], name="instrument_status_idx"),
+            models.Index(fields=["next_calibration"], name="instrument_next_cal_idx"),
+        ]
 
     def __str__(self):
         return f"{self.name} ({self.instrument_id})"

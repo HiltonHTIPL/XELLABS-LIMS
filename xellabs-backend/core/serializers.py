@@ -42,8 +42,37 @@ class UserSerializer(serializers.ModelSerializer):
         return obj.get_full_name() or obj.username
 
 
+STAFF_ROLES = ['admin', 'lab_manager', 'analyst', 'reviewer', 'receptionist']
+
+
+class StaffUserSerializer(serializers.ModelSerializer):
+    """CRUD for staff accounts (admin/lab_manager/analyst/reviewer/receptionist) — excludes 'client' role,
+    which is only created as a side effect of ClientViewSet (see core/views.py ClientViewSet.perform_create)."""
+    full_name = serializers.SerializerMethodField()
+    role = serializers.ChoiceField(choices=[(r, r) for r in STAFF_ROLES])
+
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'full_name', 'role', 'is_active', 'date_joined']
+        read_only_fields = ['date_joined']
+
+    def get_full_name(self, obj):
+        return obj.get_full_name() or obj.username
+
+
 class ClientSerializer(serializers.ModelSerializer):
     tenant_detail = TenantSerializer(source='tenant', read_only=True)
+    logo_url = serializers.SerializerMethodField(read_only=True)
+
+    def get_logo_url(self, obj):
+        if obj.tenant and obj.tenant.logo:
+            request = self.context.get('request')
+            try:
+                url = obj.tenant.logo.url
+                return request.build_absolute_uri(url) if request else url
+            except Exception:
+                return None
+        return None
 
     class Meta:
         model = Client
@@ -67,5 +96,6 @@ class ClientSerializer(serializers.ModelSerializer):
             'remarks', 'senaite_uid',
             # Meta
             'tenant', 'tenant_detail', 'is_active', 'created_at', 'updated_at',
+            'logo_url',
         ]
         read_only_fields = ['created_at', 'updated_at']

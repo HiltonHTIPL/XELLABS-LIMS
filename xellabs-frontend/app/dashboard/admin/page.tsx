@@ -1,5 +1,7 @@
-import UnderDevelopment from '../_components/UnderDevelopment'
+import { getStaffUsers } from '@/app/actions/users'
+import AdminShell from './_components/AdminShell'
 
-export default function AdminPage() {
-  return <UnderDevelopment title="Administration" />
+export default async function AdminPage() {
+  const users = await getStaffUsers()
+  return <AdminShell initialUsers={users} />
 }

@@ -290,7 +290,7 @@ export const tdStyle: React.CSSProperties = {
 }
 export const linkStyle: React.CSSProperties = { color: T.primary, fontWeight: 600, textDecoration: 'none' }
 
-export function Pagination({ page, pages, onPage }: { page: number; pages: number; onPage: (p: number) => void }) {
+export function Pagination({ page, pages, onPage, showTotal, totalItems }: { page: number; pages: number; onPage: (p: number) => void; showTotal?: boolean; totalItems?: number }) {
   if (pages <= 1) return null
   const nums: number[] = []
   const start = Math.max(1, Math.min(page - 2, pages - 4))
@@ -301,22 +301,29 @@ export function Pagination({ page, pages, onPage }: { page: number; pages: numbe
     backgroundColor: 'transparent', color: T.muted,
   }
   return (
-    <div className="flex items-center gap-1">
-      <button style={circle} disabled={page <= 1} onClick={() => onPage(page - 1)}>
-        <MI name="chevron_left" size={16} color={page <= 1 ? '#D1D5DB' : T.muted} />
-      </button>
-      {nums.map(p => (
-        <button
-          key={p}
-          style={{ ...circle, backgroundColor: p === page ? T.primary : 'transparent', color: p === page ? '#fff' : T.muted }}
-          onClick={() => onPage(p)}
-        >
-          {p}
+    <div className="flex items-center gap-3">
+      {showTotal && (
+        <span style={{ fontSize: 12, color: T.muted }}>
+          Page {page} of {pages}{typeof totalItems === 'number' ? ` · ${totalItems.toLocaleString()} total` : ''}
+        </span>
+      )}
+      <div className="flex items-center gap-1">
+        <button style={circle} disabled={page <= 1} onClick={() => onPage(page - 1)}>
+          <MI name="chevron_left" size={16} color={page <= 1 ? '#D1D5DB' : T.muted} />
         </button>
-      ))}
-      <button style={circle} disabled={page >= pages} onClick={() => onPage(page + 1)}>
-        <MI name="chevron_right" size={16} color={page >= pages ? '#D1D5DB' : T.muted} />
-      </button>
+        {nums.map(p => (
+          <button
+            key={p}
+            style={{ ...circle, backgroundColor: p === page ? T.primary : 'transparent', color: p === page ? '#fff' : T.muted }}
+            onClick={() => onPage(p)}
+          >
+            {p}
+          </button>
+        ))}
+        <button style={circle} disabled={page >= pages} onClick={() => onPage(page + 1)}>
+          <MI name="chevron_right" size={16} color={page >= pages ? '#D1D5DB' : T.muted} />
+        </button>
+      </div>
     </div>
   )
 }
@@ -334,6 +341,36 @@ export function EmptyState({ icon = 'inbox', title, sub }: { icon?: string; titl
       </div>
       <p style={{ fontSize: 13.5, fontWeight: 700, color: T.heading }}>{title}</p>
       {sub && <p className="mt-1" style={{ fontSize: 12, color: T.faint }}>{sub}</p>}
+    </div>
+  )
+}
+
+/* ------------------------------------ Confirm modal ------------------------------- */
+
+export function ConfirmModal({
+  title, message, confirmLabel = 'OK', cancelLabel = 'Cancel', danger, onConfirm, onCancel,
+}: {
+  title: string; message: string; confirmLabel?: string; cancelLabel?: string
+  danger?: boolean; onConfirm: () => void; onCancel: () => void
+}) {
+  return (
+    <div
+      onClick={e => { if (e.currentTarget === e.target) onCancel() }}
+      style={{
+        position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 1000,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      <div style={{ backgroundColor: '#fff', borderRadius: 16, width: 400, boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+        <div className="px-5 pt-5 pb-4">
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: T.heading }}>{title}</h3>
+          <p className="mt-2" style={{ fontSize: 13.5, color: T.muted, lineHeight: 1.5 }}>{message}</p>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-5 pb-5">
+          <Btn variant="outline" onClick={onCancel}>{cancelLabel}</Btn>
+          <Btn variant={danger ? 'danger' : 'primary'} onClick={onConfirm}>{confirmLabel}</Btn>
+        </div>
+      </div>
     </div>
   )
 }

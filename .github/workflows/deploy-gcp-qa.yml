@@ -1,0 +1,112 @@
+name: Deploy to GCP QA
+
+on:
+  push:
+    branches: [CICD-QA, staging-development]
+  pull_request:
+    branches: [CICD-QA, staging-development]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: xellabs_lims
+          POSTGRES_USER: xellabs_user
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xellabs_user -d xellabs_lims"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        working-directory: xellabs-backend
+        run: pip install -r requirements.txt
+
+      - name: Run backend tests
+        working-directory: xellabs-backend
+        env:
+          DEBUG: "True"
+          DB_NAME: xellabs_lims
+          DB_USER: xellabs_user
+          DB_PASSWORD: test_password
+          DB_HOST: localhost
+          DB_PORT: "5432"
+          CELERY_BROKER_URL: redis://localhost:6379/0
+          CELERY_RESULT_BACKEND: redis://localhost:6379/0
+          SENAITE_URL: http://localhost:8080/senaite
+          SENAITE_USER: admin
+          SENAITE_PASSWORD: admin
+        run: python manage.py test --verbosity=2
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: xellabs-frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: xellabs-frontend
+        run: npm ci
+
+      - name: Lint frontend
+        working-directory: xellabs-frontend
+        run: npm run lint
+
+      - name: Build frontend
+        working-directory: xellabs-frontend
+        env:
+          SESSION_SECRET: ci-build-placeholder-secret-32-chars-min
+        run: npm run build
+
+  deploy:
+    needs: build-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/CICD-QA'
+    runs-on: ubuntu-latest
+    environment: CICD-QA
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.GCP_SSH_HOST }}
+          username: ${{ secrets.GCP_SSH_USER }}
+          key: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
+          port: ${{ secrets.GCP_SSH_PORT || 22 }}
+          script: |
+            set -euo pipefail
+            cd /opt/xellabs-lims
+            git fetch origin CICD-QA
+            git reset --hard origin/CICD-QA
+            docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.proxy.yml up -d --build
+            timeout 300 bash -c '
+              until [ "$(docker ps --filter name=xellabs -q | wc -l)" -ge 9 ] && \
+                    [ "$(docker ps --filter name=xellabs --filter health=unhealthy -q | wc -l)" -eq 0 ]; do
+                sleep 5
+              done
+            '
+            docker ps --filter "name=xellabs" --format "table {{.Names}}\t{{.Status}}"

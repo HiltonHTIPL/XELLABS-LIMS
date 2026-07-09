@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { createSampleWithAnalyses, type DjangoSampleType } from '@/app/actions/lab-samples'
 import { type DjangoClient } from '@/app/actions/clients'
 import { type LimsTest } from '@/app/actions/tests'
+import StorageLocationInput from '@/app/dashboard/_components/StorageLocationInput'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -53,7 +54,7 @@ type SampleForm = {
   ccEmails: string[]; batchId: string; batchSubGroup: string; sampleTemplate: string
   analysisProfiles: string[]; dateSampled: string; sampleTypeId: string
   containerType: string; preservation: string; analysisSpec: string; samplePoint: string
-  storageLocation: string; samplingDeviation: string; condition: string; priority: string
+  storageLocation: string; storageLabelCode: string; samplingDeviation: string; condition: string; priority: string
   envConditions: string; composite: boolean; internalUse: boolean; clientOrderNum: string
   clientReference: string; clientSampleId: string; remarks: string; selectedTests: LimsTest[]
 }
@@ -63,7 +64,7 @@ function blankForm(): SampleForm {
     primarySample: 'yes', clientId: '', contactName: '', ccContact: '', ccEmails: [],
     batchId: '', batchSubGroup: '', sampleTemplate: '', analysisProfiles: [],
     dateSampled: '', sampleTypeId: '', containerType: '', preservation: '',
-    analysisSpec: '', samplePoint: '', storageLocation: '', samplingDeviation: 'none',
+    analysisSpec: '', samplePoint: '', storageLocation: '', storageLabelCode: '', samplingDeviation: 'none',
     condition: 'good', priority: 'medium', envConditions: 'room_temp',
     composite: false, internalUse: false, clientOrderNum: '', clientReference: '',
     clientSampleId: '', remarks: '', selectedTests: [],
@@ -77,10 +78,13 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
   const [forms, setForms] = useState<SampleForm[]>([blankForm()])
   const [activeTab, setActiveTab] = useState(0)
   const [submitting, setSubmitting] = useState(false)
+  const [submitProgress, setSubmitProgress] = useState({ done: 0, total: 0 })
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [showAddAnalysis, setShowAddAnalysis] = useState(false)
   const [analysisSearch, setAnalysisSearch] = useState('')
+  const [attachments, setAttachments] = useState<File[]>([])
+  const nowLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)
 
   const f = forms[activeTab]
   const sampleCount = forms.length
@@ -111,6 +115,23 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
     setError('')
   }
 
+  // Submit in small concurrent batches (not all-at-once) so a large sample count
+  // doesn't burst past the API rate limit in a single instant.
+  const SUBMIT_BATCH_SIZE = 8
+  const SUBMIT_BATCH_DELAY_MS = 400
+
+  async function submitInBatches<T>(items: T[], run: (item: T) => Promise<{ success: boolean; message?: string; sample_id?: string }>) {
+    const results: Array<{ success: boolean; message?: string; sample_id?: string }> = []
+    for (let i = 0; i < items.length; i += SUBMIT_BATCH_SIZE) {
+      const batch = items.slice(i, i + SUBMIT_BATCH_SIZE)
+      const batchResults = await Promise.all(batch.map(run))
+      results.push(...batchResults)
+      setSubmitProgress({ done: results.length, total: items.length })
+      if (i + SUBMIT_BATCH_SIZE < items.length) await new Promise(r => setTimeout(r, SUBMIT_BATCH_DELAY_MS))
+    }
+    return results
+  }
+
   async function handleSubmit(asDraft = false) {
     const invalid = forms.findIndex(f => !f.clientId || !f.sampleTypeId)
     if (invalid !== -1) {
@@ -118,28 +139,27 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
       setError(`Sample ${invalid + 1}: Client and Sample Type are required.`)
       return
     }
-    setError(''); setSubmitting(true)
-    const results = await Promise.all(
-      forms.map(f =>
-        createSampleWithAnalyses(
-          {
-            client: Number(f.clientId), sample_type: Number(f.sampleTypeId),
-            priority: f.priority, condition: f.condition,
-            collection_date: f.dateSampled || undefined,
-            description: f.remarks || undefined,
-            storage_location: f.storageLocation || undefined,
-            contact_name: f.contactName || undefined, cc_contact: f.ccContact || undefined,
-            cc_emails: f.ccEmails.join(',') || undefined, batch_id: f.batchId || undefined,
-            batch_sub_group: f.batchSubGroup || undefined, container_type: f.containerType || undefined,
-            preservation: f.preservation || undefined, analysis_specification: f.analysisSpec || undefined,
-            sample_point: f.samplePoint || undefined, environmental_conditions: f.envConditions || undefined,
-            composite: f.composite, internal_use: f.internalUse,
-            client_order_number: f.clientOrderNum || undefined,
-            client_reference: f.clientReference || undefined,
-            client_sample_id: f.clientSampleId || undefined,
-          },
-          asDraft ? [] : f.selectedTests.map(t => t.id),
-        )
+    setError(''); setSubmitting(true); setSubmitProgress({ done: 0, total: forms.length })
+    const results = await submitInBatches(forms, f =>
+      createSampleWithAnalyses(
+        {
+          client: Number(f.clientId), sample_type: Number(f.sampleTypeId),
+          priority: f.priority, condition: f.condition,
+          collection_date: f.dateSampled || undefined,
+          description: f.remarks || undefined,
+          preferred_storage_location: f.storageLocation || undefined,
+          preferred_storage_label_code: f.storageLabelCode || undefined,
+          contact_name: f.contactName || undefined, cc_contact: f.ccContact || undefined,
+          cc_emails: f.ccEmails.join(',') || undefined, batch_id: f.batchId || undefined,
+          batch_sub_group: f.batchSubGroup || undefined, container_type: f.containerType || undefined,
+          preservation: f.preservation || undefined, analysis_specification: f.analysisSpec || undefined,
+          sample_point: f.samplePoint || undefined, environmental_conditions: f.envConditions || undefined,
+          composite: f.composite, internal_use: f.internalUse,
+          client_order_number: f.clientOrderNum || undefined,
+          client_reference: f.clientReference || undefined,
+          client_sample_id: f.clientSampleId || undefined,
+        },
+        asDraft ? [] : f.selectedTests.map(t => t.id),
       )
     )
     setSubmitting(false)
@@ -147,6 +167,15 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
     if (failed.length > 0) {
       setError(failed.map(r => r.message).join(' | '))
     } else {
+      // Upload attachments to the first created sample if files were added
+      const firstId = results[0]?.sample_id
+      if (firstId && attachments.length > 0) {
+        const { uploadSampleAttachment } = await import('@/app/actions/lab-samples')
+        for (const file of attachments) {
+          const fd = new FormData(); fd.append('attachment', file)
+          await uploadSampleAttachment(firstId, fd).catch(() => null)
+        }
+      }
       const ids = results.map(r => r.sample_id).filter(Boolean).join(', ')
       setSuccess(`${forms.length} sample${forms.length > 1 ? 's' : ''} logged: ${ids}`)
       setTimeout(() => router.push('/dashboard/samples-overview'), 1800)
@@ -411,7 +440,8 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
           <SectionHeader num={2} title="Sampling Details" />
           <div style={{ ...grid4, marginBottom: 16 }}>
             <div style={field}><label style={lbl}>Date Sampled *</label>
-              <input type="datetime-local" value={f.dateSampled} onChange={e => set('dateSampled', e.target.value)} style={inp} /></div>
+              <input type="datetime-local" value={f.dateSampled} max={nowLocal}
+                onChange={e => set('dateSampled', e.target.value)} style={inp} /></div>
             <div style={field}><label style={lbl}>Sample Type *</label>
               <select value={f.sampleTypeId} onChange={e => set('sampleTypeId', e.target.value)} style={{ ...inp, borderColor: !f.sampleTypeId && error ? '#EF4444' : '#D1D5DB' }}>
                 <option value="">— select —</option>
@@ -448,7 +478,14 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
             <div style={field}><label style={lbl}>Sample Point</label>
               <input value={f.samplePoint} onChange={e => set('samplePoint', e.target.value)} placeholder="e.g. Site A - Building 25" style={inp} /></div>
             <div style={field}><label style={lbl}>Storage Location</label>
-              <input value={f.storageLocation} onChange={e => set('storageLocation', e.target.value)} placeholder="e.g. Refrigerator 2" style={inp} /></div>
+              <StorageLocationInput
+                value={f.storageLocation ? { labelCode: f.storageLabelCode, display: f.storageLocation } : null}
+                onChange={sel => {
+                  setForms(prev => prev.map((form, i) => i === activeTab
+                    ? { ...form, storageLocation: sel?.display ?? '', storageLabelCode: sel?.labelCode ?? '' }
+                    : form))
+                }}
+              /></div>
             <div style={field}><label style={lbl}>Sampling Deviation</label>
               <select value={f.samplingDeviation} onChange={e => set('samplingDeviation', e.target.value)} style={inp}>
                 <option value="none">None</option>
@@ -511,13 +548,33 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
           <SectionHeader num={4} title="Additional Content" />
           <div style={grid2}>
             <div style={field}>
-              <label style={lbl}>Attachment</label>
-              <label style={{ border: '2px dashed #D1D5DB', borderRadius: 8, padding: '24px 16px', textAlign: 'center', cursor: 'pointer', background: '#FAFAFA', display: 'block' }}>
-                <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} />
-                <MI name="cloud_upload" size={32} color="#D1D5DB" />
-                <p style={{ margin: '8px 0 4px', fontSize: 13, color: '#374151' }}>Drag and drop files here<br /><span style={{ color: '#2563EB', fontWeight: 600 }}>or browse</span></p>
-                <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>Accepted files: PDF, JPG, PNG (Max 10MB each)</p>
+              <label style={lbl}>Attachments</label>
+              <label style={{ border: `2px dashed ${attachments.length ? '#2563EB' : '#D1D5DB'}`, borderRadius: 8, padding: '20px 16px', textAlign: 'center', cursor: 'pointer', background: attachments.length ? '#EFF6FF' : '#FAFAFA', display: 'block', transition: 'all 0.15s' }}>
+                <input type="file" accept=".pdf,.jpg,.jpeg,.png" multiple style={{ display: 'none' }}
+                  onChange={e => { if (e.target.files) setAttachments(prev => [...prev, ...Array.from(e.target.files!)]) }} />
+                <MI name="cloud_upload" size={28} color={attachments.length ? '#2563EB' : '#D1D5DB'} />
+                <p style={{ margin: '6px 0 3px', fontSize: 13, color: '#374151' }}>
+                  {attachments.length ? `${attachments.length} file${attachments.length > 1 ? 's' : ''} selected` : <>Drag and drop files here<br /><span style={{ color: '#2563EB', fontWeight: 600 }}>or browse</span></>}
+                </p>
+                <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>PDF, JPG, PNG · max 10 MB each</p>
               </label>
+              {attachments.length > 0 && (
+                <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {attachments.map((file, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 10px', background: '#F0F7FF', borderRadius: 6, fontSize: 12 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                        <MI name="description" size={14} color="#2563EB" />
+                        <span style={{ color: '#1D4ED8', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+                        <span style={{ color: '#9CA3AF', flexShrink: 0 }}>({(file.size / 1024).toFixed(0)} KB)</span>
+                      </div>
+                      <button type="button" onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', padding: 2 }}>
+                        <MI name="close" size={14} color="#9CA3AF" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div style={field}>
               <label style={lbl}>Remarks</label>
@@ -533,7 +590,11 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
 
         {/* Bottom actions */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, padding: '14px 0' }}>
-          <span style={{ fontSize: 12, color: '#9CA3AF' }}>* Required fields</span>
+          <span style={{ fontSize: 12, color: '#9CA3AF' }}>
+            {submitting && submitProgress.total > 1
+              ? `Logging sample ${Math.min(submitProgress.done + 1, submitProgress.total)} of ${submitProgress.total}…`
+              : '* Required fields'}
+          </span>
           <div style={{ display: 'flex', gap: 10 }}>
             <button type="button" onClick={clearActiveForm} style={{ padding: '10px 22px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#374151' }}>
               Clear Form

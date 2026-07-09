@@ -158,9 +158,9 @@ export async function fetchSenaiteSampleTypes(token: string): Promise<SenaiteSam
       uid:           (t.uid as string) ?? '',
       id:            (t.id as string) ?? '',
       title:         (t.title as string) ?? '',
-      Prefix:        (t.Prefix as string) ?? '',
-      MinimumVolume: (t.MinimumVolume as string) ?? '',
-      RetentionPeriod: (t.RetentionPeriod as Record<string, unknown>) ?? {},
+      Prefix:        (t.Prefix as string) ?? (t.prefix as string) ?? '',
+      MinimumVolume: (t.MinimumVolume as string) ?? (t.min_volume as string) ?? '',
+      RetentionPeriod: (t.RetentionPeriod as Record<string, unknown>) ?? (t.retention_period as Record<string, unknown>) ?? {},
     }))
   } catch { return [] }
 }
@@ -204,7 +204,7 @@ export async function createSenaiteSampleType(
 export async function updateSenaiteSampleType(
   token: string,
   uid: string,
-  payload: { title?: string; Prefix?: string; MinimumVolume?: string }
+  payload: { title?: string; Prefix?: string; MinimumVolume?: string; min_volume?: string }
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update`, {
@@ -219,6 +219,106 @@ export async function updateSenaiteSampleType(
     }
     return { success: true }
   } catch (e) { return { success: false, error: String(e) } }
+}
+
+// ─── Instruments & Storage Locations (read-only master data lists) ────────────
+
+export type SenaiteInstrument = {
+  uid: string
+  id: string
+  title: string
+  InstrumentType: string
+  Manufacturer: string
+  Supplier: string
+  Model: string
+  SerialNo: string
+  AssetNumber: string
+  review_state: string
+}
+
+async function fetchSenaiteTitleMap(token: string, portalType: string): Promise<Record<string, string>> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/${portalType}?complete=true&limit=1000`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return {}
+    const data = await res.json()
+    const map: Record<string, string> = {}
+    for (const item of data.items ?? []) {
+      if (item.uid) map[item.uid] = item.title ?? ''
+    }
+    return map
+  } catch { return {} }
+}
+
+export async function fetchSenaiteInstruments(token: string): Promise<SenaiteInstrument[]> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Instrument?complete=true&limit=1000&review_state=active`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    const items = (data.items ?? []) as Record<string, unknown>[]
+
+    // InstrumentType/Manufacturer/Supplier come back as {uid, url, api_url} refs, not titles.
+    const [typeMap, manufacturerMap, supplierMap] = await Promise.all([
+      fetchSenaiteTitleMap(token, 'InstrumentType'),
+      fetchSenaiteTitleMap(token, 'Manufacturer'),
+      fetchSenaiteTitleMap(token, 'Supplier'),
+    ])
+
+    const refTitle = (ref: unknown, map: Record<string, string>) => {
+      const uid = (ref as { uid?: string } | null)?.uid
+      return uid ? (map[uid] ?? '') : ''
+    }
+
+    return items.map(t => ({
+      uid:            (t.uid as string) ?? '',
+      id:             (t.id as string) ?? '',
+      title:          (t.title as string) ?? '',
+      InstrumentType: refTitle(t.InstrumentType, typeMap),
+      Manufacturer:   refTitle(t.Manufacturer, manufacturerMap),
+      Supplier:       refTitle(t.Supplier, supplierMap),
+      Model:          (t.Model as string) ?? '',
+      SerialNo:       (t.SerialNo as string) ?? '',
+      AssetNumber:    (t.AssetNumber as string) ?? '',
+      review_state:   (t.review_state as string) ?? '',
+    }))
+  } catch { return [] }
+}
+
+export type SenaiteStorageLocation = {
+  uid: string
+  id: string
+  title: string
+  description: string
+  review_state: string
+}
+
+export async function fetchSenaiteStorageLocations(token: string): Promise<SenaiteStorageLocation[]> {
+  try {
+    // No `complete=true` here: title/description/review_state/id/uid are all standard
+    // catalog brain metadata, so this stays a cheap catalog query instead of resolving
+    // (waking up) all objects, which is what was hanging this page. Single request,
+    // limit=1000 — SENAITE's jsonapi ignores an unsupported `page` param and just
+    // re-returns page 1, so looping on `page` silently duplicated results instead
+    // of paging forward; keep this as one bounded request.
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/StorageLocation?limit=1000&review_state=active`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return (data.items ?? []).map((t: Record<string, unknown>) => ({
+      uid:          (t.uid as string) ?? '',
+      id:           (t.id as string) ?? '',
+      title:        (t.title as string) ?? '',
+      description:  (t.description as string) ?? '',
+      review_state: (t.review_state as string) ?? '',
+    }))
+  } catch { return [] }
 }
 
 // ─── Analysis Services ────────────────────────────────────────────────────────

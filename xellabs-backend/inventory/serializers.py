@@ -6,7 +6,7 @@ class StorageLocationSerializer(serializers.ModelSerializer):
     class Meta:
         model = StorageLocation
         fields = "__all__"
-        read_only_fields = ('senaite_uid',)
+        read_only_fields = ('senaite_uid', 'label_code')
 
 
 class ReagentSerializer(serializers.ModelSerializer):

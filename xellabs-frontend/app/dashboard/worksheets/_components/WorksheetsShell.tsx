@@ -4,7 +4,6 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createWorksheet } from '@/app/actions/worksheets'
 import { type SenaiteWorksheet } from '@/app/lib/senaite'
-type WS = SenaiteWorksheet
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -17,7 +16,7 @@ const STATE_BADGE: Record<string, { bg: string; color: string; label: string }> 
   rejected:          { bg: '#FEE2E2', color: '#991B1B', label: 'Rejected' },
 }
 
-export default function WorksheetsShell({ initialWorksheets }: { initialWorksheets: WS[] }) {
+export default function WorksheetsShell({ initialWorksheets }: { initialWorksheets: SenaiteWorksheet[] }) {
   const router = useRouter()
   const [busy, startTransition] = useTransition()
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)

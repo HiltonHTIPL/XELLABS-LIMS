@@ -15,6 +15,13 @@ def _rank(user):
     return ROLE_HIERARCHY.get(getattr(user, "role", ""), -1)
 
 
+class IsSuperAdmin(BasePermission):
+    """Platform-level superadmin only (Django is_superuser) — tenant admins
+    (role='admin' but not superuser) are excluded. Guards tenant management."""
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.is_superuser
+
+
 class IsAdminRole(BasePermission):
     def has_permission(self, request, view):
         return request.user.is_authenticated and request.user.role == "admin"
@@ -49,3 +56,15 @@ class AuditReadOnly(BasePermission):
     """Audit trail is read-only for all users (admin can see all)."""
     def has_permission(self, request, view):
         return request.user.is_authenticated and request.method in SAFE_METHODS
+
+
+CAN_RECEIVE_OR_STORE_ROLES = {"admin", "lab_manager", "analyst", "receptionist"}
+
+
+class CanReceiveOrStoreSamples(BasePermission):
+    """Receive a sample and assign/unassign it to storage — not reviewer or client."""
+    def has_permission(self, request, view):
+        return (
+            request.user.is_authenticated
+            and getattr(request.user, "role", None) in CAN_RECEIVE_OR_STORE_ROLES
+        )

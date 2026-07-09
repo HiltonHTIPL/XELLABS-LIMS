@@ -30,6 +30,11 @@
   --font-sans: var(--font-jakarta);
 }
 
+html {
+  background: var(--background);
+  color-scheme: light;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

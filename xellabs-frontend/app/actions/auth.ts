@@ -61,14 +61,28 @@ export async function login(
 
     // Also get a Django token so the Client/Tenant API works.
     // Fall back to service token if this user doesn't exist in Django.
-    const djangoToken = await getDjangoToken(username, password)
+    const ownDjangoToken = await getDjangoToken(username, password)
+    const djangoToken = ownDjangoToken
       || process.env.DJANGO_SERVICE_TOKEN
       || ''
+
+    // Superadmin flag comes from Django, not SENAITE — only check when the
+    // user authenticated against Django with their own credentials.
+    let isSuperuser = false
+    if (ownDjangoToken) {
+      try {
+        const meRes = await djangoFetch('/api/auth/me/', {
+          headers: { Authorization: `Token ${ownDjangoToken}` },
+        })
+        if (meRes.ok) isSuperuser = Boolean((await meRes.json()).is_superuser)
+      } catch { /* non-fatal — default to false */ }
+    }
 
     await createSession({
       userId: user.userid,
       username: user.userid,
       role,
+      isSuperuser,
       djangoToken,
       senaiteToken,
       tenantSubdomain,
@@ -86,6 +100,7 @@ export async function login(
   let userProfile: {
     id: number; username: string; email: string
     first_name: string; last_name: string; role: string
+    is_superuser?: boolean
   }
 
   try {
@@ -105,6 +120,7 @@ export async function login(
     userId: String(userProfile.id),
     username: userProfile.username,
     role: userProfile.role,
+    isSuperuser: Boolean(userProfile.is_superuser),
     djangoToken,
     tenantSubdomain,
   })
