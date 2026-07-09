@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 from .models import (
-    SampleType, Method, Test, Specification,
+    SampleType, SampleTemplate, AnalysisProfile, Method, Test, Specification,
     Sample, AnalysisRequest, Worksheet, WorksheetAssignment,
     Result, QCSample, ChainOfCustody,
 )
@@ -28,6 +28,18 @@ class SampleTypeSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'prefix': {'required': True, 'allow_blank': False},
         }
+
+
+class SampleTemplateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SampleTemplate
+        fields = "__all__"
+
+
+class AnalysisProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AnalysisProfile
+        fields = "__all__"
 
 
 class MethodSerializer(serializers.ModelSerializer):

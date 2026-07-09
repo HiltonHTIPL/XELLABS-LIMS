@@ -1,6 +1,6 @@
 'use client'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import type { CSSProperties } from 'react'
 import { type LabSample, patchLabSample } from '@/app/actions/lab-samples'
@@ -209,7 +209,8 @@ function EditDrawer({ sample, onClose, onSaved }: { sample: LabSample; onClose: 
 
 export default function SampleOverviewDetail({ sample, id, analysisRequests }: { sample: LabSample | null; id: string; analysisRequests: AnalysisRequest[] }) {
   const router = useRouter()
-  const [showEdit, setShowEdit] = useState(false)
+  const searchParams = useSearchParams()
+  const [showEdit, setShowEdit] = useState(() => searchParams.get('edit') === '1')
   const [printOpen, setPrintOpen] = useState(false)
   const [templateId, setTemplateId] = useState(STICKER_TEMPLATES[0].id)
   const [copies, setCopies] = useState(1)
@@ -260,6 +261,14 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
           <button onClick={() => router.push(`/dashboard/audit-trail?sample=${sample.sample_id}`)}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             <MI name="shield" size={16} /><span>Audit Trail</span>
+          </button>
+          <button onClick={() => router.push(`/dashboard/analysis-requests?sample=${sample.id}`)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: 'none', background: '#0154FC', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            <MI name="assignment_add" size={16} color="#fff" /><span>Create Analysis Request</span>
+          </button>
+          <button onClick={() => router.push('/dashboard/results')}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            <MI name="science" size={16} /><span>View Results</span>
           </button>
           <div style={{ position: 'relative' }}>
             <button onClick={() => setPrintOpen(v => !v)}

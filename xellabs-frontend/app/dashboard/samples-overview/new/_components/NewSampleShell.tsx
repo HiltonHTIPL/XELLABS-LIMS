@@ -4,7 +4,27 @@ import { useRouter } from 'next/navigation'
 import { createSampleWithAnalyses, type DjangoSampleType } from '@/app/actions/lab-samples'
 import { type DjangoClient } from '@/app/actions/clients'
 import { type LimsTest } from '@/app/actions/tests'
+import { type SampleTemplate } from '@/app/actions/sample-templates'
 import StorageLocationInput from '@/app/dashboard/_components/StorageLocationInput'
+
+const CONTAINER_OPTIONS = [
+  { value: 'glass_tube_10ml', label: 'Glass Tube (10 mL)' },
+  { value: 'glass_tube_50ml', label: 'Glass Tube (50 mL)' },
+  { value: 'falcon_tube',     label: 'Falcon Tube (50 mL)' },
+  { value: 'cryovial',        label: 'Cryovial (2 mL)' },
+  { value: 'blood_tube',      label: 'Blood Collection Tube' },
+  { value: 'urine_cup',       label: 'Urine Cup' },
+]
+
+// Containers valid for a given template's suggested container. If the template's
+// container text doesn't match any preset option, it becomes the sole selectable
+// option (as its own value) rather than being silently dropped.
+function containerOptionsFor(templateContainer: string): { value: string; label: string }[] {
+  const needle = templateContainer.trim().toLowerCase()
+  if (!needle) return CONTAINER_OPTIONS
+  const matched = CONTAINER_OPTIONS.filter(o => o.label.toLowerCase().includes(needle) || needle.includes(o.label.toLowerCase()))
+  return matched.length ? matched : [{ value: templateContainer.trim(), label: templateContainer.trim() }]
+}
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -51,8 +71,8 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 // ── Per-sample form state type ────────────────────────────────────────────────
 type SampleForm = {
   primarySample: string; clientId: string; contactName: string; ccContact: string
-  ccEmails: string[]; batchId: string; batchSubGroup: string; sampleTemplate: string
-  analysisProfiles: string[]; dateSampled: string; sampleTypeId: string
+  ccEmails: string[]; batchId: string; batchSubGroup: string; sampleTemplateId: string
+  analysisProfiles: string[]; suggestedContainer: string; dateSampled: string; sampleTypeId: string
   containerType: string; preservation: string; analysisSpec: string; samplePoint: string
   storageLocation: string; storageLabelCode: string; samplingDeviation: string; condition: string; priority: string
   envConditions: string; composite: boolean; internalUse: boolean; clientOrderNum: string
@@ -62,7 +82,7 @@ type SampleForm = {
 function blankForm(): SampleForm {
   return {
     primarySample: 'yes', clientId: '', contactName: '', ccContact: '', ccEmails: [],
-    batchId: '', batchSubGroup: '', sampleTemplate: '', analysisProfiles: [],
+    batchId: '', batchSubGroup: '', sampleTemplateId: '', analysisProfiles: [], suggestedContainer: '',
     dateSampled: '', sampleTypeId: '', containerType: '', preservation: '',
     analysisSpec: '', samplePoint: '', storageLocation: '', storageLabelCode: '', samplingDeviation: 'none',
     condition: 'good', priority: 'medium', envConditions: 'room_temp',
@@ -71,10 +91,22 @@ function blankForm(): SampleForm {
   }
 }
 
-type Props = { sampleTypes: DjangoSampleType[]; clients: DjangoClient[]; tests: LimsTest[] }
+type Props = { sampleTypes: DjangoSampleType[]; clients: DjangoClient[]; tests: LimsTest[]; sampleTemplates: SampleTemplate[] }
 
-export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
+export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemplates }: Props) {
   const router = useRouter()
+
+  // Sample Types valid for a given template — filtered down to the one matching
+  // the template's SENAITE sample type via senaite_uid. Falls back to the full
+  // list when no template is selected (manual mode).
+  function sampleTypeOptionsFor(templateId: string): DjangoSampleType[] {
+    if (!templateId) return sampleTypes
+    const template = sampleTemplates.find(t => String(t.id) === templateId)
+    if (!template?.sample_type_uid) return sampleTypes
+    const matched = sampleTypes.filter(st => st.senaite_uid === template.sample_type_uid)
+    return matched.length ? matched : sampleTypes
+  }
+
   const [forms, setForms] = useState<SampleForm[]>([blankForm()])
   const [activeTab, setActiveTab] = useState(0)
   const [submitting, setSubmitting] = useState(false)
@@ -140,8 +172,10 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
       return
     }
     setError(''); setSubmitting(true); setSubmitProgress({ done: 0, total: forms.length })
-    const results = await submitInBatches(forms, f =>
-      createSampleWithAnalyses(
+    const results = await submitInBatches(forms, f => {
+      const client = clients.find(c => String(c.id) === f.clientId)
+      const sampleType = sampleTypes.find(st => String(st.id) === f.sampleTypeId)
+      return createSampleWithAnalyses(
         {
           client: Number(f.clientId), sample_type: Number(f.sampleTypeId),
           priority: f.priority, condition: f.condition,
@@ -158,10 +192,13 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
           client_order_number: f.clientOrderNum || undefined,
           client_reference: f.clientReference || undefined,
           client_sample_id: f.clientSampleId || undefined,
+          client_senaite_uid: client?.senaite_uid || undefined,
+          sample_type_senaite_uid: sampleType?.senaite_uid || undefined,
         },
         asDraft ? [] : f.selectedTests.map(t => t.id),
+        asDraft ? [] : f.selectedTests.map(t => t.senaite_uid).filter((u): u is string => Boolean(u)),
       )
-    )
+    })
     setSubmitting(false)
     const failed = results.filter(r => !r.success)
     if (failed.length > 0) {
@@ -209,9 +246,30 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
       ccEmails: f.ccEmails,
       batchId: f.batchId,
       batchSubGroup: f.batchSubGroup,
-      sampleTemplate: f.sampleTemplate,
+      sampleTemplateId: f.sampleTemplateId,
       analysisProfiles: f.analysisProfiles,
     }))
+  }
+
+  // Selecting a Sample Template auto-fills Sample Type, Container, and Lab Analyses
+  // (matched via each Django record's senaite_uid — see Section 19 of CLAUDE.md:
+  // never mix Django and SENAITE IDs directly).
+  function handleTemplateChange(templateId: string) {
+    const template = sampleTemplates.find(t => String(t.id) === templateId)
+    const matchedSampleType = template ? sampleTypes.find(st => st.senaite_uid === template.sample_type_uid) : undefined
+    const matchedTests = template
+      ? tests.filter(t => template.analysis_services.some(a => a.uid === t.senaite_uid))
+      : []
+    const allowedContainers = template ? containerOptionsFor(template.container) : CONTAINER_OPTIONS
+    setForms(prev => prev.map((form, i) => i === activeTab ? {
+      ...form,
+      sampleTemplateId: templateId,
+      sampleTypeId: matchedSampleType ? String(matchedSampleType.id) : form.sampleTypeId,
+      containerType: template ? (allowedContainers[0]?.value ?? '') : form.containerType,
+      suggestedContainer: template?.container ?? '',
+      analysisProfiles: template ? template.analysis_services.map(a => a.title) : form.analysisProfiles,
+      selectedTests: matchedTests.length ? matchedTests : form.selectedTests,
+    } : form))
   }
 
   function addTest(t: LimsTest) {
@@ -376,7 +434,11 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
               </div>
               <div style={grid2}>
                 <div style={field}><label style={lbl}>Sample Template</label>
-                  <input value={f.sampleTemplate} onChange={e => set('sampleTemplate', e.target.value)} placeholder="e.g. Water Sample Template" style={inp} /></div>
+                  <select value={f.sampleTemplateId} onChange={e => handleTemplateChange(e.target.value)} style={inp}>
+                    <option value="">None — configure manually</option>
+                    {sampleTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                </div>
                 <div style={field}><label style={lbl}>Analysis Profiles</label>
                   <TagInput tags={f.analysisProfiles} onAdd={v => set('analysisProfiles', [...f.analysisProfiles, v])} onRemove={v => set('analysisProfiles', f.analysisProfiles.filter(x => x !== v))} placeholder="Type profile and press Enter" /></div>
               </div>
@@ -444,19 +506,21 @@ export default function NewSampleShell({ sampleTypes, clients, tests }: Props) {
                 onChange={e => set('dateSampled', e.target.value)} style={inp} /></div>
             <div style={field}><label style={lbl}>Sample Type *</label>
               <select value={f.sampleTypeId} onChange={e => set('sampleTypeId', e.target.value)} style={{ ...inp, borderColor: !f.sampleTypeId && error ? '#EF4444' : '#D1D5DB' }}>
-                <option value="">— select —</option>
-                {sampleTypes.map(st => <option key={st.id} value={st.id}>{st.name}</option>)}
-              </select></div>
+                {!f.sampleTemplateId && <option value="">— select —</option>}
+                {sampleTypeOptionsFor(f.sampleTemplateId).map(st => <option key={st.id} value={st.id}>{st.name}</option>)}
+              </select>
+              {f.sampleTemplateId && (
+                <span style={{ fontSize: 11, color: '#9CA3AF', marginTop: 3 }}>Filtered to the type set by this template</span>
+              )}</div>
             <div style={field}><label style={lbl}>Container</label>
               <select value={f.containerType} onChange={e => set('containerType', e.target.value)} style={inp}>
-                <option value="">— select —</option>
-                <option value="glass_tube_10ml">Glass Tube (10 mL)</option>
-                <option value="glass_tube_50ml">Glass Tube (50 mL)</option>
-                <option value="falcon_tube">Falcon Tube (50 mL)</option>
-                <option value="cryovial">Cryovial (2 mL)</option>
-                <option value="blood_tube">Blood Collection Tube</option>
-                <option value="urine_cup">Urine Cup</option>
-              </select></div>
+                {!f.sampleTemplateId && <option value="">— select —</option>}
+                {(f.sampleTemplateId ? containerOptionsFor(f.suggestedContainer) : CONTAINER_OPTIONS)
+                  .map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              {f.sampleTemplateId && (
+                <span style={{ fontSize: 11, color: '#9CA3AF', marginTop: 3 }}>Filtered to containers suited for this template</span>
+              )}</div>
             <div style={field}><label style={lbl}>Preservation</label>
               <select value={f.preservation} onChange={e => set('preservation', e.target.value)} style={inp}>
                 <option value="">None</option>

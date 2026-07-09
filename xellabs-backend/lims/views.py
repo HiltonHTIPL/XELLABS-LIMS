@@ -5,12 +5,12 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from core.permissions import IsReviewerOrAbove, IsLabManagerOrAbove, CanReceiveOrStoreSamples
 from .models import (
-    SampleType, Method, Test, Specification,
+    SampleType, SampleTemplate, AnalysisProfile, Method, Test, Specification,
     Sample, AnalysisRequest, Worksheet, WorksheetAssignment,
     Result, QCSample, ChainOfCustody,
 )
 from .serializers import (
-    SampleTypeSerializer, MethodSerializer, TestSerializer, SpecificationSerializer,
+    SampleTypeSerializer, SampleTemplateSerializer, AnalysisProfileSerializer, MethodSerializer, TestSerializer, SpecificationSerializer,
     SampleSerializer, AnalysisRequestSerializer, WorksheetSerializer,
     WorksheetAssignmentSerializer, ResultSerializer, QCSampleSerializer,
     ChainOfCustodySerializer,
@@ -63,6 +63,24 @@ class SampleTypeViewSet(viewsets.ModelViewSet):
             created_names.append(name)
 
         return Response({"synced": len(created_names), "created": created_names})
+
+
+class SampleTemplateViewSet(viewsets.ModelViewSet):
+    queryset = SampleTemplate.objects.all()
+    serializer_class = SampleTemplateSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ["is_active"]
+    search_fields = ["name"]
+    ordering_fields = ["name", "created_at"]
+
+
+class AnalysisProfileViewSet(viewsets.ModelViewSet):
+    queryset = AnalysisProfile.objects.all()
+    serializer_class = AnalysisProfileSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ["is_active"]
+    search_fields = ["name"]
+    ordering_fields = ["name", "created_at"]
 
 
 class MethodViewSet(viewsets.ModelViewSet):

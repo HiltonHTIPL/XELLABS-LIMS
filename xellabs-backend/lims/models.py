@@ -17,6 +17,39 @@ class SampleType(models.Model):
         return self.name
 
 
+class SampleTemplate(models.Model):
+    name = models.CharField(max_length=200, unique=True)
+    sample_type_uid = models.CharField(max_length=100, blank=True)
+    sample_type_name = models.CharField(max_length=200, blank=True)
+    analysis_services = models.JSONField(default=list, blank=True)
+    container = models.CharField(max_length=200, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "sample_templates"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class AnalysisProfile(models.Model):
+    name = models.CharField(max_length=200, unique=True)
+    analysis_services = models.JSONField(default=list, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "analysis_profiles"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
 class Method(models.Model):
     name = models.CharField(max_length=200)
     code = models.CharField(max_length=50, unique=True)
