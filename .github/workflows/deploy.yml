@@ -28,7 +28,7 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          envs: GHCR_TOKEN,GHCR_USER,SESSION_SECRET,DJANGO_SERVICE_TOKEN,DEPLOY_DIR,BRANCH,REPO
+          envs: GHCR_TOKEN,GHCR_USER,SESSION_SECRET,DJANGO_SERVICE_TOKEN,DJANGO_SECRET_KEY,DEPLOY_DIR,BRANCH,REPO
           script: |
             set -e
 
@@ -42,10 +42,21 @@ jobs:
             git reset --hard "origin/$BRANCH"
             git remote set-url origin "https://github.com/${REPO}.git"
 
-            # Create .env on first deploy only
+            # Create .env files on first deploy only (never overwritten later)
             if [ ! -f .env ]; then
               printf 'SESSION_SECRET=%s\nDJANGO_SERVICE_TOKEN=%s\n' "$SESSION_SECRET" "$DJANGO_SERVICE_TOKEN" > .env
               chmod 600 .env
+            fi
+            if [ ! -f xellabs-backend/.env ]; then
+              {
+                printf 'DEBUG=False\n'
+                printf 'SECRET_KEY=%s\n' "$DJANGO_SECRET_KEY"
+                printf 'ALLOWED_HOSTS=localhost,127.0.0.1,django,%s\n' "$(curl -s ifconfig.me || echo '*')"
+                printf 'SECURE_SSL_REDIRECT=False\n'
+                printf 'SESSION_COOKIE_SECURE=False\n'
+                printf 'CSRF_COOKIE_SECURE=False\n'
+              } > xellabs-backend/.env
+              chmod 600 xellabs-backend/.env
             fi
 
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
@@ -57,6 +68,7 @@ jobs:
           GHCR_USER: ${{ github.actor }}
           SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
           DJANGO_SERVICE_TOKEN: ${{ secrets.DJANGO_SERVICE_TOKEN }}
+          DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
           DEPLOY_DIR: xellabs-lims-ghcr
           BRANCH: cicd/github-actions
           REPO: ${{ github.repository }}
