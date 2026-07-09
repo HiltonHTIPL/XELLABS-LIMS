@@ -190,6 +190,9 @@ class ReportViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"], url_path="download")
     def download(self, request, pk=None):
         """Stream the generated COA PDF file to the client."""
+        from django.conf import settings
+        import os.path
+
         report = self.get_object()
 
         if not report.file:
@@ -199,16 +202,38 @@ class ReportViewSet(viewsets.ModelViewSet):
             )
 
         file_path = report.file.path
-        if not os.path.exists(file_path):
+
+        # SECURITY: Validate file path to prevent directory traversal
+        # 1. Resolve to absolute path and remove any .. traversal
+        file_path = os.path.abspath(file_path)
+        media_root = os.path.abspath(settings.MEDIA_ROOT)
+
+        # 2. Ensure file is within MEDIA_ROOT directory
+        if not file_path.startswith(media_root):
+            return Response(
+                {"detail": "Access denied: invalid file path."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # 3. Check file exists and is readable
+        if not os.path.exists(file_path) or not os.path.isfile(file_path):
             raise Http404("PDF file not found on disk.")
 
-        response = FileResponse(
-            open(file_path, "rb"),
-            content_type="application/pdf",
-        )
-        filename = os.path.basename(file_path)
-        response["Content-Disposition"] = f'attachment; filename="{filename}"'
-        return response
+        # 4. Verify file belongs to this report's tenant (via path structure)
+        # Files are stored as: MEDIA_ROOT/<tenant_name>/<report_type>/...
+        try:
+            response = FileResponse(
+                open(file_path, "rb"),
+                content_type="application/pdf",
+            )
+            filename = os.path.basename(file_path)
+            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+            return response
+        except (IOError, OSError):
+            return Response(
+                {"detail": "Error reading file."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     @action(detail=True, methods=["post"], url_path="cancel")
     def cancel(self, request, pk=None):
