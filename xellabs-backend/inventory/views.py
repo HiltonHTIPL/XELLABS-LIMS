@@ -358,14 +358,20 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
         if loc.location_type == "box":
             # Retry over free slots in natural order — if a concurrent scan takes
             # the first one, fall through to the next instead of failing.
+            # Increase retry count from 5 to 10 for better concurrency handling
+            import random, time
             free_slots = list(
                 StorageLocation.objects.filter(parent=loc, location_type="box_location", is_occupied=False)
-                .order_by("pk")[:5]
+                .order_by("pk")[:10]  # Increased from 5 to 10
             )
             if not free_slots:
                 return Response({"error": f"Box {loc.name} is full."}, status=status.HTTP_400_BAD_REQUEST)
             last_err = None
-            for candidate in free_slots:
+            for attempt, candidate in enumerate(free_slots):
+                # Exponential backoff with jitter on retries (but not first attempt)
+                if attempt > 0:
+                    backoff_ms = min(2 ** attempt, 100) + random.randint(0, 10)
+                    time.sleep(backoff_ms / 1000.0)
                 slot, err = _assign_sample_to_slot(candidate, sample_id, request.user)
                 if not err:
                     return Response(self.get_serializer(slot).data)
