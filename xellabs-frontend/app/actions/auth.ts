@@ -132,3 +132,4 @@ export async function logout() {
   await deleteSession()
   redirect('/login')
 }
+
