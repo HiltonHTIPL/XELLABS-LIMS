@@ -170,6 +170,9 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
 
   const [now, setNow] = useState('')
   useEffect(() => {
+    // Client-only timestamp: starts empty so server and client render the same
+    // HTML, then fills in after mount — avoids a hydration mismatch.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setNow(new Date().toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }))
   }, [])
 
@@ -383,6 +386,9 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
           {/* Quick Actions */}
           <Card title="Quick Actions">
             <div className="grid grid-cols-2 gap-2">
+              {/* openBulkMenu reads bulkBtnRef only when clicked, never during render —
+                  the rule can't trace that through the action property. */}
+              {/* eslint-disable-next-line react-hooks/refs */}
               {[
                 { label: 'New Sample',     icon: 'add_circle',    bg: '#EFF6FF', color: T.primary,   action: () => router.push('/dashboard/samples/new') },
                 { label: 'Receive Sample', icon: 'call_received', bg: '#DBEAFE', color: T.success,   action: () => router.push('/dashboard/sample-receipts') },

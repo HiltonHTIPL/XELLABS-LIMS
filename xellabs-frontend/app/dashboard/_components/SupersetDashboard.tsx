@@ -59,9 +59,9 @@ export default function SupersetDashboard({ dashboardId }: SupersetDashboardProp
           });
           setLoading(false);
         }
-      } catch (err: any) {
+      } catch (err) {
         if (isMounted) {
-          setError(err.message || "An error occurred while loading the dashboard");
+          setError(err instanceof Error ? err.message : "An error occurred while loading the dashboard");
           console.error("Error embedding Superset dashboard:", err);
         }
       } finally {

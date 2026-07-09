@@ -18,7 +18,7 @@ export default function AnalyticsPage() {
       // Open autologin route in a new tab with the token in query params
       const nextParam = encodeURIComponent('http://localhost:8088/superset/dashboard/6/');
       window.open(`/api/superset/autologin?token=${token}&next=${nextParam}`, '_blank');
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
       alert('Could not authenticate with Superset.');
     } finally {
