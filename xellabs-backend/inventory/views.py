@@ -86,7 +86,9 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ["location_type", "parent", "is_occupied", "assigned_sample_id"]
     search_fields = ["name", "slot_id", "label_code"]
-    pagination_class = None  # return all locations in one response — client builds the tree
+    # Use default pagination (50 items/page) — for large tenants, returning 10K+ locations
+    # at once causes memory/network bloat. Client can request all pages if needed.
+    # pagination_class left unset to use REST_FRAMEWORK.DEFAULT_PAGINATION_CLASS
 
     @action(detail=False, methods=["get"], url_path="chain-of-custody")
     def chain_of_custody(self, request):

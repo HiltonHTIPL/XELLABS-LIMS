@@ -95,17 +95,17 @@ export async function resetClientPassword(
   }
 }
 
-export async function checkClientIdAvailable(clientId: string, excludeId?: number): Promise<boolean> {
+export async function checkClientIdAvailable(clientId: string, excludeId?: number): Promise<boolean | null> {
   const trimmed = clientId.trim().toUpperCase()
   if (!trimmed) return true
   try {
     const res = await djangoFetch(`/api/clients/?search=${encodeURIComponent(trimmed)}`)
-    if (!res.ok) return true // fail open — the real uniqueness check still runs server-side on submit
+    if (!res.ok) return null // Return null on API error instead of fail-open
     const data = await res.json()
     const list: DjangoClient[] = data.results ?? data
     return !list.some(c => c.client_id?.toUpperCase() === trimmed && c.id !== excludeId)
   } catch {
-    return true
+    return null // Return null on network error — UI should show validation error
   }
 }
 

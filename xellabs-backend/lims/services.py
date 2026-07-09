@@ -65,7 +65,11 @@ def check_result_against_spec(result):
     try:
         value = float(result.value)
     except (ValueError, TypeError):
-        return False  # non-numeric — cannot range-check
+        # Non-numeric values should be rejected, not silently accepted
+        raise ValueError(
+            f"Result value '{result.value}' is not numeric. "
+            "Only numeric values can be checked against specifications."
+        )
 
     wa = result.worksheet_assignment
     spec = Specification.objects.filter(

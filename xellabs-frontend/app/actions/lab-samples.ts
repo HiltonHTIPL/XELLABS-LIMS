@@ -4,8 +4,12 @@ import { djangoFetch } from '@/app/lib/django'
 import { createSenaiteSample, senaiteWorkflowAction } from '@/app/lib/senaite'
 import { getSession } from '@/app/lib/session'
 
-const SENAITE_USER = process.env.SENAITE_ADMIN_USER ?? 'admin'
-const SENAITE_PASS = process.env.SENAITE_ADMIN_PASS ?? 'admin'
+const SENAITE_USER = process.env.SENAITE_ADMIN_USER
+const SENAITE_PASS = process.env.SENAITE_ADMIN_PASS
+
+if (!SENAITE_USER || !SENAITE_PASS) {
+  throw new Error('SENAITE_ADMIN_USER and SENAITE_ADMIN_PASS env vars are required')
+}
 
 function serverToken(): string {
   return Buffer.from(`${SENAITE_USER}:${SENAITE_PASS}`).toString('base64')
@@ -141,8 +145,9 @@ export async function createSampleWithAnalyses(
         }),
       })
       if (!arRes.ok) {
-        // Sample created but AR failed — return partial success
-        return { success: true, message: `Sample ${sampleDisplayId} created. Note: analysis request could not be created.`, sample_id: sampleDisplayId }
+        const arError = await arRes.json().catch(() => ({})) as Record<string, unknown>
+        const arMsg = (arError.detail as string) ?? 'Failed to create analysis request.'
+        return { success: false, message: `Sample ${sampleDisplayId} created, but analysis request failed: ${arMsg}` }
       }
     }
 
@@ -167,15 +172,32 @@ export async function createSampleWithAnalyses(
             method: 'PATCH',
             body: JSON.stringify({ senaite_uid: result.sample.uid, senaite_ar_id: result.sample.id }),
           })
+        } else {
+          // SENAITE sync failed — log for admin review
+          console.error('[SENAITE_SYNC_FAILED]', {
+            sample_id: sampleDisplayId,
+            sample_pk: sampleId,
+            error: result.error,
+            timestamp: new Date().toISOString(),
+          })
         }
-      } catch { /* non-fatal — sample is still fully registered in Django */ }
+      } catch (e) {
+        // SENAITE sync exception — log for admin review
+        console.error('[SENAITE_SYNC_ERROR]', {
+          sample_id: sampleDisplayId,
+          sample_pk: sampleId,
+          error: String(e),
+          timestamp: new Date().toISOString(),
+        })
+      }
     }
 
     revalidatePath('/dashboard/samples-overview')
     revalidatePath('/dashboard/analysis-requests')
     return { success: true, message: `Sample ${sampleDisplayId} logged successfully.`, sample_id: sampleDisplayId }
   } catch (e) {
-    return { success: false, message: String(e) }
+    console.error('[SAMPLE_CREATE_ERROR]', e)
+    return { success: false, message: 'An unexpected error occurred. Please try again.' }
   }
 }
 

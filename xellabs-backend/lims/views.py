@@ -28,6 +28,12 @@ class SampleTypeViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["post"], url_path="sync-from-senaite")
     def sync_from_senaite(self, request):
         """Create any SENAITE sample types missing from Django. Called by the frontend on New Sample page load."""
+        # Only lab managers and admins can trigger a full sync
+        if request.user.role not in ('admin', 'lab_manager'):
+            return Response(
+                {'detail': 'Only lab managers can sync sample types from SENAITE.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
         import os, base64, requests as http_requests
         senaite_url = os.environ.get("SENAITE_URL", "http://senaite:8080/senaite")
         user = os.environ.get("SENAITE_ADMIN_USER", "admin")
@@ -52,15 +58,22 @@ class SampleTypeViewSet(viewsets.ModelViewSet):
             prefix = (st.get("Prefix") or name[:4].upper() or "XX").strip()
             if not name:
                 continue
-            # Skip if already exists by uid or name
-            if SampleType.objects.filter(senaite_uid=uid).exists():
-                continue
-            if SampleType.objects.filter(name=name).exists():
-                # Update missing uid if name matches
-                SampleType.objects.filter(name=name, senaite_uid="").update(senaite_uid=uid)
-                continue
-            SampleType.objects.create(name=name, prefix=prefix, senaite_uid=uid, is_active=True)
-            created_names.append(name)
+            # Atomic get_or_create by uid (prevents race condition)
+            if uid:
+                obj, created = SampleType.objects.get_or_create(
+                    senaite_uid=uid,
+                    defaults={"name": name, "prefix": prefix, "is_active": True}
+                )
+                if created:
+                    created_names.append(name)
+            else:
+                # No uid from SENAITE — use name as fallback (less reliable but still atomic)
+                obj, created = SampleType.objects.get_or_create(
+                    name=name,
+                    defaults={"prefix": prefix, "is_active": True}
+                )
+                if created:
+                    created_names.append(name)
 
         return Response({"synced": len(created_names), "created": created_names})
 
@@ -107,7 +120,7 @@ class SpecificationViewSet(viewsets.ModelViewSet):
 
 
 class SampleViewSet(viewsets.ModelViewSet):
-    queryset = Sample.objects.select_related("client", "sample_type", "created_by", "received_by").all()
+    queryset = Sample.objects.all()  # select_related fields are not used in stats/tat_trend endpoints
     serializer_class = SampleSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["status", "sample_type", "client", "priority", "hold_for_qa"]
@@ -135,15 +148,18 @@ class SampleViewSet(viewsets.ModelViewSet):
     def tat_trend(self, request):
         from django.utils import timezone
         import datetime
-        qs = self.get_queryset().filter(status="published", received_date__isnull=False)
+        qs = Sample.objects.filter(status="published", received_date__isnull=False)
         now = timezone.now()
         weeks = []
         for i in range(4, -1, -1):
             week_start = now - datetime.timedelta(weeks=i + 1)
             week_end = now - datetime.timedelta(weeks=i)
-            week_qs = qs.filter(received_date__gte=week_start, received_date__lt=week_end)
+            # Only fetch the two fields we need (received_date, updated_at) to avoid N+1 query
+            week_qs = qs.filter(
+                received_date__gte=week_start, received_date__lt=week_end
+            ).values('received_date', 'updated_at')
             durations = [
-                (s.updated_at - s.received_date).total_seconds() / 86400
+                (s['updated_at'] - s['received_date']).total_seconds() / 86400
                 for s in week_qs
             ]
             avg_tat = round(sum(durations) / len(durations), 1) if durations else None

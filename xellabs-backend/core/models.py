@@ -28,23 +28,31 @@ class Tenant(TenantMixin):
         return self.name
 
     def save(self, *args, **kwargs):
+        from django.db import transaction
         # Use slug as the schema name (lowercase, no spaces)
         if not self.schema_name:
             self.schema_name = self.slug
         is_new = self.pk is None
-        super().save(*args, **kwargs)
-        # Auto-register localhost and xellabs.com subdomains on first save
-        if is_new and self.schema_name != 'public':
-            from django.apps import apps
-            DomainModel = apps.get_model('core', 'Domain')
-            DomainModel.objects.get_or_create(
-                domain=f'{self.slug}.localhost',
-                defaults={'tenant': self, 'is_primary': True},
-            )
-            DomainModel.objects.get_or_create(
-                domain=f'{self.slug}.xellabs.com',
-                defaults={'tenant': self, 'is_primary': False},
-            )
+        # Wrap entire operation in transaction so if domain creation fails,
+        # the Tenant is rolled back too (prevents orphaned records)
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+            # Auto-register localhost and xellabs.com subdomains on first save
+            if is_new and self.schema_name != 'public':
+                from django.apps import apps
+                DomainModel = apps.get_model('core', 'Domain')
+                import os
+                # Only create localhost domain in development (when DEBUG=True or in local env)
+                if os.environ.get('DEBUG', 'False') == 'True':
+                    DomainModel.objects.get_or_create(
+                        domain=f'{self.slug}.localhost',
+                        defaults={'tenant': self, 'is_primary': True},
+                    )
+                # Always create xellabs.com domain
+                DomainModel.objects.get_or_create(
+                    domain=f'{self.slug}.xellabs.com',
+                    defaults={'tenant': self, 'is_primary': is_new},
+                )
 
 
 class Domain(DomainMixin):

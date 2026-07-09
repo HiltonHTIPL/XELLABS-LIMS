@@ -13,8 +13,12 @@ import {
   SenaiteAnalysisService,
 } from '@/app/lib/senaite'
 
-const SENAITE_USER = process.env.SENAITE_ADMIN_USER ?? 'admin'
-const SENAITE_PASS = process.env.SENAITE_ADMIN_PASS ?? 'admin'
+const SENAITE_USER = process.env.SENAITE_ADMIN_USER
+const SENAITE_PASS = process.env.SENAITE_ADMIN_PASS
+
+if (!SENAITE_USER || !SENAITE_PASS) {
+  throw new Error('SENAITE_ADMIN_USER and SENAITE_ADMIN_PASS env vars are required')
+}
 
 function serverToken(): string {
   return Buffer.from(`${SENAITE_USER}:${SENAITE_PASS}`).toString('base64')

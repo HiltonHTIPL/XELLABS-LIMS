@@ -60,11 +60,13 @@ export async function login(
     const role = mapSenaiteRole(user.roles)
 
     // Also get a Django token so the Client/Tenant API works.
-    // Fall back to service token if this user doesn't exist in Django.
-    const ownDjangoToken = await getDjangoToken(username, password)
-    const djangoToken = ownDjangoToken
-      || process.env.DJANGO_SERVICE_TOKEN
-      || ''
+    // IMPORTANT: Do NOT fall back to service token on auth failure — that would bypass authentication.
+    // If this user doesn't exist in Django, the login fails (user is SENAITE-only, which is not supported).
+    const djangoToken = await getDjangoToken(username, password)
+    if (!djangoToken) {
+      return { message: 'User not found in Django. Please contact an administrator.' }
+    }
+    const ownDjangoToken = djangoToken
 
     // Superadmin flag comes from Django, not SENAITE — only check when the
     // user authenticated against Django with their own credentials.
