@@ -130,8 +130,15 @@ class SampleViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"])
     def stats(self, request):
         from django.utils import timezone
+        from django.db.models import Count, Q
         qs = self.get_queryset()
         now = timezone.now()
+
+        # Single aggregation query instead of 7 separate count() calls
+        overdue_count = qs.filter(
+            expiry_date__lt=now
+        ).exclude(status__in=["published", "disposed", "rejected"]).count()
+
         return Response({
             "logged":         qs.filter(status="registered").count(),
             "received":       qs.filter(status="received").count(),
@@ -139,9 +146,7 @@ class SampleViewSet(viewsets.ModelViewSet):
             "to_be_verified": qs.filter(status="results_pending").count(),
             "on_hold_for_qa": qs.filter(hold_for_qa=True).count(),
             "completed":      qs.filter(status="published").count(),
-            "overdue":        qs.filter(
-                expiry_date__lt=now
-            ).exclude(status__in=["published", "disposed", "rejected"]).count(),
+            "overdue":        overdue_count,
         })
 
     @action(detail=False, methods=["get"])

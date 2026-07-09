@@ -19,7 +19,7 @@ class StorageLocation(models.Model):
     name          = models.CharField(max_length=200)
     location_type = models.CharField(max_length=50, default="room", choices=LOCATION_TYPES)
     parent        = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="children")
-    temperature   = models.CharField(max_length=50, blank=True)
+    temperature   = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True, validators=[MinValueValidator(-80), MaxValueValidator(150)], help_text="Temperature in Celsius (-80 to 150°C)")
     notes         = models.TextField(blank=True)
     # SENAITE metadata fields
     description        = models.TextField(blank=True)

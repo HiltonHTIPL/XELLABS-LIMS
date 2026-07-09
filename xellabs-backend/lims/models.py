@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from django.core.validators import MinValueValidator, MaxValueValidator
 
 
 class SampleType(models.Model):
@@ -83,12 +84,19 @@ class Test(models.Model):
 
 
 class Specification(models.Model):
+    OPERATOR_CHOICES = [
+        (">=", "Greater than or equal (>=)"),
+        (">", "Greater than (>)"),
+        ("<=", "Less than or equal (<=)"),
+        ("<", "Less than (<)"),
+    ]
+
     test = models.ForeignKey(Test, on_delete=models.CASCADE, related_name="specifications")
     sample_type = models.ForeignKey(SampleType, on_delete=models.CASCADE)
     min_value = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
     max_value = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
-    min_operator = models.CharField(max_length=5, default=">=")
-    max_operator = models.CharField(max_length=5, default="<=")
+    min_operator = models.CharField(max_length=5, default=">=", choices=OPERATOR_CHOICES)
+    max_operator = models.CharField(max_length=5, default="<=", choices=OPERATOR_CHOICES)
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -369,7 +377,7 @@ class ChainOfCustody(models.Model):
                                        related_name="custody_transfers_made")
     received_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
                                     on_delete=models.SET_NULL, related_name="custody_transfers_received")
-    temperature_c = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True)
+    temperature_c = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True, validators=[MinValueValidator(-80), MaxValueValidator(150)])
     condition = models.CharField(max_length=50, blank=True,
                                  choices=[("intact", "Intact"), ("damaged", "Damaged"), ("compromised", "Compromised")])
     notes = models.TextField(blank=True)

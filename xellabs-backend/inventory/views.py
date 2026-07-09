@@ -4,6 +4,7 @@ from django.utils import timezone
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
 from core.permissions import CAN_RECEIVE_OR_STORE_ROLES
 from .models import StorageLocation, Reagent, Standard, Solvent, Lot, InventoryTransaction, ExpiryAlert
@@ -80,15 +81,19 @@ def _location_path_parts(location):
     return parts
 
 
+class _StorageLocationPagination(PageNumberPagination):
+    page_size = 50
+
+
 class StorageLocationViewSet(viewsets.ModelViewSet):
     queryset = StorageLocation.objects.all()
     serializer_class = StorageLocationSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ["location_type", "parent", "is_occupied", "assigned_sample_id"]
     search_fields = ["name", "slot_id", "label_code"]
-    # Use default pagination (50 items/page) — for large tenants, returning 10K+ locations
-    # at once causes memory/network bloat. Client can request all pages if needed.
-    # pagination_class left unset to use REST_FRAMEWORK.DEFAULT_PAGINATION_CLASS
+    # Explicitly enable pagination to prevent returning 10K+ locations at once
+    # Client can request subsequent pages; tree-building should paginate server-side
+    pagination_class = _StorageLocationPagination
 
     @action(detail=False, methods=["get"], url_path="chain-of-custody")
     def chain_of_custody(self, request):
