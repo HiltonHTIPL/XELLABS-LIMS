@@ -22,11 +22,12 @@ export async function djangoFetch(
   const [session, headerStore] = await Promise.all([getSession(), headers()])
 
   // Tenant: prefer session value (reliable after login), fall back to
-  // middleware header (useful for unauthenticated requests like login itself)
+  // middleware header (useful for unauthenticated requests like login itself).
+  // Deliberately NO env/hardcoded tenant fallback — the tenant must always
+  // come from who is logged in or which subdomain was hit, never from config.
   const tenantSubdomain =
     session?.tenantSubdomain ||
     headerStore.get('x-tenant-subdomain') ||
-    process.env.DEFAULT_TENANT_SCHEMA ||
     ''
 
   const tenantHeaders: Record<string, string> = {}
