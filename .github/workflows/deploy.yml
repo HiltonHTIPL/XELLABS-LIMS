@@ -1,0 +1,62 @@
+name: Deploy to Server
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "deploy" to confirm deployment'
+        required: true
+        default: ''
+
+env:
+  DEPLOY_DIR: xellabs-lims-ghcr
+  BRANCH: cicd/github-actions
+
+jobs:
+  deploy:
+    name: Deploy to Server
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'deploy'
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: GHCR_TOKEN,GHCR_USER,SESSION_SECRET,DJANGO_SERVICE_TOKEN,DEPLOY_DIR,BRANCH,REPO
+          script: |
+            set -e
+
+            # Clone on first deploy, pull on subsequent ones (never builds anything)
+            if [ ! -d "$HOME/$DEPLOY_DIR/.git" ]; then
+              git clone -b "$BRANCH" "https://x-access-token:${GHCR_TOKEN}@github.com/${REPO}.git" "$HOME/$DEPLOY_DIR"
+            fi
+            cd "$HOME/$DEPLOY_DIR"
+            git remote set-url origin "https://x-access-token:${GHCR_TOKEN}@github.com/${REPO}.git"
+            git fetch origin "$BRANCH"
+            git reset --hard "origin/$BRANCH"
+            git remote set-url origin "https://github.com/${REPO}.git"
+
+            # Create .env on first deploy only
+            if [ ! -f .env ]; then
+              printf 'SESSION_SECRET=%s\nDJANGO_SERVICE_TOKEN=%s\n' "$SESSION_SECRET" "$DJANGO_SERVICE_TOKEN" > .env
+              chmod 600 .env
+            fi
+
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.ghcr.yml pull
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.ghcr.yml up -d
+            docker image prune -f
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          DJANGO_SERVICE_TOKEN: ${{ secrets.DJANGO_SERVICE_TOKEN }}
+          DEPLOY_DIR: xellabs-lims-ghcr
+          BRANCH: cicd/github-actions
+          REPO: ${{ github.repository }}
