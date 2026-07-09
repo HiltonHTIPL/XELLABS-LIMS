@@ -6,7 +6,7 @@ import {
   MI, T, Chip, thStyle, tdStyle, inputStyle, selectStyle, textareaStyle,
 } from '@/app/dashboard/_components/ui'
 import {
-  createQCSample, updateQCSample, deleteQCSample,
+  createQCSample, updateQCSample, deleteQCSample, reviewQCSample,
   type QCSample, type QCSampleFormState, type QCWorksheet,
 } from '@/app/actions/quality'
 import { type LimsTest } from '@/app/actions/tests'
@@ -177,6 +177,82 @@ function QCModal({
   )
 }
 
+function ReviewModal({
+  sample, onClose, onDone,
+}: {
+  sample: QCSample; onClose: () => void; onDone: (msg: string) => void
+}) {
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleReview(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setError('')
+    const formData = new FormData(e.currentTarget)
+    const notes = formData.get('review_notes') as string
+    const action = formData.get('action_type') as 'accept' | 'reanalyze'
+    if (!notes.trim()) return setError('Review notes are required.')
+    
+    setPending(true)
+    const res = await reviewQCSample(sample.id, notes, action)
+    setPending(false)
+    if (res.success) {
+      onDone(res.message)
+    } else {
+      setError(res.message)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 100 }}>
+      <div className="bg-white rounded-xl shadow-2xl flex flex-col w-[500px] overflow-hidden" style={{ maxHeight: '90vh' }}>
+        <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${T.cardBorder}` }}>
+          <div>
+            <h2 className="font-semibold text-gray-900">Administrator Review</h2>
+            <p className="text-xs text-gray-500 mt-1">Reviewing failing QC Sample {sample.qc_id}</p>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100"><MI name="close" size={18} color={T.faint} /></button>
+        </div>
+        <form onSubmit={handleReview} className="px-5 py-4 flex flex-col gap-4 overflow-y-auto">
+          <div className="p-3 rounded-lg" style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA' }}>
+            <p className="text-xs font-semibold text-red-800 flex items-center gap-1">
+              <MI name="warning" size={14} /> Failed QC Verification
+            </p>
+            <p className="text-xs text-red-700 mt-1">
+              Target: {sample.target_value} ±{sample.tolerance_percent}% | Actual: {sample.actual_value}
+            </p>
+          </div>
+
+          <Field label="Action">
+            <select name="action_type" className="w-full outline-none bg-white" style={selectStyle}>
+              <option value="accept">Review & Accept (Override)</option>
+              <option value="reanalyze">Reject & Trigger Re-analysis</option>
+            </select>
+          </Field>
+
+          <Field label="Corrective Action Notes (Required)">
+            <textarea name="review_notes" rows={4} placeholder="Enter your review notes, corrective actions, or reasons for acceptance..."
+              className="w-full outline-none bg-white resize-none" style={textareaStyle} required />
+          </Field>
+
+          {error && (
+            <div className="px-3 py-2 rounded-lg" style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#991B1B', fontSize: 12 }}>
+              {error}
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2 pt-3" style={{ borderTop: `1px solid ${T.cardBorder}` }}>
+            <Btn type="button" variant="outline" onClick={onClose} disabled={pending}>Cancel</Btn>
+            <Btn type="submit" variant="primary" icon={pending ? 'hourglass_top' : 'verified_user'} disabled={pending}>
+              {pending ? 'Submitting…' : 'Submit Review'}
+            </Btn>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 export default function QualityShell({
   initialQCSamples, tests, worksheets,
 }: { initialQCSamples: QCSample[]; tests: LimsTest[]; worksheets: QCWorksheet[] }) {
@@ -184,6 +260,7 @@ export default function QualityShell({
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<QCSample | null>(null)
   const [deleting, setDeleting] = useState<QCSample | null>(null)
+  const [reviewing, setReviewing] = useState<QCSample | null>(null)
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
   const [, startTransition] = useTransition()
   const [typeFilter, setTypeFilter] = useState('')
@@ -262,6 +339,7 @@ export default function QualityShell({
       </div>
 
       {showModal && <QCModal editing={editing} tests={tests} worksheets={worksheets} onClose={closeModal} onDone={() => handleDone(editing ? 'QC sample updated.' : 'QC sample created.')} />}
+      {reviewing && <ReviewModal sample={reviewing} onClose={() => setReviewing(null)} onDone={msg => { setReviewing(null); handleDone(msg) }} />}
       {deleting && (
         <ConfirmModal
           title="Delete QC Sample"
@@ -313,9 +391,28 @@ export default function QualityShell({
                       <td style={tdStyle}>{q.lot_number || '—'}</td>
                       <td style={tdStyle}>{q.target_value ?? '—'}</td>
                       <td style={tdStyle}>{q.actual_value ?? '—'}</td>
-                      <td style={tdStyle}><Chip tone={statusChipTone(q.status)} dot>{q.status}</Chip></td>
                       <td style={tdStyle}>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-2">
+                          <Chip tone={statusChipTone(q.status)} dot>{q.status}</Chip>
+                          {(q.status === 'failed' || q.status === 'warning') && !q.is_reviewed && (
+                             <span className="inline-flex items-center gap-1 font-semibold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-200" style={{ fontSize: 10 }}>
+                               <MI name="warning" size={10} /> Requires Review
+                             </span>
+                          )}
+                          {q.is_reviewed && (
+                             <span className="inline-flex items-center gap-1 font-medium text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200" style={{ fontSize: 10 }}>
+                               <MI name="verified_user" size={10} /> Reviewed by {q.reviewed_by_name || 'Admin'}
+                             </span>
+                          )}
+                        </div>
+                      </td>
+                      <td style={tdStyle}>
+                        <div className="flex items-center justify-end gap-1">
+                          {(q.status === 'failed' || q.status === 'warning') && !q.is_reviewed && (
+                             <button onClick={() => setReviewing(q)} className="px-2 py-1 rounded bg-red-50 hover:bg-red-100 text-red-700 flex items-center gap-1" style={{ border: '1px solid #FECACA', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>
+                               <MI name="policy" size={13} /> Review
+                             </button>
+                          )}
                           <button onClick={() => openEdit(q)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
                             <MI name="edit" size={14} color={T.faint} />
                           </button>
