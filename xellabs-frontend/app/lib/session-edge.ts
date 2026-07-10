@@ -12,7 +12,7 @@ export const SESSION_DURATION_MS = 8 * 60 * 60 * 1000
 export function getSessionCookieOptions(expiresAt: Date) {
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: process.env.COOKIE_SECURE !== "false" && process.env.NODE_ENV === "production",
     expires: expiresAt,
     sameSite: 'strict' as const,
     path: '/',
