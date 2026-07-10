@@ -109,7 +109,7 @@ This starts 6 containers:
 docker exec -it xellabs-lims-django-1 python manage.py createsuperuser
 ```
 
-Set username: `admin`, password: `Admin@1234` (or your choice).
+Set your own username and a strong password.
 
 ### Step 5 — Register public tenant (first time only, or on fresh database)
 
@@ -129,7 +129,7 @@ print('Tenant setup complete')
 
 | Service | URL | Login |
 |---|---|---|
-| **XelLabs Frontend** | http://localhost:3000 | admin / Admin@1234 |
+| **XelLabs Frontend** | http://localhost:3000 | your Django superuser login |
 | Django Admin | http://localhost:8001/admin/ | superuser |
 | Django API | http://localhost:8001/api/ | Token auth |
 | SENAITE | http://localhost:8080/senaite | set via SENAITE_ADMIN_USER / SENAITE_ADMIN_PASS |
