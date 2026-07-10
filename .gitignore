@@ -93,3 +93,7 @@ userscredential.txt
 imm_data/
 superset_home/
 SENAITE_Module_Field_Workflow_Spec.xlsx
+
+# env templates (user preference: never commit)
+.env.example
+**/.env.example
