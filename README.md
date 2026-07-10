@@ -4,6 +4,69 @@ A modern Laboratory Information Management System with a Next.js frontend, Djang
 
 ---
 
+## 🚀 Quick Setup on a New System (Path A — fresh start)
+
+Use this section when setting up on a brand-new machine from this repo. **Prerequisites:** Git + Docker Desktop (WSL2 backend on Windows).
+
+### 1. Clone and enter
+
+```bash
+git clone https://github.com/Lijishwilson-HTIPL/xelMigration.git
+cd xelMigration
+```
+
+### 2. Environment files (both examples already contain working values)
+
+```bash
+cp .env.example .env
+cp xellabs-backend/.env.example xellabs-backend/.env
+```
+
+The root `.env` already carries the platform superadmin credentials (`DJANGO_SUPERUSER_USERNAME` / `DJANGO_SUPERUSER_PASSWORD`) — the admin account is **created automatically on startup** by `manage.py ensure_superuser`. No `createsuperuser` step needed.
+
+### 3. Start everything
+
+```bash
+# Keep the xellabs-lims-* container names that all docs/commands reference:
+docker compose -p xellabs-lims up -d
+```
+
+First run builds all images — allow 10–15 minutes. Migrations run automatically.
+
+### 4. One-time database seed — public tenant + localhost domains
+
+Required once per fresh database; without it every request 404s.
+
+```bash
+docker exec xellabs-lims-django-1 python manage.py shell -c "
+from core.models import Tenant, Domain
+t, _ = Tenant.objects.get_or_create(schema_name='public', defaults={'name':'Public','slug':'public'})
+Domain.objects.get_or_create(domain='localhost', defaults={'tenant':t,'is_primary':True})
+Domain.objects.get_or_create(domain='127.0.0.1', defaults={'tenant':t,'is_primary':False})
+print('Done')"
+```
+
+### 5. Log in and create your first organisation
+
+1. Open **http://127.0.0.1:3000** (use `127.0.0.1`, not `localhost` — some machines have an IPv6 loopback quirk with Docker).
+2. Log in with the superadmin from `.env` (`admin` + `DJANGO_SUPERUSER_PASSWORD`).
+3. Go to **Administration → Tenant Management** → **New Organisation**. This provisions the tenant's schema, domains, and its admin account in one step — copy the one-time admin credentials shown.
+
+### 6. (Optional) Re-apply the SENAITE white-label rebrand
+
+A fresh SENAITE volume shows stock SENAITE branding. Scripts live in `senaite-rebrand/`; the procedure is in `CLAUDE.md` Section 16.
+
+### Verify
+
+```bash
+docker ps --filter "name=xellabs" --format "table {{.Names}}\t{{.Status}}"
+docker logs xellabs-lims-django-1 --tail 20    # look for "Superadmin 'admin' created"
+```
+
+> ⚠️ Never run `docker compose down -v` — it permanently deletes the PostgreSQL **and** SENAITE data volumes.
+
+---
+
 ## Architecture
 
 | Layer | Technology |
