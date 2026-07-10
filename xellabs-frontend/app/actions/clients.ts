@@ -16,8 +16,7 @@ export type DjangoClient = {
   id: number
   name: string
   client_id: string
-  tenant_detail?: { id: number; name: string; slug: string; schema_name: string; logo?: string | null } | null
-  logo_url?: string | null
+  tenant_detail?: { id: number; name: string; slug: string; schema_name: string } | null
   email: string
   phone: string
   fax: string
@@ -30,6 +29,7 @@ export type DjangoClient = {
   contact_phone: string
   contact_job_title: string
   contact_department: string
+  cc_emails: string
   address: string
   physical_address: SenaiteAddress | Record<string, never>
   postal_address: SenaiteAddress | Record<string, never>
@@ -95,17 +95,17 @@ export async function resetClientPassword(
   }
 }
 
-export async function checkClientIdAvailable(clientId: string, excludeId?: number): Promise<boolean> {
+export async function checkClientIdAvailable(clientId: string, excludeId?: number): Promise<boolean | null> {
   const trimmed = clientId.trim().toUpperCase()
   if (!trimmed) return true
   try {
     const res = await djangoFetch(`/api/clients/?search=${encodeURIComponent(trimmed)}`)
-    if (!res.ok) return true // fail open — the real uniqueness check still runs server-side on submit
+    if (!res.ok) return null // Return null on API error instead of fail-open
     const data = await res.json()
     const list: DjangoClient[] = data.results ?? data
     return !list.some(c => c.client_id?.toUpperCase() === trimmed && c.id !== excludeId)
   } catch {
-    return true
+    return null // Return null on network error — UI should show validation error
   }
 }
 
@@ -251,6 +251,7 @@ export async function updateClient(
     contact_first_name: g('contact_first_name'), contact_last_name: g('contact_last_name'),
     contact_email: g('contact_email'), contact_phone: g('contact_phone'),
     contact_job_title: g('contact_job_title'), contact_department: g('contact_department'),
+    cc_emails: g('cc_emails'),
     physical_address: addr(formData, 'physical'),
     postal_address:   addr(formData, 'postal'),
     billing_address:  addr(formData, 'billing'),
@@ -303,6 +304,7 @@ export async function createClient(
     contact_first_name: g('contact_first_name'), contact_last_name: g('contact_last_name'),
     contact_email: g('contact_email'), contact_phone: g('contact_phone'),
     contact_job_title: g('contact_job_title'), contact_department: g('contact_department'),
+    cc_emails: g('cc_emails'),
     physical_address: addr(formData, 'physical'),
     postal_address:   addr(formData, 'postal'),
     billing_address:  addr(formData, 'billing'),

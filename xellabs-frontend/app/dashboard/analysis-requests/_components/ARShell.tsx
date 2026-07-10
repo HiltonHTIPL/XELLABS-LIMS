@@ -1,6 +1,6 @@
 'use client'
-import { useState, useActionState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useActionState, useTransition, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createAnalysisRequest, updateARStatus, type AnalysisRequest, type ARFormState } from '@/app/actions/analysis-requests'
 import { type LabSample } from '@/app/actions/lab-samples'
 import { type LimsTest } from '@/app/actions/tests'
@@ -25,7 +25,7 @@ const STATUS_OPTIONS = [
 
 type Props = { initialARs: AnalysisRequest[]; samples: LabSample[]; tests: LimsTest[] }
 
-function ARModal({ samples, tests, onClose, onDone }: { samples: LabSample[]; tests: LimsTest[]; onClose: () => void; onDone: () => void }) {
+function ARModal({ samples, tests, onClose, onDone, preselectedSampleId }: { samples: LabSample[]; tests: LimsTest[]; onClose: () => void; onDone: () => void; preselectedSampleId?: string }) {
   const createAction = async (prev: ARFormState, fd: FormData) => {
     const result = await createAnalysisRequest(prev, fd)
     if (result.success) { onDone(); onClose() }
@@ -36,8 +36,8 @@ function ARModal({ samples, tests, onClose, onDone }: { samples: LabSample[]; te
 
   return (
     <div onClick={e => { if (e.currentTarget === e.target) onClose() }}
-      style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ backgroundColor: '#fff', borderRadius: 16, width: 520, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+      style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', zIndex: 1000 }}>
+      <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 520, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.15)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #F3F4F6' }}>
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#DBEAFE' }}>
@@ -53,7 +53,7 @@ function ARModal({ samples, tests, onClose, onDone }: { samples: LabSample[]; te
         <form action={action} className="px-5 py-4 flex flex-col gap-3">
           <div>
             <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Sample <span style={{ color: '#EF4444' }}>*</span></label>
-            <select name="sample" required className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={inputStyle(state.errors?.sample?.[0])}>
+            <select name="sample" required defaultValue={preselectedSampleId ?? ''} className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={inputStyle(state.errors?.sample?.[0])}>
               <option value="">Select sample…</option>
               {samples.map(s => <option key={s.id} value={s.id}>{s.sample_id} — {s.client_name} ({s.sample_type_name})</option>)}
             </select>
@@ -112,9 +112,15 @@ function ARModal({ samples, tests, onClose, onDone }: { samples: LabSample[]; te
 
 export default function ARShell({ initialARs, samples, tests }: Props) {
   const router = useRouter()
-  const [showModal, setShowModal] = useState(false)
+  const searchParams = useSearchParams()
+  const preselectedSampleId = searchParams.get('sample') ?? undefined
+  const [showModal, setShowModal] = useState(!!preselectedSampleId)
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
   const [busy, startTransition] = useTransition()
+
+  // Arriving via a deep link from Sample Detail (?sample=ID) opens the create
+  // modal pre-filled — otherwise a user has to re-find the sample manually.
+  useEffect(() => { if (preselectedSampleId) setShowModal(true) }, [preselectedSampleId])
 
   function handleDone() {
     setToast({ ok: true, msg: 'Analysis request created.' })
@@ -149,7 +155,15 @@ export default function ARShell({ initialARs, samples, tests }: Props) {
           {toast.msg}
         </div>
       )}
-      {showModal && <ARModal samples={samples} tests={tests} onClose={() => setShowModal(false)} onDone={handleDone} />}
+      {showModal && (
+        <ARModal
+          samples={samples}
+          tests={tests}
+          preselectedSampleId={preselectedSampleId}
+          onClose={() => { setShowModal(false); if (preselectedSampleId) router.replace('/dashboard/analysis-requests') }}
+          onDone={handleDone}
+        />
+      )}
       {initialARs.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="assignment" size={36} color="#D1D5DB" />

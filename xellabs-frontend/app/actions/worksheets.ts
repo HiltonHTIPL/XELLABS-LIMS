@@ -40,8 +40,11 @@ export async function getUnassignedAnalyses(): Promise<SenaiteAnalysis[]> {
 }
 
 export async function createWorksheet(): Promise<{ success: boolean; message: string; uid?: string; id?: string }> {
-  const session = await getSession()
-  const token = sessionToken(session)
+  // Use the service account: worksheet creation needs LabManager rights in the
+  // lab system, and a session token from a user without a matching lab-system
+  // account silently fetched an empty analysis list (auth failures return []),
+  // which surfaced as a misleading "no unassigned analyses" error.
+  const token = serverToken()
 
   // SENAITE requires at least one analysis when creating a worksheet.
   // Check before attempting creation so we can return a clear error.

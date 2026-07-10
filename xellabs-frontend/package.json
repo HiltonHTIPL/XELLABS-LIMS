@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@superset-ui/embedded-sdk": "^0.4.0",
     "bcryptjs": "^3.0.3",
     "helmet": "^8.2.0",
     "jose": "^6.2.3",

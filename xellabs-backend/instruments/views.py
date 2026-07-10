@@ -21,7 +21,12 @@ class InstrumentViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"], url_path="calibration-due")
     def calibration_due(self, request):
         """Instruments with calibration due within the next 30 days."""
-        days = int(request.query_params.get("days", 30))
+        try:
+            days = int(request.query_params.get("days", 30))
+        except (ValueError, TypeError):
+            return Response({"error": "days must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+        if days < 1 or days > 365:
+            return Response({"error": "days must be between 1 and 365"}, status=status.HTTP_400_BAD_REQUEST)
         cutoff = timezone.now().date() + timezone.timedelta(days=days)
         qs = self.get_queryset().filter(
             status="active", next_calibration__isnull=False, next_calibration__lte=cutoff
@@ -31,7 +36,12 @@ class InstrumentViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"], url_path="maintenance-due")
     def maintenance_due(self, request):
         """Instruments with maintenance due within the next 30 days."""
-        days = int(request.query_params.get("days", 30))
+        try:
+            days = int(request.query_params.get("days", 30))
+        except (ValueError, TypeError):
+            return Response({"error": "days must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+        if days < 1 or days > 365:
+            return Response({"error": "days must be between 1 and 365"}, status=status.HTTP_400_BAD_REQUEST)
         cutoff = timezone.now().date() + timezone.timedelta(days=days)
         qs = self.get_queryset().filter(
             status="active", next_maintenance__isnull=False, next_maintenance__lte=cutoff

@@ -16,7 +16,13 @@ export type QCSample = {
   status: 'pending' | 'passed' | 'failed' | 'warning'
   notes: string
   run_by: number | null
+  run_by_name: string | null
   run_at: string | null
+  reviewed_by: number | null
+  reviewed_by_name: string | null
+  reviewed_at: string | null
+  review_notes: string
+  is_reviewed: boolean
   created_at: string
   updated_at: string
 }
@@ -146,5 +152,20 @@ export async function deleteQCSample(id: number): Promise<{ success: boolean; me
     const res = await djangoFetch(`/api/lims/qc-samples/${id}/`, { method: 'DELETE' })
     revalidatePath('/dashboard/quality')
     return { success: res.ok, message: res.ok ? 'QC sample deleted.' : 'Failed to delete QC sample.' }
+  } catch (e) { return { success: false, message: String(e) } }
+}
+
+export async function reviewQCSample(id: number, reviewNotes: string, actionType: 'accept' | 'reanalyze'): Promise<{ success: boolean; message: string }> {
+  try {
+    const res = await djangoFetch(`/api/lims/qc-samples/${id}/review/`, {
+      method: 'POST',
+      body: JSON.stringify({ review_notes: reviewNotes, action_type: actionType }),
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok) {
+      return { success: false, message: extractErrorMessage(data, 'Failed to review QC sample.') }
+    }
+    revalidatePath('/dashboard/quality')
+    return { success: true, message: String(data.detail || 'QC sample signed off.') }
   } catch (e) { return { success: false, message: String(e) } }
 }

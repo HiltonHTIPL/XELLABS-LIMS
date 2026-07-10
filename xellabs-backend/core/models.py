@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django_tenants.models import TenantMixin, DomainMixin
+from django.core.validators import MinValueValidator, MaxValueValidator, RegexValidator
 
 
 class Tenant(TenantMixin):
@@ -28,23 +29,31 @@ class Tenant(TenantMixin):
         return self.name
 
     def save(self, *args, **kwargs):
+        from django.db import transaction
         # Use slug as the schema name (lowercase, no spaces)
         if not self.schema_name:
             self.schema_name = self.slug
         is_new = self.pk is None
-        super().save(*args, **kwargs)
-        # Auto-register localhost and xellabs.com subdomains on first save
-        if is_new and self.schema_name != 'public':
-            from django.apps import apps
-            DomainModel = apps.get_model('core', 'Domain')
-            DomainModel.objects.get_or_create(
-                domain=f'{self.slug}.localhost',
-                defaults={'tenant': self, 'is_primary': True},
-            )
-            DomainModel.objects.get_or_create(
-                domain=f'{self.slug}.xellabs.com',
-                defaults={'tenant': self, 'is_primary': False},
-            )
+        # Wrap entire operation in transaction so if domain creation fails,
+        # the Tenant is rolled back too (prevents orphaned records)
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+            # Auto-register localhost and xellabs.com subdomains on first save
+            if is_new and self.schema_name != 'public':
+                from django.apps import apps
+                DomainModel = apps.get_model('core', 'Domain')
+                import os
+                # Only create localhost domain in development (when DEBUG=True or in local env)
+                if os.environ.get('DEBUG', 'False') == 'True':
+                    DomainModel.objects.get_or_create(
+                        domain=f'{self.slug}.localhost',
+                        defaults={'tenant': self, 'is_primary': True},
+                    )
+                # Always create xellabs.com domain
+                DomainModel.objects.get_or_create(
+                    domain=f'{self.slug}.xellabs.com',
+                    defaults={'tenant': self, 'is_primary': is_new},
+                )
 
 
 class Domain(DomainMixin):
@@ -101,9 +110,9 @@ class Client(models.Model):
 
     # ── Organisation contact ──────────────────────────────────────────────────
     email = models.EmailField(blank=True)                  # SENAITE: EmailAddress
-    phone = models.CharField(max_length=30, blank=True)   # SENAITE: Phone
-    fax = models.CharField(max_length=30, blank=True)     # SENAITE: Fax
-    mobile = models.CharField(max_length=30, blank=True)  # SENAITE: MobilePhone
+    phone = models.CharField(max_length=30, blank=True, validators=[RegexValidator(r'^[\d\s\-\+\(\)]*$', 'Enter a valid phone number.')])   # SENAITE: Phone
+    fax = models.CharField(max_length=30, blank=True, validators=[RegexValidator(r'^[\d\s\-\+\(\)]*$', 'Enter a valid fax number.')])     # SENAITE: Fax
+    mobile = models.CharField(max_length=30, blank=True, validators=[RegexValidator(r'^[\d\s\-\+\(\)]*$', 'Enter a valid mobile number.')])  # SENAITE: MobilePhone
 
     # ── Primary contact person ────────────────────────────────────────────────
     contact_person = models.CharField(max_length=100, blank=True)   # legacy full name
@@ -111,9 +120,10 @@ class Client(models.Model):
     contact_first_name = models.CharField(max_length=100, blank=True)   # SENAITE: Firstname
     contact_last_name = models.CharField(max_length=100, blank=True)    # SENAITE: Surname
     contact_email = models.EmailField(blank=True)                        # SENAITE: contact EmailAddress
-    contact_phone = models.CharField(max_length=30, blank=True)          # SENAITE: contact Phone
+    contact_phone = models.CharField(max_length=30, blank=True, validators=[RegexValidator(r'^[\d\s\-\+\(\)]*$', 'Enter a valid phone number.')])  # SENAITE: contact Phone
     contact_job_title = models.CharField(max_length=100, blank=True)     # SENAITE: JobTitle
     contact_department = models.CharField(max_length=100, blank=True)    # SENAITE: Department
+    cc_emails = models.TextField(blank=True)                             # SENAITE: CCEmails (comma-separated)
 
     # ── Addresses (each mirrors SENAITE's address dict schema) ────────────────
     # Expected shape: {"address": "", "city": "", "state": "", "zip": "", "country": ""}
@@ -130,8 +140,8 @@ class Client(models.Model):
     swift_code = models.CharField(max_length=20, blank=True)        # SENAITE: SWIFTcode
     iban = models.CharField(max_length=50, blank=True)              # SENAITE: IBAN
     nib = models.CharField(max_length=50, blank=True)               # SENAITE: NIB
-    bulk_discount = models.DecimalField(max_digits=5, decimal_places=2, default=0)    # SENAITE: BulkDiscount
-    member_discount = models.DecimalField(max_digits=5, decimal_places=2, default=0)  # SENAITE: MemberDiscount
+    bulk_discount = models.DecimalField(max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0), MaxValueValidator(100)])    # SENAITE: BulkDiscount (0-100%)
+    member_discount = models.DecimalField(max_digits=5, decimal_places=2, default=0, validators=[MinValueValidator(0), MaxValueValidator(100)])  # SENAITE: MemberDiscount (0-100%)
 
     # ── Notes & SENAITE sync ──────────────────────────────────────────────────
     remarks = models.TextField(blank=True)                          # SENAITE: Remarks

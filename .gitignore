@@ -87,3 +87,17 @@ xellabs-backend/reset_inventory.py
 backup.sh
 xellabs-backups/
 userscredential.txt
+
+# Superset Data (Do not commit)
+*.db
+imm_data/
+superset_home/
+SENAITE_Module_Field_Workflow_Spec.xlsx
+
+# env templates (user preference: never commit)
+.env.example
+**/.env.example
+
+# scripts/templates with embedded credentials (kept locally only)
+senaite-rebrand/rebrand.py
+senaite-rebrand/fix_title_full2.py

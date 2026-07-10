@@ -1,0 +1,22 @@
+name: xellabs-lims-ghcr
+
+services:
+  postgres:
+    ports: !override
+      - "127.0.0.1:15433:5432"
+
+  redis:
+    ports: !override
+      - "127.0.0.1:6380:6379"
+
+  django:
+    ports: !override
+      - "0.0.0.0:8002:8001"
+
+  senaite:
+    ports: !override
+      - "0.0.0.0:8081:8080"
+
+  frontend:
+    ports: !override
+      - "3001:3000"

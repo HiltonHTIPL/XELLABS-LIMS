@@ -1,7 +1,21 @@
 import { getSession } from '@/app/lib/session'
 import { redirect } from 'next/navigation'
 import DashboardShell from './_components/DashboardShell'
+import SessionRefresher from './_components/SessionRefresher'
 import { getReportDraftCount } from '@/app/actions/reports'
+import { getOpenTasks } from '@/app/actions/tasks'
+import { type EnvLabel } from '@/app/lib/envOverride'
+
+// Resolved server-side at request time — NOT baked into the client bundle at
+// build time (a client component reading NEXT_PUBLIC_* gets the build-time
+// value, which is why the badge used to show PRODUCTION in dev containers).
+function runtimeEnvLabel(): EnvLabel {
+  const env = (process.env.APP_ENV ?? process.env.NEXT_PUBLIC_APP_ENV ?? 'development').toLowerCase()
+  if (env === 'production') return 'Production'
+  if (env === 'qa') return 'QA'
+  if (env === 'staging') return 'Staging'
+  return 'Development'
+}
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession()
@@ -18,11 +32,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ')
 
-  const reportDraftCount = await getReportDraftCount()
+  const [reportDraftCount, openTasks] = await Promise.all([
+    getReportDraftCount(),
+    getOpenTasks(),
+  ])
 
   return (
     <div className="flex flex-col h-screen overflow-hidden" style={{ backgroundColor: '#F7F8FC' }}>
-      <DashboardShell initials={initials} displayName={displayName} roleLabel={roleLabel} role={session.role} reportDraftCount={reportDraftCount} isSuperuser={Boolean(session.isSuperuser)}>
+      <SessionRefresher />
+      <DashboardShell initials={initials} displayName={displayName} roleLabel={roleLabel} role={session.role} reportDraftCount={reportDraftCount} isSuperuser={Boolean(session.isSuperuser)} serverEnvLabel={runtimeEnvLabel()} notifications={openTasks}>
         {children}
       </DashboardShell>
 

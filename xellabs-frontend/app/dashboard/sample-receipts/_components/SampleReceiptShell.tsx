@@ -113,8 +113,15 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
       : null
   )
 
+  // Reopen mode: a sample that is no longer 'registered' has already been
+  // received — show its recorded receipt details read-only instead of the form.
+  const alreadyReceived = !!sample && sample.status !== 'registered'
+  const tatDays = sample?.received_date
+    ? Math.max(0, Math.round((Date.now() - new Date(sample.received_date).getTime()) / 86400000))
+    : null
+
   async function handleReceive() {
-    if (!sample) return
+    if (!sample || alreadyReceived) return
     setSubmitting(true)
     setError('')
     const result = await receiveLabSample(sample.id, {
@@ -155,7 +162,7 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
     setTimeout(() => router.push('/dashboard/lab-samples'), 1500)
   }
 
-  const canSubmit = !!sample && !submitting && !success
+  const canSubmit = !!sample && !submitting && !success && !alreadyReceived
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 272px', gap: 0, minHeight: '100%', backgroundColor: '#F7F8FC' }}>
@@ -166,7 +173,11 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em', margin: 0 }}>Sample Receipt</h1>
             <p style={{ fontSize: 12, color: '#9CA3AF', marginTop: 3 }}>
-              {sample ? `Receiving sample ${sample.sample_id}` : 'Select a registered sample from Samples Overview to begin.'}
+              {sample
+                ? alreadyReceived
+                  ? `Receipt record for sample ${sample.sample_id}`
+                  : `Receiving sample ${sample.sample_id}`
+                : 'Select a registered sample from Samples Overview to begin.'}
             </p>
           </div>
         </div>
@@ -191,7 +202,13 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
         )}
         {hasId && !sample && (
           <div className="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#B91C1C' }}>
-            <MI name="error_outline" size={14} color="#EF4444" /> Sample not found or already received.
+            <MI name="error_outline" size={14} color="#EF4444" /> Sample not found.
+          </div>
+        )}
+        {alreadyReceived && (
+          <div className="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#EFF6FF', border: '1px solid #93C5FD', color: '#1E40AF' }}>
+            <MI name="info" size={14} color="#2563EB" />
+            This sample has already been received{sample?.received_date ? ` on ${new Date(sample.received_date).toLocaleDateString('en-GB', { timeZone: 'UTC' })}` : ''} — the recorded details are shown read-only below.
           </div>
         )}
 
@@ -208,6 +225,14 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
             <LabelInput label="Sample ID" readOnly value={sample?.sample_id ?? '—'} />
             <LabelInput label="Client" readOnly value={sample?.client_name ?? '—'} />
             <LabelInput label="Sample Type" readOnly value={sample?.sample_type_name ?? '—'} />
+          </div>
+
+          {/* Row 1b — receipt/turnaround details */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 14, marginBottom: 14 }}>
+            <LabelInput label="Received On" readOnly value={sample?.received_date ? new Date(sample.received_date).toLocaleDateString('en-GB', { timeZone: 'UTC' }) : '—'} />
+            <LabelInput label="Due Date" readOnly value={sample?.expiry_date ? new Date(sample.expiry_date).toLocaleDateString('en-GB', { timeZone: 'UTC' }) : '—'} />
+            <LabelInput label="Received By" readOnly value={sample?.received_by_name || '—'} />
+            <LabelInput label="TAT (Days)" readOnly value={tatDays !== null ? String(tatDays) : '—'} />
           </div>
 
           {/* Row 2 */}

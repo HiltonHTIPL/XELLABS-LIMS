@@ -73,7 +73,10 @@ export async function createAnalysisRequest(_state: ARFormState, formData: FormD
     }
     revalidatePath('/dashboard/analysis-requests')
     return { success: true, message: `Analysis request ${data.ar_id} created.` }
-  } catch (e) { return { message: String(e) } }
+  } catch (e) {
+    console.error('[AR_CREATE_ERROR]', e)
+    return { message: 'An unexpected error occurred. Please try again.' }
+  }
 }
 
 export async function updateARStatus(id: number, status: string): Promise<{ success: boolean; message: string }> {
@@ -89,5 +92,8 @@ export async function updateARStatus(id: number, status: string): Promise<{ succ
     }
     revalidatePath('/dashboard/analysis-requests')
     return { success: true, message: 'Status updated.' }
-  } catch (e) { return { success: false, message: String(e) } }
+  } catch (e) {
+    console.error('[AR_UPDATE_ERROR]', e)
+    return { success: false, message: 'An unexpected error occurred. Please try again.' }
+  }
 }

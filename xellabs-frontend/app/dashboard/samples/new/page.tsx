@@ -1,12 +1,16 @@
 import { getSampleTypes, getAnalysisServices } from '@/app/actions/samples'
 import { getClients } from '@/app/actions/clients'
+import { getSampleTemplates } from '@/app/actions/sample-templates'
+import { getAnalysisProfiles } from '@/app/actions/analysis-profiles'
 import NewSamplePage from './_components/NewSamplePage'
 
 export default async function NewSamplePageServer() {
-  const [clients, sampleTypes, analysisServices] = await Promise.all([
+  const [clients, sampleTypes, analysisServices, sampleTemplates, analysisProfiles] = await Promise.all([
     getClients(),
     getSampleTypes(),
     getAnalysisServices(),
+    getSampleTemplates(),
+    getAnalysisProfiles(),
   ])
 
   const clientOptions = clients
@@ -18,6 +22,8 @@ export default async function NewSamplePageServer() {
       clients={clientOptions}
       sampleTypes={sampleTypes}
       analysisServices={analysisServices}
+      sampleTemplates={sampleTemplates}
+      analysisProfiles={analysisProfiles}
     />
   )
 }

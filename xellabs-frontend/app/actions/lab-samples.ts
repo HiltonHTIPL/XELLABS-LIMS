@@ -1,11 +1,30 @@
 'use server'
 import { revalidatePath } from 'next/cache'
 import { djangoFetch } from '@/app/lib/django'
+import { createSenaiteSample, updateSenaiteSample, senaiteWorkflowAction } from '@/app/lib/senaite'
+import { getSession } from '@/app/lib/session'
+
+const SENAITE_USER = process.env.SENAITE_ADMIN_USER
+const SENAITE_PASS = process.env.SENAITE_ADMIN_PASS
+
+if (!SENAITE_USER || !SENAITE_PASS) {
+  throw new Error('SENAITE_ADMIN_USER and SENAITE_ADMIN_PASS env vars are required')
+}
+
+function serverToken(): string {
+  return Buffer.from(`${SENAITE_USER}:${SENAITE_PASS}`).toString('base64')
+}
+
+async function senaiteToken(): Promise<string> {
+  const session = await getSession()
+  return session?.senaiteToken ?? serverToken()
+}
 
 export type DjangoSampleType = {
   id: number
   name: string
   prefix: string
+  senaite_uid?: string
 }
 
 export async function getDjangoSampleTypes(): Promise<DjangoSampleType[]> {
@@ -38,6 +57,7 @@ export type LabSample = {
   barcode: string
   is_locked: boolean
   received_by_name: string
+  attachment?: string | null
   created_at: string
   // Extended intake fields
   contact_name: string
@@ -82,17 +102,60 @@ export type NewSamplePayload = {
   client_order_number?: string
   client_reference?: string
   client_sample_id?: string
+  client_senaite_uid?: string
+  sample_type_senaite_uid?: string
+}
+
+function senaitePriority(priority: string): string {
+  if (priority === 'high') return '2'
+  if (priority === 'low') return '4'
+  return '3'
 }
 
 export async function createSampleWithAnalyses(
   payload: NewSamplePayload,
   testIds: number[],
-): Promise<{ success: boolean; message: string; sample_id?: string }> {
+  testSenaiteUids: string[] = [],
+): Promise<{ success: boolean; message: string; sample_id?: string; id?: number }> {
   try {
-    // Step 1: Create the sample
+    // ── SENAITE is the source of truth for samples ────────────────────────────
+    // Step 1: create the sample in SENAITE FIRST. If SENAITE rejects it (or the
+    // client/sample type isn't linked to the lab system), registration fails —
+    // no orphan Django-only samples are ever created.
+    if (!payload.client_senaite_uid) {
+      return { success: false, message: 'This client is not linked to the lab system yet — open the Clients page and sync it first.' }
+    }
+    if (!payload.sample_type_senaite_uid) {
+      return { success: false, message: 'This sample type is not linked to the lab system yet — re-open this page to trigger a sample type sync, or recreate it under Sample Types.' }
+    }
+
+    const token = await senaiteToken()
+    const senaiteResult = await createSenaiteSample(token, {
+      Client: payload.client_senaite_uid,
+      SampleType: payload.sample_type_senaite_uid,
+      DateSampled: payload.collection_date ?? new Date().toISOString(),
+      ...(testSenaiteUids.length > 0 ? { Analyses: testSenaiteUids } : {}),
+      Priority: senaitePriority(payload.priority),
+      ...(payload.client_sample_id ? { ClientSampleID: payload.client_sample_id } : {}),
+    })
+    if (!senaiteResult.success || !senaiteResult.sample) {
+      return { success: false, message: `The lab system rejected the sample: ${senaiteResult.error ?? 'unknown error'}` }
+    }
+
+    // Step 2: create the Django mirror row (receipt workflow, chain of custody,
+    // audit trail, storage and dashboards all hang off this) — already linked to
+    // the SENAITE record via senaite_uid at insert time.
     const sampleRes = await djangoFetch('/api/lims/samples/', {
       method: 'POST',
-      body: JSON.stringify({ ...payload, status: 'registered', is_active: true }),
+      body: JSON.stringify({
+        ...payload,
+        client_senaite_uid: undefined,
+        sample_type_senaite_uid: undefined,
+        status: 'registered',
+        is_active: true,
+        senaite_uid: senaiteResult.sample.uid,
+        senaite_ar_id: senaiteResult.sample.id,
+      }),
     })
     const sampleData = await sampleRes.json().catch(() => ({})) as Record<string, unknown>
     if (!sampleRes.ok) {
@@ -100,12 +163,16 @@ export async function createSampleWithAnalyses(
         ?? (sampleData.sample_type as string[])?.[0]
         ?? (sampleData.detail as string)
         ?? 'Failed to create sample.'
-      return { success: false, message: msg }
+      // The sample exists in the source of truth but the mirror failed — tell the
+      // user exactly what happened; the periodic pull-sync will not invent the
+      // mirror row, so this needs surfacing, not swallowing.
+      console.error('[MIRROR_CREATE_FAILED]', { senaite_id: senaiteResult.sample.id, error: msg })
+      return { success: false, message: `Sample ${senaiteResult.sample.id} was created in the lab system, but the local mirror failed: ${msg}` }
     }
     const sampleId = sampleData.id as number
     const sampleDisplayId = sampleData.sample_id as string
 
-    // Step 2: Create analysis request if tests selected
+    // Step 3: Django analysis-request record if tests selected
     if (testIds.length > 0) {
       const arRes = await djangoFetch('/api/lims/analysis-requests/', {
         method: 'POST',
@@ -117,16 +184,18 @@ export async function createSampleWithAnalyses(
         }),
       })
       if (!arRes.ok) {
-        // Sample created but AR failed — return partial success
-        return { success: true, message: `Sample ${sampleDisplayId} created. Note: analysis request could not be created.`, sample_id: sampleDisplayId }
+        const arError = await arRes.json().catch(() => ({})) as Record<string, unknown>
+        const arMsg = (arError.detail as string) ?? 'Failed to create analysis request.'
+        return { success: false, message: `Sample ${sampleDisplayId} created, but analysis request failed: ${arMsg}` }
       }
     }
 
     revalidatePath('/dashboard/samples-overview')
     revalidatePath('/dashboard/analysis-requests')
-    return { success: true, message: `Sample ${sampleDisplayId} logged successfully.`, sample_id: sampleDisplayId }
+    return { success: true, message: `Sample ${sampleDisplayId} logged successfully.`, sample_id: sampleDisplayId, id: sampleId }
   } catch (e) {
-    return { success: false, message: String(e) }
+    console.error('[SAMPLE_CREATE_ERROR]', e)
+    return { success: false, message: 'An unexpected error occurred. Please try again.' }
   }
 }
 
@@ -152,6 +221,8 @@ export type LabSampleFormState = {
   success?: boolean
   message?: string
   errors?: Record<string, string[]>
+  /** Numeric DB id of the created/updated sample — used for follow-up attachment upload */
+  id?: number
 }
 
 export type TatTrendPoint = { week_start: string; avg_tat_days: number | null; sample_count: number }
@@ -197,6 +268,9 @@ export async function createLabSample(_state: LabSampleFormState, formData: Form
   const errors: Record<string, string[]> = {}
   if (!client)      errors.client      = ['Client is required']
   if (!sample_type) errors.sample_type = ['Sample type is required']
+  if (collection_date && new Date(collection_date) > new Date()) {
+    errors.collection_date = ['Sample date cannot be in the future.']
+  }
   if (Object.keys(errors).length) return { errors }
 
   const body: Record<string, unknown> = {
@@ -214,16 +288,47 @@ export async function createLabSample(_state: LabSampleFormState, formData: Form
   }
 
   try {
+    // ── SENAITE first (source of truth) ───────────────────────────────────────
+    // The modal only carries Django ids, so resolve the linked lab-system UIDs.
+    const [clientRes, typeRes] = await Promise.all([
+      djangoFetch(`/api/clients/${client}/`),
+      djangoFetch(`/api/lims/sample-types/${sample_type}/`),
+    ])
+    const clientData = clientRes.ok ? await clientRes.json() as { senaite_uid?: string } : {}
+    const typeData = typeRes.ok ? await typeRes.json() as { senaite_uid?: string } : {}
+    if (!clientData.senaite_uid) {
+      return { errors: { client: ['This client is not linked to the lab system yet — open the Clients page and sync it first.'] } }
+    }
+    if (!typeData.senaite_uid) {
+      return { errors: { sample_type: ['This sample type is not linked to the lab system yet — open Sample Types to sync it first.'] } }
+    }
+
+    const token = await senaiteToken()
+    const senaiteResult = await createSenaiteSample(token, {
+      Client: clientData.senaite_uid,
+      SampleType: typeData.senaite_uid,
+      DateSampled: collection_date || new Date().toISOString(),
+      ...(sample_id ? { ClientSampleID: sample_id } : {}),
+    })
+    if (!senaiteResult.success || !senaiteResult.sample) {
+      return { message: `The lab system rejected the sample: ${senaiteResult.error ?? 'unknown error'}` }
+    }
+
     const res = await djangoFetch('/api/lims/samples/', {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        ...body,
+        senaite_uid: senaiteResult.sample.uid,
+        senaite_ar_id: senaiteResult.sample.id,
+      }),
     })
     const data = await res.json().catch(() => ({})) as Record<string, unknown>
     if (!res.ok) {
-      return { message: (data.sample_id as string[])?.[0] ?? (data.client as string[])?.[0] ?? (data.detail as string) ?? 'Failed to register sample.' }
+      console.error('[MIRROR_CREATE_FAILED]', { senaite_id: senaiteResult.sample.id, error: data })
+      return { message: `Sample ${senaiteResult.sample.id} was created in the lab system, but the local mirror failed: ${(data.sample_id as string[])?.[0] ?? (data.client as string[])?.[0] ?? (data.detail as string) ?? 'unknown error'}` }
     }
     revalidatePath('/dashboard/lab-samples')
-    return { success: true, message: `Sample ${data.sample_id} registered successfully.` }
+    return { success: true, message: `Sample ${data.sample_id} registered successfully.`, id: data.id as number }
   } catch (e) { return { message: String(e) } }
 }
 
@@ -273,10 +378,21 @@ export async function receiveLabSample(id: number, data: {
       method: 'POST',
       body: JSON.stringify(body),
     })
-    const resData = await res.json().catch(() => ({})) as { detail?: string; sample_id?: string }
+    const resData = await res.json().catch(() => ({})) as { detail?: string; sample_id?: string; senaite_uid?: string }
     if (!res.ok) {
       return { message: resData.detail ?? 'Failed to receive sample.' }
     }
+
+    // If this sample has a SENAITE mirror (created at registration time), transition
+    // it to "received" now — the exact physical-receipt moment — so its analyses
+    // move from "sample_due" into "unassigned" and become visible to Worksheets.
+    if (resData.senaite_uid) {
+      try {
+        const token = await senaiteToken()
+        await senaiteWorkflowAction(token, resData.senaite_uid, 'receive')
+      } catch { /* non-fatal — Django receipt already succeeded */ }
+    }
+
     revalidatePath('/dashboard/lab-samples')
     revalidatePath('/dashboard/sample-receipts')
     return { success: true, message: `Sample ${resData.sample_id ?? ''} marked as received.` }
@@ -318,6 +434,9 @@ export async function patchLabSample(id: number, patch: Record<string, unknown>)
 }
 
 export async function updateLabSample(id: number, _state: LabSampleFormState, formData: FormData): Promise<LabSampleFormState> {
+  const sample_id        = (formData.get('sample_id') as string)?.trim()
+  const client           = (formData.get('client') as string)?.trim()
+  const sample_type      = (formData.get('sample_type') as string)?.trim()
   const description      = (formData.get('description') as string)?.trim()
   const collection_date  = (formData.get('collection_date') as string)?.trim()
   const received_date    = (formData.get('received_date') as string)?.trim()
@@ -326,7 +445,13 @@ export async function updateLabSample(id: number, _state: LabSampleFormState, fo
   const storage_location = (formData.get('storage_location') as string)?.trim()
   const barcode          = (formData.get('barcode') as string)?.trim()
 
+  if (collection_date && new Date(collection_date) > new Date()) {
+    return { errors: { collection_date: ['Sample date cannot be in the future.'] } }
+  }
+
   const body: Record<string, unknown> = {
+    ...(client           ? { client: Number(client) }           : {}),
+    ...(sample_type      ? { sample_type: Number(sample_type) } : {}),
     ...(description      ? { description }      : {}),
     ...(collection_date  ? { collection_date }  : {}),
     ...(received_date    ? { received_date }    : {}),
@@ -342,11 +467,40 @@ export async function updateLabSample(id: number, _state: LabSampleFormState, fo
       body: JSON.stringify(body),
     })
     if (!res.ok) {
-      const data = await res.json().catch(() => ({})) as { detail?: string }
-      return { message: data.detail ?? 'Failed to update sample.' }
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>
+      // DRF may return {detail}, {status: [...]}, {non_field_errors: [...]} or plain lists
+      const firstError =
+        (data.detail as string) ??
+        (Array.isArray(data) ? String(data[0]) : undefined) ??
+        Object.values(data).flat().map(String)[0]
+      return { message: firstError ?? 'Failed to update sample.' }
     }
+
+    // Push the supported field changes to SENAITE (source of truth). Client
+    // re-assignment can't be pushed — SENAITE stores samples inside the client
+    // folder — so a client change remains mirror-only.
+    const updated = await res.json().catch(() => ({})) as { senaite_uid?: string; sample_type_senaite_uid?: string }
+    if (updated.senaite_uid && (collection_date || sample_id || sample_type)) {
+      let sampleTypeUid: string | undefined
+      if (sample_type) {
+        const typeRes = await djangoFetch(`/api/lims/sample-types/${sample_type}/`)
+        sampleTypeUid = typeRes.ok ? ((await typeRes.json()) as { senaite_uid?: string }).senaite_uid : undefined
+      }
+      const token = await senaiteToken()
+      const push = await updateSenaiteSample(token, updated.senaite_uid, {
+        ...(collection_date ? { DateSampled: collection_date } : {}),
+        ...(sample_id ? { ClientSampleID: sample_id } : {}),
+        ...(sampleTypeUid ? { SampleType: sampleTypeUid } : {}),
+      })
+      if (!push.success) {
+        console.error('[SENAITE_PUSH_FAILED]', { sample_pk: id, error: push.error })
+        return { success: true, message: 'Sample updated locally, but the lab system could not be updated — it will remain authoritative until this is resolved.', id }
+      }
+    }
+
     revalidatePath('/dashboard/lab-samples')
-    return { success: true, message: 'Sample updated.' }
+    revalidatePath('/dashboard/samples-overview')
+    return { success: true, message: 'Sample updated.', id }
   } catch (e) { return { message: String(e) } }
 }
 

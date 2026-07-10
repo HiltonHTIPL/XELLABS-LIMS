@@ -3,24 +3,59 @@ import { useActionState, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createSample, SampleFormState } from '@/app/actions/samples'
 import { SenaiteSampleType, SenaiteAnalysisService } from '@/app/lib/senaite'
+import { SampleTemplate } from '@/app/actions/sample-templates'
+import { AnalysisProfile } from '@/app/actions/analysis-profiles'
 import { T, MI, Breadcrumb, Btn, SectionCard, Field, inputStyle, selectStyle, textareaStyle, TagChip } from '../../../_components/ui'
 
 type ClientOption = { uid: string; name: string; client_id: string }
-type Props = { clients: ClientOption[]; sampleTypes: SenaiteSampleType[]; analysisServices: SenaiteAnalysisService[] }
+type Props = {
+  clients: ClientOption[]
+  sampleTypes: SenaiteSampleType[]
+  analysisServices: SenaiteAnalysisService[]
+  sampleTemplates: SampleTemplate[]
+  analysisProfiles: AnalysisProfile[]
+}
 
 const PRIORITIES = [
   { value: '1', label: 'Critical' }, { value: '2', label: 'High' },
   { value: '3', label: 'Normal' },   { value: '4', label: 'Low' }, { value: '5', label: 'Routine' },
 ]
 
-export default function NewSamplePage({ clients, sampleTypes, analysisServices }: Props) {
+export default function NewSamplePage({ clients, sampleTypes, analysisServices, sampleTemplates, analysisProfiles }: Props) {
   const router = useRouter()
   const [selectedAnalyses, setSelectedAnalyses] = useState<string[]>([])
   const [remarks, setRemarks] = useState('')
+  const [selectedTemplateId, setSelectedTemplateId] = useState('')
+  const [selectedProfileId, setSelectedProfileId] = useState('')
+  const [sampleTypeUid, setSampleTypeUid] = useState('')
+  const [container, setContainer] = useState('')
+  const [sampleCount, setSampleCount] = useState(1)
+
+  function handleTemplateChange(templateId: string) {
+    setSelectedTemplateId(templateId)
+    const template = sampleTemplates.find(t => String(t.id) === templateId)
+    if (!template) return
+    if (template.sample_type_uid) setSampleTypeUid(template.sample_type_uid)
+    setSelectedAnalyses(template.analysis_services.map(a => a.uid))
+    setContainer(template.container ?? '')
+  }
+
+  function handleProfileChange(profileId: string) {
+    setSelectedProfileId(profileId)
+    const profile = analysisProfiles.find(p => String(p.id) === profileId)
+    if (!profile) return
+    // Analysis profiles don't set sample type/container — they only add analyses on top of the current selection.
+    setSelectedAnalyses(prev => [...new Set([...prev, ...profile.analysis_services.map(a => a.uid)])])
+  }
 
   const handleCreate = async (prev: SampleFormState, fd: FormData) => {
     const result = await createSample(prev, fd)
-    if (result.success) router.push('/dashboard/samples')
+    if (!result.success) return result
+    // sampleCount > 1 registers additional identical copies of the same sample details.
+    for (let i = 1; i < sampleCount; i++) {
+      await createSample(prev, fd)
+    }
+    router.push('/dashboard/samples')
     return result
   }
   const [state, action, isPending] = useActionState(handleCreate, {})
@@ -45,11 +80,13 @@ export default function NewSamplePage({ clients, sampleTypes, analysisServices }
         <div className="flex items-center gap-3">
           <span style={{ fontSize: 12, color: T.muted }}>Number of samples</span>
           <div className="flex items-center gap-1">
-            <button type="button" className="flex items-center justify-center" style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${T.inputBorder}`, backgroundColor: '#fff', cursor: 'pointer', fontSize: 16, color: T.text }}>−</button>
-            <span style={{ width: 36, textAlign: 'center', fontSize: 14, fontWeight: 600, color: T.heading }}>1</span>
-            <button type="button" className="flex items-center justify-center" style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${T.inputBorder}`, backgroundColor: '#fff', cursor: 'pointer', fontSize: 16, color: T.text }}>+</button>
+            <button type="button" onClick={() => setSampleCount(c => Math.max(1, c - 1))}
+              className="flex items-center justify-center" style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${T.inputBorder}`, backgroundColor: '#fff', cursor: 'pointer', fontSize: 16, color: T.text }}>−</button>
+            <span style={{ width: 36, textAlign: 'center', fontSize: 14, fontWeight: 600, color: T.heading }}>{sampleCount}</span>
+            <button type="button" onClick={() => setSampleCount(c => Math.min(20, c + 1))}
+              className="flex items-center justify-center" style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${T.inputBorder}`, backgroundColor: '#fff', cursor: 'pointer', fontSize: 16, color: T.text }}>+</button>
           </div>
-          <Btn variant="outline" icon="add">Add Another Sample</Btn>
+          <Btn variant="outline" icon="add" onClick={() => setSampleCount(c => Math.min(20, c + 1))}>Add Another Sample</Btn>
         </div>
       </div>
 
@@ -76,6 +113,20 @@ export default function NewSamplePage({ clients, sampleTypes, analysisServices }
             {/* ① Client / Request Details */}
             <SectionCard step={1} title="Client / Request Details">
               <div className="grid grid-cols-2 gap-4 mb-4">
+                <Field label="Sample Template" hint="auto-fills sample type, analyses & container">
+                  <select value={selectedTemplateId} onChange={e => handleTemplateChange(e.target.value)}
+                    style={selectStyle} className="w-full outline-none">
+                    <option value="">None — configure manually</option>
+                    {sampleTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                </Field>
+                <Field label="Analysis Profile" hint="adds a bundle of analyses on top of current selection">
+                  <select value={selectedProfileId} onChange={e => handleProfileChange(e.target.value)}
+                    style={selectStyle} className="w-full outline-none">
+                    <option value="">None — select analyses manually</option>
+                    {analysisProfiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </Field>
                 <Field label="Client" required>
                   <select name="client_uid" required style={selectStyle} className="w-full outline-none"
                     defaultValue="">
@@ -98,7 +149,8 @@ export default function NewSamplePage({ clients, sampleTypes, analysisServices }
                   {state.errors?.date_sampled && <p className="mt-1" style={{ fontSize: 11, color: T.danger }}>{state.errors.date_sampled[0]}</p>}
                 </Field>
                 <Field label="Sample Type" required>
-                  <select name="sample_type_uid" required style={selectStyle} className="w-full outline-none" defaultValue="">
+                  <select name="sample_type_uid" required style={selectStyle} className="w-full outline-none"
+                    value={sampleTypeUid} onChange={e => setSampleTypeUid(e.target.value)}>
                     <option value="">Select sample type…</option>
                     {sampleTypes.map(t => <option key={t.uid} value={t.uid}>{t.title}</option>)}
                   </select>
@@ -108,6 +160,10 @@ export default function NewSamplePage({ clients, sampleTypes, analysisServices }
                   <select name="priority" defaultValue="3" style={selectStyle} className="w-full outline-none">
                     {PRIORITIES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                   </select>
+                </Field>
+                <Field label="Container" hint="from Sample Template, editable">
+                  <input type="text" name="container" placeholder="e.g. Sterile 50mL Tube" style={inputStyle} className="w-full outline-none"
+                    value={container} onChange={e => setContainer(e.target.value)} />
                 </Field>
               </div>
             </SectionCard>
@@ -146,7 +202,7 @@ export default function NewSamplePage({ clients, sampleTypes, analysisServices }
               <div className="flex items-center gap-2">
                 <Btn type="button" variant="outline" onClick={() => router.push('/dashboard/samples')}>Clear Form</Btn>
                 <Btn type="submit" variant="primary" disabled={isPending}>{isPending ? 'Saving…' : 'Save Draft'}</Btn>
-                <Btn type="submit" variant="success" icon="check" disabled={isPending}>{isPending ? 'Logging…' : 'Log Sample'}</Btn>
+                <Btn type="submit" variant="success" icon="check" disabled={isPending}>{isPending ? 'Logging…' : sampleCount > 1 ? `Log ${sampleCount} Samples` : 'Log Sample'}</Btn>
               </div>
             </div>
           </div>
@@ -189,9 +245,6 @@ export default function NewSamplePage({ clients, sampleTypes, analysisServices }
                   })}
                 </div>
               )}
-              <div className="px-4 pb-4">
-                <Btn type="button" variant="outline" fullWidth icon="add">Add Analysis</Btn>
-              </div>
             </div>
 
             {/* Pricing Summary */}

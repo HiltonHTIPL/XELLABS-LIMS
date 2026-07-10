@@ -16,7 +16,7 @@ SENAITE_PASSWORD = settings.SENAITE_PASSWORD
 def _session() -> requests.Session:
     s = requests.Session()
     s.auth = (SENAITE_USER, SENAITE_PASSWORD)
-    s.headers.update({"Accept": "application/json", "Content-Type": "application/json"})
+    s.headers.update({"Content-Type": "application/json"})
     return s
 
 
@@ -56,13 +56,6 @@ def _client_payload(client) -> dict:
             "JobTitle": client.contact_job_title or "",
             "Department": client.contact_department or "",
         })
-    # Addresses
-    if client.physical_address:
-        payload["PhysicalAddress"] = client.physical_address
-    if client.postal_address:
-        payload["PostalAddress"] = client.postal_address
-    if client.billing_address:
-        payload["BillingAddress"] = client.billing_address
     return payload
 
 

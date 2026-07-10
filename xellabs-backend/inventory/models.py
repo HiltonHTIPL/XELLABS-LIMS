@@ -2,6 +2,7 @@ from django.db import models
 from django.conf import settings
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
+from django.core.validators import MinValueValidator, MaxValueValidator
 
 
 class StorageLocation(models.Model):
@@ -18,7 +19,7 @@ class StorageLocation(models.Model):
     name          = models.CharField(max_length=200)
     location_type = models.CharField(max_length=50, default="room", choices=LOCATION_TYPES)
     parent        = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="children")
-    temperature   = models.CharField(max_length=50, blank=True)
+    temperature   = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True, validators=[MinValueValidator(-80), MaxValueValidator(150)], help_text="Temperature in Celsius (-80 to 150°C)")
     notes         = models.TextField(blank=True)
     # SENAITE metadata fields
     description        = models.TextField(blank=True)
@@ -36,8 +37,8 @@ class StorageLocation(models.Model):
     # SENAITE sync
     senaite_uid   = models.CharField(max_length=100, blank=True)
     # Box-specific
-    rows          = models.IntegerField(null=True, blank=True)
-    columns       = models.IntegerField(null=True, blank=True)
+    rows          = models.IntegerField(null=True, blank=True, validators=[MinValueValidator(1)])
+    columns       = models.IntegerField(null=True, blank=True, validators=[MinValueValidator(1)])
     # Box location (slot) specific
     slot_id            = models.CharField(max_length=20, blank=True)
     is_occupied        = models.BooleanField(default=False)
@@ -147,7 +148,7 @@ class InventoryItem(models.Model):
     manufacturer = models.CharField(max_length=200, blank=True)
     catalog_number = models.CharField(max_length=100, blank=True)
     unit = models.CharField(max_length=50, default="pcs")
-    min_stock_level = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    min_stock_level = models.DecimalField(max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)])
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -192,7 +193,7 @@ class Lot(models.Model):
     item = GenericForeignKey("content_type", "object_id")
 
     lot_number = models.CharField(max_length=100)
-    quantity = models.DecimalField(max_digits=10, decimal_places=2)
+    quantity = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     expiry_date = models.DateField(null=True, blank=True)
     storage_location = models.ForeignKey(StorageLocation, null=True, blank=True, on_delete=models.SET_NULL)
     received_date = models.DateField(auto_now_add=True)
@@ -217,7 +218,7 @@ class InventoryTransaction(models.Model):
     ]
     lot = models.ForeignKey(Lot, on_delete=models.CASCADE, related_name="transactions")
     transaction_type = models.CharField(max_length=10, choices=TYPES)
-    quantity = models.DecimalField(max_digits=10, decimal_places=2)
+    quantity = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     reference = models.CharField(max_length=200, blank=True)
     notes = models.TextField(blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)

@@ -2,7 +2,7 @@
 import { useState, useTransition, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { receiveSample } from '@/app/actions/samples'
+import { receiveSample, verifySample, publishSample, type WorkflowResult } from '@/app/actions/samples'
 import { SenaiteSample, SenaiteSampleType, SenaiteAnalysisService, mapSenaiteState, mapSenaitePriority } from '@/app/lib/senaite'
 import { DjangoClient } from '@/app/actions/clients'
 import { T, MI, PageHeader, StatCard, Chip, StatusChip, Btn, IconBtn, Card, thStyle, tdStyle, linkStyle, Pagination, EmptyState } from '../../_components/ui'
@@ -23,6 +23,9 @@ function fmtDate(d: string | null): string {
 
 const PAGE_SIZE = 25
 
+const SAVED_VIEWS_LS_KEY = 'xl_senaite_samples_saved_views'
+type SavedView = { name: string; filters: { search: string; status: string; priority: string; sampleType: string; client: string } }
+
 export default function SamplesShell({ initialSamples, clients, sampleTypes, analysisServices }: Props) {
   const router = useRouter()
   const [samples] = useState(initialSamples)
@@ -37,6 +40,17 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
   const [kebabOpen, setKebabOpen] = useState<string | null>(null)
   const [kebabPos, setKebabPos] = useState<{ top: number; left: number } | null>(null)
   const kebabRef = useRef<HTMLButtonElement | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkMenuOpen, setBulkMenuOpen] = useState(false)
+  const [bulkMenuPos, setBulkMenuPos] = useState<{ top: number; right: number } | null>(null)
+  const bulkBtnRef = useRef<HTMLButtonElement>(null)
+  const [savedViews, setSavedViews] = useState<SavedView[]>(() => {
+    if (typeof window === 'undefined') return []
+    try {
+      const raw = localStorage.getItem(SAVED_VIEWS_LS_KEY)
+      return raw ? (JSON.parse(raw) as SavedView[]) : []
+    } catch { return [] }
+  })
 
   const clientOptions: ClientOption[] = clients
     .filter(c => c.senaite_uid)
@@ -78,6 +92,80 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
     setKebabPos({ top: rect.bottom + 4, left: rect.left - 120 })
     setKebabOpen(uid === kebabOpen ? null : uid)
     kebabRef.current = e.currentTarget
+  }
+
+  function toggleAll() {
+    if (selected.size === paged.length) setSelected(new Set())
+    else setSelected(new Set(paged.map(s => s.uid)))
+  }
+  function toggleRow(uid: string) {
+    setSelected(prev => { const n = new Set(prev); n.has(uid) ? n.delete(uid) : n.add(uid); return n })
+  }
+
+  function handleReceiveSelected() {
+    if (selected.size === 0) { setActionMsg({ text: 'Select at least one sample first.', ok: false }); setTimeout(() => setActionMsg(null), 3000); return }
+    startTransition(async () => {
+      const uids = [...selected]
+      const results = await Promise.all(uids.map(uid => receiveSample(uid)))
+      const okCount = results.filter(r => r.success).length
+      setActionMsg({ text: `Received ${okCount} of ${uids.length} sample(s).`, ok: okCount === uids.length })
+      setTimeout(() => setActionMsg(null), 4000)
+      setSelected(new Set())
+      router.refresh()
+    })
+  }
+
+  function openBulkMenu() {
+    if (selected.size === 0) { setActionMsg({ text: 'Select at least one sample first.', ok: false }); setTimeout(() => setActionMsg(null), 3000); return }
+    const rect = bulkBtnRef.current!.getBoundingClientRect()
+    setBulkMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+    setBulkMenuOpen(o => !o)
+  }
+
+  function runBulkWorkflow(action: (uid: string) => Promise<WorkflowResult>, label: string) {
+    setBulkMenuOpen(false)
+    startTransition(async () => {
+      const uids = [...selected]
+      const results = await Promise.all(uids.map(uid => action(uid)))
+      const okCount = results.filter(r => r.success).length
+      setActionMsg({ text: `${label}: ${okCount} of ${uids.length} succeeded.`, ok: okCount === uids.length })
+      setTimeout(() => setActionMsg(null), 4000)
+      setSelected(new Set())
+      router.refresh()
+    })
+  }
+
+  function handleExport() {
+    const headers = ['Sample ID', 'Client', 'Sample Type', 'Status', 'Priority', 'Date Sampled', 'Due Date']
+    const rows = filtered.map(s => [
+      s.id || s.uid, s.ClientTitle || '', s.SampleTypeTitle || '',
+      mapSenaiteState(s.review_state), mapSenaitePriority(s.Priority), fmtDate(s.DateSampled), fmtDate(s.DateDue),
+    ])
+    const esc = (v: string) => (v.includes(',') || v.includes('"') ? `"${v.replace(/"/g, '""')}"` : v)
+    const csv = [headers.join(','), ...rows.map(r => r.map(esc).join(','))].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `samples-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function persistSavedViews(next: SavedView[]) {
+    setSavedViews(next)
+    try { localStorage.setItem(SAVED_VIEWS_LS_KEY, JSON.stringify(next)) } catch { /* ignore */ }
+  }
+  function saveNewView() {
+    const name = window.prompt('Name this view:')
+    if (!name) return
+    const snapshot = { search, status: filterStatus, priority: filterPriority, sampleType: filterSampleType, client: filterClient }
+    persistSavedViews([...savedViews.filter(v => v.name !== name), { name, filters: snapshot }])
+  }
+  function applySavedView(v: SavedView) {
+    setSearch(v.filters.search); setFilterStatus(v.filters.status); setFilterPriority(v.filters.priority)
+    setFilterSampleType(v.filters.sampleType); setFilterClient(v.filters.client)
+    setPage(1)
   }
 
   const [now, setNow] = useState('')
@@ -126,6 +214,24 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
             <MI name="move_to_inbox" size={15} color={T.muted} /> Receive
           </button>
         </div>
+      )}
+
+      {/* Bulk actions menu */}
+      {bulkMenuOpen && bulkMenuPos && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 9990 }} onClick={() => setBulkMenuOpen(false)} />
+          <div style={{ position: 'fixed', top: bulkMenuPos.top, right: bulkMenuPos.right, zIndex: 9999, backgroundColor: '#fff', border: `1px solid ${T.cardBorder}`, borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 200, padding: '6px 0' }}>
+            <button onClick={() => runBulkWorkflow(receiveSample, 'Receive')} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: T.text, textAlign: 'left' }}>
+              <MI name="move_to_inbox" size={15} color={T.muted} /> Receive Selected
+            </button>
+            <button onClick={() => runBulkWorkflow(verifySample, 'Verify')} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: T.text, textAlign: 'left' }}>
+              <MI name="fact_check" size={15} color={T.muted} /> Verify Selected
+            </button>
+            <button onClick={() => runBulkWorkflow(publishSample, 'Publish')} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: T.text, textAlign: 'left' }}>
+              <MI name="task_alt" size={15} color={T.muted} /> Publish Selected
+            </button>
+          </div>
+        </>
       )}
 
       <PageHeader
@@ -188,9 +294,13 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2">
               <Btn variant="primary" icon="add" onClick={() => router.push('/dashboard/samples/new')}>New Sample</Btn>
-              <Btn variant="outline" icon="call_received">Receive Sample</Btn>
-              <Btn variant="outline" icon="file_download">Export</Btn>
-              <Btn variant="outline" icon="checklist">Bulk Actions</Btn>
+              <Btn variant="outline" icon="call_received" onClick={handleReceiveSelected}>Receive Sample{selected.size > 0 ? ` (${selected.size})` : ''}</Btn>
+              <Btn variant="outline" icon="file_download" onClick={handleExport}>Export</Btn>
+              <button ref={bulkBtnRef} onClick={openBulkMenu} type="button"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
+                style={{ border: `1px solid ${T.inputBorder}`, backgroundColor: bulkMenuOpen ? '#F3F4F6' : '#fff', color: T.text, cursor: 'pointer' }}>
+                <MI name="checklist" size={14} color={T.muted} /> Bulk Actions{selected.size > 0 ? ` (${selected.size})` : ''}
+              </button>
             </div>
             <span style={{ fontSize: 12, color: T.muted }}>
               {filtered.length === 0 ? '0 results' : `${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, filtered.length)} of ${filtered.length}`}
@@ -208,7 +318,7 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
                   <thead>
                     <tr>
-                      <th style={thStyle}><input type="checkbox" style={{ accentColor: T.primary }} /></th>
+                      <th style={thStyle}><input type="checkbox" checked={paged.length > 0 && selected.size === paged.length} onChange={toggleAll} style={{ accentColor: T.primary }} /></th>
                       {['Sample ID','Client','Sample Type','Condition','Status','Priority','Received Date','Due Date','TAT','Analyst','Actions'].map(h => (
                         <th key={h} style={thStyle}>{h}</th>
                       ))}
@@ -223,7 +333,7 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
                         <tr key={s.uid}
                           onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#FAFBFE')}
                           onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}>
-                          <td style={tdStyle}><input type="checkbox" style={{ accentColor: T.primary }} /></td>
+                          <td style={tdStyle}><input type="checkbox" checked={selected.has(s.uid)} onChange={() => toggleRow(s.uid)} style={{ accentColor: T.primary }} /></td>
                           <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                             <Link href={`/dashboard/samples/${s.uid}`} style={linkStyle}>
                               {s.id || s.uid.slice(0, 8)}
@@ -274,21 +384,21 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
           <Card title="Quick Actions">
             <div className="grid grid-cols-2 gap-2">
               {[
-                { label: 'New Sample',     icon: 'add_circle',    bg: '#EFF6FF', color: T.primary,   href: '/dashboard/samples/new' },
-                { label: 'Receive Sample', icon: 'call_received', bg: '#DBEAFE', color: T.success,   href: '/dashboard/sample-receipts' },
-                { label: 'Export Samples', icon: 'file_download', bg: '#F5F3FF', color: '#7C3AED',   href: '#' },
-                { label: 'Bulk Actions',   icon: 'checklist',     bg: '#FFF7ED', color: T.warning,   href: '#' },
+                { label: 'New Sample',     icon: 'add_circle',    bg: '#EFF6FF', color: T.primary,   action: () => router.push('/dashboard/samples/new') },
+                { label: 'Receive Sample', icon: 'call_received', bg: '#DBEAFE', color: T.success,   action: () => router.push('/dashboard/sample-receipts') },
+                { label: 'Export Samples', icon: 'file_download', bg: '#F5F3FF', color: '#7C3AED',   action: handleExport },
+                { label: 'Bulk Actions',   icon: 'checklist',     bg: '#FFF7ED', color: T.warning,   action: openBulkMenu },
               ].map(a => (
-                <Link key={a.label} href={a.href} style={{ textDecoration: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 10, padding: '14px 8px', backgroundColor: a.bg }}>
+                <button key={a.label} onClick={a.action} type="button" style={{ border: 'none', textDecoration: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 10, padding: '14px 8px', backgroundColor: a.bg, cursor: 'pointer' }}>
                   <MI name={a.icon} size={20} color={a.color} />
                   <span style={{ fontSize: 11, color: a.color, fontWeight: 600, textAlign: 'center', lineHeight: 1.2 }}>{a.label}</span>
-                </Link>
+                </button>
               ))}
             </div>
           </Card>
 
           {/* Recent Alerts */}
-          <Card title="Recent Alerts" action={<a href="#" style={{ fontSize: 12, color: T.primary }}>View all</a>}>
+          <Card title="Recent Alerts" action={<Link href="/dashboard/samples-overview" style={{ fontSize: 12, color: T.primary }}>View all</Link>}>
             <div className="flex flex-col gap-2">
               {[
                 { msg: '32 samples are overdue', sub: 'Requires immediate attention', tone: 'red' as const },
@@ -307,25 +417,35 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
           </Card>
 
           {/* Saved Views */}
-          <Card title="Saved Views" action={<a href="#" style={{ fontSize: 12, color: T.primary }}>View all</a>}>
+          <Card title="Saved Views" action={<Link href="/dashboard/samples-overview" style={{ fontSize: 12, color: T.primary }}>View all</Link>}>
             <div className="flex flex-col gap-0.5">
               {[
-                { label: 'My Samples',          count: samples.length,  tone: 'blue' as const },
-                { label: 'High Priority',        count: samples.filter(s => mapSenaitePriority(s.Priority) === 'High').length, tone: 'blue' as const },
-                { label: 'Overdue Samples',      count: 0,               tone: 'red' as const },
-                { label: 'Samples by Client',    count: allClients.length, tone: 'blue' as const },
+                { label: 'My Samples',          count: samples.length,  tone: 'blue' as const, onClick: clearFilters },
+                { label: 'High Priority',        count: samples.filter(s => mapSenaitePriority(s.Priority) === 'High').length, tone: 'blue' as const, onClick: () => { setFilterPriority('High'); setPage(1) } },
+                { label: 'Overdue Samples',      count: 0,               tone: 'red' as const, onClick: () => {} },
+                { label: 'Samples by Client',    count: allClients.length, tone: 'blue' as const, onClick: clearFilters },
               ].map((v, i) => (
-                <div key={i} className="flex items-center justify-between py-2" style={{ borderBottom: i < 3 ? `1px solid ${T.rowBorder}` : 'none' }}>
+                <button key={i} onClick={v.onClick} type="button"
+                  className="flex items-center justify-between py-2 w-full" style={{ borderBottom: i < 3 ? `1px solid ${T.rowBorder}` : 'none', border: 'none', background: 'none', cursor: 'pointer', padding: '8px 0' }}>
                   <div className="flex items-center gap-2">
                     <MI name="bookmark" size={14} color={T.faint} />
                     <span style={{ fontSize: 12.5, color: T.text }}>{v.label}</span>
                   </div>
                   <Chip tone={v.tone}>{v.count}</Chip>
-                </div>
+                </button>
+              ))}
+              {savedViews.map(v => (
+                <button key={v.name} onClick={() => applySavedView(v)} type="button"
+                  className="flex items-center justify-between py-2 w-full" style={{ borderTop: `1px solid ${T.rowBorder}`, border: 'none', background: 'none', cursor: 'pointer', padding: '8px 0' }}>
+                  <div className="flex items-center gap-2">
+                    <MI name="bookmark" size={14} color={T.primary} />
+                    <span style={{ fontSize: 12.5, color: T.text }}>{v.name}</span>
+                  </div>
+                </button>
               ))}
             </div>
             <div className="mt-3">
-              <Btn variant="outline" fullWidth icon="add">Save New View</Btn>
+              <Btn variant="outline" fullWidth icon="add" onClick={saveNewView}>Save New View</Btn>
             </div>
           </Card>
         </div>

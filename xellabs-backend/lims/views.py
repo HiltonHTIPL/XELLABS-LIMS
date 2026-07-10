@@ -1,3 +1,5 @@
+import logging
+
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -5,16 +7,18 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from core.permissions import IsReviewerOrAbove, IsLabManagerOrAbove, CanReceiveOrStoreSamples
 from .models import (
-    SampleType, Method, Test, Specification,
+    SampleType, SampleTemplate, AnalysisProfile, Method, Test, Specification,
     Sample, AnalysisRequest, Worksheet, WorksheetAssignment,
     Result, QCSample, ChainOfCustody,
 )
 from .serializers import (
-    SampleTypeSerializer, MethodSerializer, TestSerializer, SpecificationSerializer,
+    SampleTypeSerializer, SampleTemplateSerializer, AnalysisProfileSerializer, MethodSerializer, TestSerializer, SpecificationSerializer,
     SampleSerializer, AnalysisRequestSerializer, WorksheetSerializer,
     WorksheetAssignmentSerializer, ResultSerializer, QCSampleSerializer,
     ChainOfCustodySerializer,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class SampleTypeViewSet(viewsets.ModelViewSet):
@@ -28,6 +32,12 @@ class SampleTypeViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["post"], url_path="sync-from-senaite")
     def sync_from_senaite(self, request):
         """Create any SENAITE sample types missing from Django. Called by the frontend on New Sample page load."""
+        # Only lab managers and admins can trigger a full sync
+        if request.user.role not in ('admin', 'lab_manager'):
+            return Response(
+                {'detail': 'Only lab managers can sync sample types from SENAITE.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
         import os, base64, requests as http_requests
         senaite_url = os.environ.get("SENAITE_URL", "http://senaite:8080/senaite")
         user = os.environ.get("SENAITE_ADMIN_USER", "admin")
@@ -46,23 +56,61 @@ class SampleTypeViewSet(viewsets.ModelViewSet):
             return Response({"detail": f"SENAITE unreachable: {e}"}, status=status.HTTP_502_BAD_GATEWAY)
 
         created_names = []
+        skipped = []
         for st in senaite_types:
             uid = st.get("uid", "")
             name = (st.get("title") or st.get("Title") or "").strip()
             prefix = (st.get("Prefix") or name[:4].upper() or "XX").strip()
             if not name:
                 continue
-            # Skip if already exists by uid or name
-            if SampleType.objects.filter(senaite_uid=uid).exists():
-                continue
-            if SampleType.objects.filter(name=name).exists():
-                # Update missing uid if name matches
-                SampleType.objects.filter(name=name, senaite_uid="").update(senaite_uid=uid)
-                continue
-            SampleType.objects.create(name=name, prefix=prefix, senaite_uid=uid, is_active=True)
-            created_names.append(name)
+            # One bad row must never abort the whole sync: SampleType.name is
+            # unique, so a SENAITE type re-created under a new UID with the same
+            # title used to raise IntegrityError here and silently drop every
+            # remaining type — the "dropdown shows 2 of 3 types" bug.
+            try:
+                if uid:
+                    existing_by_name = SampleType.objects.filter(name=name).first()
+                    if existing_by_name and existing_by_name.senaite_uid != uid:
+                        # Same title, different (or blank) UID — adopt the new UID
+                        # instead of colliding on the unique name.
+                        existing_by_name.senaite_uid = uid
+                        existing_by_name.save(update_fields=["senaite_uid"])
+                        continue
+                    obj, created = SampleType.objects.get_or_create(
+                        senaite_uid=uid,
+                        defaults={"name": name, "prefix": prefix, "is_active": True}
+                    )
+                else:
+                    # No uid from SENAITE — use name as fallback (less reliable but still atomic)
+                    obj, created = SampleType.objects.get_or_create(
+                        name=name,
+                        defaults={"prefix": prefix, "is_active": True}
+                    )
+                if created:
+                    created_names.append(name)
+            except Exception as e:
+                logger.warning("Sample type sync skipped %r: %s", name, e)
+                skipped.append(name)
 
-        return Response({"synced": len(created_names), "created": created_names})
+        return Response({"synced": len(created_names), "created": created_names, "skipped": skipped})
+
+
+class SampleTemplateViewSet(viewsets.ModelViewSet):
+    queryset = SampleTemplate.objects.all()
+    serializer_class = SampleTemplateSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ["is_active"]
+    search_fields = ["name"]
+    ordering_fields = ["name", "created_at"]
+
+
+class AnalysisProfileViewSet(viewsets.ModelViewSet):
+    queryset = AnalysisProfile.objects.all()
+    serializer_class = AnalysisProfileSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ["is_active"]
+    search_fields = ["name"]
+    ordering_fields = ["name", "created_at"]
 
 
 class MethodViewSet(viewsets.ModelViewSet):
@@ -89,7 +137,7 @@ class SpecificationViewSet(viewsets.ModelViewSet):
 
 
 class SampleViewSet(viewsets.ModelViewSet):
-    queryset = Sample.objects.select_related("client", "sample_type", "created_by", "received_by").all()
+    queryset = Sample.objects.all()  # select_related fields are not used in stats/tat_trend endpoints
     serializer_class = SampleSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["status", "sample_type", "client", "priority", "hold_for_qa"]
@@ -99,8 +147,15 @@ class SampleViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"])
     def stats(self, request):
         from django.utils import timezone
+        from django.db.models import Count, Q
         qs = self.get_queryset()
         now = timezone.now()
+
+        # Single aggregation query instead of 7 separate count() calls
+        overdue_count = qs.filter(
+            expiry_date__lt=now
+        ).exclude(status__in=["published", "disposed", "rejected"]).count()
+
         return Response({
             "logged":         qs.filter(status="registered").count(),
             "received":       qs.filter(status="received").count(),
@@ -108,24 +163,25 @@ class SampleViewSet(viewsets.ModelViewSet):
             "to_be_verified": qs.filter(status="results_pending").count(),
             "on_hold_for_qa": qs.filter(hold_for_qa=True).count(),
             "completed":      qs.filter(status="published").count(),
-            "overdue":        qs.filter(
-                expiry_date__lt=now
-            ).exclude(status__in=["published", "disposed", "rejected"]).count(),
+            "overdue":        overdue_count,
         })
 
     @action(detail=False, methods=["get"])
     def tat_trend(self, request):
         from django.utils import timezone
         import datetime
-        qs = self.get_queryset().filter(status="published", received_date__isnull=False)
+        qs = Sample.objects.filter(status="published", received_date__isnull=False)
         now = timezone.now()
         weeks = []
         for i in range(4, -1, -1):
             week_start = now - datetime.timedelta(weeks=i + 1)
             week_end = now - datetime.timedelta(weeks=i)
-            week_qs = qs.filter(received_date__gte=week_start, received_date__lt=week_end)
+            # Only fetch the two fields we need (received_date, updated_at) to avoid N+1 query
+            week_qs = qs.filter(
+                received_date__gte=week_start, received_date__lt=week_end
+            ).values('received_date', 'updated_at')
             durations = [
-                (s.updated_at - s.received_date).total_seconds() / 86400
+                (s['updated_at'] - s['received_date']).total_seconds() / 86400
                 for s in week_qs
             ]
             avg_tat = round(sum(durations) / len(durations), 1) if durations else None
@@ -276,6 +332,49 @@ class QCSampleViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ["qc_type", "status", "test", "worksheet"]
     search_fields = ["qc_id"]
+
+    @action(detail=True, methods=["post"], permission_classes=[IsReviewerOrAbove])
+    def review(self, request, pk=None):
+        from django.utils import timezone
+        qc_sample = self.get_object()
+        
+        if qc_sample.status not in ["failed", "warning"]:
+            return Response({"detail": "Only failed or warning QC samples require review."}, status=status.HTTP_400_BAD_REQUEST)
+        if qc_sample.is_reviewed:
+            return Response({"detail": "This QC sample has already been reviewed."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        review_notes = request.data.get("review_notes", "").strip()
+        if not review_notes:
+            return Response({"detail": "Review notes are required for signing off a failed QC sample."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        action_type = request.data.get("action_type", "accept")
+        
+        qc_sample.is_reviewed = True
+        qc_sample.reviewed_by = request.user
+        qc_sample.reviewed_at = timezone.now()
+        qc_sample.review_notes = review_notes
+        qc_sample.save(update_fields=["is_reviewed", "reviewed_by", "reviewed_at", "review_notes"])
+        
+        if action_type == "reanalyze":
+            from .models import QCSample
+            new_qc = QCSample.objects.create(
+                qc_type=qc_sample.qc_type,
+                test=qc_sample.test,
+                worksheet=qc_sample.worksheet,
+                lot_number=qc_sample.lot_number,
+                expiry_date=qc_sample.expiry_date,
+                target_value=qc_sample.target_value,
+                tolerance_percent=qc_sample.tolerance_percent,
+                notes=f"Re-analysis of failed QC run {qc_sample.qc_id}. Reason: {review_notes}",
+                run_by=request.user
+            )
+            return Response({
+                "detail": f"QC sample signed off. New QC run {new_qc.qc_id} scheduled.",
+                "qc_sample": QCSampleSerializer(qc_sample, context={"request": request}).data,
+                "new_qc_sample": QCSampleSerializer(new_qc, context={"request": request}).data
+            })
+            
+        return Response(QCSampleSerializer(qc_sample, context={"request": request}).data)
 
 
 class ChainOfCustodyViewSet(viewsets.ModelViewSet):
