@@ -316,6 +316,49 @@ class QCSampleViewSet(viewsets.ModelViewSet):
     filterset_fields = ["qc_type", "status", "test", "worksheet"]
     search_fields = ["qc_id"]
 
+    @action(detail=True, methods=["post"], permission_classes=[IsReviewerOrAbove])
+    def review(self, request, pk=None):
+        from django.utils import timezone
+        qc_sample = self.get_object()
+        
+        if qc_sample.status not in ["failed", "warning"]:
+            return Response({"detail": "Only failed or warning QC samples require review."}, status=status.HTTP_400_BAD_REQUEST)
+        if qc_sample.is_reviewed:
+            return Response({"detail": "This QC sample has already been reviewed."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        review_notes = request.data.get("review_notes", "").strip()
+        if not review_notes:
+            return Response({"detail": "Review notes are required for signing off a failed QC sample."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        action_type = request.data.get("action_type", "accept")
+        
+        qc_sample.is_reviewed = True
+        qc_sample.reviewed_by = request.user
+        qc_sample.reviewed_at = timezone.now()
+        qc_sample.review_notes = review_notes
+        qc_sample.save(update_fields=["is_reviewed", "reviewed_by", "reviewed_at", "review_notes"])
+        
+        if action_type == "reanalyze":
+            from .models import QCSample
+            new_qc = QCSample.objects.create(
+                qc_type=qc_sample.qc_type,
+                test=qc_sample.test,
+                worksheet=qc_sample.worksheet,
+                lot_number=qc_sample.lot_number,
+                expiry_date=qc_sample.expiry_date,
+                target_value=qc_sample.target_value,
+                tolerance_percent=qc_sample.tolerance_percent,
+                notes=f"Re-analysis of failed QC run {qc_sample.qc_id}. Reason: {review_notes}",
+                run_by=request.user
+            )
+            return Response({
+                "detail": f"QC sample signed off. New QC run {new_qc.qc_id} scheduled.",
+                "qc_sample": QCSampleSerializer(qc_sample, context={"request": request}).data,
+                "new_qc_sample": QCSampleSerializer(new_qc, context={"request": request}).data
+            })
+            
+        return Response(QCSampleSerializer(qc_sample, context={"request": request}).data)
+
 
 class ChainOfCustodyViewSet(viewsets.ModelViewSet):
     queryset = ChainOfCustody.objects.select_related("sample", "transferred_by", "received_by").all()

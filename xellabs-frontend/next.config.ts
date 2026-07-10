@@ -13,6 +13,7 @@ const csp = [
   "img-src 'self' data: blob:",
   "font-src 'self' data: https://fonts.gstatic.com",
   "connect-src 'self'",
+  "frame-src 'self' http://localhost:8088 http://localhost:8089",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

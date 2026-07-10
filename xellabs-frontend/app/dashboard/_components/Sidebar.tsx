@@ -49,6 +49,17 @@ const NAV: NavEntry[] = [
     ],
   },
   { label: 'Reports',          href: '/dashboard/reports',           icon: 'bar_chart',               roles: null },
+  { label: 'XELPulse',     href: '/dashboard/analytics',         icon: 'insights',                roles: ['admin', 'lab_manager', 'analyst'] },
+  // Compliance
+  {
+    group: 'Compliance',
+    icon: 'gavel',
+    roles: ['admin', 'lab_manager', 'reviewer'],
+    children: [
+      { label: 'Approvals', href: '/dashboard/approvals', icon: 'fact_check', roles: ['admin', 'lab_manager', 'reviewer'] },
+      { label: 'Audit Trail', href: '/dashboard/audit-trail', icon: 'history', roles: ['admin', 'lab_manager'] },
+    ],
+  },
   // Administration group — visibility is intentionally wide open (null) because
   // several children below (Tasks, Results, Chain of Custody, Analysis Requests)
   // are visible to roles (analyst/reviewer/client/receptionist) narrower than the

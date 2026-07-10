@@ -348,12 +348,39 @@ class QCSample(models.Model):
     run_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
                                on_delete=models.SET_NULL, related_name="qc_samples_run")
     run_at = models.DateTimeField(null=True, blank=True)
+    
+    # Review fields
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                    on_delete=models.SET_NULL, related_name="qc_samples_reviewed")
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    review_notes = models.TextField(blank=True)
+    is_reviewed = models.BooleanField(default=False)
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "qc_samples"
         ordering = ["-created_at"]
+
+    def save(self, *args, **kwargs):
+        if not self.qc_id:
+            from .services import generate_qc_id
+            self.qc_id = generate_qc_id()
+        
+        # Auto-calculate status when actual_value is provided
+        if self.actual_value is not None and self.target_value is not None:
+            from decimal import Decimal
+            tol_fraction = Decimal(self.tolerance_percent or 0) / Decimal("100")
+            lower_bound = Decimal(self.target_value) * (Decimal("1") - tol_fraction)
+            upper_bound = Decimal(self.target_value) * (Decimal("1") + tol_fraction)
+            actual_dec = Decimal(self.actual_value)
+            if lower_bound <= actual_dec <= upper_bound:
+                self.status = "passed"
+            else:
+                self.status = "failed"
+                
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.qc_id} ({self.get_qc_type_display()})"
