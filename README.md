@@ -72,7 +72,7 @@ DEBUG=True
 SECRET_KEY=any-random-string-at-least-50-chars
 DB_NAME=xellabs_lims
 DB_USER=xellabs_user
-DB_PASSWORD=3333
+DB_PASSWORD=<your-db-password>
 DB_HOST=postgres
 DB_PORT=5432
 CELERY_BROKER_URL=redis://redis:6379/0
@@ -132,7 +132,7 @@ print('Tenant setup complete')
 | **XelLabs Frontend** | http://localhost:3000 | admin / Admin@1234 |
 | Django Admin | http://localhost:8001/admin/ | superuser |
 | Django API | http://localhost:8001/api/ | Token auth |
-| SENAITE | http://localhost:8080/senaite | admin / admin |
+| SENAITE | http://localhost:8080/senaite | set via SENAITE_ADMIN_USER / SENAITE_ADMIN_PASS |
 
 ### Step 7 — Sync clients from SENAITE (first time)
 
@@ -228,7 +228,7 @@ The frontend integrates with SENAITE via its JSON API v1 (`/@@API/senaite/v1/`):
 | List sample types | `GET /@@API/senaite/v1/SampleType` |
 | List analysis services | `GET /@@API/senaite/v1/AnalysisService` |
 
-Auth: HTTP Basic (credentials from `SENAITE_ADMIN_USER` / `SENAITE_ADMIN_PASS`, default `admin/admin`).
+Auth: HTTP Basic (credentials from `SENAITE_ADMIN_USER` / `SENAITE_ADMIN_PASS`, set these env vars before use).
 
 ---
 
