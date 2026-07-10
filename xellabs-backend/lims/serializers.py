@@ -84,6 +84,20 @@ class SampleSerializer(RecordLockMixin, serializers.ModelSerializer):
         fields = "__all__"
         read_only_fields = ("created_by", "locked_by", "locked_at", "created_at", "updated_at")
 
+    # Fields that describe the sample itself — editable only until the sample is
+    # received (or by admin/lab_manager afterwards). Status/workflow fields are
+    # governed separately in update().
+    DETAIL_FIELDS = (
+        "client", "sample_type", "collection_date", "description",
+        "barcode", "storage_location", "expiry_date",
+    )
+
+    def validate_collection_date(self, value):
+        from django.utils import timezone
+        if value and value > timezone.now():
+            raise serializers.ValidationError("Sample date cannot be in the future.")
+        return value
+
     def create(self, validated_data):
         from .services import generate_sample_id
         from datetime import timedelta
@@ -98,12 +112,35 @@ class SampleSerializer(RecordLockMixin, serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         validated_data.pop("reason_for_change", None)
+
+        # Detail fields are editable only while the sample is still 'registered';
+        # after receipt only admin/lab_manager may correct them. Without this the
+        # periodic SENAITE pull-sync silently reasserts the mirrored state anyway,
+        # so allowing the edit would just look like a bug to the user.
+        if instance.status != "registered":
+            user = self.context["request"].user
+            if getattr(user, "role", None) not in UNLOCK_ROLES:
+                changed = [
+                    f for f in self.DETAIL_FIELDS
+                    if f in validated_data and validated_data[f] != getattr(instance, f)
+                ]
+                if changed:
+                    raise serializers.ValidationError(
+                        "Sample details can no longer be edited after the sample has been "
+                        "received. Contact a lab manager to make corrections."
+                    )
+
         new_status = validated_data.get("status")
         if new_status and new_status != instance.status:
             if instance.status == "registered" and new_status == "received":
                 raise serializers.ValidationError(
                     {"status": "Use the /receive action to move a sample to 'received' — "
                                "it also records chain of custody."}
+                )
+            if instance.status == "received" and new_status == "registered":
+                raise serializers.ValidationError(
+                    {"status": "A received sample cannot be moved back to 'registered' — "
+                               "receipt has already been recorded in the chain of custody."}
                 )
             # Auto-lock when published
             if new_status == "published" and not instance.is_locked:

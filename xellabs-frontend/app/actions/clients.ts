@@ -16,8 +16,7 @@ export type DjangoClient = {
   id: number
   name: string
   client_id: string
-  tenant_detail?: { id: number; name: string; slug: string; schema_name: string; logo?: string | null } | null
-  logo_url?: string | null
+  tenant_detail?: { id: number; name: string; slug: string; schema_name: string } | null
   email: string
   phone: string
   fax: string
@@ -30,6 +29,7 @@ export type DjangoClient = {
   contact_phone: string
   contact_job_title: string
   contact_department: string
+  cc_emails: string
   address: string
   physical_address: SenaiteAddress | Record<string, never>
   postal_address: SenaiteAddress | Record<string, never>
@@ -251,6 +251,7 @@ export async function updateClient(
     contact_first_name: g('contact_first_name'), contact_last_name: g('contact_last_name'),
     contact_email: g('contact_email'), contact_phone: g('contact_phone'),
     contact_job_title: g('contact_job_title'), contact_department: g('contact_department'),
+    cc_emails: g('cc_emails'),
     physical_address: addr(formData, 'physical'),
     postal_address:   addr(formData, 'postal'),
     billing_address:  addr(formData, 'billing'),
@@ -303,6 +304,7 @@ export async function createClient(
     contact_first_name: g('contact_first_name'), contact_last_name: g('contact_last_name'),
     contact_email: g('contact_email'), contact_phone: g('contact_phone'),
     contact_job_title: g('contact_job_title'), contact_department: g('contact_department'),
+    cc_emails: g('cc_emails'),
     physical_address: addr(formData, 'physical'),
     postal_address:   addr(formData, 'postal'),
     billing_address:  addr(formData, 'billing'),

@@ -1,7 +1,7 @@
 'use client'
 // XelLabs shared UI kit — presentational primitives for the Product Page_v3 design.
 // Every dashboard page composes these; do not fork per-page styling.
-import React from 'react'
+import React, { useState } from 'react'
 import { T, CHIP_TONES, ChipTone, statusTone } from './tokens'
 
 export { T, CHIP_TONES, statusTone }
@@ -274,6 +274,32 @@ export function TagChip({ label, onRemove }: { label: string; onRemove?: () => v
         </button>
       )}
     </span>
+  )
+}
+
+/** Multi-value text input (e.g. CC emails) — press Enter or comma to add a tag. */
+export function TagInput({ tags, onAdd, onRemove, placeholder, type = 'text' }: {
+  tags: string[]; onAdd: (v: string) => void; onRemove: (v: string) => void; placeholder?: string; type?: string
+}) {
+  const [val, setVal] = useState('')
+  return (
+    <div
+      className="w-full flex flex-wrap items-center gap-1.5"
+      style={{ ...inputStyle, height: 'auto', minHeight: 36, padding: '5px 8px' }}
+    >
+      {tags.map(t => <TagChip key={t} label={t} onRemove={() => onRemove(t)} />)}
+      <input
+        type={type}
+        value={val}
+        onChange={e => setVal(e.target.value)}
+        onKeyDown={e => {
+          if ((e.key === 'Enter' || e.key === ',') && val.trim()) { e.preventDefault(); onAdd(val.trim()); setVal('') }
+        }}
+        placeholder={tags.length === 0 ? placeholder : ''}
+        className={inputCls}
+        style={{ border: 'none', height: 22, flex: 1, minWidth: 100, padding: 0 }}
+      />
+    </div>
   )
 }
 

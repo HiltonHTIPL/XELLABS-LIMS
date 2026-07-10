@@ -6,6 +6,7 @@ import {
   createClient, updateClient, toggleClientActive, resetClientPassword,
   checkClientIdAvailable, type ClientFormState, type DjangoClient, type SenaiteAddress,
 } from '@/app/actions/clients'
+import { TagInput } from '@/app/dashboard/_components/ui'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -191,6 +192,21 @@ function Step2({ vals, set, errors, fieldErrors }: { vals: FV; set: (k: string, 
           value={vals.contact_job_title  ?? ''} onChange={v => set('contact_job_title',  v)} />
         <Field label="Department" name="contact_department" placeholder="e.g. Quality Assurance"
           value={vals.contact_department ?? ''} onChange={v => set('contact_department', v)} />
+      </Row>
+      <Row>
+        <div style={{ flex: 1 }}>
+          <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>CC Emails</label>
+          <TagInput
+            type="email"
+            tags={(vals.cc_emails ?? '').split(',').map(s => s.trim()).filter(Boolean)}
+            onAdd={v => set('cc_emails', [...(vals.cc_emails ?? '').split(',').map(s => s.trim()).filter(Boolean), v].join(','))}
+            onRemove={v => set('cc_emails', (vals.cc_emails ?? '').split(',').map(s => s.trim()).filter(x => x && x !== v).join(','))}
+            placeholder="Type email and press Enter"
+          />
+          <p className="mt-1" style={{ fontSize: 11, color: '#9CA3AF' }}>
+            Auto-fills the CC field when this client is selected while registering a new sample.
+          </p>
+        </div>
       </Row>
     </div>
   )
@@ -386,6 +402,7 @@ function clientToFV(c: DjangoClient): FV {
     salutation: c.salutation, contact_first_name: c.contact_first_name, contact_last_name: c.contact_last_name,
     contact_email: c.contact_email, contact_phone: c.contact_phone,
     contact_job_title: c.contact_job_title, contact_department: c.contact_department,
+    cc_emails: c.cc_emails ?? '',
     physical_street: phys?.address ?? '', physical_city: phys?.city ?? '', physical_state: phys?.state ?? '',
     physical_zip: phys?.zip ?? '', physical_country: phys?.country ?? '',
     postal_street: post?.address ?? '', postal_city: post?.city ?? '', postal_state: post?.state ?? '',
@@ -399,7 +416,7 @@ function clientToFV(c: DjangoClient): FV {
 }
 
 function blankFV(): FV {
-  return { name: '', client_id: '', email: '', phone: '', fax: '', mobile: '', tax_number: '', account_number: '', salutation: '', contact_first_name: '', contact_last_name: '', contact_email: '', contact_phone: '', contact_job_title: '', contact_department: '', physical_street: '', physical_city: '', physical_state: '', physical_zip: '', physical_country: '', postal_street: '', postal_city: '', postal_state: '', postal_zip: '', postal_country: '', billing_street: '', billing_city: '', billing_state: '', billing_zip: '', billing_country: '', bank_name: '', bank_branch: '', swift_code: '', iban: '', nib: '', bulk_discount: '', member_discount: '', remarks: '' }
+  return { name: '', client_id: '', email: '', phone: '', fax: '', mobile: '', tax_number: '', account_number: '', salutation: '', contact_first_name: '', contact_last_name: '', contact_email: '', contact_phone: '', contact_job_title: '', contact_department: '', cc_emails: '', physical_street: '', physical_city: '', physical_state: '', physical_zip: '', physical_country: '', postal_street: '', postal_city: '', postal_state: '', postal_zip: '', postal_country: '', billing_street: '', billing_city: '', billing_state: '', billing_zip: '', billing_country: '', bank_name: '', bank_branch: '', swift_code: '', iban: '', nib: '', bulk_discount: '', member_discount: '', remarks: '' }
 }
 
 // ── Main shell ────────────────────────────────────────────────────────────────
@@ -647,14 +664,9 @@ export default function ClientsShell({ initialClients }: { initialClients: Djang
                 <tr key={c.id} style={{ borderBottom: i < initialClients.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50 cursor-pointer">
                   <td className="px-3 py-2">
                     <Link href={`/dashboard/clients/${c.id}`} className="flex items-center gap-2">
-                      {c.logo_url
-                        ? <div className="w-6 h-6 rounded-full shrink-0 overflow-hidden flex items-center justify-center" style={{ border: '1px solid #E8EAF2' }}>
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={c.logo_url} alt={c.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                          </div>
-                        : <div className="w-6 h-6 rounded-full flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 10, backgroundColor: '#0154FC' }}>
-                            {c.name.slice(0, 1).toUpperCase()}
-                          </div>}
+                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 10, backgroundColor: '#0154FC' }}>
+                        {c.name.slice(0, 1).toUpperCase()}
+                      </div>
                       <span className="text-xs font-medium truncate" style={{ color: '#0154FC' }}>{c.name}</span>
                     </Link>
                   </td>

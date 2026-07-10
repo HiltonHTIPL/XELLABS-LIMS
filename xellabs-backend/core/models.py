@@ -123,6 +123,7 @@ class Client(models.Model):
     contact_phone = models.CharField(max_length=30, blank=True, validators=[RegexValidator(r'^[\d\s\-\+\(\)]*$', 'Enter a valid phone number.')])  # SENAITE: contact Phone
     contact_job_title = models.CharField(max_length=100, blank=True)     # SENAITE: JobTitle
     contact_department = models.CharField(max_length=100, blank=True)    # SENAITE: Department
+    cc_emails = models.TextField(blank=True)                             # SENAITE: CCEmails (comma-separated)
 
     # ── Addresses (each mirrors SENAITE's address dict schema) ────────────────
     # Expected shape: {"address": "", "city": "", "state": "", "zip": "", "country": ""}

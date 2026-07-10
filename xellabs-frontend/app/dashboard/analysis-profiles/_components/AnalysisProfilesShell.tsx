@@ -48,10 +48,24 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
         setToast({ ok: true, msg: editing ? 'Analysis profile updated.' : 'Analysis profile created.' })
         setTimeout(() => setToast(null), 4000)
         router.refresh()
-      } else if (result.errors) {
+      } else {
+        // Map recognised field errors onto inputs; surface everything else
+        // (auth {detail}, non-field errors, 500s) as an error toast so a failed
+        // create never dies silently with the drawer just sitting open.
         const fe: Record<string, string> = {}
-        for (const [k, msgs] of Object.entries(result.errors)) { if (msgs?.length) fe[k] = msgs[0] }
+        const KNOWN_FIELDS = ['name', 'analysis_services']
+        const unknown: string[] = []
+        for (const [k, msgs] of Object.entries(result.errors ?? {})) {
+          const msgList = Array.isArray(msgs) ? msgs : [String(msgs)]
+          if (!msgList.length) continue
+          if (KNOWN_FIELDS.includes(k)) fe[k] = msgList[0]
+          else unknown.push(msgList[0])
+        }
         setFieldErrors(fe)
+        if (Object.keys(fe).length === 0) {
+          setToast({ ok: false, msg: unknown[0] ?? result.message ?? 'Failed to save the analysis profile.' })
+          setTimeout(() => setToast(null), 6000)
+        }
       }
       return result
     },

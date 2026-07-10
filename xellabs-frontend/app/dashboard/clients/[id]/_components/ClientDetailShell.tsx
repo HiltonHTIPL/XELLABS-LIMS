@@ -590,14 +590,12 @@ export default function ClientDetailShell({
 
       {/* Top identity card */}
       <div className="bg-white rounded-xl p-4 mb-3 flex items-center gap-4" style={{ border: '1px solid #E8EAF2' }}>
-        {/* Avatar or logo */}
+        {/* Avatar */}
         <div
           className="w-12 h-12 rounded-lg flex items-center justify-center text-white font-bold shrink-0 overflow-hidden"
           style={{ fontSize: 16, backgroundColor: '#0154FC' }}
         >
-          {tenant?.logo
-            ? <img src={tenant.logo} alt="logo" className="w-full h-full object-contain" />
-            : initials}
+          {initials}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">

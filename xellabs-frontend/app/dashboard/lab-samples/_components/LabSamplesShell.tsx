@@ -2,7 +2,7 @@
 import { useState, useActionState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createLabSample, updateLabSample, type LabSample, type LabSampleFormState, type DjangoSampleType } from '@/app/actions/lab-samples'
+import { createLabSample, updateLabSample, uploadSampleAttachment, type LabSample, type LabSampleFormState, type DjangoSampleType } from '@/app/actions/lab-samples'
 import { type DjangoClient } from '@/app/actions/clients'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
@@ -42,17 +42,37 @@ function SampleModal({ editing, clients, sampleTypes, onClose, onDone }: {
   onClose: () => void; onDone: () => void
 }) {
   const isEdit = editing !== null
+  const [attachFile, setAttachFile] = useState<File | null>(null)
+
+  async function uploadIfAny(sampleDbId?: number) {
+    if (!attachFile || !sampleDbId) return
+    const fd = new FormData()
+    fd.append('attachment', attachFile)
+    await uploadSampleAttachment(String(sampleDbId), fd).catch(() => null)
+  }
+
   const createAction = async (prev: LabSampleFormState, fd: FormData) => {
     const result = await createLabSample(prev, fd)
-    if (result.success) { onDone(); onClose() }
+    if (result.success) { await uploadIfAny(result.id); onDone(); onClose() }
     return result
   }
   const editAction = async (prev: LabSampleFormState, fd: FormData) => {
     const result = await updateLabSample(editing!.id, prev, fd)
-    if (result.success) { onDone(); onClose() }
+    if (result.success) { await uploadIfAny(editing!.id); onDone(); onClose() }
     return result
   }
   const [state, action, pending] = useActionState(isEdit ? editAction : createAction, {})
+
+  // Receipt is a controlled workflow step: 'received' is reached only via the
+  // Receive action (chain of custody), and a received sample can't go back to
+  // 'registered' — the backend rejects both, so don't offer them here.
+  const statusOptions = STATUS_OPTIONS.filter(o => {
+    const current = editing?.status ?? 'registered'
+    if (o.value === current) return true
+    if (o.value === 'received') return false
+    if (o.value === 'registered' && current === 'received') return false
+    return true
+  })
   const inputStyle = (err?: string) => ({ border: `1px solid ${err ? '#EF4444' : '#D1D5DB'}`, color: '#111827' })
   const labelStyle = { color: '#374151' }
 
@@ -87,8 +107,11 @@ function SampleModal({ editing, clients, sampleTypes, onClose, onDone }: {
             <div>
               <label className="block text-xs font-medium mb-1" style={labelStyle}>Status</label>
               <select name="status" defaultValue={editing?.status ?? 'registered'} className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={inputStyle()}>
-                {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                {statusOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
+              {isEdit && editing!.status === 'registered' && (
+                <p className="mt-0.5" style={{ fontSize: 10, color: '#9CA3AF' }}>Use the Receive action to mark a sample as received.</p>
+              )}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -112,7 +135,10 @@ function SampleModal({ editing, clients, sampleTypes, onClose, onDone }: {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium mb-1" style={labelStyle}>Collection Date</label>
-              <input type="datetime-local" name="collection_date" defaultValue={editing?.collection_date?.slice(0,16) ?? ''} className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={inputStyle()} />
+              <input type="datetime-local" name="collection_date" defaultValue={editing?.collection_date?.slice(0,16) ?? ''}
+                max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+                className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={inputStyle(state.errors?.collection_date?.[0])} />
+              {state.errors?.collection_date && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{state.errors.collection_date[0]}</p>}
             </div>
             <div>
               <label className="block text-xs font-medium mb-1" style={labelStyle}>Received Date</label>
@@ -128,6 +154,12 @@ function SampleModal({ editing, clients, sampleTypes, onClose, onDone }: {
               <label className="block text-xs font-medium mb-1" style={labelStyle}>Barcode</label>
               <input name="barcode" placeholder="e.g. BC-0001234" defaultValue={editing?.barcode} className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={inputStyle()} />
             </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1" style={labelStyle}>Attachment <span style={{ color: '#9CA3AF', fontWeight: 400 }}>(optional — PDF, image or document)</span></label>
+            <input type="file" onChange={e => setAttachFile(e.target.files?.[0] ?? null)}
+              className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={inputStyle()} />
+            {attachFile && <p className="mt-0.5" style={{ fontSize: 10, color: '#6B7280' }}>{attachFile.name}</p>}
           </div>
           <div className="flex items-center justify-end gap-2 pt-1" style={{ borderTop: '1px solid #F3F4F6' }}>
             <button type="button" onClick={onClose} disabled={pending}
@@ -217,7 +249,7 @@ export default function LabSamplesShell({ initialSamples, clients, sampleTypes }
                     </td>
                     <td className="px-3 py-2.5 text-xs font-mono" style={{ color: '#9CA3AF', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.barcode || '—'}</td>
                     <td className="px-3 py-2.5">
-                      {s.status === 'registered' && (
+                      {s.status === 'registered' ? (
                         <Link
                           href={`/dashboard/sample-receipts?id=${s.id}`}
                           className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium"
@@ -225,6 +257,16 @@ export default function LabSamplesShell({ initialSamples, clients, sampleTypes }
                         >
                           <MI name="move_to_inbox" size={13} color="#0154FC" />
                           Receive
+                        </Link>
+                      ) : (
+                        <Link
+                          href={`/dashboard/sample-receipts?id=${s.id}`}
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium"
+                          style={{ backgroundColor: '#F3F4F6', color: '#374151', textDecoration: 'none', whiteSpace: 'nowrap', width: 'fit-content' }}
+                          title="Reopen the registration/receipt details for this sample"
+                        >
+                          <MI name="open_in_new" size={13} color="#6B7280" />
+                          Reopen
                         </Link>
                       )}
                     </td>

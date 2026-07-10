@@ -73,6 +73,7 @@ const NAV: NavEntry[] = [
       { label: 'Users',        href: '/dashboard/admin',        icon: 'group',       roles: ['admin', 'lab_manager'] },
       { label: 'Sample Types', href: '/dashboard/sample-types', icon: 'category',   roles: ['admin', 'lab_manager'] },
       { label: 'Sample Templates', href: '/dashboard/sample-templates', icon: 'view_list', roles: ['admin', 'lab_manager'] },
+      { label: 'Analyses',     href: '/dashboard/analyses',     icon: 'biotech',    roles: ['admin', 'lab_manager'] },
       { label: 'Analysis Profiles', href: '/dashboard/analysis-profiles', icon: 'science', roles: ['admin', 'lab_manager'] },
       { label: 'Tests',        href: '/dashboard/tests',        icon: 'assignment',  roles: ['admin', 'lab_manager', 'analyst'] },
       { label: 'Specifications', href: '/dashboard/specifications', icon: 'rule',    roles: ['admin', 'lab_manager'] },
@@ -104,7 +105,7 @@ export default function Sidebar({ onToggle, role, reportDraftCount, isSuperuser 
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
     const open = new Set<string>()
     if ([
-      '/dashboard/admin', '/dashboard/sample-types', '/dashboard/sample-templates', '/dashboard/analysis-profiles',
+      '/dashboard/admin', '/dashboard/sample-types', '/dashboard/sample-templates', '/dashboard/analyses', '/dashboard/analysis-profiles',
       '/dashboard/tests', '/dashboard/specifications', '/dashboard/analysis-requests', '/dashboard/results',
       '/dashboard/tasks', '/dashboard/chain-of-custody', '/dashboard/approvals', '/dashboard/audit-trail',
       '/dashboard/master-data-import', '/dashboard/instrument-list', '/dashboard/storage-list', '/dashboard/settings', '/dashboard/tenant-management',

@@ -356,7 +356,9 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
             { label: 'Received On', value: fmt(sample.received_date) },
             { label: 'Due Date', value: fmtShort(sample.expiry_date), icon: 'event' },
             { label: 'Received By', value: sample.received_by_name },
-            { label: 'TAT (Days)', value: sample.collection_date ? String(Math.max(0, Math.floor((Date.now() - new Date(sample.collection_date).getTime()) / (1000 * 60 * 60 * 24)))) : '—' },
+            // TAT counts from receipt (same as the samples list), not collection —
+            // the clock only starts when the lab actually has the sample.
+            { label: 'TAT (Days)', value: sample.received_date ? String(Math.max(0, Math.floor((Date.now() - new Date(sample.received_date).getTime()) / (1000 * 60 * 60 * 24)))) : '—' },
           ].map((m, i, arr) => (
             <div key={m.label} style={{ flex: 1, minWidth: 130, textAlign: 'center', borderRight: i < arr.length - 1 ? '1px solid #E8EAF2' : 'none' }}>
               <p style={{ fontSize: 11, color: '#9CA3AF', margin: '0 0 4px' }}>{m.label}</p>
@@ -442,10 +444,22 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
 
         <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #E8EAF2', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: 18 }}>
           <p style={{ fontSize: 13, fontWeight: 700, color: '#14265E', margin: '0 0 10px' }}>Documents</p>
-          <div style={{ textAlign: 'center', padding: '18px 0', color: '#9CA3AF' }}>
-            <MI name="description" size={28} color="#D1D5DB" />
-            <p style={{ fontSize: 12, marginTop: 8 }}>No documents uploaded for this sample yet.</p>
-          </div>
+          {sample.attachment ? (
+            <a href={sample.attachment} target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-2 px-3 py-2 rounded-lg"
+              style={{ border: '1px solid #E8EAF2', textDecoration: 'none', backgroundColor: '#F9FAFB' }}>
+              <MI name="description" size={18} color="#0154FC" />
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#2563EB', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {decodeURIComponent(sample.attachment.split('/').pop() ?? 'Attachment')}
+              </span>
+              <MI name="open_in_new" size={13} color="#9CA3AF" />
+            </a>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '18px 0', color: '#9CA3AF' }}>
+              <MI name="description" size={28} color="#D1D5DB" />
+              <p style={{ fontSize: 12, marginTop: 8 }}>No documents uploaded for this sample yet.</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -1,3 +1,5 @@
+import logging
+
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -15,6 +17,8 @@ from .serializers import (
     WorksheetAssignmentSerializer, ResultSerializer, QCSampleSerializer,
     ChainOfCustodySerializer,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class SampleTypeViewSet(viewsets.ModelViewSet):
@@ -52,30 +56,43 @@ class SampleTypeViewSet(viewsets.ModelViewSet):
             return Response({"detail": f"SENAITE unreachable: {e}"}, status=status.HTTP_502_BAD_GATEWAY)
 
         created_names = []
+        skipped = []
         for st in senaite_types:
             uid = st.get("uid", "")
             name = (st.get("title") or st.get("Title") or "").strip()
             prefix = (st.get("Prefix") or name[:4].upper() or "XX").strip()
             if not name:
                 continue
-            # Atomic get_or_create by uid (prevents race condition)
-            if uid:
-                obj, created = SampleType.objects.get_or_create(
-                    senaite_uid=uid,
-                    defaults={"name": name, "prefix": prefix, "is_active": True}
-                )
+            # One bad row must never abort the whole sync: SampleType.name is
+            # unique, so a SENAITE type re-created under a new UID with the same
+            # title used to raise IntegrityError here and silently drop every
+            # remaining type — the "dropdown shows 2 of 3 types" bug.
+            try:
+                if uid:
+                    existing_by_name = SampleType.objects.filter(name=name).first()
+                    if existing_by_name and existing_by_name.senaite_uid != uid:
+                        # Same title, different (or blank) UID — adopt the new UID
+                        # instead of colliding on the unique name.
+                        existing_by_name.senaite_uid = uid
+                        existing_by_name.save(update_fields=["senaite_uid"])
+                        continue
+                    obj, created = SampleType.objects.get_or_create(
+                        senaite_uid=uid,
+                        defaults={"name": name, "prefix": prefix, "is_active": True}
+                    )
+                else:
+                    # No uid from SENAITE — use name as fallback (less reliable but still atomic)
+                    obj, created = SampleType.objects.get_or_create(
+                        name=name,
+                        defaults={"prefix": prefix, "is_active": True}
+                    )
                 if created:
                     created_names.append(name)
-            else:
-                # No uid from SENAITE — use name as fallback (less reliable but still atomic)
-                obj, created = SampleType.objects.get_or_create(
-                    name=name,
-                    defaults={"prefix": prefix, "is_active": True}
-                )
-                if created:
-                    created_names.append(name)
+            except Exception as e:
+                logger.warning("Sample type sync skipped %r: %s", name, e)
+                skipped.append(name)
 
-        return Response({"synced": len(created_names), "created": created_names})
+        return Response({"synced": len(created_names), "created": created_names, "skipped": skipped})
 
 
 class SampleTemplateViewSet(viewsets.ModelViewSet):

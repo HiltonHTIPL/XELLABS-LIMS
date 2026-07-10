@@ -366,6 +366,141 @@ export async function fetchSenaiteAnalysisServices(token: string): Promise<Senai
   } catch { return [] }
 }
 
+// ─── Departments & Analysis Categories ───────────────────────────────────────
+
+export type SenaiteDepartment = {
+  uid: string
+  title: string
+}
+
+export async function fetchSenaiteDepartments(token: string): Promise<SenaiteDepartment[]> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Department?limit=1000`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return (data.items ?? []).map((d: Record<string, unknown>) => ({
+      uid:   (d.uid as string) ?? '',
+      title: (d.title as string) ?? '',
+    })).filter((d: SenaiteDepartment) => d.uid && d.title)
+  } catch { return [] }
+}
+
+export type SenaiteAnalysisCategory = {
+  uid: string
+  id: string
+  title: string
+}
+
+export async function fetchSenaiteAnalysisCategories(token: string): Promise<SenaiteAnalysisCategory[]> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/AnalysisCategory?limit=1000`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return (data.items ?? []).map((c: Record<string, unknown>) => ({
+      uid:   (c.uid as string) ?? '',
+      id:    (c.id as string) ?? '',
+      title: (c.title as string) ?? '',
+    })).filter((c: SenaiteAnalysisCategory) => c.uid && c.title)
+  } catch { return [] }
+}
+
+export async function createSenaiteAnalysisCategory(
+  token: string,
+  payload: { title: string; departmentUid: string }
+): Promise<{ success: boolean; uid?: string; error?: string }> {
+  try {
+    // `department` is a required Dexterity reference field and must be passed as
+    // an object `{uid: ...}` — a bare UID string or a list is rejected (confirmed
+    // by direct API probing on this 2.6.0 build).
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        portal_type: 'AnalysisCategory',
+        parent_path: '/senaite/setup/analysiscategories',
+        title: payload.title,
+        department: { uid: payload.departmentUid },
+      }),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok) return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    const items = (data.items as Record<string, unknown>[]) ?? []
+    if (!items.length) return { success: false, error: (data.message as string) ?? 'No category returned from the lab system.' }
+    return { success: true, uid: (items[0].uid as string) ?? '' }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+export async function createSenaiteAnalysisService(
+  token: string,
+  payload: { title: string; Keyword: string; CategoryUid: string; Unit?: string; Price?: string }
+): Promise<{ success: boolean; service?: SenaiteAnalysisService; error?: string }> {
+  const headers = { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }
+  try {
+    // AnalysisService is a legacy Archetypes content type on this 2.6.0 build: the
+    // jsonapi create endpoint creates the object WITH all fields correctly set, but
+    // then errors while rendering the response ("'NoneType' object has no attribute
+    // 'form'") and returns success:false — confirmed by direct probing. So the
+    // response body cannot be trusted; verify by re-fetching the service by title.
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        portal_type: 'AnalysisService',
+        parent_path: '/senaite/bika_setup/bika_analysisservices',
+        title: payload.title,
+        Keyword: payload.Keyword,
+        Category: payload.CategoryUid,
+        ...(payload.Unit ? { Unit: payload.Unit } : {}),
+        ...(payload.Price ? { Price: payload.Price } : {}),
+      }),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    const items = (data.items as Record<string, unknown>[]) ?? []
+    if (items.length > 0) {
+      const s = items[0]
+      return {
+        success: true,
+        service: {
+          uid: (s.uid as string) ?? '', id: (s.id as string) ?? '', title: (s.title as string) ?? '',
+          Keyword: (s.Keyword as string) ?? '', Category: '', Price: (s.Price as string) ?? '', Unit: (s.Unit as string) ?? '',
+        },
+      }
+    }
+
+    // Bogus-error path: verify whether the service actually got created.
+    const verify = await fetch(`${SENAITE_URL}/@@API/senaite/v1/AnalysisService?complete=true&limit=1000`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (verify.ok) {
+      const vData = await verify.json().catch(() => ({})) as Record<string, unknown>
+      const vItems = (vData.items as Record<string, unknown>[]) ?? []
+      const match = vItems.find(s =>
+        ((s.title as string) ?? '').trim().toLowerCase() === payload.title.trim().toLowerCase() &&
+        (s.Keyword as string) === payload.Keyword
+      )
+      if (match) {
+        return {
+          success: true,
+          service: {
+            uid: (match.uid as string) ?? '', id: (match.id as string) ?? '', title: (match.title as string) ?? '',
+            Keyword: (match.Keyword as string) ?? '', Category: '', Price: (match.Price as string) ?? '', Unit: (match.Unit as string) ?? '',
+          },
+        }
+      }
+    }
+    return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
 // ─── Samples (AnalysisRequests) ───────────────────────────────────────────────
 
 export type SenaiteSample = {
@@ -503,6 +638,52 @@ export async function createSenaiteSample(
   } catch (e) {
     return { success: false, error: String(e) }
   }
+}
+
+/** Push field updates to an existing SENAITE sample (AnalysisRequest) via v1/update.
+ *
+ * Two confirmed quirks of this 2.6.0 build (2026-07-10, by direct probing):
+ * - the body must be a single OBJECT `{uid, ...fields}` — a list `[{...}]` fails
+ *   with "'list' object has no attribute 'update'";
+ * - the update is APPLIED even when the response says success:false (e.g.
+ *   `{"Contact": "Contact is required"}`) — so verify by re-fetching the field
+ *   instead of trusting the response body. */
+export async function updateSenaiteSample(
+  token: string,
+  uid: string,
+  fields: { DateSampled?: string; SampleType?: string; ClientSampleID?: string }
+): Promise<{ success: boolean; error?: string }> {
+  const headers = { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ uid, ...fields }),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (res.ok && data.success !== false) return { success: true }
+
+    // Bogus-error path: check whether the update actually landed.
+    const verify = await fetch(`${SENAITE_URL}/@@API/senaite/v1/AnalysisRequest/${uid}?complete=true`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (verify.ok) {
+      const vData = await verify.json().catch(() => ({})) as Record<string, unknown>
+      const item = ((vData.items as Record<string, unknown>[]) ?? [])[0]
+      if (item) {
+        const applied = Object.entries(fields).every(([k, v]) => {
+          const got = item[k]
+          if (k === 'SampleType') return (got as { uid?: string } | null)?.uid === v
+          if (k === 'DateSampled') return typeof got === 'string' && typeof v === 'string' && got.slice(0, 10) === v.slice(0, 10)
+          return got === v
+        })
+        if (applied) return { success: true }
+      }
+    }
+    return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+  } catch (e) { return { success: false, error: String(e) } }
 }
 
 // This SENAITE 2.6 instance has no `/workflow_action` REST route (senaite.jsonapi only

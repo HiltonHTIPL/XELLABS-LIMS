@@ -423,7 +423,7 @@ class SenaiteInstrumentImportView(APIView):
             return Response({'detail': 'No file uploaded.'}, status=400)
 
         try:
-            rows = read_excel_rows(file_obj, required_columns={'title'})
+            rows = read_excel_rows(file_obj, required_columns={'title'}, filename=file_obj.name)
         except ValueError as exc:
             return Response({'detail': str(exc)}, status=400)
 
@@ -452,7 +452,7 @@ class SenaiteStorageLocationImportView(APIView):
             return Response({'detail': 'No file uploaded.'}, status=400)
 
         try:
-            rows = read_excel_rows(file_obj, required_columns={'title'})
+            rows = read_excel_rows(file_obj, required_columns={'title'}, filename=file_obj.name)
         except ValueError as exc:
             return Response({'detail': str(exc)}, status=400)
 

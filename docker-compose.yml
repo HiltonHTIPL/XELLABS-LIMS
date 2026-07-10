@@ -244,6 +244,8 @@ services:
     environment:
       - DJANGO_API_URL=http://django:8001
       - SENAITE_URL=${SENAITE_URL:-http://senaite:8080/senaite}
+      - SENAITE_ADMIN_USER=${SENAITE_ADMIN_USER:-admin}
+      - SENAITE_ADMIN_PASS=${SENAITE_ADMIN_PASS:-admin}
       - SESSION_SECRET=${SESSION_SECRET}
       - DJANGO_SERVICE_TOKEN=${DJANGO_SERVICE_TOKEN}
       # DEFAULT_TENANT_SCHEMA intentionally NOT set — never hardcode a tenant here.

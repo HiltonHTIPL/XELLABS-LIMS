@@ -152,8 +152,8 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
   const SUBMIT_BATCH_SIZE = 8
   const SUBMIT_BATCH_DELAY_MS = 400
 
-  async function submitInBatches<T>(items: T[], run: (item: T) => Promise<{ success: boolean; message?: string; sample_id?: string }>) {
-    const results: Array<{ success: boolean; message?: string; sample_id?: string }> = []
+  async function submitInBatches<T>(items: T[], run: (item: T) => Promise<{ success: boolean; message?: string; sample_id?: string; id?: number }>) {
+    const results: Array<{ success: boolean; message?: string; sample_id?: string; id?: number }> = []
     for (let i = 0; i < items.length; i += SUBMIT_BATCH_SIZE) {
       const batch = items.slice(i, i + SUBMIT_BATCH_SIZE)
       const batchResults = await Promise.all(batch.map(run))
@@ -169,6 +169,12 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
     if (invalid !== -1) {
       setActiveTab(invalid)
       setError(`Sample ${invalid + 1}: Client and Sample Type are required.`)
+      return
+    }
+    const futureDated = forms.findIndex(f => f.dateSampled && new Date(f.dateSampled) > new Date())
+    if (futureDated !== -1) {
+      setActiveTab(futureDated)
+      setError(`Sample ${futureDated + 1}: Date Sampled cannot be in the future.`)
       return
     }
     setError(''); setSubmitting(true); setSubmitProgress({ done: 0, total: forms.length })
@@ -204,13 +210,15 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
     if (failed.length > 0) {
       setError(failed.map(r => r.message).join(' | '))
     } else {
-      // Upload attachments to the first created sample if files were added
-      const firstId = results[0]?.sample_id
+      // Upload attachments to the first created sample if files were added.
+      // Must use the numeric DB id — the display sample_id ("BL-2026-001") 404s
+      // against the DRF detail route, which is why uploads used to vanish silently.
+      const firstId = results[0]?.id
       if (firstId && attachments.length > 0) {
         const { uploadSampleAttachment } = await import('@/app/actions/lab-samples')
         for (const file of attachments) {
           const fd = new FormData(); fd.append('attachment', file)
-          await uploadSampleAttachment(firstId, fd).catch(() => null)
+          await uploadSampleAttachment(String(firstId), fd).catch(() => null)
         }
       }
       const ids = results.map(r => r.sample_id).filter(Boolean).join(', ')
@@ -224,9 +232,10 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
     const client = clients.find(c => String(c.id) === clientId)
     if (!client) { set('clientId', ''); return }
     const contactName = [client.contact_first_name, client.contact_last_name].filter(Boolean).join(' ') || client.contact_person || ''
-    const emails: string[] = []
-    if (client.contact_email) emails.push(client.contact_email)
-    if (client.email && client.email !== client.contact_email) emails.push(client.email)
+    const ccFromClient = (client.cc_emails ?? '').split(',').map(s => s.trim()).filter(Boolean)
+    const emails: string[] = [...ccFromClient]
+    if (client.contact_email && !emails.includes(client.contact_email)) emails.push(client.contact_email)
+    if (client.email && !emails.includes(client.email)) emails.push(client.email)
     setForms(prev => prev.map((form, i) => i === activeTab ? {
       ...form, clientId,
       contactName: contactName || form.contactName,
