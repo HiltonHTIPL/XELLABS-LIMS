@@ -214,15 +214,20 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
       // Must use the numeric DB id — the display sample_id ("BL-2026-001") 404s
       // against the DRF detail route, which is why uploads used to vanish silently.
       const firstId = results[0]?.id
+      let failedUploads = 0
       if (firstId && attachments.length > 0) {
         const { uploadSampleAttachment } = await import('@/app/actions/lab-samples')
         for (const file of attachments) {
           const fd = new FormData(); fd.append('attachment', file)
-          await uploadSampleAttachment(String(firstId), fd).catch(() => null)
+          const up = await uploadSampleAttachment(String(firstId), fd)
+          if (!up.ok) failedUploads++
         }
       }
       const ids = results.map(r => r.sample_id).filter(Boolean).join(', ')
-      setSuccess(`${forms.length} sample${forms.length > 1 ? 's' : ''} logged: ${ids}`)
+      const uploadWarning = failedUploads > 0
+        ? ` — note: ${failedUploads} attachment${failedUploads > 1 ? 's' : ''} failed to upload; edit the sample to retry.`
+        : ''
+      setSuccess(`${forms.length} sample${forms.length > 1 ? 's' : ''} logged: ${ids}${uploadWarning}`)
       setTimeout(() => router.push('/dashboard/samples-overview'), 1800)
     }
   }

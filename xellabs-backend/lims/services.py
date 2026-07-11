@@ -139,8 +139,9 @@ def receive_sample(sample, user, location="", notes="", **receipt_fields):
 
 @transaction.atomic
 def submit_result(result, user):
-    """Analyst submits a result value — checks spec and marks submitted."""
-    if result.status != "pending":
+    """Analyst submits a result value — checks spec and marks submitted.
+    Rejected results may be corrected and re-submitted."""
+    if result.status not in ("pending", "rejected"):
         raise ValueError(f"Result is already '{result.status}', cannot submit.")
     if not result.value:
         raise ValueError("Result value cannot be empty.")
@@ -152,12 +153,14 @@ def submit_result(result, user):
     result.save(update_fields=[
         "status", "submitted_by", "submitted_at", "is_out_of_range"
     ])
+    _refresh_samples_for_result(result)
     return result
 
 
 @transaction.atomic
 def verify_result(result, user):
-    """Reviewer verifies a submitted result — auto-locks it."""
+    """Reviewer verifies a submitted result — auto-locks it and completes the
+    parent AnalysisRequest if this was its last unverified result."""
     if result.status != "submitted":
         raise ValueError(f"Result must be 'submitted' to verify (current: '{result.status}').")
 
@@ -168,18 +171,23 @@ def verify_result(result, user):
     result.save(update_fields=[
         "status", "verified_by", "verified_at", "is_locked"
     ])
+    complete_analysis_request(result.worksheet_assignment.analysis_request)
+    _refresh_samples_for_result(result)
     return result
 
 
 @transaction.atomic
 def reject_result(result, user, remarks=""):
-    """Reviewer rejects a submitted result — sends it back to pending."""
+    """Reviewer rejects a submitted result — marks it 'rejected'. The analyst
+    can then correct the value and re-submit (submit_result accepts rejected)."""
     if result.status not in ("submitted",):
         raise ValueError(f"Only submitted results can be rejected (current: '{result.status}').")
 
     result.status = "rejected"
-    result.remarks = remarks or result.remarks
+    if remarks:
+        result.remarks = f"Rejected by {user.username}: {remarks}"
     result.save(update_fields=["status", "remarks"])
+    _refresh_samples_for_result(result)
     return result
 
 
@@ -210,6 +218,55 @@ def reject_worksheet(worksheet, user):
     worksheet.status = "rejected"
     worksheet.save(update_fields=["status", "updated_at"])
     return worksheet
+
+
+# ── Sample workflow status derivation ────────────────────────────────────────
+
+@transaction.atomic
+def refresh_sample_workflow_status(sample):
+    """Derive the sample's status from its lab-worksheet progress.
+
+    Lab worksheets are Django-owned (assignment/results/verification never touch
+    the SENAITE mirror), so the sample status for these stages must be derived
+    here: any assignment -> in_progress; all results submitted -> results_pending;
+    all results verified -> reviewed. Only moves the status forward from
+    'received' onward — registration/receipt and terminal states are untouched.
+    """
+    from .models import Result, WorksheetAssignment
+
+    if sample.status not in ("received", "in_progress", "results_pending", "reviewed"):
+        return sample
+
+    assignments = WorksheetAssignment.objects.filter(analysis_request__sample=sample)
+    total = assignments.count()
+    if total == 0:
+        return sample
+
+    results = Result.objects.filter(worksheet_assignment__in=assignments)
+    verified = results.filter(status="verified").count()
+    submitted_or_verified = results.filter(status__in=("submitted", "verified")).count()
+
+    if verified == total:
+        new_status = "reviewed"
+    elif submitted_or_verified == total:
+        new_status = "results_pending"
+    else:
+        new_status = "in_progress"
+
+    if new_status != sample.status:
+        sample.status = new_status
+        # instance.save() (not queryset.update) so audit signals fire
+        sample.save(update_fields=["status", "updated_at"])
+    return sample
+
+
+def _refresh_samples_for_result(result):
+    samples = set()
+    ar = result.worksheet_assignment.analysis_request
+    if ar and ar.sample_id:
+        samples.add(ar.sample)
+    for s in samples:
+        refresh_sample_workflow_status(s)
 
 
 # ── Analysis Request workflow ─────────────────────────────────────────────────

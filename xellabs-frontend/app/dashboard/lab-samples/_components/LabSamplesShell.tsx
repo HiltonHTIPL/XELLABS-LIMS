@@ -44,21 +44,38 @@ function SampleModal({ editing, clients, sampleTypes, onClose, onDone }: {
   const isEdit = editing !== null
   const [attachFile, setAttachFile] = useState<File | null>(null)
 
-  async function uploadIfAny(sampleDbId?: number) {
-    if (!attachFile || !sampleDbId) return
+  async function uploadIfAny(sampleDbId?: number): Promise<boolean> {
+    if (!attachFile || !sampleDbId) return true
     const fd = new FormData()
     fd.append('attachment', attachFile)
-    await uploadSampleAttachment(String(sampleDbId), fd).catch(() => null)
+    const res = await uploadSampleAttachment(String(sampleDbId), fd)
+    return res.ok
   }
+
+  const uploadFailedState = (result: LabSampleFormState): LabSampleFormState => ({
+    ...result,
+    success: false,
+    message: 'The sample was saved, but the attachment failed to upload. Reopen the sample and attach the file again.',
+  })
 
   const createAction = async (prev: LabSampleFormState, fd: FormData) => {
     const result = await createLabSample(prev, fd)
-    if (result.success) { await uploadIfAny(result.id); onDone(); onClose() }
+    if (result.success) {
+      const uploaded = await uploadIfAny(result.id)
+      onDone()
+      if (!uploaded) return uploadFailedState(result)
+      onClose()
+    }
     return result
   }
   const editAction = async (prev: LabSampleFormState, fd: FormData) => {
     const result = await updateLabSample(editing!.id, prev, fd)
-    if (result.success) { await uploadIfAny(editing!.id); onDone(); onClose() }
+    if (result.success) {
+      const uploaded = await uploadIfAny(editing!.id)
+      onDone()
+      if (!uploaded) return uploadFailedState(result)
+      onClose()
+    }
     return result
   }
   const [state, action, pending] = useActionState(isEdit ? editAction : createAction, {})
@@ -140,10 +157,15 @@ function SampleModal({ editing, clients, sampleTypes, onClose, onDone }: {
                 className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={inputStyle(state.errors?.collection_date?.[0])} />
               {state.errors?.collection_date && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{state.errors.collection_date[0]}</p>}
             </div>
-            <div>
-              <label className="block text-xs font-medium mb-1" style={labelStyle}>Received Date</label>
-              <input type="datetime-local" name="received_date" defaultValue={editing?.received_date?.slice(0,16) ?? ''} className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={inputStyle()} />
-            </div>
+            {/* Received Date is set by the Receive workflow, never entered by hand —
+                shown read-only on edit when it exists, hidden otherwise. */}
+            {isEdit && editing?.received_date ? (
+              <div>
+                <label className="block text-xs font-medium mb-1" style={labelStyle}>Received Date <span style={{ color: '#9CA3AF', fontWeight: 400 }}>(from receipt)</span></label>
+                <input type="text" readOnly value={new Date(editing.received_date).toLocaleString('en-GB', { timeZone: 'UTC' })}
+                  className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={{ ...inputStyle(), backgroundColor: '#FAFAFA', color: '#9CA3AF' }} />
+              </div>
+            ) : <div />}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

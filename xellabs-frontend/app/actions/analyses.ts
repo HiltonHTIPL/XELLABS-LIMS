@@ -11,12 +11,7 @@ import {
   SenaiteDepartment,
 } from '@/app/lib/senaite'
 
-const SENAITE_USER = process.env.SENAITE_ADMIN_USER ?? 'admin'
-const SENAITE_PASS = process.env.SENAITE_ADMIN_PASS ?? 'admin'
-
-function serverToken(): string {
-  return Buffer.from(`${SENAITE_USER}:${SENAITE_PASS}`).toString('base64')
-}
+import { serverToken } from '@/app/lib/senaite-auth'
 
 export type AnalysesPageData = {
   services: SenaiteAnalysisService[]

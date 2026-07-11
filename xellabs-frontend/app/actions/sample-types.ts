@@ -7,13 +7,7 @@ import {
   SenaiteSampleType,
 } from '@/app/lib/senaite'
 import { djangoFetch } from '@/app/lib/django'
-
-const SENAITE_USER = process.env.SENAITE_ADMIN_USER ?? 'admin'
-const SENAITE_PASS = process.env.SENAITE_ADMIN_PASS ?? 'admin'
-
-function serverToken(): string {
-  return Buffer.from(`${SENAITE_USER}:${SENAITE_PASS}`).toString('base64')
-}
+import { serverToken } from '@/app/lib/senaite-auth'
 
 export async function getSampleTypesList(): Promise<SenaiteSampleType[]> {
   return fetchSenaiteSampleTypes(serverToken())

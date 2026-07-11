@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache'
 import { getSession } from '@/app/lib/session'
 import { djangoFetch } from '@/app/lib/django'
 import { fetchSenaiteClients } from '@/app/lib/senaite'
+import { sessionToken } from '@/app/lib/senaite-auth'
 
 export type SenaiteAddress = {
   address: string
@@ -169,9 +170,7 @@ export async function syncClientsFromSenaite(): Promise<SyncResult> {
   }
 
   // 2. Fetch all clients from SENAITE (raw fetch — not a Django endpoint)
-  const SENAITE_USER = process.env.SENAITE_ADMIN_USER ?? 'admin'
-  const SENAITE_PASS = process.env.SENAITE_ADMIN_PASS ?? 'admin'
-  const senaiteToken = session.senaiteToken ?? Buffer.from(`${SENAITE_USER}:${SENAITE_PASS}`).toString('base64')
+  const senaiteToken = sessionToken(session)
   const senaiteClients = await fetchSenaiteClients(senaiteToken)
   if (senaiteClients.length === 0) {
     return { success: false, message: 'No clients found in XelLabs. Verify XelLabs is running and you are logged in as a XelLabs user.', created: 0, updated: 0, total: 0 }

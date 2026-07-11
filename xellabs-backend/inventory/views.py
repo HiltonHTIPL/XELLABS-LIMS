@@ -6,7 +6,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
-from core.permissions import CAN_RECEIVE_OR_STORE_ROLES
+from core.permissions import CAN_RECEIVE_OR_STORE_ROLES, ReadOnlyOrAnalystOrAbove, ReadOnlyOrSampleHandler
 from .models import StorageLocation, Reagent, Standard, Solvent, Lot, InventoryTransaction, ExpiryAlert
 from .serializers import (
     StorageLocationSerializer, ReagentSerializer, StandardSerializer,
@@ -48,8 +48,12 @@ def _assign_sample_to_slot(slot, sample_id, user):
     # text field — sync it here, the single place a sample enters a slot, so
     # those pages never go stale regardless of which entry path (direct assign
     # or scanned assign-by-label) was used.
+    # instance.save() (not Queryset.update) so the audittrail post_save signals
+    # record this storage change on the Sample itself (CLAUDE.md §5).
     from lims.models import Sample
-    Sample.objects.filter(sample_id=sample_id).update(storage_location=storage_path)
+    for _sample in Sample.objects.filter(sample_id=sample_id):
+        _sample.storage_location = storage_path
+        _sample.save(update_fields=["storage_location", "updated_at"])
 
     from django.contrib.contenttypes.models import ContentType
     from audittrail.models import AuditEvent
@@ -88,6 +92,7 @@ class _StorageLocationPagination(PageNumberPagination):
 class StorageLocationViewSet(viewsets.ModelViewSet):
     queryset = StorageLocation.objects.all()
     serializer_class = StorageLocationSerializer
+    permission_classes = [ReadOnlyOrSampleHandler]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ["location_type", "parent", "is_occupied", "assigned_sample_id"]
     search_fields = ["name", "slot_id", "label_code"]
@@ -357,21 +362,17 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
 
         if loc.location_type == "box":
             # Retry over free slots in natural order — if a concurrent scan takes
-            # the first one, fall through to the next instead of failing.
-            # Increase retry count from 5 to 10 for better concurrency handling
-            import random, time
+            # the first one, fall through to the next instead of failing. The
+            # occupy is an atomic conditional UPDATE, so no sleep/backoff is
+            # needed (and sleeping here would block a Gunicorn worker).
             free_slots = list(
                 StorageLocation.objects.filter(parent=loc, location_type="box_location", is_occupied=False)
-                .order_by("pk")[:10]  # Increased from 5 to 10
+                .order_by("pk")[:10]
             )
             if not free_slots:
                 return Response({"error": f"Box {loc.name} is full."}, status=status.HTTP_400_BAD_REQUEST)
             last_err = None
-            for attempt, candidate in enumerate(free_slots):
-                # Exponential backoff with jitter on retries (but not first attempt)
-                if attempt > 0:
-                    backoff_ms = min(2 ** attempt, 100) + random.randint(0, 10)
-                    time.sleep(backoff_ms / 1000.0)
+            for candidate in free_slots:
                 slot, err = _assign_sample_to_slot(candidate, sample_id, request.user)
                 if not err:
                     return Response(self.get_serializer(slot).data)
@@ -409,8 +410,11 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
         # Sample.storage_location so list/detail pages don't keep showing a
         # slot the sample no longer occupies.
         if released_sample_id:
+            # instance.save() so the audittrail signals log the release on the Sample.
             from lims.models import Sample
-            Sample.objects.filter(sample_id=released_sample_id).update(storage_location='')
+            for _sample in Sample.objects.filter(sample_id=released_sample_id):
+                _sample.storage_location = ''
+                _sample.save(update_fields=["storage_location", "updated_at"])
 
         from django.contrib.contenttypes.models import ContentType
         from audittrail.models import AuditEvent
@@ -491,6 +495,7 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
 class ReagentViewSet(viewsets.ModelViewSet):
     queryset = Reagent.objects.all()
     serializer_class = ReagentSerializer
+    permission_classes = [ReadOnlyOrAnalystOrAbove]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ["is_active"]
     search_fields = ["name", "catalog_number", "cas_number"]
@@ -499,6 +504,7 @@ class ReagentViewSet(viewsets.ModelViewSet):
 class StandardViewSet(viewsets.ModelViewSet):
     queryset = Standard.objects.all()
     serializer_class = StandardSerializer
+    permission_classes = [ReadOnlyOrAnalystOrAbove]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ["is_active"]
     search_fields = ["name", "catalog_number"]
@@ -507,6 +513,7 @@ class StandardViewSet(viewsets.ModelViewSet):
 class SolventViewSet(viewsets.ModelViewSet):
     queryset = Solvent.objects.all()
     serializer_class = SolventSerializer
+    permission_classes = [ReadOnlyOrAnalystOrAbove]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ["is_active"]
     search_fields = ["name", "catalog_number"]
@@ -515,6 +522,7 @@ class SolventViewSet(viewsets.ModelViewSet):
 class LotViewSet(viewsets.ModelViewSet):
     queryset = Lot.objects.select_related("storage_location", "created_by").all()
     serializer_class = LotSerializer
+    permission_classes = [ReadOnlyOrAnalystOrAbove]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ["storage_location", "content_type"]
     ordering_fields = ["received_date", "expiry_date"]
@@ -571,6 +579,7 @@ class LotViewSet(viewsets.ModelViewSet):
 class InventoryTransactionViewSet(viewsets.ModelViewSet):
     queryset = InventoryTransaction.objects.select_related("lot", "created_by").all()
     serializer_class = InventoryTransactionSerializer
+    permission_classes = [ReadOnlyOrAnalystOrAbove]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ["transaction_type", "lot"]
     ordering_fields = ["created_at"]
@@ -592,6 +601,7 @@ class InventoryTransactionViewSet(viewsets.ModelViewSet):
 class ExpiryAlertViewSet(viewsets.ModelViewSet):
     queryset = ExpiryAlert.objects.select_related("lot", "acknowledged_by").all()
     serializer_class = ExpiryAlertSerializer
+    permission_classes = [ReadOnlyOrAnalystOrAbove]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ["is_acknowledged"]
 
@@ -621,4 +631,7 @@ class ExpiryAlertViewSet(viewsets.ModelViewSet):
         """Return unacknowledged alerts for lots expiring within 30 days."""
         cutoff = timezone.now().date() + timezone.timedelta(days=30)
         qs = self.get_queryset().filter(is_acknowledged=False, alert_date__lte=cutoff)
+        page = self.paginate_queryset(qs)
+        if page is not None:
+            return self.get_paginated_response(ExpiryAlertSerializer(page, many=True).data)
         return Response(ExpiryAlertSerializer(qs, many=True).data)
