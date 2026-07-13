@@ -2,6 +2,10 @@
 CLAUDE.md
 .claude/
 
+# Internal feature/principle change-log — contains implementation notes not
+# meant for the shared repo (kept locally, never committed)
+Codetrackbypriciple.txt
+
 # Startup / reference docs
 start-commands.txt
 
