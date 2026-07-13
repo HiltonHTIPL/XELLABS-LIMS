@@ -11,7 +11,7 @@ services:
     environment:
       POSTGRES_DB: xellabs_lims
       POSTGRES_USER: xellabs_user
-      POSTGRES_PASSWORD: "${DB_PASSWORD:-3333}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD must be set in .env}"
     ports:
       - "127.0.0.1:15432:5432"   # host port 5432 is taken by a native Windows PostgreSQL 18 service
     volumes:
@@ -28,11 +28,11 @@ services:
     image: redis:7
     restart: unless-stopped
     command: >
-      redis-server --requirepass "${REDIS_PASSWORD:-3333}" --maxmemory 256mb --maxmemory-policy allkeys-lru
+      redis-server --requirepass "${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}" --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
       - "127.0.0.1:6380:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-3333}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -49,19 +49,19 @@ services:
     environment:
       DB_NAME: xellabs_lims
       DB_USER: xellabs_user
-      DB_PASSWORD: "${DB_PASSWORD:-3333}"
+      DB_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD must be set in .env}"
       DB_HOST: postgres
       DB_PORT: "5432"
-      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-3333}@redis:6379/0
-      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-3333}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}@redis:6379/0
       SENAITE_URL: "${SENAITE_URL:-http://senaite:8080/senaite}"
       SENAITE_USER: admin
-      SENAITE_PASSWORD: "${SENAITE_ADMIN_PASSWORD:-admin}"
+      SENAITE_PASSWORD: "${SENAITE_ADMIN_PASSWORD:?SENAITE_ADMIN_PASSWORD must be set in .env}"
       # Platform superadmin — created/re-synced on every start by ensure_superuser.
       # Set real values in the project-root .env; never commit them.
-      DJANGO_SUPERUSER_USERNAME: "${DJANGO_SUPERUSER_USERNAME:-admin}"
+      DJANGO_SUPERUSER_USERNAME: "${DJANGO_SUPERUSER_USERNAME:?DJANGO_SUPERUSER_USERNAME must be set in .env}"
       DJANGO_SUPERUSER_PASSWORD: "${DJANGO_SUPERUSER_PASSWORD:-}"
-      DJANGO_SUPERUSER_EMAIL: "${DJANGO_SUPERUSER_EMAIL:-admin@xellabs.com}"
+      DJANGO_SUPERUSER_EMAIL: "${DJANGO_SUPERUSER_EMAIL:?DJANGO_SUPERUSER_EMAIL must be set in .env}"
     ports:
       - "127.0.0.1:8001:8001"
     volumes:
@@ -95,14 +95,14 @@ services:
     environment:
       DB_NAME: xellabs_lims
       DB_USER: xellabs_user
-      DB_PASSWORD: "${DB_PASSWORD:-3333}"
+      DB_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD must be set in .env}"
       DB_HOST: postgres
       DB_PORT: "5432"
-      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-3333}@redis:6379/0
-      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-3333}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}@redis:6379/0
       SENAITE_URL: "${SENAITE_URL:-http://senaite:8080/senaite}"
       SENAITE_USER: admin
-      SENAITE_PASSWORD: "${SENAITE_ADMIN_PASSWORD:-admin}"
+      SENAITE_PASSWORD: "${SENAITE_ADMIN_PASSWORD:?SENAITE_ADMIN_PASSWORD must be set in .env}"
     volumes:
       - ./xellabs-backend:/app
     depends_on:
@@ -135,14 +135,14 @@ services:
     environment:
       DB_NAME: xellabs_lims
       DB_USER: xellabs_user
-      DB_PASSWORD: "${DB_PASSWORD:-3333}"
+      DB_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD must be set in .env}"
       DB_HOST: postgres
       DB_PORT: "5432"
-      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-3333}@redis:6379/0
-      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-3333}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}@redis:6379/0
       SENAITE_URL: "${SENAITE_URL:-http://senaite:8080/senaite}"
       SENAITE_USER: admin
-      SENAITE_PASSWORD: "${SENAITE_ADMIN_PASSWORD:-admin}"
+      SENAITE_PASSWORD: "${SENAITE_ADMIN_PASSWORD:?SENAITE_ADMIN_PASSWORD must be set in .env}"
     volumes:
       - ./xellabs-backend:/app
     depends_on:
@@ -172,14 +172,14 @@ services:
     environment:
       DB_NAME: xellabs_lims
       DB_USER: xellabs_user
-      DB_PASSWORD: "${DB_PASSWORD:-3333}"
+      DB_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD must be set in .env}"
       DB_HOST: postgres
       DB_PORT: "5432"
-      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-3333}@redis:6379/0
-      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-3333}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}@redis:6379/0
       SENAITE_URL: "${SENAITE_URL:-http://senaite:8080/senaite}"
       SENAITE_USER: admin
-      SENAITE_PASSWORD: "${SENAITE_ADMIN_PASSWORD:-admin}"
+      SENAITE_PASSWORD: "${SENAITE_ADMIN_PASSWORD:?SENAITE_ADMIN_PASSWORD must be set in .env}"
     volumes:
       - ./xellabs-backend:/app
     depends_on:
@@ -202,7 +202,7 @@ services:
       - "127.0.0.1:8080:8080"
     environment:
       - SITE=senaite
-      - PASSWORD=${SENAITE_ADMIN_PASSWORD:-admin}
+      - PASSWORD=${SENAITE_ADMIN_PASSWORD:?SENAITE_ADMIN_PASSWORD must be set in .env}
     volumes:
       - senaite_data:/data
     healthcheck:
@@ -228,7 +228,7 @@ services:
     environment:
       - SITE=senaite2
       - ADMIN_USER=admin
-      - ADMIN_PASSWORD=${SENAITE_ADMIN_PASSWORD:-admin}
+      - ADMIN_PASSWORD=${SENAITE_ADMIN_PASSWORD:?SENAITE_ADMIN_PASSWORD must be set in .env}
     volumes:
       - senaite2_data:/data
     healthcheck:
@@ -249,8 +249,8 @@ services:
     environment:
       - DJANGO_API_URL=http://django:8001
       - SENAITE_URL=${SENAITE_URL:-http://senaite:8080/senaite}
-      - SENAITE_ADMIN_USER=${SENAITE_ADMIN_USER:-admin}
-      - SENAITE_ADMIN_PASS=${SENAITE_ADMIN_PASS:-admin}
+      - SENAITE_ADMIN_USER=${SENAITE_ADMIN_USER:?SENAITE_ADMIN_USER must be set in .env}
+      - SENAITE_ADMIN_PASS=${SENAITE_ADMIN_PASS:?SENAITE_ADMIN_PASS must be set in .env}
       - SESSION_SECRET=${SESSION_SECRET}
       - DJANGO_SERVICE_TOKEN=${DJANGO_SERVICE_TOKEN}
       # DEFAULT_TENANT_SCHEMA intentionally NOT set — never hardcode a tenant here.

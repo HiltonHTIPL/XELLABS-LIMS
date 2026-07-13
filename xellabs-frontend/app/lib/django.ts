@@ -22,12 +22,18 @@ export async function djangoFetch(
   const [session, headerStore] = await Promise.all([getSession(), headers()])
 
   // Tenant: prefer session value (reliable after login), fall back to
-  // middleware header (useful for unauthenticated requests like login itself).
-  // Deliberately NO env/hardcoded tenant fallback — the tenant must always
-  // come from who is logged in or which subdomain was hit, never from config.
+  // middleware header (useful for unauthenticated requests like login itself),
+  // then DEFAULT_TENANT_SCHEMA (demo-phase only — see auth.ts's identical
+  // fallback and CLAUDE.md). This must match auth.ts's login() resolution:
+  // login() calls this same djangoFetch for /api/auth/me/ BEFORE any session
+  // exists and with no subdomain header on plain localhost access, so without
+  // this fallback here too, any non-superuser tenant user fails login with
+  // "This account does not belong to the requested tenant" even though the
+  // session it's about to create would have had the right tenant all along.
   const tenantSubdomain =
     session?.tenantSubdomain ||
     headerStore.get('x-tenant-subdomain') ||
+    process.env.DEFAULT_TENANT_SCHEMA ||
     ''
 
   const tenantHeaders: Record<string, string> = {}

@@ -42,10 +42,17 @@ class SampleTypeViewSet(viewsets.ModelViewSet):
                 {'detail': 'Only lab managers can sync sample types from SENAITE.'},
                 status=status.HTTP_403_FORBIDDEN
             )
-        import os, base64, requests as http_requests
-        senaite_url = os.environ.get("SENAITE_URL", "http://senaite:8080/senaite")
-        user = os.environ.get("SENAITE_ADMIN_USER", "admin")
-        pw = os.environ.get("SENAITE_ADMIN_PASS", "admin")
+        import base64, requests as http_requests
+        from django.conf import settings
+        # Use the same settings the rest of the backend authenticates to SENAITE
+        # with (core/senaite_service.py's _session()) — NOT the frontend's env var
+        # names (SENAITE_ADMIN_USER/SENAITE_ADMIN_PASS), which don't exist in this
+        # container. Reading those here silently fell back to "admin"/"admin",
+        # authenticating as Anonymous and returning zero SampleTypes from SENAITE's
+        # Setup area — the sync endpoint ran, reported success, and fixed nothing.
+        senaite_url = settings.SENAITE_URL
+        user = settings.SENAITE_USER
+        pw = settings.SENAITE_PASSWORD
         token = base64.b64encode(f"{user}:{pw}".encode()).decode()
         try:
             resp = http_requests.get(

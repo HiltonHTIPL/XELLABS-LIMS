@@ -13,6 +13,7 @@ export type StaffUser = {
   role: StaffRole
   is_active: boolean
   date_joined: string
+  senaite_roles: string[]
 }
 
 export type StaffUserFormState = {
@@ -128,6 +129,27 @@ export async function toggleStaffUserActive(
     if (!res.ok) return { success: false, message: `Server error ${res.status}` }
     revalidatePath('/dashboard/admin')
     return { success: true, message: is_active ? 'User activated.' : 'User deactivated.' }
+  } catch {
+    return { success: false, message: 'Could not reach the server.' }
+  }
+}
+
+export async function toggleSenaiteRole(
+  id: number,
+  role: string,
+  enabled: boolean
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    const res = await djangoFetch(`/api/users/${id}/senaite-roles/`, {
+      method: 'POST',
+      body: JSON.stringify({ role, enabled }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      return { success: false, message: err.detail ?? `Server error ${res.status}` }
+    }
+    revalidatePath('/dashboard/admin')
+    return { success: true }
   } catch {
     return { success: false, message: 'Could not reach the server.' }
   }

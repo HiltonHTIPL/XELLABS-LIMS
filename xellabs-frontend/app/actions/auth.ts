@@ -49,9 +49,13 @@ export async function login(
 
   const { username, password } = validated.data
 
-  // Read subdomain injected by proxy.ts middleware
+  // Read subdomain injected by proxy.ts middleware. Falls back to
+  // DEFAULT_TENANT_SCHEMA (demo-phase only) when no subdomain is present, so
+  // plain localhost:3000 access still resolves to a real tenant instead of
+  // the public schema — unset that env var once real subdomain-based
+  // multi-tenant login is rolled out.
   const headerStore = await headers()
-  const tenantSubdomain = headerStore.get('x-tenant-subdomain') || ''
+  const tenantSubdomain = headerStore.get('x-tenant-subdomain') || process.env.DEFAULT_TENANT_SCHEMA || ''
   const ip = headerStore.get('x-forwarded-for')?.split(',')[0].trim()
     || headerStore.get('x-real-ip')
     || 'unknown'

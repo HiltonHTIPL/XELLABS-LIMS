@@ -105,3 +105,10 @@ export async function publishSample(uid: string): Promise<WorkflowResult> {
   revalidatePath('/dashboard/samples')
   return { success: result.success, message: result.success ? 'Sample published.' : (result.error ?? 'Failed to publish sample.') }
 }
+
+export async function cancelSample(uid: string): Promise<WorkflowResult> {
+  const session = await getSession()
+  const result = await senaiteWorkflowAction(sessionToken(session), uid, 'cancel')
+  revalidatePath('/dashboard/samples')
+  return { success: result.success, message: result.success ? 'Sample cancelled.' : (result.error ?? 'Failed to cancel sample.') }
+}

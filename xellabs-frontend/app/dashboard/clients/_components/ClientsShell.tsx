@@ -3,7 +3,7 @@ import { useState, useActionState, useTransition, useRef, useEffect } from 'reac
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  createClient, updateClient, toggleClientActive, resetClientPassword,
+  createClient, updateClient, toggleClientActive,
   checkClientIdAvailable, type ClientFormState, type DjangoClient, type SenaiteAddress,
 } from '@/app/actions/clients'
 import { TagInput } from '@/app/dashboard/_components/ui'
@@ -253,81 +253,12 @@ function Step5({ vals, set }: { vals: FV; set: (k: string, v: string) => void })
   )
 }
 
-// ── Reset Password Modal ──────────────────────────────────────────────────────
-function ResetPasswordModal({ client, onClose }: { client: DjangoClient; onClose: () => void }) {
-  const [password, setPassword] = useState('')
-  const [confirm, setConfirm] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null)
-  const [show, setShow] = useState(false)
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (password.length < 8) { setResult({ ok: false, msg: 'Password must be at least 8 characters.' }); return }
-    if (password !== confirm) { setResult({ ok: false, msg: 'Passwords do not match.' }); return }
-    setBusy(true)
-    const res = await resetClientPassword(client.id, password)
-    setResult({ ok: res.success, msg: res.message })
-    setBusy(false)
-    if (res.success) setTimeout(onClose, 1800)
-  }
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)' }}>
-      <div style={{ background: '#fff', borderRadius: 12, padding: 24, width: 360, boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}>
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <MI name="lock_reset" size={18} color="#2563EB" />
-            <h3 style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Reset Password</h3>
-          </div>
-          <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><MI name="close" size={16} color="#9CA3AF" /></button>
-        </div>
-        <p style={{ fontSize: 12, color: '#6B7280', marginBottom: 16 }}>
-          Set a new login password for <strong style={{ color: '#111827' }}>{client.name}</strong>
-          {client.client_id && <> (username: <code style={{ background: '#F3F4F6', padding: '1px 4px', borderRadius: 3 }}>{client.client_id}</code>)</>}
-        </p>
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>New Password</label>
-            <div style={{ position: 'relative' }}>
-              <input type={show ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
-                placeholder="Min. 8 characters"
-                style={{ width: '100%', padding: '8px 32px 8px 10px', fontSize: 12, border: '1px solid #D1D5DB', borderRadius: 6, outline: 'none' }} required />
-              <button type="button" onClick={() => setShow(s => !s)} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer' }}>
-                <MI name={show ? 'visibility_off' : 'visibility'} size={14} color="#9CA3AF" />
-              </button>
-            </div>
-          </div>
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Confirm Password</label>
-            <input type={show ? 'text' : 'password'} value={confirm} onChange={e => setConfirm(e.target.value)}
-              placeholder="Re-enter password"
-              style={{ width: '100%', padding: '8px 10px', fontSize: 12, border: '1px solid #D1D5DB', borderRadius: 6, outline: 'none' }} required />
-          </div>
-          {result && (
-            <div style={{ fontSize: 12, padding: '8px 10px', borderRadius: 6, backgroundColor: result.ok ? '#DBEAFE' : '#FEF2F2', color: result.ok ? '#0154FC' : '#991B1B', border: `1px solid ${result.ok ? '#93C5FD' : '#FECACA'}` }}>
-              {result.msg}
-            </div>
-          )}
-          <div className="flex gap-2 justify-end" style={{ marginTop: 4 }}>
-            <button type="button" onClick={onClose} style={{ padding: '7px 14px', fontSize: 12, border: '1px solid #D1D5DB', borderRadius: 6, background: '#fff', cursor: 'pointer', color: '#374151' }}>Cancel</button>
-            <button type="submit" disabled={busy} style={{ padding: '7px 14px', fontSize: 12, borderRadius: 6, border: 'none', background: busy ? '#93C5FD' : '#2563EB', color: '#fff', cursor: busy ? 'not-allowed' : 'pointer', fontWeight: 600 }}>
-              {busy ? 'Saving…' : 'Reset Password'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
 // ── ActionsMenu ───────────────────────────────────────────────────────────────
 function ActionsMenu({ client, onEdit, onDone }: { client: DjangoClient; onEdit: (c: DjangoClient) => void; onDone: () => void }) {
   const [open, setOpen] = useState(false)
   const [busy, startTransition] = useTransition()
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
-  const [showResetPwd, setShowResetPwd] = useState(false)
   const btnRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -359,7 +290,6 @@ function ActionsMenu({ client, onEdit, onDone }: { client: DjangoClient; onEdit:
 
   return (
     <div style={{ display: 'inline-block' }}>
-      {showResetPwd && <ResetPasswordModal client={client} onClose={() => setShowResetPwd(false)} />}
       {toast && (
         <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 999, backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', border: `1px solid ${toast.ok ? '#93C5FD' : '#FECACA'}`, color: toast.ok ? '#0154FC' : '#991B1B', padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 500, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
           {toast.msg}
@@ -375,9 +305,6 @@ function ActionsMenu({ client, onEdit, onDone }: { client: DjangoClient; onEdit:
           </Link>
           <button onClick={() => { setOpen(false); onEdit(client) }} className="flex items-center gap-2 w-full px-3 py-2 text-xs hover:bg-gray-50" style={{ color: '#2563EB', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
             <span className="material-icons" style={{ fontSize: 14, color: '#2563EB' }}>edit</span>Edit Client
-          </button>
-          <button onClick={() => { setOpen(false); setShowResetPwd(true) }} className="flex items-center gap-2 w-full px-3 py-2 text-xs hover:bg-gray-50" style={{ color: '#7C3AED', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
-            <span className="material-icons" style={{ fontSize: 14, color: '#7C3AED' }}>lock_reset</span>Reset Password
           </button>
           <div style={{ borderTop: '1px solid #F3F4F6', margin: '2px 0' }} />
           <button onClick={toggle} disabled={busy} className="flex items-center gap-2 w-full px-3 py-2 text-xs hover:bg-gray-50"

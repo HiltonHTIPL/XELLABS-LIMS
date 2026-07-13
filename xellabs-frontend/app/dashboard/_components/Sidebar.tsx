@@ -33,7 +33,7 @@ const NAV: NavEntry[] = [
     ],
   },
   { label: 'Methods',           href: '/dashboard/methods',           icon: 'biotech',     roles: ['admin', 'lab_manager', 'analyst'] },
-  { label: 'Batches',           href: '/dashboard/batches',           icon: 'layers',      roles: null },
+  { label: 'Batches',           href: '/dashboard/batches',           icon: 'layers',      roles: ['admin', 'lab_manager', 'analyst'] },
   { label: 'Worksheet',         href: '/dashboard/worksheets',        icon: 'table_chart', roles: ['admin', 'lab_manager', 'analyst'] },
   { label: 'Quality',           href: '/dashboard/quality',           icon: 'verified',    roles: ['admin', 'lab_manager', 'analyst', 'reviewer', 'client'] },
   { label: 'Storage Manager',   href: '/dashboard/storage',           icon: 'inventory_2', roles: ['admin', 'lab_manager', 'analyst', 'client'] },
@@ -87,7 +87,10 @@ const NAV: NavEntry[] = [
       { label: 'Instrument List', href: '/dashboard/instrument-list', icon: 'precision_manufacturing', roles: ['admin', 'lab_manager'] },
       { label: 'Storage List', href: '/dashboard/storage-list', icon: 'inventory_2', roles: ['admin', 'lab_manager'] },
       { label: 'Report Templates', href: '/dashboard/settings/report-templates', icon: 'description', roles: ['admin'] },
-      { label: 'Tenant Management', href: '/dashboard/tenant-management', icon: 'corporate_fare', roles: ['admin'], superuserOnly: true },
+      // Tenant Management nav entry hidden for the single-tenant demo phase — the
+      // route/backend/permissions are untouched and fully working, just not
+      // linked from nav. Re-add this line once real multi-tenant onboarding ships:
+      // { label: 'Tenant Management', href: '/dashboard/tenant-management', icon: 'corporate_fare', roles: ['admin'], superuserOnly: true },
     ],
   },
 ]

@@ -345,6 +345,8 @@ DB_PORT=5432
 | Sample list/detail pages read a stale denormalized field, not live storage state | `Sample.storage_location` (`lims/models.py`) is a plain text field, separate from the authoritative `StorageLocation.assigned_sample_id`/`is_occupied`. The QR-label assign flow updated only the storage side, so Samples Overview / Lab Samples kept showing blank location and stale occupied state after a sample was stored via scan. Fixed by syncing `Sample.storage_location` inside `_assign_sample_to_slot()` (write the resolved path) and in the `unassign` action (clear it) — the single choke point both entry paths already share, so no list page needs an extra per-row fetch (would be N+1). **Any future feature that changes where a sample physically sits must update through this one function, not touch `StorageLocation` directly, or the same staleness bug returns.** |
 | Storage label codes are hidden + pk-derived | `StorageLocation.label_code` (boxes `BX-<pk>`, slots `BX-<pk>-A1`) is system-generated in `inventory/signals.py` (`_register_label_code_signal`, connected BEFORE the slot-autogenerate signal so slots can copy the box code during `bulk_create`). Never derived from the user-editable name (names can duplicate); unique constraint lives on the code. Resolve/assign endpoints: `GET /api/inventory/storage-locations/resolve-label/?code=` and `POST .../assign-by-label/`. |
 | Superadmin ≠ `role='admin'` | Every tenant's lab admin also has `role='admin'`; platform-level gating (Tenant Management) must check `is_superuser` — exposed via `/api/auth/me/`, enforced by `core/permissions.py IsSuperAdmin`, carried in the frontend session as `session.isSuperuser` and in the Sidebar via the `superuserOnly` nav flag. |
+| Fresh/wiped DB has zero `Tenant`/`Domain` rows → every API call 404s | `XelLabsTenantMiddleware` (`config/tenant_middleware.py`) needs a `Domain(domain='localhost')` (plus `127.0.0.1`, `django`) row pointing at the `public` `Tenant`, or django-tenants raises `No tenant for hostname "localhost"` and Django returns a plain 404 on **every** endpoint — including `/api/clients/` — with only a generic "Error 404" banner surfaced on the frontend, easy to miss. Symptom looked exactly like "client creation silently does nothing." Fix: run the "One-time setup after a full DB wipe" block below immediately after any DB reset. |
+| Client deletion in Django does **not** propagate to SENAITE (accepted gap, not building sync) | `core/signals.py` only registers a `post_save` receiver for `Client` (`_register_client_signal`) — there is no `pre_delete`/`post_delete` handler. Deleting or deactivating a Client in XelLabs leaves an orphaned record in SENAITE forever; remove it manually inside SENAITE's own Clients UI. Also: deleting a `Client` via the normal Django ORM `.delete()` hits the cross-schema cascade crash (`relation "samples" does not exist`) in an install with no tenant schemas yet — use a raw `DELETE FROM clients WHERE ...` via `connection.cursor()` instead when that happens. |
 
 ### One-time setup after a full DB wipe:
 ```bash
@@ -504,6 +506,20 @@ When the user ends a request with "ok", execute the full task without pausing fo
 - Every file that needed updating was updated (including this file and `start-commands.txt`)
 - The feature/fix/setup works end-to-end and is verified
 - All new learnings are recorded in CLAUDE.md
+
+---
+
+## 15a. Git Push Checklist — Track Unpushed Local Work
+
+**`GIT-PUSH-CHECKLIST.md` (project root) is the visible, in-repo record of what's sitting on this machine unpushed.** Local commits and uncommitted changes are invisible to anyone but this machine — this file is what makes that state visible and prevents it from being silently lost or overwritten by a future `git pull`/merge.
+
+### Rules:
+- After every commit made during a session, add/update an entry in `GIT-PUSH-CHECKLIST.md` — what changed, which files, one line of why.
+- Uncommitted changes that are meaningful (not yet committed but shouldn't be lost) also get listed there, clearly marked as uncommitted.
+- Note any local-only config that `git push` will **not** carry along (e.g. `.env` values, since `.env` is gitignored) — these need manual replication on any other machine/deploy target.
+- **Once the listed work is actually pushed**, delete those entries and reset the file back to just its template header. An empty checklist (just the header) means "everything local is pushed" — that is the file's steady state, not a growing log.
+- This is NOT a duplicate of `Codetrackbypriciple.txt` (which is a permanent feature/principle history that never gets cleared) — this file is a transient "what's at risk right now" list.
+- Before pushing to any remote, confirm with the user which remote/branch is the actual intended target — do not assume `origin` is the right destination without asking, since a fork/remote mismatch is easy to get wrong silently.
 
 ---
 

@@ -1,10 +1,11 @@
 'use client'
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createSampleWithAnalyses, type DjangoSampleType } from '@/app/actions/lab-samples'
 import { type DjangoClient } from '@/app/actions/clients'
 import { type LimsTest } from '@/app/actions/tests'
 import { type SampleTemplate } from '@/app/actions/sample-templates'
+import { type SenaiteBatch } from '@/app/lib/senaite'
 import StorageLocationInput from '@/app/dashboard/_components/StorageLocationInput'
 
 const CONTAINER_OPTIONS = [
@@ -71,7 +72,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 // ── Per-sample form state type ────────────────────────────────────────────────
 type SampleForm = {
   primarySample: string; clientId: string; contactName: string; ccContact: string
-  ccEmails: string[]; batchId: string; batchSubGroup: string; sampleTemplateId: string
+  ccEmails: string[]; batchUid: string; batchSubGroup: string; sampleTemplateId: string
   analysisProfiles: string[]; suggestedContainer: string; dateSampled: string; sampleTypeId: string
   containerType: string; preservation: string; analysisSpec: string; samplePoint: string
   storageLocation: string; storageLabelCode: string; samplingDeviation: string; condition: string; priority: string
@@ -82,7 +83,7 @@ type SampleForm = {
 function blankForm(): SampleForm {
   return {
     primarySample: 'yes', clientId: '', contactName: '', ccContact: '', ccEmails: [],
-    batchId: '', batchSubGroup: '', sampleTemplateId: '', analysisProfiles: [], suggestedContainer: '',
+    batchUid: '', batchSubGroup: '', sampleTemplateId: '', analysisProfiles: [], suggestedContainer: '',
     dateSampled: '', sampleTypeId: '', containerType: '', preservation: '',
     analysisSpec: '', samplePoint: '', storageLocation: '', storageLabelCode: '', samplingDeviation: 'none',
     condition: 'good', priority: 'medium', envConditions: 'room_temp',
@@ -91,10 +92,14 @@ function blankForm(): SampleForm {
   }
 }
 
-type Props = { sampleTypes: DjangoSampleType[]; clients: DjangoClient[]; tests: LimsTest[]; sampleTemplates: SampleTemplate[] }
+type Props = { sampleTypes: DjangoSampleType[]; clients: DjangoClient[]; tests: LimsTest[]; sampleTemplates: SampleTemplate[]; batches: SenaiteBatch[] }
 
-export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemplates }: Props) {
+export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemplates, batches }: Props) {
   const router = useRouter()
+  // Pre-select a Batch when arriving from that batch's "New Sample" button
+  // (/dashboard/samples-overview/new?batch=<uid>) — only applied to the first
+  // sample tab, not every subsequent "Add Another Sample" tab.
+  const initialBatchUid = useSearchParams().get('batch') ?? ''
 
   // Sample Types valid for a given template — filtered down to the one matching
   // the template's SENAITE sample type via senaite_uid. Falls back to the full
@@ -107,7 +112,19 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
     return matched.length ? matched : sampleTypes
   }
 
-  const [forms, setForms] = useState<SampleForm[]>([blankForm()])
+  // Batches offered for a given client — once a client is picked, only show
+  // that client's own batches plus any batch with no client assigned (a batch
+  // isn't necessarily client-specific). Before any client is picked, every
+  // open batch is shown so the field still works standalone.
+  function batchOptionsFor(clientId: string): SenaiteBatch[] {
+    const open = batches.filter(b => b.review_state === 'open')
+    if (!clientId) return open
+    const client = clients.find(c => String(c.id) === clientId)
+    if (!client?.senaite_uid) return open
+    return open.filter(b => !b.ClientUID || b.ClientUID === client.senaite_uid)
+  }
+
+  const [forms, setForms] = useState<SampleForm[]>(() => [{ ...blankForm(), batchUid: initialBatchUid }])
   const [activeTab, setActiveTab] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const [submitProgress, setSubmitProgress] = useState({ done: 0, total: 0 })
@@ -181,16 +198,27 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
     const results = await submitInBatches(forms, f => {
       const client = clients.find(c => String(c.id) === f.clientId)
       const sampleType = sampleTypes.find(st => String(st.id) === f.sampleTypeId)
+      const batch = batches.find(b => b.uid === f.batchUid)
       return createSampleWithAnalyses(
         {
           client: Number(f.clientId), sample_type: Number(f.sampleTypeId),
           priority: f.priority, condition: f.condition,
-          collection_date: f.dateSampled || undefined,
+          // f.dateSampled is a <input type="datetime-local"> value — a naive
+          // wall-clock string with NO timezone offset (e.g. "2026-07-13T14:54").
+          // Django has USE_TZ=True + TIME_ZONE="UTC", so sending that string
+          // as-is gets misread as 14:54 UTC instead of the user's actual local
+          // time — for any timezone ahead of UTC (e.g. IST, UTC+5:30) this
+          // makes "just now" look like a future timestamp and the backend's
+          // "cannot be in the future" guard rejects every submission. `new
+          // Date(...)` parses the naive string using the browser's local
+          // timezone, so `.toISOString()` converts it to true UTC correctly.
+          collection_date: f.dateSampled ? new Date(f.dateSampled).toISOString() : undefined,
           description: f.remarks || undefined,
           preferred_storage_location: f.storageLocation || undefined,
           preferred_storage_label_code: f.storageLabelCode || undefined,
           contact_name: f.contactName || undefined, cc_contact: f.ccContact || undefined,
-          cc_emails: f.ccEmails.join(',') || undefined, batch_id: f.batchId || undefined,
+          cc_emails: f.ccEmails.join(',') || undefined, batch_id: batch?.id || undefined,
+          batch_senaite_uid: f.batchUid || undefined,
           batch_sub_group: f.batchSubGroup || undefined, container_type: f.containerType || undefined,
           preservation: f.preservation || undefined, analysis_specification: f.analysisSpec || undefined,
           sampling_deviation: f.samplingDeviation !== 'none' ? f.samplingDeviation : undefined,
@@ -251,6 +279,19 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
     } : form))
   }
 
+  // Arrived via a Batch's "Add Samples" button with the Batch pre-selected
+  // (see the useState initializer above) — if that Batch has its own Client,
+  // auto-fill the Client (and its contact/CC cascade) too, exactly as if the
+  // user had picked it manually. Runs once on mount only.
+  useEffect(() => {
+    if (!initialBatchUid) return
+    const batch = batches.find(b => b.uid === initialBatchUid)
+    if (!batch?.ClientUID) return
+    const client = clients.find(c => c.senaite_uid === batch.ClientUID)
+    if (client) handleClientChange(String(client.id))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Propagate ALL Section 1 fields from active tab to every other tab
   function applyClientToAll() {
     if (!f.clientId) return
@@ -261,7 +302,7 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
       contactName: f.contactName,
       ccContact: f.ccContact,
       ccEmails: f.ccEmails,
-      batchId: f.batchId,
+      batchUid: f.batchUid,
       batchSubGroup: f.batchSubGroup,
       sampleTemplateId: f.sampleTemplateId,
       analysisProfiles: f.analysisProfiles,
@@ -444,7 +485,15 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
                   <TagInput tags={f.ccEmails} onAdd={v => set('ccEmails', [...f.ccEmails, v])} onRemove={v => set('ccEmails', f.ccEmails.filter(x => x !== v))} placeholder="Type email and press Enter" /></div>
                 <div style={grid2}>
                   <div style={field}><label style={lbl}>Batch</label>
-                    <input value={f.batchId} onChange={e => set('batchId', e.target.value)} placeholder="e.g. B-250519-001" style={inp} /></div>
+                    <select value={f.batchUid} onChange={e => set('batchUid', e.target.value)} style={inp}>
+                      <option value="">None</option>
+                      {batchOptionsFor(f.clientId).map(b => (
+                        <option key={b.uid} value={b.uid}>{b.id} — {b.title}</option>
+                      ))}
+                    </select>
+                    {f.clientId && batchOptionsFor(f.clientId).length < batches.filter(b => b.review_state === 'open').length && (
+                      <span style={{ fontSize: 11, color: '#9CA3AF', marginTop: 3 }}>Filtered to this client&apos;s batches (and unassigned ones)</span>
+                    )}</div>
                   <div style={field}><label style={lbl}>Batch Sub-group</label>
                     <input value={f.batchSubGroup} onChange={e => set('batchSubGroup', e.target.value)} placeholder="e.g. Stability Study" style={inp} /></div>
                 </div>

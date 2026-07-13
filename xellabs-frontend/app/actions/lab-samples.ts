@@ -59,6 +59,7 @@ export type LabSample = {
   received_by_name: string
   attachment?: string | null
   created_at: string
+  senaite_uid?: string
   // Extended intake fields
   contact_name: string
   cc_contact: string
@@ -105,6 +106,7 @@ export type NewSamplePayload = {
   client_sample_id?: string
   client_senaite_uid?: string
   sample_type_senaite_uid?: string
+  batch_senaite_uid?: string
 }
 
 function senaitePriority(priority: string): string {
@@ -138,6 +140,7 @@ export async function createSampleWithAnalyses(
       ...(testSenaiteUids.length > 0 ? { Analyses: testSenaiteUids } : {}),
       Priority: senaitePriority(payload.priority),
       ...(payload.client_sample_id ? { ClientSampleID: payload.client_sample_id } : {}),
+      ...(payload.batch_senaite_uid ? { Batch: payload.batch_senaite_uid } : {}),
     })
     if (!senaiteResult.success || !senaiteResult.sample) {
       return { success: false, message: `The lab system rejected the sample: ${senaiteResult.error ?? 'unknown error'}` }
@@ -152,6 +155,7 @@ export async function createSampleWithAnalyses(
         ...payload,
         client_senaite_uid: undefined,
         sample_type_senaite_uid: undefined,
+        batch_senaite_uid: undefined,
         status: 'registered',
         is_active: true,
         senaite_uid: senaiteResult.sample.uid,

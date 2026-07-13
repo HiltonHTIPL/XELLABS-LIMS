@@ -603,6 +603,7 @@ export type SenaiteSample = {
   review_state: string
   Priority: string
   ClientSampleID: string
+  BatchUID: string
   Analyses: { uid: string; title: string; Keyword: string; review_state: string }[]
   url: string
 }
@@ -610,6 +611,7 @@ export type SenaiteSample = {
 function mapSample(s: Record<string, unknown>): SenaiteSample {
   const client = (s.Client as Record<string, unknown>) ?? {}
   const sampleType = (s.SampleType as Record<string, unknown>) ?? {}
+  const batch = (s.Batch as Record<string, unknown>) ?? {}
   return {
     uid:             (s.uid as string) ?? '',
     id:              (s.id as string) ?? '',
@@ -625,6 +627,7 @@ function mapSample(s: Record<string, unknown>): SenaiteSample {
     review_state:    (s.review_state as string) ?? '',
     Priority:        (s.Priority as string) ?? '3',
     ClientSampleID:  (s.ClientSampleID as string) ?? '',
+    BatchUID:        (batch.uid as string) ?? '',
     Analyses:        Array.isArray(s.Analyses)
       ? (s.Analyses as Record<string, unknown>[]).map(a => ({
           uid:          (a.uid as string) ?? '',
@@ -673,6 +676,7 @@ export async function createSenaiteSample(
     Analyses?: string[]   // analysis service UIDs
     Priority?: string     // "1"-"5"
     ClientSampleID?: string
+    Batch?: string         // Batch UID — groups this sample under a Batch (optional)
   }
 ): Promise<{ success: boolean; sample?: SenaiteSample; error?: string }> {
   const headers = {
@@ -704,6 +708,7 @@ export async function createSenaiteSample(
     if (payload.Analyses?.length)    body.Analyses       = payload.Analyses
     if (payload.ClientSampleID)      body.ClientSampleID = payload.ClientSampleID
     if (payload.Contact)             body.Contact        = payload.Contact
+    if (payload.Batch)               body.Batch          = payload.Batch
 
     const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
       method: 'POST',
@@ -1080,10 +1085,16 @@ export async function submitAnalysisResult(
   result: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const updateRes = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update`, {
+    // Pre-existing bug found while building Batch results entry: the bulk
+    // /update endpoint with a LIST body `[{uid, Result}]` always fails with
+    // "'list' object has no attribute 'update'" (confirmed via direct
+    // testing) — never actually set a Result, ever. The `/update/<uid>` form
+    // (uid in the URL, plain object body) is the one proven working pattern
+    // already used everywhere else in this file (Client, Batch, etc).
+    const updateRes = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update/${analysisUid}`, {
       method: 'POST',
       headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify([{ uid: analysisUid, Result: result }]),
+      body: JSON.stringify({ Result: result }),
       cache: 'no-store',
     })
     const updateData = await updateRes.json().catch(() => ({})) as Record<string, unknown>
@@ -1096,8 +1107,200 @@ export async function submitAnalysisResult(
     const path = await _resolvePath(token, 'Analysis', analysisUid)
     if (!path) return { success: false, error: 'Analysis not found in SENAITE after update.' }
 
+    // content_status_modify is a classic Zope form view — it redirects (which
+    // fetch follows to a 200 by default) whether the transition actually fired
+    // or was silently rejected (e.g. the parent Sample hasn't been received
+    // yet, so 'submit' isn't a legal transition), so `res.ok` alone is not
+    // proof of success. Confirmed by direct testing: Result saved correctly,
+    // content_status_modify returned ok, yet review_state never left
+    // "registered" for an unreceived sample's analysis. Verify the state
+    // actually changed, same guard senaiteWorkflowAction already uses for ARs.
     const ok = await _contentStatusModify(token, path, 'submit')
     if (!ok) return { success: false, error: 'Failed to submit result for verification.' }
+
+    const afterRes = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Analysis/${analysisUid}?complete=true`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    const afterData = await afterRes.json().catch(() => ({})) as Record<string, unknown>
+    const afterItems = (afterData.items as Record<string, unknown>[]) ?? []
+    const stateAfter = afterItems[0]?.review_state as string | undefined
+    if (stateAfter !== 'to_be_verified' && stateAfter !== 'verified') {
+      return {
+        success: false,
+        error: stateAfter === 'registered' || stateAfter === 'unassigned'
+          ? 'Result saved, but this sample must be Received before its result can be submitted for verification.'
+          : `Result saved, but submit was rejected (analysis is in "${stateAfter}" state).`,
+      }
+    }
+    return { success: true }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+export type SenaiteAnalysisFull = {
+  uid: string
+  title: string
+  Keyword: string
+  Result: string
+  Unit: string
+  review_state: string
+  sampleId: string
+}
+
+/**
+ * Fetch every Analysis in SENAITE, unfiltered. `sample_uid` (and every other
+ * search param tried against this endpoint) is silently ignored rather than
+ * actually filtering — confirmed via direct testing with a nonsense UID that
+ * still returned real results — so there is no reliable server-side way to
+ * fetch only the analyses for a given sample/batch. Callers must filter
+ * client-side against the uids they already trust (e.g. a SenaiteSample's own
+ * `Analyses[].uid` list, which comes from the object itself, not a search).
+ */
+export async function fetchAllAnalyses(token: string): Promise<SenaiteAnalysisFull[]> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Analysis?complete=true&limit=5000`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return (data.items ?? []).map((a: Record<string, unknown>) => ({
+      uid:          (a.uid as string) ?? '',
+      title:        (a.title as string) ?? '',
+      Keyword:      (a.Keyword as string) ?? (a.getKeyword as string) ?? '',
+      Result:       (a.Result as string) ?? '',
+      Unit:         (a.Unit as string) ?? '',
+      review_state: (a.review_state as string) ?? '',
+      sampleId:     (a.getRequestID as string) ?? '',
+    }))
+  } catch { return [] }
+}
+
+// ─── Batches ──────────────────────────────────────────────────────────────────
+
+export type SenaiteBatch = {
+  uid: string
+  id: string
+  title: string
+  ClientUID: string
+  ClientTitle: string
+  ClientID: string
+  ClientBatchID: string
+  Remarks: string
+  description: string
+  BatchLabels: string[]
+  BatchDate: string
+  review_state: string
+  created: string
+  getProgress: number
+}
+
+export async function fetchSenaiteBatches(token: string): Promise<SenaiteBatch[]> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/batch?complete=true&limit=1000`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return (data.items ?? []).map((b: Record<string, unknown>) => {
+      const client = (b.Client as Record<string, unknown>) ?? {}
+      return {
+        uid:           (b.uid as string) ?? '',
+        id:            (b.id as string) ?? '',
+        title:         (b.title as string) ?? '',
+        ClientUID:     (client.uid as string) ?? '',
+        ClientTitle:   (b.getClientTitle as string) ?? '',
+        ClientID:      (b.getClientID as string) ?? '',
+        ClientBatchID: (b.ClientBatchID as string) ?? (b.getClientBatchID as string) ?? '',
+        Remarks:       (b.Remarks as string) ?? '',
+        description:   (b.description as string) ?? '',
+        BatchLabels:   Array.isArray(b.BatchLabels) ? (b.BatchLabels as string[]) : [],
+        BatchDate:     (b.BatchDate as string) ?? '',
+        review_state:  (b.review_state as string) ?? '',
+        created:       (b.created as string) ?? '',
+        getProgress:   Number(b.getProgress ?? 0),
+      }
+    })
+  } catch { return [] }
+}
+
+export async function createSenaiteBatch(
+  token: string,
+  data: {
+    title: string; ClientUID?: string; ClientBatchID?: string; Remarks?: string
+    description?: string; BatchDate?: string; BatchLabels?: string[]
+  }
+): Promise<{ success: boolean; batch?: SenaiteBatch; error?: string }> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        portal_type: 'Batch',
+        parent_path: `${new URL(SENAITE_URL).pathname}/batches`,
+        title: data.title,
+        ...(data.ClientUID ? { Client: data.ClientUID } : {}),
+        ...(data.ClientBatchID ? { ClientBatchID: data.ClientBatchID } : {}),
+        ...(data.Remarks ? { Remarks: data.Remarks } : {}),
+        ...(data.description ? { description: data.description } : {}),
+        ...(data.BatchDate ? { BatchDate: data.BatchDate } : {}),
+        ...(data.BatchLabels?.length ? { BatchLabels: data.BatchLabels } : {}),
+      }),
+      cache: 'no-store',
+    })
+    const rawText = await res.text()
+    let responseData: Record<string, unknown> = {}
+    try { responseData = JSON.parse(rawText) } catch { /* non-JSON */ }
+
+    if (!res.ok || responseData.success === false) {
+      return { success: false, error: (responseData.message as string) ?? rawText ?? `HTTP ${res.status}` }
+    }
+    const items = (responseData.items as Record<string, unknown>[]) ?? []
+    if (!items.length) return { success: false, error: 'No batch returned from SENAITE.' }
+    const b = items[0]
+    const client = (b.Client as Record<string, unknown>) ?? {}
+    return {
+      success: true,
+      batch: {
+        uid: (b.uid as string) ?? '',
+        id: (b.id as string) ?? '',
+        title: (b.title as string) ?? '',
+        ClientUID: (client.uid as string) ?? '',
+        ClientTitle: (b.getClientTitle as string) ?? '',
+        ClientID: (b.getClientID as string) ?? '',
+        ClientBatchID: (b.ClientBatchID as string) ?? '',
+        Remarks: (b.Remarks as string) ?? '',
+        description: (b.description as string) ?? '',
+        BatchLabels: Array.isArray(b.BatchLabels) ? (b.BatchLabels as string[]) : [],
+        BatchDate: (b.BatchDate as string) ?? '',
+        review_state: (b.review_state as string) ?? 'open',
+        created: (b.created as string) ?? '',
+        getProgress: 0,
+      },
+    }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+/** Close, reopen, or cancel a Batch (confirmed via direct testing: 'close' and
+ * 'cancel' are both valid from the open state; 'open' is the reopen transition
+ * once closed — not 'reinstate'/'reopen' as might be assumed). */
+export async function setSenaiteBatchState(
+  token: string,
+  uid: string,
+  transition: 'close' | 'open' | 'cancel'
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update/${uid}`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ transition }),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok || data.success === false) {
+      return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    }
     return { success: true }
   } catch (e) { return { success: false, error: String(e) } }
 }

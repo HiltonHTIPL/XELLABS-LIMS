@@ -6,6 +6,7 @@ from rest_framework.viewsets import ModelViewSet
 from rest_framework.generics import ListAPIView, RetrieveUpdateAPIView
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.authtoken.models import Token
@@ -147,12 +148,50 @@ class UserViewSet(ModelViewSet):
         # ClientViewSet.perform_create — never logged, never returned again.
         self.request._created_staff_password = temp_password
 
+        # Mirror this staff user into SENAITE (matching Group = real SENAITE
+        # permissions for their role) — temp_password only exists in-memory
+        # right now, so it must be passed through immediately, not re-derived later.
+        from core.tasks import sync_staff_user_to_senaite
+        sync_staff_user_to_senaite.apply_async(args=[user.pk, temp_password], countdown=2)
+
     def create(self, request, *args, **kwargs):
         response = super().create(request, *args, **kwargs)
         password = getattr(request, '_created_staff_password', None)
         if password:
             response.data['login_password'] = password
         return response
+
+    def list(self, request, *args, **kwargs):
+        """Merge each user's live SENAITE roles into the list response — one
+        bulk SENAITE call for the whole page, not one per row (see
+        senaite_service.list_senaite_users), so the Users page can render a
+        role checkbox matrix without an N+1 fan-out of HTTP calls."""
+        from .senaite_service import list_senaite_users
+        response = super().list(request, *args, **kwargs)
+        by_username = {u['username']: u['roles'] for u in list_senaite_users()}
+        rows = response.data.get('results', response.data) if isinstance(response.data, dict) else response.data
+        for row in rows:
+            row['senaite_roles'] = by_username.get(row['username'], [])
+        return response
+
+    @action(detail=True, methods=['post'], url_path='senaite-roles')
+    def senaite_roles(self, request, pk=None):
+        """POST /api/users/{id}/senaite-roles/  { "role": "Analyst", "enabled": true }
+        Grants or revokes one SENAITE role directly on this user's SENAITE account —
+        the same operation as ticking a checkbox on SENAITE's own Users matrix."""
+        from .senaite_service import set_senaite_user_role, SENAITE_USER_ROLES
+        from rest_framework.exceptions import ValidationError as DRFValidationError
+
+        user = self.get_object()
+        role = request.data.get('role')
+        enabled = bool(request.data.get('enabled'))
+        if role not in SENAITE_USER_ROLES:
+            raise DRFValidationError({'role': [f'Must be one of {SENAITE_USER_ROLES}.']})
+
+        result = set_senaite_user_role(user.username, role, enabled)
+        if not result['ok']:
+            return Response({'detail': result['error']}, status=502)
+        return Response({'role': role, 'enabled': enabled})
 
 
 class ClientViewSet(ModelViewSet):

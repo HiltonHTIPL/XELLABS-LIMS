@@ -505,3 +505,155 @@ def delete_object(uid: str) -> dict:
         return {"ok": False, "uid": uid, "error": _sanitize_error(str(data.get("message") or data))}
     except Exception as exc:
         return {"ok": False, "uid": uid, "error": _sanitize_error(str(exc))}
+
+
+def activate_object(uid: str) -> dict:
+    """
+    Reactivate a previously-deactivated SENAITE object by UID — the symmetric
+    counterpart to delete_object(). SENAITE's JSON API has no dedicated
+    'activate'/'reinstate' endpoint; confirmed via direct testing that posting
+    {"transition": "activate"} to the 'update' endpoint fires the workflow
+    transition and flips review_state back to 'active'.
+    Returns {"ok": True, "uid": uid} or {"ok": False, "uid": uid, "error": ...}.
+    """
+    if not uid:
+        return {"ok": False, "uid": uid, "error": "Missing uid"}
+    try:
+        s = _session()
+        resp = s.post(_api(f"update/{uid}"), json={"transition": "activate"}, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("success", True):
+            return {"ok": True, "uid": uid}
+        return {"ok": False, "uid": uid, "error": _sanitize_error(str(data.get("message") or data))}
+    except Exception as exc:
+        return {"ok": False, "uid": uid, "error": _sanitize_error(str(exc))}
+
+
+# ── Staff user sync ────────────────────────────────────────────────────────────
+
+# Maps our internal User.role to the matching SENAITE Group id (confirmed via
+# GET /@groups — each group's `roles` list is what actually grants SENAITE
+# permissions, e.g. Analysts -> ['Analyst', 'Authenticated']). 'client' is
+# intentionally excluded: Client accounts are never created via this staff
+# flow (see UserViewSet docstring).
+ROLE_TO_SENAITE_GROUP = {
+    "admin": "Administrators",
+    "lab_manager": "LabManagers",
+    "analyst": "Analysts",
+    "reviewer": "Reviewers",
+    "receptionist": "LabClerks",
+}
+
+
+def _plone_rest_api(path: str) -> str:
+    """Plone's own REST API (@users, @groups) — distinct from senaite.jsonapi's
+    /@@API/senaite/v1/ used by _api(). Both live on the same SENAITE_URL."""
+    return f"{SENAITE_URL}/{path.lstrip('/')}"
+
+
+def push_staff_user(user, temp_password: str) -> dict:
+    """
+    Create a matching SENAITE member account for a newly-created Django staff
+    user, and add them to the SENAITE Group matching their internal role so
+    they get real SENAITE permissions (e.g. an 'analyst' can submit results).
+    Uses Plone's own @users/@groups REST API (confirmed working via direct
+    testing — plone.restapi, not senaite.jsonapi), not the senaite.jsonapi
+    v1 endpoints used elsewhere in this module.
+
+    Unlike senaite.jsonapi, Plone's own @users/@groups services require an
+    explicit `Accept: application/json` header for content-negotiation-based
+    traversal to route to them at all (missing it -> 404 NotFound). That
+    header was deliberately removed from _session()'s defaults by an earlier
+    fix because it broke senaite.jsonapi POSTs elsewhere — so it's set here
+    as a per-call override instead of touching the shared session.
+
+    Returns {"ok": True} or {"ok": False, "error": ...}. Never raises —
+    a SENAITE-side failure must never block Django staff-user creation.
+    """
+    group = ROLE_TO_SENAITE_GROUP.get(user.role)
+    if not group:
+        return {"ok": False, "error": f"No SENAITE group mapping for role '{user.role}'"}
+
+    s = _session()
+    plone_headers = {"Accept": "application/json"}
+    try:
+        resp = s.post(_plone_rest_api("@users"), json={
+            "username": user.username,
+            "email": user.email or "",
+            "password": temp_password,
+            "roles": [],
+        }, headers=plone_headers, timeout=15)
+        if resp.status_code not in (200, 201):
+            return {"ok": False, "error": _sanitize_error(f"User create failed: HTTP {resp.status_code} {resp.text[:200]}")}
+
+        resp = s.patch(_plone_rest_api(f"@groups/{group}"), json={
+            "users": {user.username: True}
+        }, headers=plone_headers, timeout=15)
+        if resp.status_code not in (200, 204):
+            return {"ok": False, "error": _sanitize_error(f"Group assign failed: HTTP {resp.status_code} {resp.text[:200]}")}
+
+        logger.info("SENAITE user sync OK: %s -> group %s", user.username, group)
+        return {"ok": True}
+    except requests.RequestException as exc:
+        return {"ok": False, "error": _sanitize_error(str(exc))}
+
+
+# Every SENAITE role a user can be granted directly (the columns on the
+# "Users and Groups" -> Users matrix in SENAITE itself). Kept as one ordered
+# list so the frontend table and any backend validation share the same set.
+SENAITE_USER_ROLES = [
+    "Analyst", "Client", "LabClerk", "LabManager", "Preserver", "Publisher",
+    "RegulatoryInspector", "Sampler", "SamplingCoordinator", "Verifier", "Manager",
+]
+
+
+def list_senaite_users() -> list[dict]:
+    """
+    Fetch every SENAITE member with their current effective roles, in one bulk
+    call (GET /@users returns `roles` per user already — confirmed via direct
+    testing, no need for a per-user follow-up call).
+    Returns [] on any failure — a SENAITE outage must never break the Users page.
+    """
+    s = _session()
+    try:
+        resp = s.get(_plone_rest_api("@users"), headers={"Accept": "application/json"}, timeout=15)
+        resp.raise_for_status()
+        return [
+            {
+                "username": u.get("username") or u.get("id"),
+                "email": u.get("email") or "",
+                "fullname": u.get("fullname") or "",
+                "roles": u.get("roles") or [],
+            }
+            for u in resp.json()
+        ]
+    except requests.RequestException as exc:
+        logger.error("list_senaite_users failed: %s", _sanitize_error(str(exc)))
+        return []
+
+
+def set_senaite_user_role(username: str, role: str, enabled: bool) -> dict:
+    """
+    Grant or revoke a single SENAITE role directly on a user (the exact
+    operation SENAITE's own Users-matrix checkboxes perform) — confirmed via
+    direct testing that PATCH /@users/<username> {"roles": {role: bool}} is a
+    diff against the user's current roles, not a full replace, so toggling
+    one checkbox never touches any of the user's other roles.
+    Returns {"ok": True} or {"ok": False, "error": ...}.
+    """
+    if role not in SENAITE_USER_ROLES:
+        return {"ok": False, "error": f"Unknown SENAITE role '{role}'"}
+    s = _session()
+    try:
+        resp = s.patch(
+            _plone_rest_api(f"@users/{username}"),
+            json={"roles": {role: enabled}},
+            headers={"Accept": "application/json"},
+            timeout=15,
+        )
+        if resp.status_code not in (200, 204):
+            return {"ok": False, "error": _sanitize_error(f"HTTP {resp.status_code} {resp.text[:200]}")}
+        return {"ok": True}
+    except requests.RequestException as exc:
+        return {"ok": False, "error": _sanitize_error(str(exc))}

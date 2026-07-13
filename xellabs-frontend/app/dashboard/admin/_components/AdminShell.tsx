@@ -1,7 +1,7 @@
 'use client'
 import { useState, useCallback } from 'react'
-import { getStaffUsers, toggleStaffUserActive, type StaffUser } from '@/app/actions/users'
-import { STAFF_ROLE_LABELS } from '@/app/lib/roles'
+import { getStaffUsers, toggleStaffUserActive, toggleSenaiteRole, type StaffUser } from '@/app/actions/users'
+import { STAFF_ROLE_LABELS, SENAITE_USER_ROLES } from '@/app/lib/roles'
 import UserModal from './UserModal'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
@@ -41,6 +41,21 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
     if (result.success) await refresh()
   }
 
+  async function handleToggleSenaiteRole(user: StaffUser, role: string) {
+    const enabled = !user.senaite_roles.includes(role)
+    // Optimistic update — this table has 11 checkbox columns per row, a round
+    // trip before any visual feedback would make every click feel unresponsive.
+    setUsers(prev => prev.map(u => u.id !== user.id ? u : {
+      ...u,
+      senaite_roles: enabled ? [...u.senaite_roles, role] : u.senaite_roles.filter(r => r !== role),
+    }))
+    const result = await toggleSenaiteRole(user.id, role, enabled)
+    if (!result.success) {
+      showToast(false, result.message ?? 'Failed to update SENAITE role.')
+      await refresh() // revert the optimistic change back to server truth
+    }
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: '#F5F6FA' }}>
       <div className="flex items-center justify-between px-5 py-3" style={{ backgroundColor: '#fff', borderBottom: '1px solid #E5E7EB' }}>
@@ -71,15 +86,19 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ backgroundColor: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
-                {['Name', 'Username', 'Email', 'Role', 'Status', 'Joined', ''].map(h => (
-                  <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{h}</th>
+                {['Name', 'Username', 'Email', 'Role', 'Status', 'Joined'].map(h => (
+                  <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
+                {SENAITE_USER_ROLES.map(role => (
+                  <th key={role} title={`SENAITE role: ${role}`} style={{ textAlign: 'center', padding: '10px 8px', fontSize: 10, fontWeight: 600, color: '#6B7280', whiteSpace: 'nowrap', borderLeft: '1px solid #F3F4F6' }}>{role}</th>
+                ))}
+                <th style={{ padding: '10px 14px' }} />
               </tr>
             </thead>
             <tbody>
               {users.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: '#9CA3AF' }}>
+                  <td colSpan={6 + SENAITE_USER_ROLES.length + 1} style={{ padding: '32px', textAlign: 'center', color: '#9CA3AF' }}>
                     No staff users yet — click "New User" to create one.
                   </td>
                 </tr>
@@ -102,6 +121,16 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
                         </span>
                       </td>
                       <td style={{ padding: '10px 14px', color: '#9CA3AF' }}>{fmtDate(u.date_joined)}</td>
+                      {SENAITE_USER_ROLES.map(role => (
+                        <td key={role} style={{ padding: '10px 8px', textAlign: 'center', borderLeft: '1px solid #F3F4F6' }}>
+                          <input
+                            type="checkbox"
+                            checked={u.senaite_roles.includes(role)}
+                            onChange={() => handleToggleSenaiteRole(u, role)}
+                            style={{ cursor: 'pointer' }}
+                          />
+                        </td>
+                      ))}
                       <td style={{ padding: '10px 14px', textAlign: 'right' }}>
                         <div className="flex items-center justify-end gap-1">
                           <button onClick={() => setModal({ editing: u })} title="Edit"
