@@ -124,7 +124,18 @@ def pull_samples_and_results():
                 if senaite_ar_id and not sample.senaite_ar_id:
                     sample.senaite_ar_id = senaite_ar_id
                     changed_fields.append("senaite_ar_id")
-                if new_status and sample.status != new_status and not sample.is_locked:
+                # Forward-only: Django owns the worksheet-progress stages
+                # (in_progress/results_pending/reviewed) because lab worksheets
+                # never touch SENAITE, whose AR just sits at sample_received.
+                # Without this rank guard, every sync tick reverted those
+                # derived statuses back to "received".
+                RANK = {"registered": 0, "received": 1, "in_progress": 2,
+                        "results_pending": 3, "reviewed": 4, "published": 5}
+                moves_forward = (
+                    new_status not in RANK or sample.status not in RANK
+                    or RANK[new_status] > RANK[sample.status]
+                )
+                if new_status and sample.status != new_status and not sample.is_locked and moves_forward:
                     logger.info("Sample %s: %s → %s", sample.sample_id, sample.status, new_status)
                     sample.status = new_status
                     changed_fields.append("status")

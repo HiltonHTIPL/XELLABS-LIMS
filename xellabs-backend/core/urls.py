@@ -11,7 +11,10 @@ router.register(r'clients', ClientViewSet, basename='client')
 router.register(r'users', UserViewSet, basename='staff-user')
 router.register(r'tenant-management', TenantManagementViewSet, basename='tenant-management')
 
+from .dashboard import DashboardView
+
 urlpatterns = router.urls + [
+    path('dashboard/', DashboardView.as_view(), name='dashboard'),
     path('tenants/', TenantListView.as_view(), name='tenant-list'),
     path('tenants/<int:pk>/', TenantDetailView.as_view(), name='tenant-detail'),
     path('tenants/<int:tenant_id>/users/', TenantUsersView.as_view(), name='tenant-users'),

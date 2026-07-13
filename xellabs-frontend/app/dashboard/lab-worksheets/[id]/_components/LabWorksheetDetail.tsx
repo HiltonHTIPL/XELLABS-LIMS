@@ -1,7 +1,7 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { type EnrichedWorksheet, assignToWorksheet, submitResultValue, verifyResult, submitWorksheetForReview, verifyWorksheet } from '@/app/actions/django-worksheets'
+import { type EnrichedWorksheet, assignToWorksheet, submitResultValue, verifyResult, submitWorksheetForReview, verifyWorksheet, assignWorksheetAnalyst } from '@/app/actions/django-worksheets'
 import { type AnalysisRequest } from '@/app/actions/analysis-requests'
 import { type LimsTest } from '@/app/actions/tests'
 
@@ -24,9 +24,9 @@ const RESULT_STATUS_BADGE: Record<string, { bg: string; color: string }> = {
   rejected:   { bg: '#FEE2E2', color: '#991B1B' },
 }
 
-type Props = { worksheet: EnrichedWorksheet; ars: AnalysisRequest[]; tests: LimsTest[] }
+type Props = { worksheet: EnrichedWorksheet; ars: AnalysisRequest[]; tests: LimsTest[]; users: { id: number; name: string }[] }
 
-export default function LabWorksheetDetail({ worksheet: initialWs, ars, tests }: Props) {
+export default function LabWorksheetDetail({ worksheet: initialWs, ars, tests, users }: Props) {
   const router = useRouter()
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [selectedAr, setSelectedAr] = useState('')
@@ -85,6 +85,19 @@ export default function LabWorksheetDetail({ worksheet: initialWs, ars, tests }:
     })
   }
 
+  function handleAssignAnalyst(userId: number) {
+    if (!userId) return
+    startTransition(async () => {
+      const res = await assignWorksheetAnalyst(initialWs.id, userId)
+      if (res.success) {
+        showToast(true, res.message)
+        router.refresh()
+      } else {
+        showToast(false, res.message)
+      }
+    })
+  }
+
   function handleSubmitWorksheet() {
     startTransition(async () => {
       const res = await submitWorksheetForReview(initialWs.id)
@@ -123,9 +136,24 @@ export default function LabWorksheetDetail({ worksheet: initialWs, ars, tests }:
             ← Lab Worksheets
           </button>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em', margin: 0 }}>{initialWs.ws_id}</h1>
-          <span style={{ background: badge.bg, color: badge.color, borderRadius: 20, padding: '4px 12px', fontWeight: 600, fontSize: 12, display: 'inline-block', marginTop: 8 }}>
-            {badge.label}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+            <span style={{ background: badge.bg, color: badge.color, borderRadius: 20, padding: '4px 12px', fontWeight: 600, fontSize: 12, display: 'inline-block' }}>
+              {badge.label}
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <MI name="person" size={14} color="#6B7280" />
+              <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 600 }}>Assigned to</span>
+              <select
+                value={initialWs.analyst ?? ''}
+                onChange={e => handleAssignAnalyst(Number(e.target.value))}
+                disabled={busy || !['open', 'in_progress'].includes(initialWs.status)}
+                style={{ padding: '4px 8px', border: '1px solid #D1D5DB', borderRadius: 6, fontSize: 12, color: '#374151', background: '#fff', cursor: 'pointer' }}
+              >
+                <option value="" disabled>Select user…</option>
+                {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {canAddAssignments && (

@@ -79,6 +79,42 @@ export async function createAnalysisRequest(_state: ARFormState, formData: FormD
   }
 }
 
+export async function updateAnalysisRequest(id: number, _state: ARFormState, formData: FormData): Promise<ARFormState> {
+  const tests    = formData.getAll('tests') as string[]
+  const priority = (formData.get('priority') as string)?.trim() || 'normal'
+  const due_date = (formData.get('due_date') as string)?.trim()
+  const notes    = (formData.get('notes') as string)?.trim()
+
+  if (!tests.length) return { errors: { tests: ['At least one test is required'] } }
+
+  try {
+    const res = await djangoFetch(`/api/lims/analysis-requests/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        tests: tests.map(Number),
+        priority,
+        due_date: due_date || null,
+        notes: notes ?? '',
+      }),
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok) {
+      const msg =
+        (Array.isArray(data) ? String(data[0]) : undefined) ??
+        (data.tests as string[])?.[0] ??
+        (data.detail as string) ??
+        Object.values(data).flat().map(String)[0] ??
+        'Failed to update analysis request.'
+      return { message: msg }
+    }
+    revalidatePath('/dashboard/analysis-requests')
+    return { success: true, message: `Analysis request ${data.ar_id} updated.` }
+  } catch (e) {
+    console.error('[AR_EDIT_ERROR]', e)
+    return { message: 'An unexpected error occurred. Please try again.' }
+  }
+}
+
 export async function updateARStatus(id: number, status: string): Promise<{ success: boolean; message: string }> {
   try {
     const res = await djangoFetch(`/api/lims/analysis-requests/${id}/`, {

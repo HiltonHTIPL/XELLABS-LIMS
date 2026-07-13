@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
 from rest_framework import status
 from rest_framework.authtoken.models import Token
-from rest_framework.test import APITestCase
+from core.tenant_test import TenantAPITestCase
 
 from audittrail.models import AuditEvent, DataChangeLog, RecordVersion
 from core.models import Client
@@ -20,7 +20,7 @@ def make_user(username, role="analyst"):
     return u, token.key
 
 
-class AuditEventCreationTest(APITestCase):
+class AuditEventCreationTest(TenantAPITestCase):
     def setUp(self):
         self.user, self.key = make_user("audit_analyst")
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.key}")
@@ -29,7 +29,7 @@ class AuditEventCreationTest(APITestCase):
 
     def test_sample_create_logs_audit_event(self):
         before = AuditEvent.objects.count()
-        self.client.post("/api/samples/", {
+        self.client.post("/api/lims/samples/", {
             "client": self.client_obj.pk,
             "sample_type": self.st.pk,
         }, format="json")
@@ -41,7 +41,7 @@ class AuditEventCreationTest(APITestCase):
             created_by=self.user, description="Original"
         )
         before = DataChangeLog.objects.count()
-        self.client.patch(f"/api/samples/{sample.pk}/", {"description": "Updated"}, format="json")
+        self.client.patch(f"/api/lims/samples/{sample.pk}/", {"description": "Updated"}, format="json")
         self.assertGreater(DataChangeLog.objects.count(), before)
 
     def test_sample_update_creates_record_version(self):
@@ -50,11 +50,11 @@ class AuditEventCreationTest(APITestCase):
             created_by=self.user, description="v1"
         )
         before = RecordVersion.objects.count()
-        self.client.patch(f"/api/samples/{sample.pk}/", {"description": "v2"}, format="json")
+        self.client.patch(f"/api/lims/samples/{sample.pk}/", {"description": "v2"}, format="json")
         self.assertGreater(RecordVersion.objects.count(), before)
 
 
-class AuditReadOnlyTest(APITestCase):
+class AuditReadOnlyTest(TenantAPITestCase):
     """Audit events must not be writable via API."""
 
     def setUp(self):

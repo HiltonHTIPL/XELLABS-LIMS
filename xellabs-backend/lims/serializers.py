@@ -1,3 +1,4 @@
+from django.db import IntegrityError, transaction
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 from .models import (
@@ -7,6 +8,24 @@ from .models import (
 )
 
 UNLOCK_ROLES = ("admin", "lab_manager")
+
+
+def _create_with_id_retry(validated_data, id_field, generate, create):
+    """ID generators read MAX(<id>) then format the next number, so two
+    concurrent creates can produce the same ID. Retry with a freshly generated
+    ID instead of surfacing a 500 IntegrityError. Only applies when the ID was
+    auto-generated — a caller-supplied duplicate should still fail loudly."""
+    auto_generated = not validated_data.get(id_field)
+    for attempt in range(5):
+        if auto_generated:
+            validated_data[id_field] = generate()
+        try:
+            with transaction.atomic():
+                return create(validated_data)
+        except IntegrityError:
+            if not auto_generated or attempt == 4:
+                raise
+    raise RuntimeError("unreachable")
 
 
 class RecordLockMixin:
@@ -103,12 +122,15 @@ class SampleSerializer(RecordLockMixin, serializers.ModelSerializer):
         from datetime import timedelta
         validated_data.pop("reason_for_change", None)
         validated_data["created_by"] = self.context["request"].user
-        if not validated_data.get("sample_id"):
-            validated_data["sample_id"] = generate_sample_id(validated_data["sample_type"])
         # Auto-compute due date: collection_date + 14 days if not explicitly provided
         if validated_data.get("collection_date") and not validated_data.get("expiry_date"):
             validated_data["expiry_date"] = validated_data["collection_date"] + timedelta(days=14)
-        return super().create(validated_data)
+        sample_type = validated_data["sample_type"]
+        return _create_with_id_retry(
+            validated_data, "sample_id",
+            lambda: generate_sample_id(sample_type),
+            super().create,
+        )
 
     def update(self, instance, validated_data):
         validated_data.pop("reason_for_change", None)
@@ -169,10 +191,32 @@ class AnalysisRequestSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         from .services import generate_ar_id
-        if not validated_data.get("ar_id"):
-            validated_data["ar_id"] = generate_ar_id()
         validated_data["created_by"] = self.context["request"].user
-        return super().create(validated_data)
+        return _create_with_id_retry(validated_data, "ar_id", generate_ar_id, super().create)
+
+    def update(self, instance, validated_data):
+        # Analyses are editable until the sample is received; afterwards only
+        # admin/lab_manager may correct them (mirrors the Sample detail rule).
+        if instance.sample and instance.sample.status != "registered":
+            user = self.context["request"].user
+            if getattr(user, "role", None) not in UNLOCK_ROLES:
+                guarded = ("tests", "sample", "priority", "due_date", "notes")
+                changed = []
+                for f in guarded:
+                    if f not in validated_data:
+                        continue
+                    if f == "tests":
+                        new_ids = {t.pk for t in validated_data["tests"]}
+                        if new_ids != set(instance.tests.values_list("pk", flat=True)):
+                            changed.append(f)
+                    elif validated_data[f] != getattr(instance, f):
+                        changed.append(f)
+                if changed:
+                    raise serializers.ValidationError(
+                        "Analyses can no longer be edited after the sample has been "
+                        "received. Contact a lab manager to make corrections."
+                    )
+        return super().update(instance, validated_data)
 
 
 class WorksheetAssignmentSerializer(serializers.ModelSerializer):
@@ -180,25 +224,40 @@ class WorksheetAssignmentSerializer(serializers.ModelSerializer):
         model = WorksheetAssignment
         fields = "__all__"
 
+    def create(self, validated_data):
+        instance = super().create(validated_data)
+        # Assigning a test to a worksheet moves the sample into In Progress.
+        from .services import refresh_sample_workflow_status
+        if instance.analysis_request and instance.analysis_request.sample:
+            refresh_sample_workflow_status(instance.analysis_request.sample)
+        return instance
+
 
 class WorksheetSerializer(serializers.ModelSerializer):
     assignments = WorksheetAssignmentSerializer(many=True, read_only=True)
+    analyst_name = serializers.SerializerMethodField(read_only=True)
     ws_id = serializers.CharField(
         required=False, allow_blank=True,
         validators=[UniqueValidator(queryset=Worksheet.objects.all())],
     )
 
+    def get_analyst_name(self, obj):
+        if obj.analyst:
+            full = f"{obj.analyst.first_name} {obj.analyst.last_name}".strip()
+            return full or obj.analyst.username
+        return ""
+
     class Meta:
         model = Worksheet
         fields = "__all__"
-        read_only_fields = ("analyst", "created_at", "updated_at")
+        # analyst is settable on update (Assign To); create always uses request.user
+        read_only_fields = ("created_at", "updated_at")
+        extra_kwargs = {"analyst": {"required": False}}
 
     def create(self, validated_data):
         from .services import generate_ws_id
-        if not validated_data.get("ws_id"):
-            validated_data["ws_id"] = generate_ws_id()
         validated_data["analyst"] = self.context["request"].user
-        return super().create(validated_data)
+        return _create_with_id_retry(validated_data, "ws_id", generate_ws_id, super().create)
 
 
 class ResultSerializer(RecordLockMixin, serializers.ModelSerializer):

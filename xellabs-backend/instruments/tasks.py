@@ -26,7 +26,11 @@ def process_instrument_import(self, import_id: int):
         logger.error("InstrumentResultImport %d not found.", import_id)
         return
 
-    imp.status = "pending"
+    # The view already flips pending/failed -> "processing" atomically before
+    # dispatching (guards against a double-click starting two concurrent
+    # imports of the same file) — set it here too in case this task is ever
+    # invoked directly (shell, admin) without going through that view.
+    imp.status = "processing"
     imp.save(update_fields=["status"])
 
     # ── 1. Parse ─────────────────────────────────────────────────────────────

@@ -41,6 +41,9 @@ export default function DashboardShell({ children, initials, displayName, roleLa
   const notifBtnRef = useRef<HTMLButtonElement>(null)
   const notifPanelRef = useRef<HTMLDivElement>(null)
   const [notifPos, setNotifPos] = useState<{ top: number; right: number } | null>(null)
+  const helpBtnRef = useRef<HTMLButtonElement>(null)
+  const helpPanelRef = useRef<HTMLDivElement>(null)
+  const [helpPos, setHelpPos] = useState<{ top: number; right: number } | null>(null)
 
   const buildEnvLabel: EnvLabel = serverEnvLabel
     ?? ((process.env.NEXT_PUBLIC_APP_ENV ?? 'development').toLowerCase() === 'production' ? 'Production' : 'Development')
@@ -70,6 +73,12 @@ export default function DashboardShell({ children, initials, displayName, roleLa
         notifBtnRef.current && !notifBtnRef.current.contains(e.target as Node)
       ) {
         setNotifOpen(false)
+      }
+      if (
+        helpPanelRef.current && !helpPanelRef.current.contains(e.target as Node) &&
+        helpBtnRef.current && !helpBtnRef.current.contains(e.target as Node)
+      ) {
+        setHelpPos(null)
       }
     }
     document.addEventListener('mousedown', handleClick)
@@ -202,9 +211,34 @@ export default function DashboardShell({ children, initials, displayName, roleLa
           )}
 
           {/* Help */}
-          <button className="p-1.5 rounded-lg hover:bg-gray-100">
+          <button ref={helpBtnRef} title="Help & support"
+            onClick={() => {
+              if (helpPos) { setHelpPos(null); return }
+              const rect = helpBtnRef.current!.getBoundingClientRect()
+              setHelpPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right })
+            }}
+            className="p-1.5 rounded-lg hover:bg-gray-100" style={{ cursor: 'pointer' }}>
             <span className="material-icons" style={{ fontSize: 20, color: '#6B7280' }}>help_outline</span>
           </button>
+          {helpPos && (
+            <div ref={helpPanelRef} className="rounded-xl"
+              style={{ position: 'fixed', top: helpPos.top, right: helpPos.right, width: 260, zIndex: 9999, backgroundColor: '#fff', border: '1px solid #E5E7EB', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', padding: 14 }}>
+              <p className="text-sm font-semibold" style={{ color: '#111827', margin: '0 0 4px' }}>Help & Support</p>
+              <p className="text-xs" style={{ color: '#6B7280', margin: '0 0 10px', lineHeight: 1.5 }}>
+                Questions or issues with XelLabs LIMS? Reach out to the support team.
+              </p>
+              <a href="mailto:support@hephzibahtech.com?subject=XelLabs%20LIMS%20Support"
+                className="flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg hover:bg-gray-50"
+                style={{ border: '1px solid #E5E7EB', color: '#0154FC', textDecoration: 'none' }}
+                onClick={() => setHelpPos(null)}>
+                <span className="material-icons" style={{ fontSize: 15 }}>mail_outline</span>
+                Contact Support
+              </a>
+              <p style={{ fontSize: 10, color: '#9CA3AF', margin: '10px 0 0' }}>
+                XelLabs LIMS · supported by Hephzibah Technologies
+              </p>
+            </div>
+          )}
 
           {/* User dropdown */}
           <div ref={userMenuRef} className="relative pl-3" style={{ borderLeft: '1px solid #E5E7EB' }}>
@@ -311,11 +345,9 @@ export default function DashboardShell({ children, initials, displayName, roleLa
         >
           <span>© 2026 XELLABS LIMS. All rights reserved.</span>
           <div className="flex items-center gap-3">
-            <a href="#" className="hover:text-gray-600">Privacy Policy</a>
+            <a href="mailto:support@hephzibahtech.com?subject=XelLabs%20LIMS%20Support" className="hover:text-gray-600">Contact Support</a>
             <span>|</span>
-            <a href="#" className="hover:text-gray-600">Terms of Use</a>
-            <span>|</span>
-            <a href="#" className="hover:text-gray-600">Security</a>
+            <span>Secure. Compliant. Reliable.</span>
           </div>
         </div>
       </div>

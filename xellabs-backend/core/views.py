@@ -6,12 +6,12 @@ from rest_framework.viewsets import ModelViewSet
 from rest_framework.generics import ListAPIView, RetrieveUpdateAPIView
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
-from rest_framework.authentication import TokenAuthentication
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.authtoken.models import Token
 from django_filters.rest_framework import DjangoFilterBackend
 
+from .authentication import TenantAwareTokenAuthentication as TokenAuthentication
 from .models import Client, Tenant
 from .permissions import IsLabManagerOrAbove, IsSuperAdmin
 from .serializers import ClientSerializer, UserSerializer, StaffUserSerializer, TenantSerializer, TenantLogoSerializer
@@ -29,6 +29,24 @@ class FlexibleTokenView(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
 
+    @staticmethod
+    def _log_login(request, username_attempted, user=None, success=False):
+        """LoginEvent for every attempt — success AND failure (compliance).
+        Never blocks the login flow itself."""
+        try:
+            from audittrail.models import LoginEvent
+            xff = request.META.get('HTTP_X_FORWARDED_FOR')
+            ip = xff.split(',')[0].strip() if xff else request.META.get('REMOTE_ADDR')
+            LoginEvent.objects.create(
+                user=user,
+                username_attempted=username_attempted[:150],
+                success=success,
+                ip_address=ip,
+                user_agent=request.META.get('HTTP_USER_AGENT', '')[:1000],
+            )
+        except Exception:
+            logger.exception("Failed to write LoginEvent for '%s'.", username_attempted)
+
     def post(self, request):
         identifier = request.data.get('username', '').strip()
         password = request.data.get('password', '').strip()
@@ -44,6 +62,7 @@ class FlexibleTokenView(APIView):
                 user_obj = User.objects.get(email__iexact=identifier)
                 username = user_obj.username
             except User.DoesNotExist:
+                self._log_login(request, identifier)
                 return Response({'non_field_errors': ['No account found with that email address.']}, status=400)
             except User.MultipleObjectsReturned:
                 logger.error("Duplicate accounts share email '%s' (case-insensitive) — data integrity issue.", identifier)
@@ -61,10 +80,13 @@ class FlexibleTokenView(APIView):
 
         user = authenticate(request=request, username=username, password=password)
         if not user:
+            self._log_login(request, identifier)
             return Response({'non_field_errors': ['Invalid credentials.']}, status=400)
         if not user.is_active:
+            self._log_login(request, identifier, user=user)
             return Response({'non_field_errors': ['This account is disabled.']}, status=400)
 
+        self._log_login(request, identifier, user=user, success=True)
         token, _ = Token.objects.get_or_create(user=user)
         return Response({'token': token.key})
 
@@ -186,8 +208,13 @@ class ClientResetPasswordView(APIView):
         if len(new_password) < 8:
             raise DRFValidationError({'new_password': ['Password must be at least 8 characters.']})
 
+        # Tenant scoping: an admin may only reset passwords for clients of
+        # their own tenant. (Superusers without a tenant may reset any.)
+        clients = Client.objects.all()
+        if request.user.tenant_id:
+            clients = clients.filter(tenant=request.user.tenant)
         try:
-            client = Client.objects.get(pk=client_id)
+            client = clients.get(pk=client_id)
         except Client.DoesNotExist:
             return Response({'detail': 'Client not found.'}, status=404)
 

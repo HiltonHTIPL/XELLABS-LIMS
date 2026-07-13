@@ -914,7 +914,6 @@ export async function createSenaiteWorksheet(
       cache: 'no-store',
     })
     const rawText = await res.text()
-    console.log('[createSenaiteWorksheet] status:', res.status, 'body:', rawText)
     let data: Record<string, unknown> = {}
     try { data = JSON.parse(rawText) } catch { /* non-JSON */ }
 

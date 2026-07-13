@@ -24,7 +24,8 @@ export default function AccountSettingsShell() {
   }
 
   return (
-    <div className="max-w-2xl">
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
+      <div className="max-w-2xl">
       <div className="flex items-center gap-2 mb-4" style={{ fontSize: 12 }}>
         <Link href="/dashboard" style={{ color: '#6B7280' }}>Dashboard</Link>
         <span style={{ color: '#D1D5DB' }}>/</span>
@@ -63,6 +64,7 @@ export default function AccountSettingsShell() {
             Saved — badge updated.
           </div>
         )}
+      </div>
       </div>
     </div>
   )

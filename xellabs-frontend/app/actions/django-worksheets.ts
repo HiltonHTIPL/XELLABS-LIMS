@@ -178,6 +178,32 @@ export async function assignToWorksheet(worksheetId: number, analysisRequestId: 
   }
 }
 
+export async function getAssignableUsers(): Promise<{ id: number; name: string }[]> {
+  const users = await fetchAllPages<StaffUser>('/api/users/?page_size=500')
+  return users.map(u => ({
+    id: u.id,
+    name: `${u.first_name} ${u.last_name}`.trim() || u.username,
+  }))
+}
+
+export async function assignWorksheetAnalyst(worksheetId: number, userId: number): Promise<{ success: boolean; message: string }> {
+  try {
+    const res = await djangoFetch(`/api/lims/worksheets/${worksheetId}/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ analyst: userId }),
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      return { success: false, message: (data as Record<string, unknown>).detail as string ?? 'Failed to assign analyst' }
+    }
+    revalidatePath('/dashboard/lab-worksheets')
+    revalidatePath(`/dashboard/lab-worksheets/${worksheetId}`)
+    return { success: true, message: 'Worksheet assigned.' }
+  } catch (e) {
+    return { success: false, message: String(e) }
+  }
+}
+
 export async function submitResultValue(resultId: number, value: string): Promise<{ success: boolean; message: string }> {
   try {
     // submit_result() (lims/services.py) requires Result.value to already be

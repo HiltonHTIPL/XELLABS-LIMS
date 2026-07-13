@@ -95,6 +95,7 @@ export type NewSamplePayload = {
   container_type?: string
   preservation?: string
   analysis_specification?: string
+  sampling_deviation?: string
   sample_point?: string
   environmental_conditions?: string
   composite?: boolean

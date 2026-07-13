@@ -368,7 +368,8 @@ export async function getUpcomingExpiryAlerts(): Promise<ExpiryAlert[]> {
   try {
     const res = await djangoFetch('/api/inventory/expiry-alerts/upcoming/')
     if (!res.ok) return []
-    return await res.json()
+    const data = await res.json()
+    return unwrap<ExpiryAlert>(data)
   } catch { return [] }
 }
 

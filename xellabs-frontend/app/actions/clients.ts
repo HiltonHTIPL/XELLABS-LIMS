@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache'
 import { getSession } from '@/app/lib/session'
 import { djangoFetch } from '@/app/lib/django'
 import { fetchSenaiteClients } from '@/app/lib/senaite'
+import { sessionToken } from '@/app/lib/senaite-auth'
 
 export type SenaiteAddress = {
   address: string
@@ -120,11 +121,21 @@ export async function getClient(id: number): Promise<DjangoClient | null> {
 }
 
 export async function getClients(): Promise<DjangoClient[]> {
+  // Follow DRF pagination — a single unparameterised fetch returned only the
+  // first 50 clients, truncating every client dropdown.
   try {
-    const res = await djangoFetch('/api/clients/')
-    if (!res.ok) return []
-    const data = await res.json()
-    return data.results ?? data
+    const all: DjangoClient[] = []
+    let page = 1
+    while (page) {
+      const res = await djangoFetch(`/api/clients/?page=${page}&page_size=200`)
+      if (!res.ok) break
+      const data = await res.json()
+      const items: DjangoClient[] = data.results ?? data
+      all.push(...items)
+      if (!Array.isArray(data.results) || !data.next) break
+      page += 1
+    }
+    return all
   } catch {
     return []
   }
@@ -169,9 +180,7 @@ export async function syncClientsFromSenaite(): Promise<SyncResult> {
   }
 
   // 2. Fetch all clients from SENAITE (raw fetch — not a Django endpoint)
-  const SENAITE_USER = process.env.SENAITE_ADMIN_USER ?? 'admin'
-  const SENAITE_PASS = process.env.SENAITE_ADMIN_PASS ?? 'admin'
-  const senaiteToken = session.senaiteToken ?? Buffer.from(`${SENAITE_USER}:${SENAITE_PASS}`).toString('base64')
+  const senaiteToken = sessionToken(session)
   const senaiteClients = await fetchSenaiteClients(senaiteToken)
   if (senaiteClients.length === 0) {
     return { success: false, message: 'No clients found in XelLabs. Verify XelLabs is running and you are logged in as a XelLabs user.', created: 0, updated: 0, total: 0 }
