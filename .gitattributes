@@ -1,0 +1,5 @@
+# Shell scripts must always have LF line endings — a CRLF shebang line
+# ("#!/usr/bin/env bash\r") fails outright on Linux/Mac, and this repo is
+# cloned across Windows/Linux/Mac machines.
+.githooks/* text eol=lf
+*.sh text eol=lf

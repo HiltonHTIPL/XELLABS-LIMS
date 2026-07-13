@@ -523,6 +523,29 @@ When the user ends a request with "ok", execute the full task without pausing fo
 
 ---
 
+## 15b. Pre-Push Checks — `.githooks/pre-push`
+
+**One-time setup per clone (this is a repo-local git config, it does not carry over automatically):**
+```bash
+git config core.hooksPath .githooks
+```
+
+Every `git push` then runs, in order: no `.env`/secrets staged → Django `check` → `makemigrations --check --dry-run` (no missing migrations) → Django test suite (`--noinput`, **no** `--parallel` — see below) → TypeScript `tsc --noEmit` → ESLint (**warns only**, does not block) → `npm run build` (the actual production build, the strongest real signal that deployment won't break).
+
+**Requires `docker compose up -d` running first** — the checks run via `docker exec` against the live `xellabs-lims-django-1`/`xellabs-lims-frontend-1` containers, since that's where the real deps/DB connection live. The hook fails fast with a clear message if the containers aren't up rather than silently skipping.
+
+**Known gotchas found while building this (2026-07-13):**
+| Gotcha | Fix |
+|---|---|
+| `manage.py test --parallel` crashes with `TypeError: cannot pickle 'traceback' object` on ANY test failure/error (Python 3.12 quirk) — the runner itself dies instead of reporting the failure | Never use `--parallel` in this hook. Slower, but reports real failures correctly. |
+| `manage.py test` prompts "Type 'yes' to delete test database" interactively if a stale `test_xellabs_lims` DB exists from an earlier interrupted run — hangs/EOFErrors with no TTY | Always pass `--noinput`. |
+| ESLint has a large pre-existing backlog (~39 errors, 41 warnings) unrelated to any one change, and `next build` has succeeded repeatedly all session despite it | Lint is a **warning**, not a blocking check, in this hook — don't gate every future push on an unrelated historical backlog. Re-evaluate making it blocking once the backlog is actually cleaned up. |
+| `InstrumentViewSet.calibration_due`/`maintenance_due` intermittently returned a paginated `{count, results: [...]}` envelope instead of a plain array, breaking any caller expecting a flat list (a real pre-existing bug the hook caught on its first real run) | Fixed — these two alert-style endpoints (bounded "due within N days" lists) are now deliberately unpaginated; see `instruments/views.py`. |
+
+**To skip once, for a genuinely urgent push** (use sparingly — not a habit): `git push --no-verify`.
+
+---
+
 ## 16. SENAITE White-Label — XelLabs Branding
 
 SENAITE has been white-labeled to **XelLabs**. All visible "SENAITE" text has been replaced.

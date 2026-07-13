@@ -33,9 +33,9 @@ class InstrumentViewSet(viewsets.ModelViewSet):
         qs = self.get_queryset().filter(
             status="active", next_calibration__isnull=False, next_calibration__lte=cutoff
         ).order_by("next_calibration")
-        page = self.paginate_queryset(qs)
-        if page is not None:
-            return self.get_paginated_response(InstrumentSerializer(page, many=True).data)
+        # Deliberately unpaginated — this is a small, bounded alerts list (due
+        # within N days), not a general browse listing, and callers (dashboard
+        # widgets) expect a plain array, not the {count, next, results} envelope.
         return Response(InstrumentSerializer(qs, many=True).data)
 
     @action(detail=False, methods=["get"], url_path="maintenance-due")
@@ -51,9 +51,7 @@ class InstrumentViewSet(viewsets.ModelViewSet):
         qs = self.get_queryset().filter(
             status="active", next_maintenance__isnull=False, next_maintenance__lte=cutoff
         ).order_by("next_maintenance")
-        page = self.paginate_queryset(qs)
-        if page is not None:
-            return self.get_paginated_response(InstrumentSerializer(page, many=True).data)
+        # Deliberately unpaginated — see calibration_due for why.
         return Response(InstrumentSerializer(qs, many=True).data)
 
 
