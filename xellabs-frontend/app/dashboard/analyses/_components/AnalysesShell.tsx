@@ -6,6 +6,7 @@ import {
   type SenaiteAnalysisService,
   type SenaiteAnalysisCategory,
   type SenaiteDepartment,
+  type SenaiteLabContact,
 } from '@/app/lib/senaite'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
@@ -62,15 +63,26 @@ function SelectField({
   )
 }
 
-type FV = { title: string; Keyword: string; Category: string; newCategoryTitle: string; Department: string; Unit: string; Price: string }
-const blank = (): FV => ({ title: '', Keyword: '', Category: '', newCategoryTitle: '', Department: '', Unit: '', Price: '' })
+type FV = {
+  title: string; Keyword: string; Category: string; newCategoryTitle: string
+  Department: string; newDepartmentTitle: string; newDepartmentId: string
+  Manager: string; newContactFirstName: string; newContactLastName: string
+  Unit: string; Price: string
+}
+const blank = (): FV => ({
+  title: '', Keyword: '', Category: '', newCategoryTitle: '',
+  Department: '', newDepartmentTitle: '', newDepartmentId: '',
+  Manager: '', newContactFirstName: '', newContactLastName: '',
+  Unit: '', Price: '',
+})
 
 export default function AnalysesShell({
-  initialServices, categories, departments,
+  initialServices, categories, departments, labContacts,
 }: {
   initialServices: SenaiteAnalysisService[]
   categories: SenaiteAnalysisCategory[]
   departments: SenaiteDepartment[]
+  labContacts: SenaiteLabContact[]
 }) {
   const router = useRouter()
   const [showDrawer, setShowDrawer] = useState(false)
@@ -80,6 +92,8 @@ export default function AnalysesShell({
   const [search, setSearch] = useState('')
 
   const creatingCategory = vals.Category === '__new__'
+  const creatingDepartment = creatingCategory && vals.Department === '__new__'
+  const creatingContact = creatingDepartment && vals.Manager === '__new__'
 
   function setVal(k: keyof FV, v: string) {
     setVals(prev => ({ ...prev, [k]: v }))
@@ -189,7 +203,7 @@ export default function AnalysesShell({
                 error={fieldErrors.Category} value={vals.Category} onChange={v => setVal('Category', v)}>
                 <option value="">Select a category…</option>
                 {categories.map(c => <option key={c.uid} value={c.uid}>{c.title}</option>)}
-                {departments.length > 0 && <option value="__new__">+ Create new category…</option>}
+                <option value="__new__">+ Create new category…</option>
               </SelectField>
 
               {creatingCategory && (
@@ -200,7 +214,37 @@ export default function AnalysesShell({
                     error={fieldErrors.Department} value={vals.Department} onChange={v => setVal('Department', v)}>
                     <option value="">Select a department…</option>
                     {departments.map(d => <option key={d.uid} value={d.uid}>{d.title}</option>)}
+                    <option value="__new__">+ Create new department…</option>
                   </SelectField>
+
+                  {creatingDepartment && (
+                    <div className="flex flex-col gap-3 p-3 rounded-lg" style={{ backgroundColor: '#F3F4F6', border: '1px dashed #D1D5DB' }}>
+                      <Field label="New Department Name" name="newDepartmentTitle" placeholder="e.g. Microbiology" required
+                        error={fieldErrors.newDepartmentTitle} value={vals.newDepartmentTitle} onChange={v => setVal('newDepartmentTitle', v)} />
+                      <Field label="Department ID" name="newDepartmentId" placeholder="e.g. MICRO" required
+                        hint="(short code, letters/numbers only)"
+                        error={fieldErrors.newDepartmentId} value={vals.newDepartmentId} onChange={v => setVal('newDepartmentId', v)} />
+                      <SelectField label="Manager" name="Manager" required
+                        error={fieldErrors.Manager} value={vals.Manager} onChange={v => setVal('Manager', v)}>
+                        <option value="">Select a manager…</option>
+                        {labContacts.map(c => <option key={c.uid} value={c.uid}>{c.title}</option>)}
+                        <option value="__new__">+ Create new contact…</option>
+                      </SelectField>
+
+                      {creatingContact && (
+                        <div className="flex gap-2">
+                          <div className="flex-1">
+                            <Field label="First Name" name="newContactFirstName" placeholder="e.g. Jane" required
+                              error={fieldErrors.newContactFirstName} value={vals.newContactFirstName} onChange={v => setVal('newContactFirstName', v)} />
+                          </div>
+                          <div className="flex-1">
+                            <Field label="Last Name" name="newContactLastName" placeholder="e.g. Doe" required
+                              error={fieldErrors.newContactLastName} value={vals.newContactLastName} onChange={v => setVal('newContactLastName', v)} />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
