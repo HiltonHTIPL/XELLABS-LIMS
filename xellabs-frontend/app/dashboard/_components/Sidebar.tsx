@@ -43,6 +43,8 @@ const NAV: NavEntry[] = [
     icon: 'science',
     roles: ['admin', 'lab_manager', 'analyst'],
     children: [
+      { label: 'Test Schedule', href: '/dashboard/schedule', icon: 'event_note', roles: ['admin', 'lab_manager', 'analyst'] },
+      { label: 'Inventory Dashboard', href: '/dashboard/inventory-dashboard', icon: 'monitoring', roles: ['admin', 'lab_manager', 'analyst'] },
       { label: 'Reagents & Standards', href: '/dashboard/inventory-items', icon: 'biotech', roles: ['admin', 'lab_manager', 'analyst'] },
       { label: 'Lots & Transactions', href: '/dashboard/inventory-lots', icon: 'inventory', roles: ['admin', 'lab_manager', 'analyst'] },
       { label: 'Instrument Maintenance', href: '/dashboard/instrument-maintenance', icon: 'build', roles: ['admin', 'lab_manager', 'analyst'] },
@@ -110,7 +112,7 @@ export default function Sidebar({ onToggle, role, reportDraftCount, isSuperuser 
       '/dashboard/master-data-import', '/dashboard/instrument-list', '/dashboard/storage-list', '/dashboard/settings', '/dashboard/tenant-management',
     ].some(p => pathname.startsWith(p))) open.add('Administration')
     if (['/dashboard/samples-overview', '/dashboard/samples/new', '/dashboard/lab-samples', '/dashboard/lab-worksheets'].some(p => pathname.startsWith(p))) open.add('Samples')
-    if (['/dashboard/inventory-items', '/dashboard/inventory-lots', '/dashboard/instrument-maintenance'].some(p => pathname.startsWith(p))) open.add('Instruments')
+    if (['/dashboard/inventory-items', '/dashboard/inventory-lots', '/dashboard/instrument-maintenance', '/dashboard/schedule', '/dashboard/inventory-dashboard'].some(p => pathname.startsWith(p))) open.add('Instruments')
     return open
   })
 
