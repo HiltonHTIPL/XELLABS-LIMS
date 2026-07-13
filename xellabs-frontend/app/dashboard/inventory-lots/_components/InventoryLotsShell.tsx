@@ -1,6 +1,7 @@
 'use client'
 import { useMemo, useState, useActionState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import {
   createLot, updateLot, deleteLot,
   createTransaction, createExpiryAlert, acknowledgeExpiryAlert,
@@ -317,21 +318,29 @@ export default function InventoryLotsShell({
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Lots &amp; Stock</h1>
           <p className="mt-1" style={{ fontSize: 13, color: '#6B7280' }}>Track received lots, stock movements, and expiry alerts</p>
         </div>
-        {tab === 'lots' && (
-          <button onClick={openCreateLot} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#2563EB', border: 'none', cursor: 'pointer' }}>
-            <MI name="add" size={15} color="#fff" /> New Lot
-          </button>
-        )}
-        {tab === 'transactions' && (
-          <button onClick={() => setShowTxnModal(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#2563EB', border: 'none', cursor: 'pointer' }}>
-            <MI name="add" size={15} color="#fff" /> Record Transaction
-          </button>
-        )}
-        {tab === 'alerts' && (
-          <button onClick={() => setShowAlertModal(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#2563EB', border: 'none', cursor: 'pointer' }}>
-            <MI name="add" size={15} color="#fff" /> New Alert
-          </button>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link href="/dashboard/inventory-dashboard" className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold" style={{ backgroundColor: '#fff', color: '#2563EB', border: '1px solid #D9DEEA', textDecoration: 'none' }}>
+            <MI name="inventory" size={15} color="#2563EB" /> Inventory Dashboard
+          </Link>
+          <Link href="/dashboard/schedule" className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold" style={{ backgroundColor: '#fff', color: '#2563EB', border: '1px solid #D9DEEA', textDecoration: 'none' }}>
+            <MI name="event_note" size={15} color="#2563EB" /> Test Schedule
+          </Link>
+          {tab === 'lots' && (
+            <button onClick={openCreateLot} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#2563EB', border: 'none', cursor: 'pointer' }}>
+              <MI name="add" size={15} color="#fff" /> New Lot
+            </button>
+          )}
+          {tab === 'transactions' && (
+            <button onClick={() => setShowTxnModal(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#2563EB', border: 'none', cursor: 'pointer' }}>
+              <MI name="add" size={15} color="#fff" /> Record Transaction
+            </button>
+          )}
+          {tab === 'alerts' && (
+            <button onClick={() => setShowAlertModal(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#2563EB', border: 'none', cursor: 'pointer' }}>
+              <MI name="add" size={15} color="#fff" /> New Alert
+            </button>
+          )}
+        </div>
       </div>
 
       {toast && (
