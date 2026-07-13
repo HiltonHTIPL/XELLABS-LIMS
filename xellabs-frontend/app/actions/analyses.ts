@@ -4,11 +4,15 @@ import {
   fetchSenaiteAnalysisServices,
   fetchSenaiteAnalysisCategories,
   fetchSenaiteDepartments,
+  fetchSenaiteLabContacts,
   createSenaiteAnalysisCategory,
   createSenaiteAnalysisService,
+  createSenaiteDepartment,
+  createSenaiteLabContact,
   SenaiteAnalysisService,
   SenaiteAnalysisCategory,
   SenaiteDepartment,
+  SenaiteLabContact,
 } from '@/app/lib/senaite'
 
 import { serverToken } from '@/app/lib/senaite-auth'
@@ -17,16 +21,18 @@ export type AnalysesPageData = {
   services: SenaiteAnalysisService[]
   categories: SenaiteAnalysisCategory[]
   departments: SenaiteDepartment[]
+  labContacts: SenaiteLabContact[]
 }
 
 export async function getAnalysesPageData(): Promise<AnalysesPageData> {
   const token = serverToken()
-  const [services, categories, departments] = await Promise.all([
+  const [services, categories, departments, labContacts] = await Promise.all([
     fetchSenaiteAnalysisServices(token),
     fetchSenaiteAnalysisCategories(token),
     fetchSenaiteDepartments(token),
+    fetchSenaiteLabContacts(token),
   ])
-  return { services, categories, departments }
+  return { services, categories, departments, labContacts }
 }
 
 export type AnalysisFormState = {
@@ -44,10 +50,17 @@ export async function createAnalysis(
   const categoryUid      = (formData.get('Category') as string)?.trim()
   const newCategoryTitle = (formData.get('newCategoryTitle') as string)?.trim()
   const departmentUid    = (formData.get('Department') as string)?.trim()
+  const newDepartmentTitle = (formData.get('newDepartmentTitle') as string)?.trim()
+  const newDepartmentId    = (formData.get('newDepartmentId') as string)?.trim()
+  const managerUid         = (formData.get('Manager') as string)?.trim()
+  const newContactFirstName = (formData.get('newContactFirstName') as string)?.trim()
+  const newContactLastName  = (formData.get('newContactLastName') as string)?.trim()
   const unit             = (formData.get('Unit') as string)?.trim()
   const price            = (formData.get('Price') as string)?.trim()
 
-  const creatingCategory = categoryUid === '__new__'
+  const creatingCategory   = categoryUid === '__new__'
+  const creatingDepartment = creatingCategory && departmentUid === '__new__'
+  const creatingContact    = creatingDepartment && managerUid === '__new__'
 
   // The lab system's headless create endpoint does NOT reject invalid payloads for
   // this content type — it creates broken orphan records instead. All validation
@@ -63,6 +76,18 @@ export async function createAnalysis(
     if (!newCategoryTitle) errors.newCategoryTitle = ['New category name is required']
     if (!departmentUid) errors.Department = ['Department is required for a new category']
   }
+  if (creatingDepartment) {
+    if (!newDepartmentTitle) errors.newDepartmentTitle = ['New department name is required']
+    if (!newDepartmentId) errors.newDepartmentId = ['Department ID is required']
+    else if (!/^[A-Za-z0-9_-]+$/.test(newDepartmentId)) {
+      errors.newDepartmentId = ['Department ID must contain only letters, numbers, hyphens or underscores']
+    }
+    if (!managerUid) errors.Manager = ['A manager is required for a new department']
+  }
+  if (creatingContact) {
+    if (!newContactFirstName) errors.newContactFirstName = ['First name is required']
+    if (!newContactLastName) errors.newContactLastName = ['Last name is required']
+  }
   if (price && !/^\d+(\.\d{1,2})?$/.test(price)) errors.Price = ['Price must be a number, e.g. 25.00']
   if (Object.keys(errors).length) return { errors }
 
@@ -77,11 +102,39 @@ export async function createAnalysis(
     return { errors: { Keyword: ['This keyword is already in use by another analysis'] } }
   }
 
+  // Chain: LabContact (if needed) -> Department (if needed) -> Category (if needed) -> Service.
+  // A Department requires a `manager` (LabContact) — without this step, a tenant
+  // with zero departments had no way to create one from this screen at all.
+  let finalManagerUid = managerUid
+  if (creatingContact) {
+    const contactResult = await createSenaiteLabContact(token, {
+      firstName: newContactFirstName,
+      lastName: newContactLastName,
+    })
+    if (!contactResult.success || !contactResult.uid) {
+      return { message: contactResult.error ?? 'Failed to create the new contact.' }
+    }
+    finalManagerUid = contactResult.uid
+  }
+
+  let finalDepartmentUid = departmentUid
+  if (creatingDepartment) {
+    const deptResult = await createSenaiteDepartment(token, {
+      title: newDepartmentTitle,
+      departmentId: newDepartmentId,
+      managerUid: finalManagerUid,
+    })
+    if (!deptResult.success || !deptResult.uid) {
+      return { message: deptResult.error ?? 'Failed to create the new department.' }
+    }
+    finalDepartmentUid = deptResult.uid
+  }
+
   let finalCategoryUid = categoryUid
   if (creatingCategory) {
     const catResult = await createSenaiteAnalysisCategory(token, {
       title: newCategoryTitle,
-      departmentUid,
+      departmentUid: finalDepartmentUid,
     })
     if (!catResult.success || !catResult.uid) {
       return { message: catResult.error ?? 'Failed to create the new category.' }

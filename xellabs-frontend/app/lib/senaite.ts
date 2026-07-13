@@ -392,6 +392,87 @@ export async function fetchSenaiteDepartments(token: string): Promise<SenaiteDep
   } catch { return [] }
 }
 
+export type SenaiteLabContact = {
+  uid: string
+  title: string
+}
+
+export async function fetchSenaiteLabContacts(token: string): Promise<SenaiteLabContact[]> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/LabContact?complete=true&limit=1000`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return (data.items ?? []).map((c: Record<string, unknown>) => ({
+      uid:   (c.uid as string) ?? '',
+      title: (c.title as string) ?? (c.getFullname as string) ?? '',
+    })).filter((c: SenaiteLabContact) => c.uid && c.title)
+  } catch { return [] }
+}
+
+/**
+ * Create a LabContact — the minimal set (Firstname/Surname) is all this build
+ * requires (confirmed by direct API probing, 2026-07-13). Needed as the
+ * `manager` reference before a Department can be created (see below).
+ */
+export async function createSenaiteLabContact(
+  token: string,
+  payload: { firstName: string; lastName: string }
+): Promise<{ success: boolean; uid?: string; title?: string; error?: string }> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        portal_type: 'LabContact',
+        parent_path: '/senaite/bika_setup/bika_labcontacts',
+        Firstname: payload.firstName,
+        Surname: payload.lastName,
+      }),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok) return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    const items = (data.items as Record<string, unknown>[]) ?? []
+    if (!items.length) return { success: false, error: 'No contact returned from the lab system.' }
+    return { success: true, uid: (items[0].uid as string) ?? '', title: (items[0].title as string) ?? '' }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+/**
+ * Create a Department. Confirmed by direct API probing (2026-07-13):
+ * `department_id` (plain string) and `manager` are both required at creation
+ * time; `manager` must be a reference object `{"uid": "..."}` — a bare UID
+ * string is rejected with `{"manager": ""}`, same pattern as
+ * AnalysisCategory.department below.
+ */
+export async function createSenaiteDepartment(
+  token: string,
+  payload: { title: string; departmentId: string; managerUid: string }
+): Promise<{ success: boolean; uid?: string; error?: string }> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        portal_type: 'Department',
+        parent_path: '/senaite/setup/departments',
+        title: payload.title,
+        department_id: payload.departmentId,
+        manager: { uid: payload.managerUid },
+      }),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok) return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    const items = (data.items as Record<string, unknown>[]) ?? []
+    if (!items.length) return { success: false, error: 'No department returned from the lab system.' }
+    return { success: true, uid: (items[0].uid as string) ?? '' }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
 export type SenaiteAnalysisCategory = {
   uid: string
   id: string
