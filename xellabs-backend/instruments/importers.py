@@ -135,3 +135,103 @@ def map_results(rows: list[dict]) -> tuple[list[dict], list[dict]]:
         mapped.append({**row, "sample_pk": sample.pk, "test_pk": test.pk})
 
     return mapped, errors
+
+
+def build_preview(rows: list[dict], parse_errors: list[dict]) -> tuple[list[dict], dict]:
+    """
+    Validate parsed rows against the database without writing anything.
+
+    A row is "valid" (it will create or refresh a Result on commit) when its
+    sample and test both exist and an open worksheet assignment links them.
+    Everything else is surfaced as an "error" row so the analyst sees exactly
+    what will be skipped before confirming the import.
+
+    Returns (preview_rows, summary) where summary = {total, valid, invalid}.
+    """
+    from lims.models import Sample, Test, WorksheetAssignment
+
+    sample_ids = {r["sample_id"] for r in rows}
+    test_codes = {r["test_code"] for r in rows}
+    sample_cache = {s.sample_id: s for s in Sample.objects.filter(sample_id__in=sample_ids)}
+    test_cache = {t.code: t for t in Test.objects.filter(code__in=test_codes)}
+    assignment_pairs = set(
+        WorksheetAssignment.objects.filter(
+            analysis_request__sample__sample_id__in=sample_ids,
+            test__code__in=test_codes,
+        ).values_list("analysis_request__sample__sample_id", "test__code")
+    )
+
+    preview: list[dict] = []
+
+    for err in parse_errors:
+        preview.append({
+            "row": err.get("row", 0),
+            "sample_id": "", "test_code": "", "value": "", "unit": "", "flags": "",
+            "test_name": "", "sample_status": "",
+            "status": "error", "detail": err.get("detail", "Could not parse row."),
+        })
+
+    for i, row in enumerate(rows, start=1):
+        base = {
+            "row": i,
+            "sample_id": row["sample_id"], "test_code": row["test_code"],
+            "value": row["value"], "unit": row["unit"], "flags": row["flags"],
+            "test_name": "", "sample_status": "",
+        }
+        sample = sample_cache.get(row["sample_id"])
+        if not sample:
+            preview.append({**base, "status": "error", "detail": f"Sample '{row['sample_id']}' not found."})
+            continue
+        test = test_cache.get(row["test_code"])
+        if not test:
+            preview.append({**base, "status": "error", "detail": f"Test code '{row['test_code']}' not found."})
+            continue
+        base["test_name"] = test.name
+        base["sample_status"] = sample.status
+        if (row["sample_id"], row["test_code"]) not in assignment_pairs:
+            preview.append({**base, "status": "error",
+                            "detail": "No open worksheet assignment for this sample and test."})
+            continue
+        preview.append({**base, "status": "valid", "detail": ""})
+
+    valid = sum(1 for p in preview if p["status"] == "valid")
+    summary = {"total": len(preview), "valid": valid, "invalid": len(preview) - valid}
+    return preview, summary
+
+
+def build_provenance_map(sample_id: str) -> dict:
+    """
+    Reconstruct per-test instrument provenance for one sample from the backed-up
+    original import files. The most recent processed import wins for a given test,
+    matching the "latest value applied" behaviour of the commit step.
+
+    Returns {test_code: {instrument_name, instrument_code, import_date,
+    file_format, import_id}}.
+    """
+    from .models import InstrumentResultImport
+
+    provenance: dict[str, dict] = {}
+    imports = (
+        InstrumentResultImport.objects
+        .filter(status="processed")
+        .select_related("instrument")
+        .order_by("created_at")
+    )
+    for imp in imports:
+        try:
+            content = imp.file.read()
+            imp.file.close()
+        except (FileNotFoundError, ValueError, OSError):
+            continue
+        rows, _ = parse_xml(content) if imp.file_format == "xml" else parse_csv(content)
+        for row in rows:
+            if row["sample_id"] != sample_id:
+                continue
+            provenance[row["test_code"]] = {
+                "instrument_name": imp.instrument.name,
+                "instrument_code": imp.instrument.instrument_id,
+                "import_date": imp.created_at.isoformat(),
+                "file_format": imp.file_format,
+                "import_id": imp.pk,
+            }
+    return provenance
