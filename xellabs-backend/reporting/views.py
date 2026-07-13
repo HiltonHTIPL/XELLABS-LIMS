@@ -9,6 +9,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 
+from core.permissions import ReadOnlyOrLabManager, ReadOnlyOrAnalystOrAbove
 from .models import Report, ReportTemplate, DEFAULT_COA_FIELDS
 from .serializers import ReportSerializer, ReportTemplateSerializer
 from .tasks import generate_coa_pdf
@@ -17,6 +18,7 @@ from .tasks import generate_coa_pdf
 class ReportTemplateViewSet(viewsets.ModelViewSet):
     queryset = ReportTemplate.objects.select_related("created_by", "client").all()
     serializer_class = ReportTemplateSerializer
+    permission_classes = [ReadOnlyOrLabManager]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["report_type", "is_active", "client"]
     search_fields = ["name"]
@@ -113,6 +115,7 @@ class ReportViewSet(viewsets.ModelViewSet):
         "sample", "sample__client", "sample__sample_type", "generated_by"
     ).all()
     serializer_class = ReportSerializer
+    permission_classes = [ReadOnlyOrAnalystOrAbove]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["report_type", "status", "sample", "sample__client"]
     search_fields = ["report_id", "title"]
@@ -150,7 +153,14 @@ class ReportViewSet(viewsets.ModelViewSet):
         Server-side push instead of the frontend polling every few seconds: holds the
         connection open and only writes a line when the status actually changes, ending
         as soon as generation finishes (or after a timeout matching the frontend's backstop).
+
+        Gunicorn runs only 2 sync workers (see CLAUDE.md — memory-capped), and this
+        view blocks its worker for the whole stream via time.sleep. Unrestricted use
+        could pin every worker on open streams and freeze the entire API. A Redis
+        counter (cross-process, unlike an in-memory semaphore) caps concurrent
+        streams at MAX_CONCURRENT_STREAMS so at least one worker always stays free.
         """
+        from django.core.cache import cache
         from django_tenants.utils import schema_context
 
         # get_object() (not raw pk) so a report belonging to another tenant/user still 404s.
@@ -158,29 +168,50 @@ class ReportViewSet(viewsets.ModelViewSet):
         report_id = pk
         schema_name = connection.schema_name
 
+        MAX_CONCURRENT_STREAMS = 1
+        counter_key = "report_stream_active_count"
+        cache.add(counter_key, 0, timeout=None)
+        try:
+            current = cache.incr(counter_key)
+        except ValueError:
+            cache.set(counter_key, 1, timeout=None)
+            current = 1
+        if current > MAX_CONCURRENT_STREAMS:
+            cache.decr(counter_key)
+            return Response(
+                {"detail": "Too many active report streams. Please try again shortly."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
         def event_stream():
             last_status = None
             elapsed = 0
             interval = 1
             timeout = 120
-            while elapsed <= timeout:
-                with schema_context(schema_name):
-                    report = Report.objects.filter(pk=report_id).first()
-                if not report:
-                    yield json.dumps({"type": "error", "detail": "Report not found"}) + "\n"
-                    return
-                if report.status != last_status:
-                    last_status = report.status
-                    yield json.dumps({
-                        "type": "update",
-                        "status": report.status,
-                        "file": bool(report.file),
-                    }) + "\n"
-                if report.status in ("final", "cancelled", "failed"):
-                    return
-                time.sleep(interval)
-                elapsed += interval
-            yield json.dumps({"type": "timeout"}) + "\n"
+            try:
+                while elapsed <= timeout:
+                    with schema_context(schema_name):
+                        report = Report.objects.filter(pk=report_id).first()
+                    if not report:
+                        yield json.dumps({"type": "error", "detail": "Report not found"}) + "\n"
+                        return
+                    if report.status != last_status:
+                        last_status = report.status
+                        yield json.dumps({
+                            "type": "update",
+                            "status": report.status,
+                            "file": bool(report.file),
+                        }) + "\n"
+                    if report.status in ("final", "cancelled", "failed"):
+                        return
+                    time.sleep(interval)
+                    elapsed += interval
+                yield json.dumps({"type": "timeout"}) + "\n"
+            finally:
+                try:
+                    cache.decr(counter_key)
+                except ValueError:
+                    pass
 
         response = StreamingHttpResponse(event_stream(), content_type="application/x-ndjson")
         response["Cache-Control"] = "no-cache"
@@ -208,8 +239,11 @@ class ReportViewSet(viewsets.ModelViewSet):
         file_path = os.path.abspath(file_path)
         media_root = os.path.abspath(settings.MEDIA_ROOT)
 
-        # 2. Ensure file is within MEDIA_ROOT directory
-        if not file_path.startswith(media_root):
+        # 2. Ensure file is within MEDIA_ROOT directory. A bare startswith()
+        # would let a sibling directory that merely shares the prefix (e.g.
+        # MEDIA_ROOT="/app/media" matching "/app/media_evil/...") pass the
+        # check — os.path.commonpath is the correct containment test.
+        if os.path.commonpath([file_path, media_root]) != media_root:
             return Response(
                 {"detail": "Access denied: invalid file path."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -262,10 +296,13 @@ class ReportViewSet(viewsets.ModelViewSet):
                 {"detail": "Report has no linked sample."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        old_file = report.file
         report.status = "draft"
         report.file = None
         report.published_at = None
         report.save(update_fields=["status", "file", "published_at"])
+        if old_file:
+            old_file.storage.delete(old_file.name)
         task = generate_coa_pdf.delay(report.pk, schema_name=connection.schema_name)
         return Response(
             {"detail": "Regeneration started.", "task_id": task.id},

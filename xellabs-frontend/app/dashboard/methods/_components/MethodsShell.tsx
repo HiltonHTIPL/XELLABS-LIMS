@@ -36,7 +36,7 @@ export default function MethodsShell({ initialMethods }: { initialMethods: Metho
   const [showDrawer, setShowDrawer] = useState(false)
   const [editing, setEditing] = useState<Method | null>(null)
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
-  const [busy, startTransition] = useTransition()
+  const [, startTransition] = useTransition()
   const [vals, setVals] = useState<FV>(blank)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
@@ -73,12 +73,18 @@ export default function MethodsShell({ initialMethods }: { initialMethods: Metho
   function openEdit(m: Method) { setEditing(m); setVals({ name: m.name, code: m.code, description: m.description ?? '' }); setFieldErrors({}); setShowDrawer(true) }
   function closeDrawer() { setShowDrawer(false) }
 
+  // Per-row pending state — a single shared `busy` flag disabled every toggle
+  // in the table while one request was in flight.
+  const [togglingId, setTogglingId] = useState<number | null>(null)
+
   function toggle(m: Method) {
+    setTogglingId(m.id)
     startTransition(async () => {
       const r = await toggleMethodActive(m.id, !m.is_active)
       setToast({ ok: r.success, msg: r.message })
       setTimeout(() => setToast(null), 3000)
       if (r.success) router.refresh()
+      setTogglingId(null)
     })
   }
 
@@ -180,7 +186,7 @@ export default function MethodsShell({ initialMethods }: { initialMethods: Metho
                   <td className="px-3 py-2.5"><span className="font-mono text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#EFF6FF', color: '#2563EB', fontWeight: 600 }}>{m.code}</span></td>
                   <td className="px-3 py-2.5 text-xs truncate" style={{ color: '#6B7280' }}>{m.description || '—'}</td>
                   <td className="px-3 py-2.5">
-                    <button onClick={() => toggle(m)} disabled={busy}
+                    <button onClick={() => toggle(m)} disabled={togglingId === m.id}
                       className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, color: m.is_active ? '#0154FC' : '#6B7280', background: 'none', border: 'none', cursor: 'pointer' }}>
                       <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: m.is_active ? '#0154FC' : '#9CA3AF', display: 'inline-block' }} />
                       {m.is_active ? 'Active' : 'Inactive'}

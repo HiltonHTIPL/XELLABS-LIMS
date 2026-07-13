@@ -193,6 +193,7 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
           cc_emails: f.ccEmails.join(',') || undefined, batch_id: f.batchId || undefined,
           batch_sub_group: f.batchSubGroup || undefined, container_type: f.containerType || undefined,
           preservation: f.preservation || undefined, analysis_specification: f.analysisSpec || undefined,
+          sampling_deviation: f.samplingDeviation !== 'none' ? f.samplingDeviation : undefined,
           sample_point: f.samplePoint || undefined, environmental_conditions: f.envConditions || undefined,
           composite: f.composite, internal_use: f.internalUse,
           client_order_number: f.clientOrderNum || undefined,
@@ -210,17 +211,19 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
     if (failed.length > 0) {
       setError(failed.map(r => r.message).join(' | '))
     } else {
-      // Upload attachments to the first created sample if files were added.
-      // Must use the numeric DB id — the display sample_id ("BL-2026-001") 404s
-      // against the DRF detail route, which is why uploads used to vanish silently.
-      const firstId = results[0]?.id
+      // Upload attachments to EVERY created sample in the batch — previously only
+      // the first sample got them, silently. Must use the numeric DB id — the
+      // display sample_id ("BL-2026-001") 404s against the DRF detail route.
       let failedUploads = 0
-      if (firstId && attachments.length > 0) {
+      const createdIds = results.map(r => r.id).filter((id): id is number => Boolean(id))
+      if (createdIds.length > 0 && attachments.length > 0) {
         const { uploadSampleAttachment } = await import('@/app/actions/lab-samples')
-        for (const file of attachments) {
-          const fd = new FormData(); fd.append('attachment', file)
-          const up = await uploadSampleAttachment(String(firstId), fd)
-          if (!up.ok) failedUploads++
+        for (const sid of createdIds) {
+          for (const file of attachments) {
+            const fd = new FormData(); fd.append('attachment', file)
+            const up = await uploadSampleAttachment(String(sid), fd)
+            if (!up.ok) failedUploads++
+          }
         }
       }
       const ids = results.map(r => r.sample_id).filter(Boolean).join(', ')

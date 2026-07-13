@@ -128,6 +128,15 @@ export default function ARShell({ initialARs, samples, tests }: Props) {
   // modal pre-filled — otherwise a user has to re-find the sample manually.
   useEffect(() => { if (preselectedSampleId) setShowModal(true) }, [preselectedSampleId])
 
+  // Deep link to a specific AR (?ar=<id>) — opens that AR's modal directly,
+  // used by the AR ID links on the Sample Detail page.
+  const deepLinkArId = searchParams.get('ar')
+  useEffect(() => {
+    if (!deepLinkArId) return
+    const target = initialARs.find(a => String(a.id) === deepLinkArId)
+    if (target) { setEditing(target); setShowModal(true) }
+  }, [deepLinkArId, initialARs])
+
   function handleDone() {
     setToast({ ok: true, msg: editing ? 'Analysis request updated.' : 'Analysis request created.' })
     setTimeout(() => setToast(null), 4000)
@@ -168,7 +177,7 @@ export default function ARShell({ initialARs, samples, tests }: Props) {
           tests={tests}
           preselectedSampleId={preselectedSampleId}
           editing={editing}
-          onClose={() => { setShowModal(false); setEditing(null); if (preselectedSampleId) router.replace('/dashboard/analysis-requests') }}
+          onClose={() => { setShowModal(false); setEditing(null); if (preselectedSampleId || deepLinkArId) router.replace('/dashboard/analysis-requests') }}
           onDone={handleDone}
         />
       )}

@@ -322,14 +322,16 @@ function ReportRow({
   showToast: (ok: boolean, msg: string) => void
 }) {
   const [report, setReport] = useState(initial)
-  const [polling, setPolling] = useState(initial.status === 'draft' && initial.report_type === 'coa')
+  // Polling starts ONLY when the user explicitly triggers generate/regenerate
+  // (those handlers call setPolling(true)). Auto-polling every draft COA on
+  // mount made idle drafts flash "Generating…" then "Failed" on page load.
+  const [polling, setPolling] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [timedOut, setTimedOut] = useState(false)
 
   useEffect(() => {
     setReport(initial)
-    if (initial.status === 'draft' && initial.report_type === 'coa') setPolling(true)
   }, [initial])
 
   useEffect(() => {

@@ -6,12 +6,12 @@ from rest_framework.viewsets import ModelViewSet
 from rest_framework.generics import ListAPIView, RetrieveUpdateAPIView
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
-from rest_framework.authentication import TokenAuthentication
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.authtoken.models import Token
 from django_filters.rest_framework import DjangoFilterBackend
 
+from .authentication import TenantAwareTokenAuthentication as TokenAuthentication
 from .models import Client, Tenant
 from .permissions import IsLabManagerOrAbove, IsSuperAdmin
 from .serializers import ClientSerializer, UserSerializer, StaffUserSerializer, TenantSerializer, TenantLogoSerializer

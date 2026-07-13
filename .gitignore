@@ -101,3 +101,9 @@ SENAITE_Module_Field_Workflow_Spec.xlsx
 # scripts/templates with embedded credentials (kept locally only)
 senaite-rebrand/rebrand.py
 senaite-rebrand/fix_title_full2.py
+
+# Testing (local-only, per user request)
+e2e-playwright/
+xellabs-backend/unit_tests/
+sample-imports/
+TEST-REPORT.md

@@ -164,8 +164,29 @@ export default function StorageModal({
     }
   }, [state])
 
-  // Exclude self and descendants from parent options to avoid cycles
-  const parentOptions = allLocations.filter(l => !editing || l.id !== editing.id)
+  // Exclude self AND all descendants from parent options to avoid cycles —
+  // choosing a child (or grandchild) as parent would break the tree and send
+  // ancestor-walking code into an infinite loop.
+  const excludedIds = (() => {
+    if (!editing) return new Set<number>()
+    const childrenByParent = new Map<number, number[]>()
+    for (const l of allLocations) {
+      if (l.parent != null) {
+        const arr = childrenByParent.get(l.parent) ?? []
+        arr.push(l.id)
+        childrenByParent.set(l.parent, arr)
+      }
+    }
+    const excluded = new Set<number>([editing.id])
+    const queue = [editing.id]
+    while (queue.length) {
+      for (const childId of childrenByParent.get(queue.shift()!) ?? []) {
+        if (!excluded.has(childId)) { excluded.add(childId); queue.push(childId) }
+      }
+    }
+    return excluded
+  })()
+  const parentOptions = allLocations.filter(l => !excludedIds.has(l.id))
 
   return (
     <div style={{ position: 'fixed', top: 0, bottom: 0, left: 0, right: 0, zIndex: 200, pointerEvents: open ? 'auto' : 'none' }}>

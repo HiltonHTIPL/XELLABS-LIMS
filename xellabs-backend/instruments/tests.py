@@ -6,7 +6,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.authtoken.models import Token
-from rest_framework.test import APITestCase
+from core.tenant_test import TenantAPITestCase
 
 from instruments.models import Instrument
 from instruments.importers import parse_csv, parse_xml, map_results
@@ -20,7 +20,7 @@ def make_user(username, role="analyst"):
     return u, token.key
 
 
-class InstrumentDueAlertsTest(APITestCase):
+class InstrumentDueAlertsTest(TenantAPITestCase):
     def setUp(self):
         _, key = make_user("inst_analyst")
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {key}")
@@ -58,7 +58,7 @@ class InstrumentDueAlertsTest(APITestCase):
         self.assertNotIn("OLD-001", ids)
 
 
-class CSVParserTest(APITestCase):
+class CSVParserTest(TenantAPITestCase):
     def test_valid_csv_parsed(self):
         csv_data = b"sample_id,test_code,value,unit,flags\nS-001,PH01,7.4,pH,\nS-002,PH01,8.1,pH,H\n"
         rows, errors = parse_csv(csv_data)
@@ -80,7 +80,7 @@ class CSVParserTest(APITestCase):
         self.assertEqual(len(errors), 1)
 
 
-class XMLParserTest(APITestCase):
+class XMLParserTest(TenantAPITestCase):
     def test_valid_xml_parsed(self):
         xml_data = b"""<Results>
             <Result><SampleId>S-001</SampleId><TestCode>PH01</TestCode><Value>7.4</Value><Unit>pH</Unit><Flags></Flags></Result>

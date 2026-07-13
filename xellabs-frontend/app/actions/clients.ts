@@ -121,11 +121,21 @@ export async function getClient(id: number): Promise<DjangoClient | null> {
 }
 
 export async function getClients(): Promise<DjangoClient[]> {
+  // Follow DRF pagination — a single unparameterised fetch returned only the
+  // first 50 clients, truncating every client dropdown.
   try {
-    const res = await djangoFetch('/api/clients/')
-    if (!res.ok) return []
-    const data = await res.json()
-    return data.results ?? data
+    const all: DjangoClient[] = []
+    let page = 1
+    while (page) {
+      const res = await djangoFetch(`/api/clients/?page=${page}&page_size=200`)
+      if (!res.ok) break
+      const data = await res.json()
+      const items: DjangoClient[] = data.results ?? data
+      all.push(...items)
+      if (!Array.isArray(data.results) || !data.next) break
+      page += 1
+    }
+    return all
   } catch {
     return []
   }

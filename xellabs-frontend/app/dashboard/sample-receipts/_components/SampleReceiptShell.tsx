@@ -116,6 +116,11 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
   // Reopen mode: a sample that is no longer 'registered' has already been
   // received — show its recorded receipt details read-only instead of the form.
   const alreadyReceived = !!sample && sample.status !== 'registered'
+
+  // Step indicator derived from actual progress instead of the old hard-coded 1:
+  // 1 = no sample selected, 2 = filling details/custody, 3 = submitting,
+  // 4 = received (success or reopened already-received sample).
+  const activeStep = success || alreadyReceived ? 4 : submitting ? 3 : sample ? 2 : 1
   const tatDays = sample?.received_date
     ? Math.max(0, Math.round((Date.now() - new Date(sample.received_date).getTime()) / 86400000))
     : null
@@ -182,7 +187,7 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
           </div>
         </div>
 
-        <StepBar active={1} />
+        <StepBar active={activeStep} />
 
         {error && (
           <div className="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#B91C1C' }}>

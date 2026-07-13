@@ -4,7 +4,7 @@ Functional + security tests for authentication and RBAC.
 from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.authtoken.models import Token
-from rest_framework.test import APITestCase
+from core.tenant_test import TenantAPITestCase
 
 User = get_user_model()
 
@@ -15,31 +15,31 @@ def make_user(username, role="analyst", password="testpass123"):
     return u, token.key
 
 
-class AuthTokenTest(APITestCase):
+class AuthTokenTest(TenantAPITestCase):
     def setUp(self):
         self.user, _ = make_user("auth_user")
 
     def test_obtain_token_success(self):
-        r = self.client.post("/api/auth/token/", {"username": "auth_user", "password": "testpass123"})
+        r = self.client.post("/api/auth/login/", {"username": "auth_user", "password": "testpass123"})
         self.assertEqual(r.status_code, status.HTTP_200_OK)
         self.assertIn("token", r.data)
 
     def test_obtain_token_wrong_password(self):
-        r = self.client.post("/api/auth/token/", {"username": "auth_user", "password": "wrong"})
+        r = self.client.post("/api/auth/login/", {"username": "auth_user", "password": "wrong"})
         self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_unauthenticated_api_rejected(self):
-        r = self.client.get("/api/samples/")
+        r = self.client.get("/api/lims/samples/")
         self.assertEqual(r.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_authenticated_api_allowed(self):
         _, key = make_user("auth_user2", role="analyst")
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {key}")
-        r = self.client.get("/api/samples/")
+        r = self.client.get("/api/lims/samples/")
         self.assertEqual(r.status_code, status.HTTP_200_OK)
 
 
-class RBACTest(APITestCase):
+class RBACTest(TenantAPITestCase):
     """Role-based access: verify permission boundaries."""
 
     def _auth(self, role):
@@ -75,7 +75,7 @@ class RBACTest(APITestCase):
         result = Result.objects.create(worksheet_assignment=wa, value="5.2", status="submitted")
 
         self._auth("analyst")
-        r = self.client.post(f"/api/results/{result.pk}/verify/")
+        r = self.client.post(f"/api/lims/results/{result.pk}/verify/")
         self.assertEqual(r.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_reviewer_can_verify_result(self):
@@ -101,12 +101,12 @@ class RBACTest(APITestCase):
         result = Result.objects.create(worksheet_assignment=wa, value="5.2", status="submitted")
 
         self._auth("reviewer")
-        r = self.client.post(f"/api/results/{result.pk}/verify/")
+        r = self.client.post(f"/api/lims/results/{result.pk}/verify/")
         self.assertEqual(r.status_code, status.HTTP_200_OK)
         self.assertEqual(r.data["status"], "verified")
 
 
-class SecurityTest(APITestCase):
+class SecurityTest(TenantAPITestCase):
     """OWASP-relevant checks."""
 
     def setUp(self):
@@ -114,19 +114,19 @@ class SecurityTest(APITestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {key}")
 
     def test_sql_injection_in_search_does_not_crash(self):
-        r = self.client.get("/api/samples/?search=' OR '1'='1")
+        r = self.client.get("/api/lims/samples/?search=' OR '1'='1")
         self.assertIn(r.status_code, [status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST])
 
     def test_xss_payload_stored_safely(self):
         from core.models import Client
-        r = self.client.post("/api/samples/", {
+        r = self.client.post("/api/lims/samples/", {
             "description": "<script>alert(1)</script>",
         }, format="json")
         # Should fail validation (missing required fields), not crash
         self.assertIn(r.status_code, [status.HTTP_400_BAD_REQUEST, status.HTTP_201_CREATED])
 
     def test_password_not_exposed_in_user_response(self):
-        r = self.client.get("/api/auth/token/", format="json")
+        r = self.client.get("/api/auth/login/", format="json")
         # Token endpoint only accepts POST
         self.assertEqual(r.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
 

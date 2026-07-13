@@ -100,13 +100,17 @@ function EditDrawer({ sample, onClose, onSaved }: { sample: LabSample; onClose: 
     batch_id:        sample.batch_id ?? '',
   })
 
+  // Snapshot of the values as the drawer opened — a field is PATCHed when it
+  // differs from this, so clearing a field ('' when it had a value) is sent too.
+  const [initialVals] = useState(vals)
+
   function set(k: string, v: string) { setVals(prev => ({ ...prev, [k]: v })) }
 
   function handleSave() {
     startTransition(async () => {
       const patch: Record<string, unknown> = {}
       for (const [k, v] of Object.entries(vals)) {
-        if (v !== '') patch[k] = v
+        if (v !== initialVals[k as keyof typeof initialVals]) patch[k] = v
       }
       const res = await patchLabSample(sample.id, patch)
       setToast({ ok: res.ok, msg: res.ok ? 'Changes saved.' : (res.message ?? 'Save failed.') })
@@ -405,7 +409,7 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
                   return (
                     <tr key={`${ar.id}-${i}`}>
                       <td style={{ ...td, fontWeight: 600 }}>{test.name}</td>
-                      <td style={{ ...td, color: '#2563EB', cursor: 'pointer' }} onClick={() => router.push('/dashboard/analysis-requests')}>{ar.ar_id}</td>
+                      <td style={{ ...td, color: '#2563EB', cursor: 'pointer' }} onClick={() => router.push(`/dashboard/analysis-requests?ar=${ar.id}`)}>{ar.ar_id}</td>
                       <td style={td}><span style={{ background: arBadge.bg, color: arBadge.color, borderRadius: 20, padding: '3px 9px', fontWeight: 600, fontSize: 11 }}>{arBadge.label}</span></td>
                       <td style={td}><span style={{ background: prBadge.bg, color: prBadge.color, borderRadius: 20, padding: '3px 9px', fontWeight: 600, fontSize: 11, textTransform: 'capitalize' }}>{ar.priority}</span></td>
                       <td style={td}>{fmtShort(ar.due_date)}</td>
