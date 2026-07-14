@@ -20,6 +20,17 @@ export type StorageLocation = {
   address: string
   phone: string
   email: string
+  senaite_sync_error: string | null
+  site_title?: string
+  site_code?: string
+  site_description?: string
+  location_title?: string
+  location_code?: string
+  location_description?: string
+  shelf_title?: string
+  shelf_code?: string
+  shelf_description?: string
+  senaite_location_type?: string
 }
 
 export type StorageFormState = {
@@ -352,5 +363,13 @@ export async function assignSampleByLabel(
     revalidatePath('/dashboard/samples-overview')
     revalidatePath('/dashboard/samples-overview')
     return { success: true, message: `Sample ${sampleId} stored in slot ${data.slot_id}.`, slot: data }
+  } catch { return { success: false, message: 'Network error.' } }
+}
+
+export async function retryStorageSync(id: number): Promise<{ success: boolean; message: string }> {
+  try {
+    const res = await djangoFetch(`/api/inventory/storage-locations/${id}/retry-sync/`, { method: 'POST' })
+    if (!res.ok) return { success: false, message: 'Sync retry failed.' }
+    return { success: true, message: 'Sync retried successfully.' }
   } catch { return { success: false, message: 'Network error.' } }
 }

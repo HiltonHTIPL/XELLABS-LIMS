@@ -1710,6 +1710,26 @@ export type SenaiteBatch = {
   getProgress: number
 }
 
+// SENAITE's Batch.Remarks (and this shape appears on other content types too)
+// is NOT a plain string at runtime — it's a list of structured comment objects
+// ({content, user_id, user_name, id, created}, content itself being HTML),
+// confirmed live via a direct API call. Rendering it directly as a React
+// child (as `as string` type-cast code here previously did) throws React
+// error #31 ("Objects are not valid as a React child") the moment any batch
+// actually has a remark — silent for every batch with Remarks: None, so this
+// went unnoticed until B-009 (the first one with a real comment) crashed.
+function extractRemarksText(raw: unknown): string {
+  if (!raw) return ''
+  if (typeof raw === 'string') return raw
+  const entries = Array.isArray(raw) ? raw : [raw]
+  return entries
+    .map(e => (e && typeof e === 'object' && 'content' in e) ? String((e as { content: unknown }).content) : '')
+    .filter(Boolean)
+    .join(' ')
+    .replace(/<[^>]+>/g, '')
+    .trim()
+}
+
 export async function fetchSenaiteBatches(token: string): Promise<SenaiteBatch[]> {
   try {
     const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/batch?complete=true&limit=1000`, {
@@ -1728,7 +1748,7 @@ export async function fetchSenaiteBatches(token: string): Promise<SenaiteBatch[]
         ClientTitle:   (b.getClientTitle as string) ?? '',
         ClientID:      (b.getClientID as string) ?? '',
         ClientBatchID: (b.ClientBatchID as string) ?? (b.getClientBatchID as string) ?? '',
-        Remarks:       (b.Remarks as string) ?? '',
+        Remarks:       extractRemarksText(b.Remarks),
         description:   (b.description as string) ?? '',
         BatchLabels:   Array.isArray(b.BatchLabels) ? (b.BatchLabels as string[]) : [],
         BatchDate:     (b.BatchDate as string) ?? '',
@@ -1785,7 +1805,7 @@ export async function createSenaiteBatch(
         ClientTitle: (b.getClientTitle as string) ?? '',
         ClientID: (b.getClientID as string) ?? '',
         ClientBatchID: (b.ClientBatchID as string) ?? '',
-        Remarks: (b.Remarks as string) ?? '',
+        Remarks: extractRemarksText(b.Remarks),
         description: (b.description as string) ?? '',
         BatchLabels: Array.isArray(b.BatchLabels) ? (b.BatchLabels as string[]) : [],
         BatchDate: (b.BatchDate as string) ?? '',
