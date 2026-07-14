@@ -17,6 +17,7 @@ export type DjangoClient = {
   id: number
   name: string
   client_id: string
+  organization_type: string
   tenant_detail?: { id: number; name: string; slug: string; schema_name: string } | null
   email: string
   phone: string
@@ -254,7 +255,7 @@ export async function updateClient(
   if (Object.keys(errors).length > 0) return { errors }
 
   const payload = {
-    name, client_id,
+    name, client_id, organization_type: g('organization_type'),
     email: g('email'), phone: g('phone'), fax: g('fax'), mobile: g('mobile'),
     contact_person: g('contact_person'), salutation: g('salutation'),
     contact_first_name: g('contact_first_name'), contact_last_name: g('contact_last_name'),
@@ -307,7 +308,7 @@ export async function createClient(
   if (Object.keys(errors).length > 0) return { errors }
 
   const payload = {
-    name, client_id,
+    name, client_id, organization_type: g('organization_type'),
     email:  g('email'), phone: g('phone'), fax: g('fax'), mobile: g('mobile'),
     contact_person: g('contact_person'), salutation: g('salutation'),
     contact_first_name: g('contact_first_name'), contact_last_name: g('contact_last_name'),

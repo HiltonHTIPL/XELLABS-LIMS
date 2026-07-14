@@ -8,6 +8,15 @@ function MI({ name, size = 16, color }: { name: string; size?: number; color?: s
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
 }
 
+// sample_id is Django's own locally-generated ID (prefix + today's date +
+// sequence, e.g. "E2E-20260714-0001") — cosmetically similar to but NOT the
+// real SENAITE-assigned ID (e.g. "E2E-0001"), which is stored separately in
+// senaite_ar_id. Always prefer the real SENAITE ID for anything user-facing;
+// fall back to sample_id only for samples created before senaite_ar_id existed.
+function displayId(s: LabSample): string {
+  return s.senaite_ar_id || s.sample_id
+}
+
 // ── Column config ─────────────────────────────────────────────────────────────
 const ALL_COLUMNS = [
   { key: 'client',          label: 'Client',           defaultVisible: true  },
@@ -132,7 +141,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
   const PAGE_SIZE = 25
 
   const filtered = samples.filter(s => {
-    if (search && !s.sample_id.toLowerCase().includes(search.toLowerCase()) &&
+    if (search && !displayId(s).toLowerCase().includes(search.toLowerCase()) &&
         !s.client_name.toLowerCase().includes(search.toLowerCase())) return false
     if (filterSampleType && String(s.sample_type) !== filterSampleType) return false
     if (filterClient && String(s.client) !== filterClient) return false
@@ -193,7 +202,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
   function handleExport() {
     const headers = ['Sample ID', 'Client', 'Sample Type', 'Condition', 'Status', 'Priority', 'Received Date', 'Due Date', 'Storage']
     const rows = filtered.map(s => [
-      s.sample_id, s.client_name, s.sample_type_name, s.condition || '',
+      displayId(s), s.client_name, s.sample_type_name, s.condition || '',
       getSampleStatusDisplay(s).label, s.priority || '', fmt(s.received_date), fmt(s.expiry_date), s.storage_location || '',
     ])
     const esc = (v: string) => (v.includes(',') || v.includes('"') ? `"${v.replace(/"/g, '""')}"` : v)
@@ -286,7 +295,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
   async function handleDeleteSample(id: number) {
     const sample = samples.find(s => s.id === id)
     if (!sample) return
-    if (!window.confirm(`Mark sample "${sample.sample_id}" as disposed? This cannot be undone and the record will move to the Disposed status.`)) return
+    if (!window.confirm(`Mark sample "${displayId(sample)}" as disposed? This cannot be undone and the record will move to the Disposed status.`)) return
     setDeletingId(id)
     try {
       const result = await patchLabSample(id, { status: 'disposed' })
@@ -501,7 +510,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
                       <td style={{ padding: '10px 12px', whiteSpace: 'nowrap', minWidth: 120 }}>
                         <span style={{ color: '#2563EB', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', whiteSpace: 'nowrap', display: 'inline-block' }}
                           onClick={() => router.push(`/dashboard/samples-overview/${s.id}`)}>
-                          {s.sample_id}
+                          {displayId(s)}
                         </span>
                       </td>
                       {vis('client')        && <td style={{ padding: '10px 12px', color: '#374151' }}>{s.client_name}</td>}

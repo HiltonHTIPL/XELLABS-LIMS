@@ -3,8 +3,7 @@ import { useState, useActionState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   createSampleTemplate, updateSampleTemplate, deleteSampleTemplate,
-  createSampleContainer, createPreservation, createSamplePoint,
-  type SampleTemplateFormState, type CreateRefOptionState,
+  type SampleTemplateFormState,
 } from '@/app/actions/sample-templates'
 import {
   type SenaiteSampleTemplate, type SenaiteSampleType, type SenaiteAnalysisService,
@@ -13,37 +12,6 @@ import {
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
-}
-
-// Compact "+ New" affordance for a reference list (Container/Preservation/Sample
-// Point) that lives directly in SENAITE setup — lets the user add a missing
-// option without leaving the drawer, mirroring the dashed-box pattern already
-// used on the Sample Types page, just condensed to fit inside a partition row.
-function InlineCreate({ placeholder, creating, onCreate }: {
-  placeholder: string; creating: boolean; onCreate: (title: string) => void
-}) {
-  const [title, setTitle] = useState('')
-  return (
-    <div className="flex flex-col gap-1 mt-1 w-full">
-      <input
-        value={title}
-        onChange={e => setTitle(e.target.value)}
-        placeholder={placeholder}
-        className="w-full px-2 py-1 text-xs rounded-lg outline-none"
-        style={{ border: '1px dashed #D1D5DB', color: '#111827', backgroundColor: '#fff' }}
-      />
-      <button
-        type="button"
-        disabled={!title.trim() || creating}
-        onClick={() => { onCreate(title.trim()); setTitle('') }}
-        className="flex items-center justify-center gap-1 w-full"
-        style={{ fontSize: 10, fontWeight: 600, padding: '4px 8px', borderRadius: 6, backgroundColor: '#0154FC', color: '#fff', border: 'none', cursor: creating ? 'not-allowed' : 'pointer', opacity: (!title.trim() || creating) ? 0.6 : 1 }}
-      >
-        <MI name={creating ? 'hourglass_top' : 'add'} size={11} color="#fff" />
-        {creating ? 'Adding…' : 'New'}
-      </button>
-    </div>
-  )
 }
 
 const blankPartition = (n: number): SampleTemplatePartition => ({
@@ -90,69 +58,8 @@ export default function SampleTemplatesShell({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [deleteTarget, setDeleteTarget] = useState<SenaiteSampleTemplate | null>(null)
   const [deleting, setDeleting] = useState(false)
-  const [sampleContainerOptions, setSampleContainerOptions] = useState(sampleContainers)
-  const [preservationOptions, setPreservationOptions] = useState(preservations)
-  const [samplePointOptions, setSamplePointOptions] = useState(samplePoints)
-  // Tracks which partition row triggered an inline "+ New Container/Preservation"
-  // create, so the newly created option can be auto-selected on that specific
-  // row once the shared create action resolves.
-  const [pendingContainerIdx, setPendingContainerIdx] = useState<number | null>(null)
-  const [pendingPreservationIdx, setPendingPreservationIdx] = useState<number | null>(null)
 
   const isEdit = editing !== null
-
-  const [, createContainerAction, creatingContainer] = useActionState(
-    async (prev: CreateRefOptionState, fd: FormData) => {
-      const result = await createSampleContainer(prev, fd)
-      if (result.success && result.option) {
-        setSampleContainerOptions(prev => [...prev, result.option!])
-        if (pendingContainerIdx !== null) setPartition(pendingContainerIdx, { containerUid: result.option.uid })
-        setPendingContainerIdx(null)
-        setToast({ ok: true, msg: result.message ?? 'Container created.' })
-        setTimeout(() => setToast(null), 4000)
-      } else if (result.message) {
-        setToast({ ok: false, msg: result.message })
-        setTimeout(() => setToast(null), 6000)
-      }
-      return result
-    },
-    {}
-  )
-
-  const [, createPreservationAction, creatingPreservation] = useActionState(
-    async (prev: CreateRefOptionState, fd: FormData) => {
-      const result = await createPreservation(prev, fd)
-      if (result.success && result.option) {
-        setPreservationOptions(prev => [...prev, result.option!])
-        if (pendingPreservationIdx !== null) setPartition(pendingPreservationIdx, { preservationUid: result.option.uid })
-        setPendingPreservationIdx(null)
-        setToast({ ok: true, msg: result.message ?? 'Preservation created.' })
-        setTimeout(() => setToast(null), 4000)
-      } else if (result.message) {
-        setToast({ ok: false, msg: result.message })
-        setTimeout(() => setToast(null), 6000)
-      }
-      return result
-    },
-    {}
-  )
-
-  const [, createSamplePointAction, creatingSamplePoint] = useActionState(
-    async (prev: CreateRefOptionState, fd: FormData) => {
-      const result = await createSamplePoint(prev, fd)
-      if (result.success && result.option) {
-        setSamplePointOptions(prev => [...prev, result.option!])
-        setVal('samplePointUid', result.option.uid)
-        setToast({ ok: true, msg: result.message ?? 'Sample point created.' })
-        setTimeout(() => setToast(null), 4000)
-      } else if (result.message) {
-        setToast({ ok: false, msg: result.message })
-        setTimeout(() => setToast(null), 6000)
-      }
-      return result
-    },
-    {}
-  )
 
   function setVal<K extends keyof FV>(k: K, v: FV[K]) {
     setVals(prev => ({ ...prev, [k]: v }))
@@ -367,10 +274,8 @@ export default function SampleTemplatesShell({
                     style={{ border: '1px solid #D1D5DB', color: '#111827' }}
                   >
                     <option value="">None</option>
-                    {samplePointOptions.map(sp => <option key={sp.uid} value={sp.uid}>{sp.title}</option>)}
+                    {samplePoints.map(sp => <option key={sp.uid} value={sp.uid}>{sp.title}</option>)}
                   </select>
-                  <InlineCreate placeholder="New sample point…" creating={creatingSamplePoint}
-                    onCreate={title => { const fd = new FormData(); fd.set('title', title); createSamplePointAction(fd) }} />
                 </div>
               </div>
 
@@ -419,13 +324,8 @@ export default function SampleTemplatesShell({
                             style={{ border: '1px solid #D1D5DB', color: '#111827', backgroundColor: '#fff' }}
                           >
                             <option value="">None</option>
-                            {sampleContainerOptions.map(c => <option key={c.uid} value={c.uid}>{c.title}</option>)}
+                            {sampleContainers.map(c => <option key={c.uid} value={c.uid}>{c.title}</option>)}
                           </select>
-                          <InlineCreate placeholder="New container…" creating={creatingContainer}
-                            onCreate={title => {
-                              setPendingContainerIdx(idx)
-                              const fd = new FormData(); fd.set('title', title); createContainerAction(fd)
-                            }} />
                         </div>
                         <div>
                           <label className="block mb-0.5" style={{ fontSize: 10, color: '#6B7280' }}>Preservation</label>
@@ -436,13 +336,8 @@ export default function SampleTemplatesShell({
                             style={{ border: '1px solid #D1D5DB', color: '#111827', backgroundColor: '#fff' }}
                           >
                             <option value="">None</option>
-                            {preservationOptions.map(pr => <option key={pr.uid} value={pr.uid}>{pr.title}</option>)}
+                            {preservations.map(pr => <option key={pr.uid} value={pr.uid}>{pr.title}</option>)}
                           </select>
-                          <InlineCreate placeholder="New preservation…" creating={creatingPreservation}
-                            onCreate={title => {
-                              setPendingPreservationIdx(idx)
-                              const fd = new FormData(); fd.set('title', title); createPreservationAction(fd)
-                            }} />
                         </div>
                         <div>
                           <label className="block mb-0.5" style={{ fontSize: 10, color: '#6B7280' }}>Sample Type</label>

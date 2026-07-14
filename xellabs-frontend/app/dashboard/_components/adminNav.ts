@@ -7,6 +7,9 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { label: 'Users',        href: '/dashboard/admin/users',   icon: 'group',       roles: ['admin', 'lab_manager'] },
   { label: 'Sample Types', href: '/dashboard/sample-types', icon: 'category',   roles: ['admin', 'lab_manager'] },
   { label: 'Sample Templates', href: '/dashboard/sample-templates', icon: 'view_list', roles: ['admin', 'lab_manager'] },
+  { label: 'Sample Containers', href: '/dashboard/sample-containers', icon: 'science', roles: ['admin', 'lab_manager'] },
+  { label: 'Preservations', href: '/dashboard/preservations', icon: 'ac_unit', roles: ['admin', 'lab_manager'] },
+  { label: 'Sample Points', href: '/dashboard/sample-points', icon: 'place', roles: ['admin', 'lab_manager'] },
   // Analysis Profiles now lives as a tab inside the Analyses page — route still
   // works standalone (unlinked from nav) for any existing direct links.
   { label: 'Analyses',     href: '/dashboard/analyses',     icon: 'biotech',    roles: ['admin', 'lab_manager'] },

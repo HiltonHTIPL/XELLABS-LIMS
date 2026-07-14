@@ -12,9 +12,18 @@ import { type CocSample } from '@/app/actions/storage'
 // renderSticker/printSticker were built for the chain-of-custody lookup shape
 // (CocSample) — adapt LabSample into it rather than writing a second sticker
 // renderer, so both pages print from the exact same templates/logic.
+// sample_id is Django's own locally-generated ID (prefix + today's date +
+// sequence, e.g. "E2E-20260714-0001") — cosmetically similar to but NOT the
+// real SENAITE-assigned ID (e.g. "E2E-0001"), which is stored separately in
+// senaite_ar_id. Always prefer the real SENAITE ID for anything user-facing;
+// fall back to sample_id only for samples created before senaite_ar_id existed.
+function displayId(s: LabSample): string {
+  return s.senaite_ar_id || s.sample_id
+}
+
 function toCocSample(s: LabSample): CocSample {
   return {
-    sample_id: s.sample_id, status: s.status, status_display: s.status,
+    sample_id: displayId(s), status: s.status, status_display: s.status,
     sample_type: s.sample_type_name, client: s.client_name, barcode: s.barcode,
     collection_date: s.collection_date, received_date: s.received_date, expiry_date: s.expiry_date,
     condition: s.condition, seal_condition: '', priority: s.priority,
@@ -127,7 +136,7 @@ function EditDrawer({ sample, onClose, onSaved }: { sample: LabSample; onClose: 
         <div style={{ padding: '16px 20px', borderBottom: '1px solid #F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <div>
             <h3 style={{ fontSize: 15, fontWeight: 700, color: '#14265E', margin: 0 }}>Edit Sample</h3>
-            <p style={{ fontSize: 11, color: '#9CA3AF', margin: '2px 0 0' }}>{sample.sample_id}</p>
+            <p style={{ fontSize: 11, color: '#9CA3AF', margin: '2px 0 0' }}>{displayId(sample)}</p>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
             <MI name="close" size={18} color="#9CA3AF" />
@@ -262,7 +271,7 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             <MI name="inventory_2" size={16} /><span>Storage History</span>
           </button>
-          <button onClick={() => router.push(`/dashboard/audit-trail?sample=${sample.sample_id}`)}
+          <button onClick={() => router.push(`/dashboard/audit-trail?sample=${displayId(sample)}`)}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             <MI name="shield" size={16} /><span>Audit Trail</span>
           </button>
@@ -316,9 +325,9 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
             </div>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 22, fontWeight: 800, color: '#14265E' }}>{sample.sample_id}</span>
+                <span style={{ fontSize: 22, fontWeight: 800, color: '#14265E' }}>{displayId(sample)}</span>
                 <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2 }}
-                  onClick={() => navigator.clipboard?.writeText(sample.sample_id)}>
+                  onClick={() => navigator.clipboard?.writeText(displayId(sample))}>
                   <MI name="content_copy" size={14} color="#9CA3AF" />
                 </button>
               </div>
@@ -348,8 +357,8 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
           {/* Barcode */}
           <div style={{ textAlign: 'center', paddingLeft: 20, borderLeft: '1px solid #E8EAF2' }}>
             <p style={{ fontSize: 11, color: '#9CA3AF', margin: '0 0 6px' }}>Sample Bar Code</p>
-            <div style={{ height: 32, width: 160 }}><LiveBarcode value={sample.barcode || sample.sample_id} height={32} /></div>
-            <p style={{ fontSize: 11, fontWeight: 600, color: '#14265E', margin: '4px 0 0', letterSpacing: '0.05em' }}>{sample.sample_id}</p>
+            <div style={{ height: 32, width: 160 }}><LiveBarcode value={sample.barcode || displayId(sample)} height={32} /></div>
+            <p style={{ fontSize: 11, fontWeight: 600, color: '#14265E', margin: '4px 0 0', letterSpacing: '0.05em' }}>{displayId(sample)}</p>
           </div>
         </div>
 

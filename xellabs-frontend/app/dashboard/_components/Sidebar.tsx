@@ -11,7 +11,10 @@ function MI({ name, size = 16 }: { name: string; size?: number }) {
 }
 
 type NavItem = { label: string; href: string; icon: string; roles: string[] | null; exact?: boolean; superuserOnly?: boolean }
-type NavGroup = { group: string; icon: string; roles: string[] | null; children: NavItem[] }
+// linkOnly groups (e.g. Administration) navigate straight to `href` on click
+// instead of expanding an in-sidebar submenu — `children` is still used to
+// compute the "any child active" highlight and by /dashboard/admin's own grid.
+type NavGroup = { group: string; icon: string; roles: string[] | null; children: NavItem[]; linkOnly?: boolean; href?: string }
 type NavEntry = NavItem | NavGroup
 
 function isGroup(entry: NavEntry): entry is NavGroup {
@@ -62,6 +65,8 @@ const NAV: NavEntry[] = [
     group: 'Administration',
     icon: 'admin_panel_settings',
     roles: null,
+    linkOnly: true,
+    href: '/dashboard/admin',
     children: ADMIN_SECTIONS,
     // Tenant Management nav entry hidden for the single-tenant demo phase — the
     // route/backend/permissions are untouched and fully working, just not
@@ -130,6 +135,17 @@ export default function Sidebar({ onToggle, role, reportDraftCount, isSuperuser 
 
           if (isGroup(entry)) {
             const anyChildActive = entry.children.some(c => c.exact ? pathname === c.href : (pathname === c.href || pathname.startsWith(c.href + '/')))
+
+            if (entry.linkOnly && entry.href) {
+              const active = anyChildActive || pathname === entry.href || pathname.startsWith(entry.href + '/')
+              return (
+                <Link key={entry.group} href={entry.href} style={linkStyle(active)}>
+                  <MI name={entry.icon} size={16} />
+                  <span>{entry.group}</span>
+                </Link>
+              )
+            }
+
             const isOpen = openGroups.has(entry.group)
             return (
               <div key={entry.group}>

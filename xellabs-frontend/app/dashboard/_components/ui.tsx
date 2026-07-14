@@ -338,8 +338,8 @@ export const tdStyle: React.CSSProperties = {
 }
 export const linkStyle: React.CSSProperties = { color: T.primary, fontWeight: 600, textDecoration: 'none' }
 
-export function Pagination({ page, pages, onPage, showTotal, totalItems }: { page: number; pages: number; onPage: (p: number) => void; showTotal?: boolean; totalItems?: number }) {
-  if (pages <= 1) return null
+export function Pagination({ page, pages, onPage, showTotal, totalItems, alwaysShow }: { page: number; pages: number; onPage: (p: number) => void; showTotal?: boolean; totalItems?: number; alwaysShow?: boolean }) {
+  if (pages <= 1 && !alwaysShow) return null
   const nums: number[] = []
   const start = Math.max(1, Math.min(page - 2, pages - 4))
   for (let p = start; p <= Math.min(pages, start + 4); p++) nums.push(p)

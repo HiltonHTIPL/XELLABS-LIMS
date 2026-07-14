@@ -67,7 +67,7 @@ class ClientSerializer(serializers.ModelSerializer):
         model = Client
         fields = [
             # Core identifiers
-            'id', 'name', 'client_id',
+            'id', 'name', 'client_id', 'organization_type',
             # Organisation contact
             'email', 'phone', 'fax', 'mobile',
             # Primary contact person

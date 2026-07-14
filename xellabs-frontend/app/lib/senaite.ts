@@ -135,6 +135,289 @@ export async function fetchSenaiteClients(token: string): Promise<SenaiteClient[
   }
 }
 
+// ─── SENAITE-owned Clients (full CRUD, no Django) ─────────────────────────────
+// The Clients feature is sourced entirely from SENAITE. A client's primary
+// contact person is a separate SENAITE `Contact` object living under the client
+// folder — we treat the first Contact as the primary one.
+
+export type SenaiteContact = {
+  uid: string
+  path: string
+  Salutation: string
+  Firstname: string
+  Surname: string
+  EmailAddress: string
+  BusinessPhone: string
+  MobilePhone: string
+  Fax: string
+  JobTitle: string
+  Department: string
+}
+
+export type SenaiteClientFull = {
+  uid: string
+  id: string
+  path: string
+  title: string
+  ClientID: string
+  EmailAddress: string
+  Phone: string
+  Fax: string
+  TaxNumber: string
+  AccountName: string
+  AccountNumber: string
+  AccountType: string
+  BankName: string
+  BankBranch: string
+  CCEmails: string
+  BulkDiscount: boolean
+  MemberDiscountApplies: boolean
+  DecimalMark: string
+  description: string
+  PhysicalAddress: SenaiteAddress | null
+  PostalAddress: SenaiteAddress | null
+  BillingAddress: SenaiteAddress | null
+  review_state: string
+  contact: SenaiteContact | null
+}
+
+const CLIENTS_PATH = '/senaite/clients'
+
+function mapAddress(a: unknown): SenaiteAddress | null {
+  if (!a || typeof a !== 'object') return null
+  const o = a as Record<string, unknown>
+  return {
+    address: (o.address as string) ?? '',
+    city:    (o.city as string) ?? '',
+    state:   (o.state as string) ?? '',
+    zip:     (o.zip as string) ?? '',
+    country: (o.country as string) ?? '',
+  }
+}
+
+function mapClient(c: Record<string, unknown>): SenaiteClientFull {
+  return {
+    uid:                  (c.uid as string) ?? '',
+    id:                   (c.id as string) ?? '',
+    path:                 (c.path as string) ?? '',
+    title:                (c.title as string) ?? (c.Name as string) ?? '',
+    ClientID:             (c.ClientID as string) ?? '',
+    EmailAddress:         (c.EmailAddress as string) ?? '',
+    Phone:                (c.Phone as string) ?? '',
+    Fax:                  (c.Fax as string) ?? '',
+    TaxNumber:            (c.TaxNumber as string) ?? '',
+    AccountName:          (c.AccountName as string) ?? '',
+    AccountNumber:        (c.AccountNumber as string) ?? '',
+    AccountType:          (c.AccountType as string) ?? '',
+    BankName:             (c.BankName as string) ?? '',
+    BankBranch:           (c.BankBranch as string) ?? '',
+    CCEmails:             (c.CCEmails as string) ?? '',
+    BulkDiscount:         Boolean(c.BulkDiscount),
+    MemberDiscountApplies: Boolean(c.MemberDiscountApplies),
+    DecimalMark:          (c.DecimalMark as string) ?? '.',
+    description:          (c.description as string) ?? '',
+    PhysicalAddress:      mapAddress(c.PhysicalAddress),
+    PostalAddress:        mapAddress(c.PostalAddress),
+    BillingAddress:       mapAddress(c.BillingAddress),
+    review_state:         (c.review_state as string) ?? 'active',
+    contact:              null,
+  }
+}
+
+function mapContact(c: Record<string, unknown>): SenaiteContact {
+  return {
+    uid:           (c.uid as string) ?? '',
+    path:          (c.path as string) ?? '',
+    Salutation:    (c.Salutation as string) ?? '',
+    Firstname:     (c.Firstname as string) ?? '',
+    Surname:       (c.Surname as string) ?? '',
+    EmailAddress:  (c.EmailAddress as string) ?? '',
+    BusinessPhone: (c.BusinessPhone as string) ?? '',
+    MobilePhone:   (c.MobilePhone as string) ?? '',
+    Fax:           (c.BusinessFax as string) ?? (c.Fax as string) ?? '',
+    JobTitle:      (c.JobTitle as string) ?? '',
+    Department:    (c.Department as string) ?? '',
+  }
+}
+
+/** List all active clients with their primary contact merged in (one bulk Contact fetch). */
+export async function fetchSenaiteClientsFull(token: string): Promise<SenaiteClientFull[]> {
+  const headers = { Authorization: `Basic ${token}`, Accept: 'application/json' }
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Client?complete=true&limit=1000&review_state=active`, {
+      headers, cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    const clients: SenaiteClientFull[] = (data.items ?? []).map(mapClient)
+    if (clients.length === 0) return []
+
+    // One bulk Contact fetch, grouped by parent client path.
+    const cRes = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Contact?complete=true&limit=2000`, {
+      headers, cache: 'no-store',
+    })
+    if (cRes.ok) {
+      const cData = await cRes.json()
+      const byParent = new Map<string, SenaiteContact>()
+      for (const raw of (cData.items ?? []) as Record<string, unknown>[]) {
+        const parent = (raw.parent_path as string) ?? ''
+        if (parent && !byParent.has(parent)) byParent.set(parent, mapContact(raw))
+      }
+      for (const cl of clients) cl.contact = byParent.get(cl.path) ?? null
+    }
+    return clients
+  } catch { return [] }
+}
+
+/** Fetch a single client by UID, with its primary contact. */
+export async function fetchSenaiteClientByUid(token: string, uid: string): Promise<SenaiteClientFull | null> {
+  const headers = { Authorization: `Basic ${token}`, Accept: 'application/json' }
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Client?UID=${encodeURIComponent(uid)}&complete=true`, {
+      headers, cache: 'no-store',
+    })
+    if (!res.ok) return null
+    const item = ((await res.json()).items ?? [])[0]
+    if (!item) return null
+    const client = mapClient(item)
+    const cRes = await fetch(
+      `${SENAITE_URL}/@@API/senaite/v1/Contact?complete=true&limit=100&path=${encodeURIComponent(client.path)}`,
+      { headers, cache: 'no-store' },
+    )
+    if (cRes.ok) {
+      const first = ((await cRes.json()).items ?? [])[0]
+      if (first) client.contact = mapContact(first as Record<string, unknown>)
+    }
+    return client
+  } catch { return null }
+}
+
+export type SenaiteClientPayload = {
+  title: string
+  ClientID: string
+  EmailAddress: string
+  Phone: string
+  Fax: string
+  TaxNumber: string
+  AccountName: string
+  AccountNumber: string
+  AccountType: string
+  BankName: string
+  BankBranch: string
+  CCEmails: string
+  BulkDiscount: boolean
+  MemberDiscountApplies: boolean
+  DecimalMark: string
+  description: string
+  PhysicalAddress: SenaiteAddress
+  PostalAddress: SenaiteAddress
+  BillingAddress: SenaiteAddress
+}
+
+export type SenaiteContactPayload = {
+  Salutation: string
+  Firstname: string
+  Surname: string
+  EmailAddress: string
+  BusinessPhone: string
+  MobilePhone: string
+  BusinessFax: string
+  JobTitle: string
+  Department: string
+}
+
+function hasContactData(p: SenaiteContactPayload): boolean {
+  return Boolean(p.Firstname || p.Surname || p.EmailAddress || p.BusinessPhone || p.MobilePhone || p.JobTitle || p.Department)
+}
+
+/** Create a Client (+ its primary Contact) in SENAITE. Returns the new client UID. */
+export async function createSenaiteClientObj(
+  token: string, client: SenaiteClientPayload, contact: SenaiteContactPayload,
+): Promise<{ success: boolean; uid?: string; error?: string }> {
+  const headers = { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
+      method: 'POST', headers, cache: 'no-store',
+      body: JSON.stringify({ portal_type: 'Client', parent_path: CLIENTS_PATH, ...client }),
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok || data.success === false) return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    const item = ((data.items as Record<string, unknown>[]) ?? [])[0]
+    const uid = (item?.uid as string) ?? ''
+    const path = (item?.path as string) ?? ''
+    if (!uid || !path) return { success: false, error: 'No client returned from the lab system.' }
+    if (hasContactData(contact)) await createSenaiteContactObj(token, path, contact)
+    return { success: true, uid }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+/** Update an existing Client, and upsert its primary Contact. */
+export async function updateSenaiteClientObj(
+  token: string, uid: string, clientPath: string,
+  client: SenaiteClientPayload, contact: SenaiteContactPayload, existingContactUid: string | null,
+): Promise<{ success: boolean; error?: string }> {
+  const headers = { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update/${uid}`, {
+      method: 'POST', headers, cache: 'no-store', body: JSON.stringify(client),
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok || data.success === false) return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    if (hasContactData(contact)) {
+      if (existingContactUid) await updateSenaiteContactObj(token, existingContactUid, contact)
+      else await createSenaiteContactObj(token, clientPath, contact)
+    }
+    return { success: true }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+export async function createSenaiteContactObj(
+  token: string, clientPath: string, contact: SenaiteContactPayload,
+): Promise<{ success: boolean; error?: string }> {
+  const headers = { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
+      method: 'POST', headers, cache: 'no-store',
+      body: JSON.stringify({ portal_type: 'Contact', parent_path: clientPath, ...contact }),
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok || data.success === false) return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    return { success: true }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+export async function updateSenaiteContactObj(
+  token: string, uid: string, contact: SenaiteContactPayload,
+): Promise<{ success: boolean; error?: string }> {
+  const headers = { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update/${uid}`, {
+      method: 'POST', headers, cache: 'no-store', body: JSON.stringify(contact),
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok || data.success === false) return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    return { success: true }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+/** Activate or deactivate a client via the SENAITE workflow. */
+export async function setSenaiteClientActive(
+  token: string, uid: string, active: boolean,
+): Promise<{ success: boolean; error?: string }> {
+  const headers = { Authorization: `Basic ${token}`, Accept: 'application/json' }
+  const transition = active ? 'activate' : 'deactivate'
+  try {
+    // The workflow route can return a non-200 while still committing the
+    // transition, so we verify the resulting review_state rather than trust the status.
+    await fetch(`${SENAITE_URL}/@@API/senaite/v1/${transition}/${uid}`, { method: 'POST', headers, cache: 'no-store' })
+    const check = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Client?UID=${encodeURIComponent(uid)}`, { headers, cache: 'no-store' })
+    const item = ((await check.json()).items ?? [])[0]
+    const state = (item?.review_state as string) ?? ''
+    const ok = active ? state === 'active' : state === 'inactive'
+    return ok ? { success: true } : { success: false, error: `Client is still '${state}'.` }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
 // ─── Sample Types ────────────────────────────────────────────────────────────
 
 // Fixed sticker template codes — same list rendered by SENAITE's own

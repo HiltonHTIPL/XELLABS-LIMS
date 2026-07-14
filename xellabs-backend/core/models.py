@@ -104,9 +104,22 @@ class Client(models.Model):
         ('Prof', 'Prof'),
     ]
 
+    ORGANIZATION_TYPE_CHOICES = [
+        ('', '—'),
+        ('Pharmaceutical', 'Pharmaceutical'),
+        ('Biotechnology', 'Biotechnology'),
+        ('Environmental', 'Environmental'),
+        ('Healthcare', 'Healthcare'),
+        ('Food & Beverage', 'Food & Beverage'),
+        ('Academic', 'Academic'),
+        ('Government', 'Government'),
+        ('Other', 'Other'),
+    ]
+
     # ── Core identifiers ─────────────────────────────────────────────────────
     name = models.CharField(max_length=200)               # SENAITE: title
     client_id = models.CharField(max_length=50, blank=True, unique=True)  # SENAITE: ClientID
+    organization_type = models.CharField(max_length=50, blank=True, choices=ORGANIZATION_TYPE_CHOICES)
 
     # ── Organisation contact ──────────────────────────────────────────────────
     email = models.EmailField(blank=True)                  # SENAITE: EmailAddress
