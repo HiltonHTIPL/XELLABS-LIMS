@@ -10,6 +10,10 @@ export type Worksheet = {
   updated_at: string
   analyst: number | null
   analyst_name?: string
+  instrument: number | null
+  instrument_name?: string
+  method: number | null
+  method_name?: string
 }
 
 export type WorksheetAssignment = {
@@ -19,6 +23,10 @@ export type WorksheetAssignment = {
   test: number
   status: string
   created_at: string
+  instrument: number | null
+  instrument_name?: string
+  method: number | null
+  method_name?: string
 }
 
 export type EnrichedAssignment = WorksheetAssignment & {
@@ -139,7 +147,7 @@ export async function createDjangoWorksheet(): Promise<{ success: boolean; works
       return { success: false, message: (data as Record<string, unknown>).detail as string ?? 'Failed to create worksheet' }
     }
     const data = await res.json() as { id: number }
-    revalidatePath('/dashboard/lab-worksheets')
+    revalidatePath('/dashboard/worksheets')
     return { success: true, worksheet_id: data.id, message: 'Worksheet created.' }
   } catch (e) {
     return { success: false, message: String(e) }
@@ -171,7 +179,7 @@ export async function assignToWorksheet(worksheetId: number, analysisRequestId: 
       const data = await resultRes.json().catch(() => ({}))
       return { success: false, message: (data as Record<string, unknown>).detail as string ?? 'Assigned, but failed to create result row' }
     }
-    revalidatePath(`/dashboard/lab-worksheets/${worksheetId}`)
+    revalidatePath(`/dashboard/worksheets/${worksheetId}`)
     return { success: true, message: 'Assignment added.' }
   } catch (e) {
     return { success: false, message: String(e) }
@@ -196,9 +204,45 @@ export async function assignWorksheetAnalyst(worksheetId: number, userId: number
       const data = await res.json().catch(() => ({}))
       return { success: false, message: (data as Record<string, unknown>).detail as string ?? 'Failed to assign analyst' }
     }
-    revalidatePath('/dashboard/lab-worksheets')
-    revalidatePath(`/dashboard/lab-worksheets/${worksheetId}`)
+    revalidatePath('/dashboard/worksheets')
+    revalidatePath(`/dashboard/worksheets/${worksheetId}`)
     return { success: true, message: 'Worksheet assigned.' }
+  } catch (e) {
+    return { success: false, message: String(e) }
+  }
+}
+
+export async function assignWorksheetInstrument(worksheetId: number, instrumentId: number | null): Promise<{ success: boolean; message: string }> {
+  try {
+    const res = await djangoFetch(`/api/lims/worksheets/${worksheetId}/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ instrument: instrumentId }),
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      return { success: false, message: (data as Record<string, unknown>).detail as string ?? 'Failed to set instrument' }
+    }
+    revalidatePath('/dashboard/worksheets')
+    revalidatePath(`/dashboard/worksheets/${worksheetId}`)
+    return { success: true, message: 'Instrument updated.' }
+  } catch (e) {
+    return { success: false, message: String(e) }
+  }
+}
+
+export async function assignWorksheetMethod(worksheetId: number, methodId: number | null): Promise<{ success: boolean; message: string }> {
+  try {
+    const res = await djangoFetch(`/api/lims/worksheets/${worksheetId}/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ method: methodId }),
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      return { success: false, message: (data as Record<string, unknown>).detail as string ?? 'Failed to set method' }
+    }
+    revalidatePath('/dashboard/worksheets')
+    revalidatePath(`/dashboard/worksheets/${worksheetId}`)
+    return { success: true, message: 'Method updated.' }
   } catch (e) {
     return { success: false, message: String(e) }
   }
@@ -221,7 +265,7 @@ export async function submitResultValue(resultId: number, value: string): Promis
       const data = await res.json().catch(() => ({}))
       return { success: false, message: (data as Record<string, unknown>).detail as string ?? 'Failed to submit' }
     }
-    revalidatePath('/dashboard/lab-worksheets')
+    revalidatePath('/dashboard/worksheets')
     return { success: true, message: 'Result submitted.' }
   } catch (e) {
     return { success: false, message: String(e) }
@@ -235,7 +279,7 @@ export async function verifyResult(resultId: number): Promise<{ success: boolean
       const data = await res.json().catch(() => ({}))
       return { success: false, message: (data as Record<string, unknown>).detail as string ?? 'Failed to verify' }
     }
-    revalidatePath('/dashboard/lab-worksheets')
+    revalidatePath('/dashboard/worksheets')
     return { success: true, message: 'Result verified.' }
   } catch (e) {
     return { success: false, message: String(e) }
@@ -249,7 +293,7 @@ export async function submitWorksheetForReview(worksheetId: number): Promise<{ s
       const data = await res.json().catch(() => ({}))
       return { success: false, message: (data as Record<string, unknown>).detail as string ?? 'Failed to submit' }
     }
-    revalidatePath('/dashboard/lab-worksheets')
+    revalidatePath('/dashboard/worksheets')
     return { success: true, message: 'Worksheet submitted for review.' }
   } catch (e) {
     return { success: false, message: String(e) }
@@ -263,8 +307,26 @@ export async function verifyWorksheet(worksheetId: number): Promise<{ success: b
       const data = await res.json().catch(() => ({}))
       return { success: false, message: (data as Record<string, unknown>).detail as string ?? 'Failed to verify' }
     }
-    revalidatePath('/dashboard/lab-worksheets')
+    revalidatePath('/dashboard/worksheets')
     return { success: true, message: 'Worksheet verified.' }
+  } catch (e) {
+    return { success: false, message: String(e) }
+  }
+}
+
+export async function rejectWorksheet(worksheetId: number): Promise<{ success: boolean; message: string }> {
+  try {
+    const res = await djangoFetch(`/api/lims/worksheets/${worksheetId}/reject/`, { method: 'POST', body: JSON.stringify({}) })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok) {
+      return { success: false, message: (data.detail as string) ?? 'Failed to reject' }
+    }
+    revalidatePath('/dashboard/worksheets')
+    const newWs = data.new_worksheet as { ws_id?: string } | null
+    const message = newWs?.ws_id
+      ? `Worksheet rejected. Unfinished analyses carried forward to ${newWs.ws_id}.`
+      : 'Worksheet rejected.'
+    return { success: true, message }
   } catch (e) {
     return { success: false, message: String(e) }
   }

@@ -332,7 +332,7 @@ export async function createLabSample(_state: LabSampleFormState, formData: Form
       console.error('[MIRROR_CREATE_FAILED]', { senaite_id: senaiteResult.sample.id, error: data })
       return { message: `Sample ${senaiteResult.sample.id} was created in the lab system, but the local mirror failed: ${(data.sample_id as string[])?.[0] ?? (data.client as string[])?.[0] ?? (data.detail as string) ?? 'unknown error'}` }
     }
-    revalidatePath('/dashboard/lab-samples')
+    revalidatePath('/dashboard/samples-overview')
     return { success: true, message: `Sample ${data.sample_id} registered successfully.`, id: data.id as number }
   } catch (e) { return { message: String(e) } }
 }
@@ -398,7 +398,7 @@ export async function receiveLabSample(id: number, data: {
       } catch { /* non-fatal — Django receipt already succeeded */ }
     }
 
-    revalidatePath('/dashboard/lab-samples')
+    revalidatePath('/dashboard/samples-overview')
     revalidatePath('/dashboard/sample-receipts')
     return { success: true, message: `Sample ${resData.sample_id ?? ''} marked as received.` }
   } catch (e) { return { message: String(e) } }
@@ -503,7 +503,7 @@ export async function updateLabSample(id: number, _state: LabSampleFormState, fo
       }
     }
 
-    revalidatePath('/dashboard/lab-samples')
+    revalidatePath('/dashboard/samples-overview')
     revalidatePath('/dashboard/samples-overview')
     return { success: true, message: 'Sample updated.', id }
   } catch (e) { return { message: String(e) } }

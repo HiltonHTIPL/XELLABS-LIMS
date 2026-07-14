@@ -6,6 +6,25 @@
 
 ---
 
+## 0d. Token Efficiency Rule — Accurate Answers, Minimal Tokens
+
+- Investigate only what's needed to answer correctly — don't re-read files already in context, don't re-run commands whose output is already known, don't explore unrelated code paths "just in case."
+- Prefer targeted reads (`Grep`, specific line ranges) over reading whole large files when only a section is relevant.
+- Keep responses terse: state the finding/fix directly, skip restating the question, skip narrating steps that produced no useful signal.
+- **Never trade accuracy for brevity** — verify root cause before answering; a short wrong answer costs more (rework, lost trust) than a longer correct one. Confirm file/command state before acting on it rather than assuming.
+
+---
+
+## 0e. Sidebar Lock Rule — Fixed Top-Level Nav, Ask Before Adding
+
+The left sidebar's **top-level** entries are fixed to exactly: Dashboard, Clients, Samples, Methods, Batches, Worksheet, Quality, Storage Manager, Instruments, Reports, Administration (defined in `app/dashboard/_components/Sidebar.tsx`'s `NAV` array).
+
+- **Never add a new top-level sidebar entry or group without asking the user first.** New admin-style sub-pages belong inside the Administration group (`app/dashboard/_components/adminNav.ts`'s `ADMIN_SECTIONS`, shared by the sidebar submenu and the `/dashboard/admin` grid) — not as a new top-level item.
+- If a feature seems to need its own top-level nav slot, present that as an explicit question/plan (per Section 0) rather than adding it directly.
+- Removing a route/backend entirely is not required when unlinking from nav — follow the existing pattern (e.g. Tenant Management, XELPulse, Compliance) of keeping the route/backend working but reachable only via Administration or direct URL.
+
+---
+
 ## 0. UI / Feature Design Rule — Read Code First, Present Plan, Wait for Approval
 
 **Before writing any UI or feature code, follow this sequence — no exceptions:**
@@ -319,6 +338,8 @@ DB_PORT=5432
 ### Environment facts — things that went wrong and were corrected
 | Fact | Detail |
 |---|---|
+| Django runs via **gunicorn with no `--reload`** | `docker-compose.yml`'s django/celery commands never pass `--reload`/watchmedo for Django itself (only Celery uses `watchmedo auto-restart`). Even though `./xellabs-backend:/app` is volume-mounted, gunicorn workers cache imported Python modules in memory — editing `models.py`/`serializers.py`/`views.py` and hitting the API again silently keeps serving the OLD code (e.g. new serializer fields just don't appear in the response, no error). **After any backend code change, `docker restart xellabs-lims-django-1`** (no rebuild needed for pure `.py` changes) before testing — this cost real debugging time twice in one session (looked like a routing 404, then looked like missing serializer fields, both were just stale gunicorn workers). |
+| `lims`/`inventory`/`instruments`/`workflow`/`audittrail`/`reporting` are **TENANT_APPS**, not shared | Their tables/API routes only exist inside a real tenant schema (e.g. `demo`), never in `public`. A fresh dev env's one-time setup only creates the `public` tenant — hitting `/api/lims/*` (or any tenant-app endpoint) via `public` 404s even though the model/serializer/view/urls.py are all correctly wired, while `core` (SHARED_APPS: users, clients) endpoints work fine. Fix: set `DEFAULT_TENANT_SCHEMA=<real-tenant-schema>` (e.g. `demo`) in the root `.env` and recreate the frontend container — `app/lib/django.ts` reads this env var and sends it as the `X-Tenant-Schema` header when no subdomain-based tenant is present. Check existing tenants first: `docker exec xellabs-lims-django-1 python manage.py shell -c "from core.models import Tenant; [print(t.schema_name) for t in Tenant.objects.all()]"`. |
 | Git Bash ≠ WSL Ubuntu | The Bash tool runs in MINGW64 (Git Bash), NOT WSL. `sudo` does not work in Git Bash. Always use PowerShell `wsl -d Ubuntu-22.04 --` prefix or run directly in WSL terminal |
 | `winget` is blocked | Network policy returns 403 Forbidden on this machine. Never use winget. Install everything via WSL `apt` |
 | `wsl -- sudo` needs TTY | Running `wsl -d Ubuntu-22.04 -- sudo <cmd>` from PowerShell silently fails if sudo needs a password. For sudo commands, ask user to run directly in WSL terminal |
@@ -481,6 +502,56 @@ docker compose up -d
 
 ---
 
+## 13a. Multiple Claude Instances Rule — Coordinate, Never Collide
+
+If more than one Claude Code instance is running against this project at the same time (e.g. two IDE windows, two terminals):
+
+- **Check for signs of another instance's in-progress work first** — running background commands/builds (`docker ps`, `docker compose logs -f` still tailing), uncommitted changes you didn't make, a lock file, a `.next` build in progress, or a container mid-restart. Treat any of these as evidence another instance is active.
+- **Communicate through the repo, not assumptions** — leave a short note of what you're doing/changed in the relevant section of this file (or a scratch note) so the other instance can see it on its next read of `CLAUDE.md`.
+- **Never run the same mutating command the other instance is already running** (e.g. both running `docker compose up -d --build`, both doing `npm install`, both applying migrations). If one is clearly mid-task, wait for it to finish before starting overlapping work.
+- **Avoid touching the same files at the same time.** If both instances need to edit the same file, one must finish and save before the other starts — do not interleave edits.
+- **Run independent, non-conflicting work in parallel freely** (e.g. one reviews backend code while the other investigates frontend), since that carries no collision risk.
+- If it's unclear whether the other instance is still working, prefer waiting a short beat and re-checking over racing ahead.
+
+---
+
+## 13b. Git Push Rule — Never Push Without Explicit Permission
+
+**Never run `git push` on your own initiative — only when the user explicitly says to push.** Committing locally and other git prep work (stash, pull, merge) is fine without asking each time, but the push itself always needs the user's go-ahead.
+
+**This repo's remote:** `origin` → `https://github.com/hephzibahtechnologies/XELLABS-LIMS.git`, default working branch `staging-development` (confirm with the user if a different branch/remote is meant for a given push — this repo also historically references a personal fork, see README.md "Git Remotes").
+
+When the user says to push the code, follow these steps in order — do not skip or reorder:
+
+1. **Stash current changes** — `git stash -u` (include untracked files) so the working tree is clean.
+2. **Ask the user which branch to pull from** (and which remote, if not obviously `origin`) — never assume unless they've already stated it in the same request.
+3. **Pull that branch** — `git pull <remote> <branch>`.
+4. **Merge the pulled code into the project** — resolve any conflicts with the user if they come up; never silently discard either side.
+5. **Merge the stash back in** — `git stash pop` — resolve any stash-vs-pull conflicts the same way.
+6. **Ask the user which branch to push to** if not already stated, then push — `git push <remote> <branch>`.
+
+Never reorder this (e.g. never push before pulling/merging), and never force-push (`--force`/`-f`) unless the user explicitly asks for it in that exact request.
+
+---
+
+## 13c. Change Tracking — `pending-changes.md`
+
+**Every change made must be logged in `pending-changes.md` as it happens — do not miss any change.** This file is gitignored (never committed) and exists purely so nothing gets lost between pushes.
+
+- Log each meaningful change (file created/edited, command run that altered state, config added, dependency changed, container rebuilt) with a one-line entry as you make it — don't batch it all up at the end and risk forgetting something.
+- **Immediately after a successful `git push`** (per Section 13b's push workflow): delete the file's contents and start a fresh log for the next session/work period. Never let entries from before a push linger into the next one.
+- If `pending-changes.md` doesn't exist, create it fresh.
+
+## 13d. Work Progress Log — `workprogress.md` (7-Day Rolling Window)
+
+`workprogress.md` (root) is a running log of work done, grouped by date — unlike `pending-changes.md`, this one **is** meant to persist across pushes as a short-term history.
+
+- Append a new dated section for each day's work (what was done, diagnosed, or decided) — don't overwrite prior days.
+- **Entries older than 7 days must be deleted** — check the oldest date in the file whenever you add a new entry, and remove any section older than 7 days from today.
+- Keep entries terse (bullet list per day), matching the existing style already in the file.
+
+---
+
 ## 14. "OK" Signal — Execute Without Confirmation
 
 When the user ends a request with "ok", execute the full task without pausing for confirmations or yes/no questions. Make autonomous decisions using sensible defaults. Only stop for genuinely destructive actions that cannot be inferred.
@@ -610,3 +681,59 @@ docker restart senaite
 - **`bin/instance run` fails while running**: ZODB lock error — use HTTP POST approach for runtime config changes
 - **Plone z3c.form requires CSRF token + all form fields**: GET the form first, extract `_authenticator` token and all `<select>` values, then POST everything back
 - **Remaining SENAITE text**: 4 occurrences remain in `<meta name="generator">` and HTML comments — these are NOT visible to users
+
+## 16b. SENAITE Custom Field Deserializer — SampleType Retention Period & Admitted Stickers
+
+**Discovery (2026-07-14):** SENAITE v2.6.0's legacy `@@API/senaite/v1/create` and `/update`
+endpoints **silently drop** `SampleType.retention_period` and
+`SampleType.admitted_sticker_templates` — both are custom field types
+(`DurationField`, `DataGridField`) with no adapter registered on that legacy
+API path. The request returns `success: true` and HTTP 200, but the field is
+never actually written (confirmed by reading the object back — always null).
+
+**Fix applied:** `plone.restapi` (a separate, modern REST framework also
+bundled in this SENAITE build, reachable at the object's own URL with
+`Accept: application/json`) natively supports `retention_period` (as total
+seconds — `DurationField` subclasses the standard `zope.schema.Timedelta`,
+which restapi already has a serializer/deserializer for). But
+`admitted_sticker_templates` still fails even via restapi (`Wrong contained
+type` / `Object is of wrong type`) — no deserializer exists anywhere in this
+install for the custom `DataGridField` type. Wrote one:
+`senaite-rebrand/sampletype_stickers_deserializer.py` — a
+`IFieldDeserializer` adapter for `(DataGridField, ISampleType,
+IBrowserRequest)` that bypasses schema validation and writes straight through
+the content object's own existing `setAdmittedStickerTemplates()` mutator.
+
+**App-side wiring** (`xellabs-frontend/app/lib/senaite.ts`): `sampleTypeApiBody()`
+no longer sends these two fields to the v1 create/update calls at all (dead
+weight — confirmed never persists there). A separate `patchSampleTypeExtras()`
+does a `PATCH` straight to the object's restapi URL for both fields, called
+right after the v1 create/update succeeds. **Reading** is split the same way:
+the v1 list read (`fetchSenaiteSampleTypes`) never returns these two fields
+either (same broken serialization, both directions) — so after the v1 list
+call, a per-object restapi GET (`fetchRestapiSampleTypeExtras`) fetches just
+these two fields and overlays them onto the v1-sourced list.
+
+**Also discovered:** `plone.restapi`'s own `@search`/folder-listing endpoints
+return `items_total: 0` for `SampleType` (and presumably other setup-folder
+content) — they query a catalog that doesn't index SENAITE's custom
+`SETUP_CATALOG`. Direct object access by known path/URL works fine via
+restapi; bulk listing does not. This is why the fix reads lists via the
+legacy v1 API and only uses restapi for single-object GET/PATCH.
+
+**Now baked permanently into the `senaite-rebrand/Dockerfile`** (same build that
+produces the white-labeled image) — `docker compose build senaite` /
+`docker compose up -d --build senaite` carries this fix forward automatically,
+no manual re-apply needed. Verified: rebuilt the image from scratch and
+confirmed retention_period + admitted_sticker_templates persist correctly with
+zero manual steps afterward.
+
+`senaite-rebrand/apply_sampletype_stickers_fix.sh` is kept only as a fallback
+for patching an already-running container without a rebuild (e.g. a quick fix
+before the next planned rebuild):
+```bash
+docker cp senaite-rebrand/sampletype_stickers_deserializer.py senaite:/tmp/
+docker cp senaite-rebrand/apply_sampletype_stickers_fix.sh senaite:/tmp/
+docker exec --user root senaite bash /tmp/apply_sampletype_stickers_fix.sh
+docker restart senaite
+```

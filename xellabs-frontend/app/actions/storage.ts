@@ -287,7 +287,7 @@ export async function releaseSampleFromSlot(
   }
   revalidatePath('/dashboard/storage')
   revalidatePath('/dashboard/samples-overview')
-  revalidatePath('/dashboard/lab-samples')
+  revalidatePath('/dashboard/samples-overview')
   return { success: true, message: 'Slot released.' }
 }
 
@@ -306,7 +306,7 @@ export async function assignSampleToSlot(
   revalidatePath('/dashboard/storage')
   revalidatePath('/dashboard/chain-of-custody')
   revalidatePath('/dashboard/samples-overview')
-  revalidatePath('/dashboard/lab-samples')
+  revalidatePath('/dashboard/samples-overview')
   return { success: true, message: `Sample ${sampleId} assigned to slot.` }
 }
 
@@ -360,7 +360,7 @@ export async function assignSampleByLabel(
     revalidatePath('/dashboard/storage')
     revalidatePath('/dashboard/chain-of-custody')
     revalidatePath('/dashboard/samples-overview')
-    revalidatePath('/dashboard/lab-samples')
+    revalidatePath('/dashboard/samples-overview')
     return { success: true, message: `Sample ${sampleId} stored in slot ${data.slot_id}.`, slot: data }
   } catch { return { success: false, message: 'Network error.' } }
 }

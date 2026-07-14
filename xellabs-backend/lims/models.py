@@ -20,10 +20,18 @@ class SampleType(models.Model):
 
 class SampleTemplate(models.Model):
     name = models.CharField(max_length=200, unique=True)
+    description = models.TextField(blank=True)
     sample_type_uid = models.CharField(max_length=100, blank=True)
     sample_type_name = models.CharField(max_length=200, blank=True)
-    analysis_services = models.JSONField(default=list, blank=True)
-    container = models.CharField(max_length=200, blank=True)
+    sample_point_uid = models.CharField(max_length=100, blank=True)
+    sample_point_name = models.CharField(max_length=200, blank=True)
+    composite = models.BooleanField(default=False)
+    sampling_required = models.BooleanField(default=False)
+    auto_partition = models.BooleanField(default=False)
+    # List of partition dicts: {part_id, container_uid, container_name,
+    # preservation_uid, preservation_name, sample_type_uid, sample_type_name,
+    # services: [{uid, title, hidden}]} — mirrors SENAITE's partitions DataGrid.
+    partitions = models.JSONField(default=list, blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -265,6 +273,10 @@ class Worksheet(models.Model):
     ]
     ws_id = models.CharField(max_length=50, unique=True)
     analyst = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="worksheets")
+    instrument = models.ForeignKey(
+        "instruments.Instrument", null=True, blank=True, on_delete=models.SET_NULL, related_name="worksheets",
+    )
+    method = models.ForeignKey(Method, null=True, blank=True, on_delete=models.SET_NULL, related_name="worksheets")
     status = models.CharField(max_length=20, choices=STATUS, default="open")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -281,6 +293,14 @@ class WorksheetAssignment(models.Model):
     worksheet = models.ForeignKey(Worksheet, on_delete=models.CASCADE, related_name="assignments")
     analysis_request = models.ForeignKey(AnalysisRequest, on_delete=models.CASCADE)
     test = models.ForeignKey(Test, on_delete=models.PROTECT)
+    # Defaulted from the parent worksheet's instrument/method at assignment-creation
+    # time (see WorksheetAssignmentSerializer.create), then kept in sync whenever the
+    # worksheet's own instrument/method changes (see WorksheetSerializer.update) —
+    # mirrors SENAITE's cascade-to-analyses behavior. Independently overridable per row.
+    instrument = models.ForeignKey(
+        "instruments.Instrument", null=True, blank=True, on_delete=models.SET_NULL, related_name="worksheet_assignments",
+    )
+    method = models.ForeignKey(Method, null=True, blank=True, on_delete=models.SET_NULL, related_name="worksheet_assignments")
     assigned_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -164,7 +164,7 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
       setSubmitting(false)
       setSuccess(result.message ?? 'Sample received.')
     }
-    setTimeout(() => router.push('/dashboard/lab-samples'), 1500)
+    setTimeout(() => router.push('/dashboard/samples-overview'), 1500)
   }
 
   const canSubmit = !!sample && !submitting && !success && !alreadyReceived
@@ -354,7 +354,7 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
           <p style={{ fontSize: 10, color: '#9CA3AF', marginBottom: 16 }}>* Required fields</p>
 
           <div className="flex items-center justify-end gap-2">
-            <button type="button" onClick={() => router.push('/dashboard/lab-samples')}
+            <button type="button" onClick={() => router.push('/dashboard/samples-overview')}
               className="px-5 py-2 text-xs font-medium rounded-lg"
               style={{ border: '1px solid #D1D5DB', color: '#374151', cursor: 'pointer', backgroundColor: '#fff' }}>
               Cancel

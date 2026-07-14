@@ -134,6 +134,28 @@ export function StatCard({
   )
 }
 
+/** Clickable icon+label tile — used by grid launcher pages (e.g. /dashboard/admin). */
+export function LinkTile({ href, icon, label }: { href: string; icon: string; label: string }) {
+  return (
+    <a
+      href={href}
+      className="bg-white flex items-center gap-3 hover:shadow-md"
+      style={{
+        border: `1px solid ${T.cardBorder}`, borderRadius: T.cardRadius, boxShadow: T.cardShadow,
+        padding: '18px 16px', textDecoration: 'none', transition: 'box-shadow .15s, border-color .15s',
+      }}
+    >
+      <div
+        className="flex items-center justify-center shrink-0"
+        style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#EFF6FF' }}
+      >
+        <MI name={icon} size={20} color={T.primary} />
+      </div>
+      <span style={{ fontSize: 13, fontWeight: 700, color: T.primary }}>{label}</span>
+    </a>
+  )
+}
+
 /* ------------------------------------ Chips -------------------------------------- */
 
 export function Chip({ tone, children, dot }: { tone: ChipTone; children: React.ReactNode; dot?: boolean }) {

@@ -4,6 +4,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { T } from './tokens'
+import { ADMIN_SECTIONS } from './adminNav'
 
 function MI({ name, size = 16 }: { name: string; size?: number }) {
   return <span className="material-icons" style={{ fontSize: size, lineHeight: 1 }}>{name}</span>
@@ -28,13 +29,11 @@ const NAV: NavEntry[] = [
     children: [
       { label: 'Samples Overview', href: '/dashboard/samples-overview', icon: 'list_alt',      roles: ['admin', 'lab_manager', 'receptionist', 'analyst', 'reviewer'], exact: true },
       { label: 'New Samples',      href: '/dashboard/samples-overview/new', icon: 'add_circle', roles: ['admin', 'lab_manager', 'receptionist'] },
-      { label: 'Lab Samples',      href: '/dashboard/lab-samples', icon: 'science', roles: ['admin', 'lab_manager', 'receptionist', 'analyst', 'reviewer'] },
-      { label: 'Lab Worksheets',   href: '/dashboard/lab-worksheets', icon: 'assignment', roles: ['admin', 'lab_manager', 'analyst', 'reviewer'] },
     ],
   },
   { label: 'Methods',           href: '/dashboard/methods',           icon: 'biotech',     roles: ['admin', 'lab_manager', 'analyst'] },
   { label: 'Batches',           href: '/dashboard/batches',           icon: 'layers',      roles: ['admin', 'lab_manager', 'analyst'] },
-  { label: 'Worksheet',         href: '/dashboard/worksheets',        icon: 'table_chart', roles: ['admin', 'lab_manager', 'analyst'] },
+  { label: 'Worksheet',         href: '/dashboard/worksheets',        icon: 'table_chart', roles: ['admin', 'lab_manager', 'analyst', 'reviewer'] },
   { label: 'Quality',           href: '/dashboard/quality',           icon: 'verified',    roles: ['admin', 'lab_manager', 'analyst', 'reviewer', 'client'] },
   { label: 'Storage Manager',   href: '/dashboard/storage',           icon: 'inventory_2', roles: ['admin', 'lab_manager', 'analyst', 'client'] },
   // Inventory
@@ -49,17 +48,11 @@ const NAV: NavEntry[] = [
     ],
   },
   { label: 'Reports',          href: '/dashboard/reports',           icon: 'bar_chart',               roles: null },
-  { label: 'XELPulse',     href: '/dashboard/analytics',         icon: 'insights',                roles: ['admin', 'lab_manager', 'analyst'] },
-  // Compliance
-  {
-    group: 'Compliance',
-    icon: 'gavel',
-    roles: ['admin', 'lab_manager', 'reviewer'],
-    children: [
-      { label: 'Approvals', href: '/dashboard/approvals', icon: 'fact_check', roles: ['admin', 'lab_manager', 'reviewer'] },
-      { label: 'Audit Trail', href: '/dashboard/audit-trail', icon: 'history', roles: ['admin', 'lab_manager'] },
-    ],
-  },
+  // Data Analytics and Compliance (Approvals, Audit Trail) intentionally not top-level —
+  // reachable via the Administration group/grid instead, to keep the top-level
+  // sidebar limited to: Dashboard, Clients, Samples, Methods, Batches, Worksheet,
+  // Quality, Storage Manager, Instruments, Reports, Administration. Do not add a
+  // new top-level entry here without asking first — see CLAUDE.md.
   // Administration group — visibility is intentionally wide open (null) because
   // several children below (Tasks, Results, Chain of Custody, Analysis Requests)
   // are visible to roles (analyst/reviewer/client/receptionist) narrower than the
@@ -69,29 +62,11 @@ const NAV: NavEntry[] = [
     group: 'Administration',
     icon: 'admin_panel_settings',
     roles: null,
-    children: [
-      { label: 'Users',        href: '/dashboard/admin',        icon: 'group',       roles: ['admin', 'lab_manager'] },
-      { label: 'Sample Types', href: '/dashboard/sample-types', icon: 'category',   roles: ['admin', 'lab_manager'] },
-      { label: 'Sample Templates', href: '/dashboard/sample-templates', icon: 'view_list', roles: ['admin', 'lab_manager'] },
-      { label: 'Analyses',     href: '/dashboard/analyses',     icon: 'biotech',    roles: ['admin', 'lab_manager'] },
-      { label: 'Analysis Profiles', href: '/dashboard/analysis-profiles', icon: 'science', roles: ['admin', 'lab_manager'] },
-      { label: 'Tests',        href: '/dashboard/tests',        icon: 'assignment',  roles: ['admin', 'lab_manager', 'analyst'] },
-      { label: 'Specifications', href: '/dashboard/specifications', icon: 'rule',    roles: ['admin', 'lab_manager'] },
-      { label: 'Analysis Requests', href: '/dashboard/analysis-requests', icon: 'assignment_turned_in', roles: ['admin', 'lab_manager', 'analyst', 'reviewer'] },
-      { label: 'Results',      href: '/dashboard/results',      icon: 'science',     roles: ['admin', 'lab_manager', 'analyst', 'reviewer'] },
-      { label: 'Tasks',        href: '/dashboard/tasks',        icon: 'checklist',   roles: null },
-      { label: 'Chain of Custody', href: '/dashboard/chain-of-custody', icon: 'link', roles: ['admin', 'lab_manager', 'analyst', 'reviewer', 'client'] },
-      { label: 'Approvals',    href: '/dashboard/approvals',    icon: 'fact_check',  roles: ['admin', 'lab_manager', 'reviewer'] },
-      { label: 'Audit Trail',  href: '/dashboard/audit-trail',  icon: 'history',     roles: ['admin', 'lab_manager'] },
-      { label: 'Master Data Import', href: '/dashboard/master-data-import', icon: 'upload_file', roles: ['admin', 'lab_manager'] },
-      { label: 'Instrument List', href: '/dashboard/instrument-list', icon: 'precision_manufacturing', roles: ['admin', 'lab_manager'] },
-      { label: 'Storage List', href: '/dashboard/storage-list', icon: 'inventory_2', roles: ['admin', 'lab_manager'] },
-      { label: 'Report Templates', href: '/dashboard/settings/report-templates', icon: 'description', roles: ['admin'] },
-      // Tenant Management nav entry hidden for the single-tenant demo phase — the
-      // route/backend/permissions are untouched and fully working, just not
-      // linked from nav. Re-add this line once real multi-tenant onboarding ships:
-      // { label: 'Tenant Management', href: '/dashboard/tenant-management', icon: 'corporate_fare', roles: ['admin'], superuserOnly: true },
-    ],
+    children: ADMIN_SECTIONS,
+    // Tenant Management nav entry hidden for the single-tenant demo phase — the
+    // route/backend/permissions are untouched and fully working, just not
+    // linked from nav. Re-add once real multi-tenant onboarding ships:
+    // { label: 'Tenant Management', href: '/dashboard/tenant-management', icon: 'corporate_fare', roles: ['admin'], superuserOnly: true },
   },
 ]
 
@@ -113,7 +88,7 @@ export default function Sidebar({ onToggle, role, reportDraftCount, isSuperuser 
       '/dashboard/tasks', '/dashboard/chain-of-custody', '/dashboard/approvals', '/dashboard/audit-trail',
       '/dashboard/master-data-import', '/dashboard/instrument-list', '/dashboard/storage-list', '/dashboard/settings', '/dashboard/tenant-management',
     ].some(p => pathname.startsWith(p))) open.add('Administration')
-    if (['/dashboard/samples-overview', '/dashboard/samples/new', '/dashboard/lab-samples', '/dashboard/lab-worksheets'].some(p => pathname.startsWith(p))) open.add('Samples')
+    if (['/dashboard/samples-overview', '/dashboard/samples/new'].some(p => pathname.startsWith(p))) open.add('Samples')
     if (['/dashboard/inventory-items', '/dashboard/inventory-lots', '/dashboard/instrument-maintenance'].some(p => pathname.startsWith(p))) open.add('Instruments')
     return open
   })

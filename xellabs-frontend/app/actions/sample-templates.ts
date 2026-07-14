@@ -2,15 +2,31 @@
 import { revalidatePath } from 'next/cache'
 import { djangoFetch } from '@/app/lib/django'
 
-export type AnalysisServiceRef = { uid: string; title: string }
+export type AnalysisServiceRef = { uid: string; title: string; hidden?: boolean }
+
+export type TemplatePartition = {
+  part_id: string
+  container_uid: string
+  container_name: string
+  preservation_uid: string
+  preservation_name: string
+  sample_type_uid: string
+  sample_type_name: string
+  services: AnalysisServiceRef[]
+}
 
 export type SampleTemplate = {
   id: number
   name: string
+  description: string
   sample_type_uid: string
   sample_type_name: string
-  analysis_services: AnalysisServiceRef[]
-  container: string
+  sample_point_uid: string
+  sample_point_name: string
+  composite: boolean
+  sampling_required: boolean
+  auto_partition: boolean
+  partitions: TemplatePartition[]
   is_active: boolean
 }
 
@@ -28,11 +44,16 @@ export type SampleTemplateFormState = {
 }
 
 function parsePayload(formData: FormData) {
-  const name           = (formData.get('name') as string)?.trim()
-  const sampleTypeUid   = (formData.get('sample_type_uid') as string)?.trim()
-  const sampleTypeName  = (formData.get('sample_type_name') as string)?.trim()
-  const container        = (formData.get('container') as string)?.trim() ?? ''
-  const analysisServices = JSON.parse((formData.get('analysis_services') as string) || '[]')
+  const name              = (formData.get('name') as string)?.trim()
+  const description       = (formData.get('description') as string)?.trim() ?? ''
+  const sampleTypeUid     = (formData.get('sample_type_uid') as string)?.trim()
+  const sampleTypeName    = (formData.get('sample_type_name') as string)?.trim()
+  const samplePointUid    = (formData.get('sample_point_uid') as string)?.trim() ?? ''
+  const samplePointName   = (formData.get('sample_point_name') as string)?.trim() ?? ''
+  const composite         = formData.get('composite') === 'true'
+  const samplingRequired  = formData.get('sampling_required') === 'true'
+  const autoPartition     = formData.get('auto_partition') === 'true'
+  const partitions        = JSON.parse((formData.get('partitions') as string) || '[]')
 
   const errors: Record<string, string[]> = {}
   if (!name) errors.name = ['Template name is required']
@@ -42,10 +63,15 @@ function parsePayload(formData: FormData) {
     errors,
     payload: {
       name,
+      description,
       sample_type_uid: sampleTypeUid,
       sample_type_name: sampleTypeName,
-      container,
-      analysis_services: analysisServices,
+      sample_point_uid: samplePointUid,
+      sample_point_name: samplePointName,
+      composite,
+      sampling_required: samplingRequired,
+      auto_partition: autoPartition,
+      partitions,
     },
   }
 }

@@ -153,7 +153,7 @@ export default function ResultsShell({ initialResults }: { initialResults: Enric
                     <td style={tdStyle}>
                       {r.ws_id ? (
                         r.worksheet_id ? (
-                          <Link href={`/dashboard/lab-worksheets/${r.worksheet_id}`} style={{ color: T.primary, fontWeight: 600, textDecoration: 'none' }}>
+                          <Link href={`/dashboard/worksheets/${r.worksheet_id}`} style={{ color: T.primary, fontWeight: 600, textDecoration: 'none' }}>
                             {r.ws_id}
                           </Link>
                         ) : r.ws_id

@@ -2,7 +2,17 @@ FROM senaite/senaite:v2.6.0
 
 USER root
 
-ENV BASE=/home/senaite/senaitelims/eggs/cp27mu/senaite.core-2.6.0-py2.7.egg/senaite/core/browser
+ENV CORE=/home/senaite/senaitelims/eggs/cp27mu/senaite.core-2.6.0-py2.7.egg/senaite/core
+ENV BASE=${CORE}/browser
+
+# Custom plone.restapi field deserializer for SampleType.admitted_sticker_templates —
+# see CLAUDE.md section 16b. Neither the legacy @@API/senaite/v1 endpoints nor
+# plone.restapi's own generic deserializer can write this DataGridField; this
+# adapter bypasses schema validation and writes through the object's own mutator.
+COPY sampletype_stickers_deserializer.py ${CORE}/adapters/sampletype_stickers_deserializer.py
+COPY patch_sampletype_stickers_zcml.py /tmp/patch_sampletype_stickers_zcml.py
+RUN python2.7 /tmp/patch_sampletype_stickers_zcml.py
+RUN chown senaite:senaite ${CORE}/adapters/sampletype_stickers_deserializer.py ${CORE}/adapters/configure.zcml
 
 # Replace branding templates
 COPY logo.pt          ${BASE}/viewlets/templates/logo.pt

@@ -1,9 +1,11 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { type EnrichedWorksheet, assignToWorksheet, submitResultValue, verifyResult, submitWorksheetForReview, verifyWorksheet, assignWorksheetAnalyst } from '@/app/actions/django-worksheets'
+import { type EnrichedWorksheet, assignToWorksheet, submitResultValue, verifyResult, submitWorksheetForReview, verifyWorksheet, rejectWorksheet, assignWorksheetAnalyst, assignWorksheetInstrument, assignWorksheetMethod } from '@/app/actions/django-worksheets'
 import { type AnalysisRequest } from '@/app/actions/analysis-requests'
 import { type LimsTest } from '@/app/actions/tests'
+import { type InstrumentOption } from '@/app/actions/instrument-maintenance'
+import { type Method } from '@/app/actions/methods'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -24,9 +26,12 @@ const RESULT_STATUS_BADGE: Record<string, { bg: string; color: string }> = {
   rejected:   { bg: '#FEE2E2', color: '#991B1B' },
 }
 
-type Props = { worksheet: EnrichedWorksheet; ars: AnalysisRequest[]; tests: LimsTest[]; users: { id: number; name: string }[] }
+type Props = {
+  worksheet: EnrichedWorksheet; ars: AnalysisRequest[]; tests: LimsTest[]; users: { id: number; name: string }[]
+  instruments: InstrumentOption[]; methods: Method[]
+}
 
-export default function LabWorksheetDetail({ worksheet: initialWs, ars, tests, users }: Props) {
+export default function LabWorksheetDetail({ worksheet: initialWs, ars, tests, users, instruments, methods }: Props) {
   const router = useRouter()
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [selectedAr, setSelectedAr] = useState('')
@@ -98,6 +103,30 @@ export default function LabWorksheetDetail({ worksheet: initialWs, ars, tests, u
     })
   }
 
+  function handleAssignInstrument(instrumentId: string) {
+    startTransition(async () => {
+      const res = await assignWorksheetInstrument(initialWs.id, instrumentId ? Number(instrumentId) : null)
+      if (res.success) {
+        showToast(true, res.message)
+        router.refresh()
+      } else {
+        showToast(false, res.message)
+      }
+    })
+  }
+
+  function handleAssignMethod(methodId: string) {
+    startTransition(async () => {
+      const res = await assignWorksheetMethod(initialWs.id, methodId ? Number(methodId) : null)
+      if (res.success) {
+        showToast(true, res.message)
+        router.refresh()
+      } else {
+        showToast(false, res.message)
+      }
+    })
+  }
+
   function handleSubmitWorksheet() {
     startTransition(async () => {
       const res = await submitWorksheetForReview(initialWs.id)
@@ -122,9 +151,21 @@ export default function LabWorksheetDetail({ worksheet: initialWs, ars, tests, u
     })
   }
 
+  function handleRejectWorksheet() {
+    startTransition(async () => {
+      const res = await rejectWorksheet(initialWs.id)
+      if (res.success) {
+        showToast(true, res.message)
+        router.refresh()
+      } else {
+        showToast(false, res.message)
+      }
+    })
+  }
+
   const badge = STATUS_BADGE[initialWs.status] || { bg: '#F3F4F6', color: '#6B7280', label: initialWs.status }
   const canAddAssignments = ['open', 'in_progress'].includes(initialWs.status)
-  const canSubmit = initialWs.status === 'in_progress' && initialWs.assignments.every(a => a.result_status === 'verified')
+  const canSubmit = ['open', 'in_progress'].includes(initialWs.status) && initialWs.assignments.every(a => a.result_status === 'verified')
   const canVerify = initialWs.status === 'to_be_verified'
 
   return (
@@ -132,8 +173,8 @@ export default function LabWorksheetDetail({ worksheet: initialWs, ars, tests, u
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <button onClick={() => router.push('/dashboard/lab-worksheets')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280', fontSize: 13, marginBottom: 6 }}>
-            ← Lab Worksheets
+          <button onClick={() => router.push('/dashboard/worksheets')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280', fontSize: 13, marginBottom: 6 }}>
+            ← Worksheets
           </button>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em', margin: 0 }}>{initialWs.ws_id}</h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
@@ -151,6 +192,32 @@ export default function LabWorksheetDetail({ worksheet: initialWs, ars, tests, u
               >
                 <option value="" disabled>Select user…</option>
                 {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <MI name="precision_manufacturing" size={14} color="#6B7280" />
+              <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 600 }}>Instrument</span>
+              <select
+                value={initialWs.instrument ?? ''}
+                onChange={e => handleAssignInstrument(e.target.value)}
+                disabled={busy || !['open', 'in_progress'].includes(initialWs.status)}
+                style={{ padding: '4px 8px', border: '1px solid #D1D5DB', borderRadius: 6, fontSize: 12, color: '#374151', background: '#fff', cursor: 'pointer' }}
+              >
+                <option value="">None</option>
+                {instruments.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <MI name="biotech" size={14} color="#6B7280" />
+              <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 600 }}>Method</span>
+              <select
+                value={initialWs.method ?? ''}
+                onChange={e => handleAssignMethod(e.target.value)}
+                disabled={busy || !['open', 'in_progress'].includes(initialWs.status)}
+                style={{ padding: '4px 8px', border: '1px solid #D1D5DB', borderRadius: 6, fontSize: 12, color: '#374151', background: '#fff', cursor: 'pointer' }}
+              >
+                <option value="">None</option>
+                {methods.filter(m => m.is_active).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
             </div>
           </div>
@@ -172,6 +239,12 @@ export default function LabWorksheetDetail({ worksheet: initialWs, ars, tests, u
             <button onClick={handleVerifyWorksheet} disabled={busy} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 8, border: 'none', background: '#10B981', color: '#fff', fontSize: 13, fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1 }}>
               <MI name="check" size={16} color="#fff" />
               Verify Worksheet
+            </button>
+          )}
+          {canVerify && (
+            <button onClick={handleRejectWorksheet} disabled={busy} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 8, border: '1px solid #DC2626', background: '#fff', color: '#DC2626', fontSize: 13, fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1 }}>
+              <MI name="close" size={16} color="#DC2626" />
+              Reject Worksheet
             </button>
           )}
         </div>
@@ -205,6 +278,8 @@ export default function LabWorksheetDetail({ worksheet: initialWs, ars, tests, u
                   <th style={{ padding: '10px 14px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#6B7280' }}>AR ID</th>
                   <th style={{ padding: '10px 14px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#6B7280' }}>Sample</th>
                   <th style={{ padding: '10px 14px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#6B7280' }}>Test</th>
+                  <th style={{ padding: '10px 14px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#6B7280' }}>Instrument</th>
+                  <th style={{ padding: '10px 14px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#6B7280' }}>Method</th>
                   <th style={{ padding: '10px 14px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#6B7280' }}>Result Value</th>
                   <th style={{ padding: '10px 14px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#6B7280' }}>Status</th>
                   <th style={{ padding: '10px 14px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#6B7280' }}>Actions</th>
@@ -220,6 +295,8 @@ export default function LabWorksheetDetail({ worksheet: initialWs, ars, tests, u
                       <td style={{ padding: '12px 14px', fontSize: 13, color: '#2563EB', fontWeight: 600 }}>{a.ar_id}</td>
                       <td style={{ padding: '12px 14px', fontSize: 13, color: '#374151' }}>{a.sample_id}</td>
                       <td style={{ padding: '12px 14px', fontSize: 13, color: '#374151' }}>{a.test_name}</td>
+                      <td style={{ padding: '12px 14px', fontSize: 13, color: '#374151' }}>{a.instrument_name || '—'}</td>
+                      <td style={{ padding: '12px 14px', fontSize: 13, color: '#374151' }}>{a.method_name || '—'}</td>
                       <td style={{ padding: '12px 14px' }}>
                         {canEdit ? (
                           <input

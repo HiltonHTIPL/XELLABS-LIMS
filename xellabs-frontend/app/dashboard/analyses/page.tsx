@@ -1,14 +1,19 @@
 import { getAnalysesPageData } from '@/app/actions/analyses'
-import AnalysesShell from './_components/AnalysesShell'
+import { getAnalysisProfiles } from '@/app/actions/analysis-profiles'
+import AnalysesTabsShell from './_components/AnalysesTabsShell'
 
 export default async function AnalysesPage() {
-  const { services, categories, departments, labContacts } = await getAnalysesPageData()
+  const [{ services, categories, departments, labContacts }, profiles] = await Promise.all([
+    getAnalysesPageData(),
+    getAnalysisProfiles(),
+  ])
   return (
-    <AnalysesShell
+    <AnalysesTabsShell
       initialServices={services}
       categories={categories}
       departments={departments}
       labContacts={labContacts}
+      initialProfiles={profiles}
     />
   )
 }

@@ -213,11 +213,36 @@ def verify_worksheet(worksheet, user):
 
 @transaction.atomic
 def reject_worksheet(worksheet, user):
+    """Reviewer rejects a worksheet pending review — mirrors SENAITE's rejection
+    flow: unfinished (non-verified) analyses are carried forward onto a fresh
+    worksheet for the analyst to redo, while already-verified analyses stay on
+    the original worksheet, which is marked 'rejected' for the audit trail."""
+    from .models import Worksheet, Result
+
     if worksheet.status not in ("to_be_verified",):
         raise ValueError("Only worksheets pending review can be rejected.")
+
+    unfinished = worksheet.assignments.exclude(result__status="verified")
+    new_worksheet = None
+    if unfinished.exists():
+        new_worksheet = Worksheet.objects.create(
+            ws_id=generate_ws_id(),
+            analyst=worksheet.analyst,
+            instrument=worksheet.instrument,
+            method=worksheet.method,
+            status="open",
+        )
+        unfinished_ids = list(unfinished.values_list("id", flat=True))
+        WorksheetAssignmentModel = worksheet.assignments.model
+        WorksheetAssignmentModel.objects.filter(id__in=unfinished_ids).update(worksheet=new_worksheet)
+        Result.objects.filter(worksheet_assignment_id__in=unfinished_ids).exclude(status="verified").update(
+            status="pending", is_out_of_range=False,
+            submitted_by=None, submitted_at=None,
+        )
+
     worksheet.status = "rejected"
     worksheet.save(update_fields=["status", "updated_at"])
-    return worksheet
+    return worksheet, new_worksheet
 
 
 # ── Sample workflow status derivation ────────────────────────────────────────
