@@ -10,8 +10,6 @@ import {
 } from '@/app/lib/senaite'
 import { serverToken } from '@/app/lib/senaite-auth'
 
-export type { SenaiteRefOption }
-
 export type CreateRefOptionState = {
   success?: boolean
   message?: string

@@ -7,8 +7,6 @@ import {
   type SenaiteClientFull, type SenaiteClientPayload, type SenaiteContactPayload,
 } from '@/app/lib/senaite'
 
-export type { SenaiteClientFull }
-
 export type ClientFormState = {
   success?: boolean
   message?: string
