@@ -1,4 +1,13 @@
 const SENAITE_URL = process.env.SENAITE_URL ?? 'http://senaite:8080/senaite'
+// Plone/SENAITE site root path — used for legacy create API parent_path.
+// When SENAITE_URL has no path (e.g. http://172.21.0.1:8096), pathname is '/'
+// which produces '//batches' — incorrect. Always use '/senaite' as the site root.
+const SENAITE_SITE_PATH = (() => {
+  try {
+    const p = new URL(SENAITE_URL).pathname.replace(/\/$/, '')
+    return p || '/senaite'
+  } catch { return '/senaite' }
+})()
 
 export type SenaiteUser = {
   userid: string
@@ -1982,7 +1991,7 @@ export async function createSenaiteWorksheet(
       },
       body: JSON.stringify({
         portal_type: 'Worksheet',
-        parent_path: `${new URL(SENAITE_URL).pathname}/worksheets`,
+        parent_path: `${SENAITE_SITE_PATH}/worksheets`,
         Analyses: analysisUids.map(uid => ({ uid })),
       }),
       cache: 'no-store',
@@ -2246,7 +2255,7 @@ export async function createSenaiteBatch(
       headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
         portal_type: 'Batch',
-        parent_path: `${new URL(SENAITE_URL).pathname}/batches`,
+        parent_path: `${SENAITE_SITE_PATH}/batches`,
         title: data.title,
         ...(data.ClientUID ? { Client: data.ClientUID } : {}),
         ...(data.ClientBatchID ? { ClientBatchID: data.ClientBatchID } : {}),
