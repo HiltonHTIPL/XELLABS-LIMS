@@ -1,6 +1,7 @@
 import JsBarcode from 'jsbarcode'
 import QRCode from 'qrcode'
 import type { CocSample } from '@/app/actions/storage'
+import { sampleDisplayId } from '@/app/lib/sampleDisplay'
 
 export type StickerSymbology = 'code128' | 'code39' | 'code93' | 'qr' | 'none'
 export type StickerLayout = 'table' | 'barcode' | 'address' | 'qr'
@@ -67,7 +68,7 @@ function fieldCell(label: string, value: string): string {
 
 function renderFieldTable(sample: CocSample): string {
   const rows: Array<[[string, string], [string, string]]> = [
-    [['Sample ID', sample.sample_id], ['Date Sampled', fmtDate(sample.collection_date)]],
+    [['Sample ID', sampleDisplayId(sample)], ['Date Sampled', fmtDate(sample.collection_date)]],
     [['Sampler', sample.collector], ['Order', sample.client_order_number]],
     [['Deviation', sample.sampling_deviation], ['Composite', sample.composite ? 'True' : 'False']],
     [['Container', sample.container_type], ['Preservation', sample.preservation]],
@@ -77,7 +78,7 @@ function renderFieldTable(sample: CocSample): string {
 }
 
 export async function renderSticker(template: StickerTemplate, sample: CocSample): Promise<string> {
-  const idValue = (template.idField === 'barcode' ? sample.barcode : sample.sample_id) || sample.sample_id
+  const idValue = (template.idField === 'barcode' ? sample.barcode : sampleDisplayId(sample)) || sampleDisplayId(sample)
 
   let bodyHtml = ''
   switch (template.layout) {
@@ -119,7 +120,7 @@ export async function renderSticker(template: StickerTemplate, sample: CocSample
 export async function printSticker(sample: CocSample, template: StickerTemplate, copies: number) {
   const stickerHtml = await renderSticker(template, sample)
   const stickers = Array.from({ length: copies }, () => stickerHtml).join('')
-  const html = `<!DOCTYPE html><html><head><title>Sticker — ${sample.sample_id}</title>
+  const html = `<!DOCTYPE html><html><head><title>Sticker — ${sampleDisplayId(sample)}</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family: Inter, Arial, sans-serif; background:#fff; }

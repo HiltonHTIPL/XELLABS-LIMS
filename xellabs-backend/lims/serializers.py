@@ -3,6 +3,7 @@ from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 from .models import (
     SampleType, SampleTemplate, AnalysisProfile, Method, Calculation, Test, Specification,
+    DynamicAnalysisSpecification, AnalysisSpecification,
     Sample, AnalysisRequest, Worksheet, WorksheetAssignment,
     Result, QCSample, ChainOfCustody,
 )
@@ -118,10 +119,48 @@ class TestSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+class DynamicAnalysisSpecificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DynamicAnalysisSpecification
+        fields = "__all__"
+        read_only_fields = ("senaite_uid",)
+
+
 class SpecificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Specification
         fields = "__all__"
+        extra_kwargs = {"specification": {"required": False}}  # set by the parent AnalysisSpecificationSerializer
+
+
+class AnalysisSpecificationSerializer(serializers.ModelSerializer):
+    """Header + nested writable rows — the whole grid saves in one request,
+    matching SENAITE's own single-Save-button form (see the screenshot this
+    was designed from). create()/update() replace the full row set rather
+    than diffing, since the frontend always submits the complete grid."""
+    rows = SpecificationSerializer(many=True)
+
+    class Meta:
+        model = AnalysisSpecification
+        fields = "__all__"
+
+    def create(self, validated_data):
+        rows_data = validated_data.pop("rows")
+        instance = AnalysisSpecification.objects.create(**validated_data)
+        for row in rows_data:
+            Specification.objects.create(specification=instance, **row)
+        return instance
+
+    def update(self, instance, validated_data):
+        rows_data = validated_data.pop("rows", None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        if rows_data is not None:
+            instance.rows.all().delete()
+            for row in rows_data:
+                Specification.objects.create(specification=instance, **row)
+        return instance
 
 
 class SampleSerializer(RecordLockMixin, serializers.ModelSerializer):

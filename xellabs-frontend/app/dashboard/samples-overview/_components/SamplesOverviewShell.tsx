@@ -1,20 +1,12 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { type LabSample, type SampleStats, type DjangoSampleType, patchLabSample } from '@/app/actions/lab-samples'
 import { type DjangoClient } from '@/app/actions/clients'
+import { sampleDisplayId as displayId } from '@/app/lib/sampleDisplay'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
-}
-
-// sample_id is Django's own locally-generated ID (prefix + today's date +
-// sequence, e.g. "E2E-20260714-0001") — cosmetically similar to but NOT the
-// real SENAITE-assigned ID (e.g. "E2E-0001"), which is stored separately in
-// senaite_ar_id. Always prefer the real SENAITE ID for anything user-facing;
-// fall back to sample_id only for samples created before senaite_ar_id existed.
-function displayId(s: LabSample): string {
-  return s.senaite_ar_id || s.sample_id
 }
 
 // ── Column config ─────────────────────────────────────────────────────────────
@@ -125,10 +117,14 @@ type Props = { initialSamples: LabSample[]; sampleTypes: DjangoSampleType[]; sta
 
 export default function SamplesOverviewShell({ initialSamples, sampleTypes, stats, clients }: Props) {
   const router = useRouter()
+  // Pre-select a Client when arriving from that client's "Client Name" link
+  // (/dashboard/samples-overview?client=<id>) — same query-param pre-fill
+  // pattern already used by New Sample's ?batch= param.
+  const initialClientId = useSearchParams().get('client') ?? ''
   const [samples, setSamples] = useState(initialSamples)
   const [search, setSearch] = useState('')
   const [filterSampleType, setFilterSampleType] = useState('')
-  const [filterClient, setFilterClient] = useState('')
+  const [filterClient, setFilterClient] = useState(initialClientId)
   const [filterStatus, setFilterStatus] = useState('')
   const [filterPriority, setFilterPriority] = useState('')
   const [filterFrom, setFilterFrom] = useState('')

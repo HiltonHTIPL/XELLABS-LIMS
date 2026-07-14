@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createSampleWithAnalyses, type DjangoSampleType } from '@/app/actions/lab-samples'
 import { type DjangoClient } from '@/app/actions/clients'
 import { type LimsTest } from '@/app/actions/tests'
+import { type AnalysisSpecification } from '@/app/actions/specifications'
 import { type SenaiteBatch, type SenaiteSampleTemplate, type SenaiteRefOption } from '@/app/lib/senaite'
 import StorageLocationInput from '@/app/dashboard/_components/StorageLocationInput'
 
@@ -94,9 +95,10 @@ function blankForm(): SampleForm {
 type Props = {
   sampleTypes: DjangoSampleType[]; clients: DjangoClient[]; tests: LimsTest[]
   sampleTemplates: SenaiteSampleTemplate[]; sampleContainers: SenaiteRefOption[]; batches: SenaiteBatch[]
+  analysisSpecifications: AnalysisSpecification[]; preservations: SenaiteRefOption[]
 }
 
-export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemplates, sampleContainers, batches }: Props) {
+export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemplates, sampleContainers, batches, analysisSpecifications, preservations }: Props) {
   const router = useRouter()
   // Pre-select a Batch when arriving from that batch's "New Sample" button
   // (/dashboard/samples-overview/new?batch=<uid>) — only applied to the first
@@ -333,6 +335,30 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
       containerType: template ? (allowedContainers[0]?.value ?? '') : form.containerType,
       suggestedContainer: templateContainer,
       analysisProfiles: template ? matchedTests.map(t => t.name) : form.analysisProfiles,
+      selectedTests: matchedTests.length ? matchedTests : form.selectedTests,
+    } : form))
+  }
+
+  // Analysis Specifications valid for the currently selected Sample Type —
+  // each spec has exactly one sample_type (see lims/models.py AnalysisSpecification).
+  // Shows every spec until a sample type is chosen, same fallback as sampleTypeOptionsFor.
+  function analysisSpecOptionsFor(sampleTypeId: string): AnalysisSpecification[] {
+    if (!sampleTypeId) return analysisSpecifications
+    const matched = analysisSpecifications.filter(s => String(s.sample_type) === sampleTypeId)
+    return matched.length ? matched : analysisSpecifications
+  }
+
+  // Selecting an Analysis Specification auto-fills Lab Analyses from its rows —
+  // rows already store Django Test ids directly (no senaite_uid matching needed,
+  // unlike Sample Template above, since Specification rows are Django-only).
+  function handleAnalysisSpecChange(specId: string) {
+    const spec = analysisSpecifications.find(s => String(s.id) === specId)
+    const matchedTests = spec
+      ? tests.filter(t => spec.rows.some(r => r.test === t.id))
+      : []
+    setForms(prev => prev.map((form, i) => i === activeTab ? {
+      ...form,
+      analysisSpec: specId,
       selectedTests: matchedTests.length ? matchedTests : form.selectedTests,
     } : form))
   }
@@ -597,21 +623,16 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
             <div style={field}><label style={lbl}>Preservation</label>
               <select value={f.preservation} onChange={e => set('preservation', e.target.value)} style={inp}>
                 <option value="">None</option>
-                <option value="refrigerated">Refrigerated</option>
-                <option value="frozen">Frozen</option>
-                <option value="chemical">Chemical Preservative</option>
-                <option value="dark">Dark / Light-protected</option>
+                {preservations.map(p => <option key={p.uid} value={p.title}>{p.title}</option>)}
               </select></div>
           </div>
           <div style={{ ...grid4, marginBottom: 16 }}>
             <div style={field}><label style={lbl}>Analysis Specification</label>
-              <select value={f.analysisSpec} onChange={e => set('analysisSpec', e.target.value)} style={inp}>
+              <select value={f.analysisSpec} onChange={e => handleAnalysisSpecChange(e.target.value)} style={inp}>
                 <option value="">— select —</option>
-                <option value="in_house">In-House Standard</option>
-                <option value="iso_17025">ISO 17025</option>
-                <option value="pharmacopeia">Pharmacopeia</option>
-                <option value="regulatory">Regulatory Standard</option>
-              </select></div>
+                {analysisSpecOptionsFor(f.sampleTypeId).map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+              </select>
+              <span style={{ fontSize: 11, color: '#9CA3AF', marginTop: 3 }}>Selecting one auto-fills Lab Analyses from its rows</span></div>
             <div style={field}><label style={lbl}>Sample Point</label>
               <input value={f.samplePoint} onChange={e => set('samplePoint', e.target.value)} placeholder="e.g. Site A - Building 25" style={inp} /></div>
             <div style={field}><label style={lbl}>Storage Location</label>

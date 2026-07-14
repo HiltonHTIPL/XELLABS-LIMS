@@ -290,11 +290,11 @@ export default function AnalysesShell({
         <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
           <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
             <colgroup>
-              <col style={{ width: '30%' }} /><col style={{ width: '18%' }} /><col style={{ width: '20%' }} /><col style={{ width: '12%' }} /><col style={{ width: '10%' }} /><col style={{ width: '10%' }} />
+              <col style={{ width: '34%' }} /><col style={{ width: '20%' }} /><col style={{ width: '22%' }} /><col style={{ width: '12%' }} /><col style={{ width: '12%' }} />
             </colgroup>
             <thead>
               <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                {['Name', 'Keyword', 'Category', 'Unit', 'Price', ''].map(h => (
+                {['Name', 'Keyword', 'Category', 'Unit', 'Price'].map(h => (
                   <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
                 ))}
               </tr>
@@ -318,7 +318,6 @@ export default function AnalysesShell({
                   <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{s.Category || '—'}</td>
                   <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{s.Unit || '—'}</td>
                   <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{s.Price && s.Price !== '0.00' ? s.Price : '—'}</td>
-                  <td className="px-3 py-2.5 font-mono text-xs truncate" style={{ color: '#9CA3AF' }} title={s.uid}>{s.uid.slice(0, 8)}…</td>
                 </tr>
               ))}
             </tbody>

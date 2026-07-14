@@ -181,7 +181,7 @@ function ActionsMenu({ client, onEdit, onDone }: { client: SenaiteClientFull; on
   )
 }
 
-export default function ClientsShell({ initialClients }: { initialClients: SenaiteClientFull[] }) {
+export default function ClientsShell({ initialClients, clientIdByUid }: { initialClients: SenaiteClientFull[]; clientIdByUid: Record<string, number> }) {
   const router = useRouter()
   const [showForm, setShowForm] = useState(false)
   const [step, setStep] = useState(0)
@@ -527,7 +527,11 @@ export default function ClientsShell({ initialClients }: { initialClients: Senai
                       <Link href={`/dashboard/clients/${c.uid}`} className="font-mono text-xs font-medium" style={{ color: '#0154FC', textDecoration: 'none' }}>{c.ClientID || '—'}</Link>
                     </td>
                     <td className="px-3 py-2">
-                      <Link href={`/dashboard/clients/${c.uid}`} className="flex items-center gap-2">
+                      <Link
+                        href={clientIdByUid[c.uid] ? `/dashboard/samples-overview?client=${clientIdByUid[c.uid]}` : `/dashboard/clients/${c.uid}`}
+                        className="flex items-center gap-2"
+                        title={clientIdByUid[c.uid] ? `View samples logged under ${c.title}` : 'View client details'}
+                      >
                         <div className="w-6 h-6 rounded-full flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 10, backgroundColor: '#0154FC' }}>
                           {c.title.slice(0, 1).toUpperCase()}
                         </div>

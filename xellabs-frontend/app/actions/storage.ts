@@ -195,6 +195,7 @@ export async function deleteStorageLocation(id: number): Promise<{ success: bool
 
 export type CocSample = {
   sample_id: string
+  senaite_ar_id?: string
   status: string
   status_display: string
   sample_type: string

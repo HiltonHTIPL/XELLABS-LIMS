@@ -570,6 +570,27 @@ async function fetchSenaiteRefList(token: string, portalType: string): Promise<S
 
 export const fetchSenaiteSampleMatrices = (token: string) => fetchSenaiteRefList(token, 'SampleMatrix')
 export const fetchSenaiteContainerTypes = (token: string) => fetchSenaiteRefList(token, 'ContainerType')
+
+// Full Container Type record (uid/title/description) for the standalone admin
+// list page — fetchSenaiteRefList only returns uid/title, which is enough for
+// dropdown options but not enough to show a description column.
+export type SenaiteContainerType = { uid: string; title: string; description: string }
+
+export async function fetchSenaiteContainerTypesFull(token: string): Promise<SenaiteContainerType[]> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/ContainerType?limit=1000`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return ((data.items ?? []) as Record<string, unknown>[]).map(d => ({
+      uid: (d.uid as string) ?? '',
+      title: (d.title as string) ?? '',
+      description: (d.description as string) ?? '',
+    })).filter(d => d.uid && d.title)
+  } catch { return [] }
+}
 // The v1 API's portal_type is "SamplePreservation", not "Preservation" — the
 // latter 404s ("Not Found"), confirmed by direct probing.
 export const fetchSenaitePreservations = (token: string) => fetchSenaiteRefList(token, 'SamplePreservation')
@@ -599,6 +620,26 @@ export async function createSenaiteContainerType(
     const items = (data.items as Record<string, unknown>[]) ?? []
     if (!items.length) return { success: false, error: 'No container type returned from the lab system.' }
     return { success: true, option: { uid: (items[0].uid as string) ?? '', title: (items[0].title as string) ?? payload.title } }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+export async function updateSenaiteContainerType(
+  token: string,
+  uid: string,
+  payload: { title: string; description?: string }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify([{ uid, title: payload.title, description: payload.description ?? '' }]),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok || data.success === false) {
+      return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    }
+    return { success: true }
   } catch (e) { return { success: false, error: String(e) } }
 }
 
@@ -645,6 +686,123 @@ export const createSenaiteSampleContainer = (token: string, payload: { title: st
 
 export const createSenaiteSamplePreservation = (token: string, payload: { title: string; description?: string }) =>
   createSenaiteSetupRef(token, 'SamplePreservation', '/senaite/setup/samplepreservations', payload, 'preservation')
+
+// ─── Sample Containers — full CRUD (standalone admin page) ───────────────────
+// Beyond title/description (the only fields createSenaiteSampleContainer above
+// exercises for the inline-create widget), a SampleContainer also carries
+// capacity, container_type/preservation references, pre_preserved and
+// security_seal_intact. These field shapes were not previously exercised live
+// — capacity is sent under both casings the same defensive way MinimumVolume
+// is (see updateSenaiteSampleType), and container_type/preservation are sent
+// as {uid: ...} objects, mirroring the confirmed Dexterity reference shape
+// used for SampleType.sample_matrix/container_type.
+export type SampleContainerPayload = {
+  title: string
+  description?: string
+  capacity?: string
+  containerTypeUid?: string
+  preservationUid?: string
+  prePreserved: boolean
+  securitySealIntact: boolean
+}
+
+export type SenaiteSampleContainer = {
+  uid: string
+  title: string
+  description: string
+  capacity: string
+  containerTypeUid: string
+  containerTypeTitle: string
+  preservationUid: string
+  preservationTitle: string
+  prePreserved: boolean
+  securitySealIntact: boolean
+}
+
+function sampleContainerApiBody(payload: SampleContainerPayload): Record<string, unknown> {
+  return {
+    title: payload.title,
+    description: payload.description ?? '',
+    Capacity: payload.capacity || '0 ml',
+    capacity: payload.capacity || '0 ml',
+    pre_preserved: payload.prePreserved,
+    security_seal_intact: payload.securitySealIntact,
+    ...(payload.containerTypeUid ? { container_type: { uid: payload.containerTypeUid } } : {}),
+    ...(payload.preservationUid ? { preservation: { uid: payload.preservationUid } } : {}),
+  }
+}
+
+function mapSenaiteSampleContainer(d: Record<string, unknown>): SenaiteSampleContainer {
+  const containerType = parseRef(d.container_type)
+  const preservation = parseRef(d.preservation)
+  return {
+    uid: (d.uid as string) ?? '',
+    title: (d.title as string) ?? '',
+    description: (d.description as string) ?? '',
+    capacity: (d.Capacity as string) ?? (d.capacity as string) ?? '',
+    containerTypeUid: containerType.uid,
+    containerTypeTitle: containerType.title,
+    preservationUid: preservation.uid,
+    preservationTitle: preservation.title,
+    prePreserved: Boolean(d.pre_preserved ?? false),
+    securitySealIntact: Boolean(d.security_seal_intact ?? false),
+  }
+}
+
+export async function fetchSenaiteSampleContainersFull(token: string): Promise<SenaiteSampleContainer[]> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/SampleContainer?limit=1000`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return ((data.items ?? []) as Record<string, unknown>[]).map(mapSenaiteSampleContainer).filter(d => d.uid && d.title)
+  } catch { return [] }
+}
+
+export async function createSenaiteSampleContainerFull(
+  token: string,
+  payload: SampleContainerPayload
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        portal_type: 'SampleContainer',
+        parent_path: '/senaite/setup/samplecontainers',
+        ...sampleContainerApiBody(payload),
+      }),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok || data.success === false) {
+      return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    }
+    return { success: true }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+export async function updateSenaiteSampleContainer(
+  token: string,
+  uid: string,
+  payload: SampleContainerPayload
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify([{ uid, ...sampleContainerApiBody(payload) }]),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok || data.success === false) {
+      return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    }
+    return { success: true }
+  } catch (e) { return { success: false, error: String(e) } }
+}
 
 export const createSenaiteSamplePoint = (token: string, payload: { title: string; description?: string }) =>
   createSenaiteSetupRef(token, 'SamplePoint', '/senaite/setup/samplepoints', payload, 'sample point')
@@ -918,18 +1076,45 @@ function sampleTypeApiBody(payload: SampleTypePayload): Record<string, unknown> 
   }
 }
 
-// Patches retention_period + admitted_sticker_templates via plone.restapi,
-// the only API path that actually persists them (see sampleTypeApiBody above).
+// Patches retention_period + admitted_sticker_templates via plone.restapi —
+// the only API path that persists retention_period at all (see
+// sampleTypeApiBody above). These used to be sent in ONE bundled PATCH; if
+// either field failed validation, the WHOLE request 400'd and neither field
+// saved — confirmed live: retention_period alone always succeeds, but
+// admitted_sticker_templates (a DataGridField) is rejected by plone.restapi's
+// deserializer with "Object is of wrong type" for ANY non-empty row content,
+// regardless of payload shape tried (only a bare empty list is accepted) —
+// this looks like a genuine plone.restapi/DataGridField incompatibility in
+// this SENAITE version, not a fixable payload-formatting mistake. Splitting
+// into two independent calls so retention_period reliably saves even though
+// sticker templates structurally cannot be set through this API.
 async function patchSampleTypeExtras(
   token: string, url: string, payload: SampleTypePayload
 ): Promise<{ success: boolean; error?: string }> {
   if (!url) return { success: false, error: 'Could not resolve sample type URL for retention/sticker update' }
+  const headers = { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }
+
   try {
-    const res = await fetch(url, {
+    const retentionRes = await fetch(url, {
       method: 'PATCH',
-      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers,
       body: JSON.stringify({
         retention_period: retentionPeriodToSeconds(payload.retentionPeriod ?? { days: 0, hours: 0, minutes: 0 }),
+      }),
+    })
+    if (!retentionRes.ok) {
+      return { success: false, error: `Retention period update failed (HTTP ${retentionRes.status})` }
+    }
+
+    const wantsStickers = (payload.stickerTemplates?.admitted?.length ?? 0) > 0
+      || payload.stickerTemplates?.smallDefault
+      || payload.stickerTemplates?.largeDefault
+    if (!wantsStickers) return { success: true }
+
+    const stickerRes = await fetch(url, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({
         admitted_sticker_templates: [{
           admitted: payload.stickerTemplates?.admitted ?? [],
           small_default: payload.stickerTemplates?.smallDefault || null,
@@ -937,7 +1122,12 @@ async function patchSampleTypeExtras(
         }],
       }),
     })
-    if (!res.ok) return { success: false, error: `Retention/sticker update failed (HTTP ${res.status})` }
+    if (!stickerRes.ok) {
+      return {
+        success: false,
+        error: 'Sticker templates could not be saved via the API — set them directly in SENAITE\'s Sample Types page (retention period was saved).',
+      }
+    }
     return { success: true }
   } catch (e) {
     return { success: false, error: `Retention/sticker update failed: ${String(e)}` }

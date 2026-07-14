@@ -6,6 +6,7 @@ import {
 } from '@/app/actions/storage'
 import { STICKER_TEMPLATES, renderSticker, stickerPageCss, printSticker, type StickerTemplate } from '@/app/lib/stickerTemplates'
 import QrScanModal from '@/app/dashboard/_components/QrScanModal'
+import { sampleDisplayId } from '@/app/lib/sampleDisplay'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -209,7 +210,7 @@ export default function ChainOfCustodyPage() {
           <div className="flex items-center gap-1.5 text-xs" style={{ color: '#6B7280' }}>
             <span style={{ cursor: 'pointer', color: '#0154FC' }}>Samples</span>
             {sample && <><MI name="chevron_right" size={14} color="#9CA3AF" />
-              <span style={{ cursor: 'pointer', color: '#0154FC' }}>{sample.sample_id}</span></>}
+              <span style={{ cursor: 'pointer', color: '#0154FC' }}>{sampleDisplayId(sample)}</span></>}
             <MI name="chevron_right" size={14} color="#9CA3AF" />
             <span style={{ color: '#374151' }}>Store Sample</span>
           </div>
@@ -348,10 +349,10 @@ export default function ChainOfCustodyPage() {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
               {[
-                { label: 'Sample ID',        val: sample.sample_id,                isStatus: false, isBarcode: false },
+                { label: 'Sample ID',        val: sampleDisplayId(sample),         isStatus: false, isBarcode: false },
                 { label: 'Project / Client', val: sample.client,                   isStatus: false, isBarcode: false },
                 { label: 'Sample Type',      val: sample.sample_type,              isStatus: false, isBarcode: false },
-                { label: 'Barcode',          val: sample.barcode || sample.sample_id, isStatus: false, isBarcode: true },
+                { label: 'Barcode',          val: sample.barcode || sampleDisplayId(sample), isStatus: false, isBarcode: true },
                 { label: 'Status',           val: '',                              isStatus: true,  isBarcode: false },
               ].map(f => (
                 <div key={f.label}>
@@ -401,7 +402,7 @@ export default function ChainOfCustodyPage() {
                 <div>
                   <p style={{ fontSize: 11, fontWeight: 700, color: '#166534', margin: '0 0 4px' }}>Barcode Scanned Successfully</p>
                   <p style={{ fontSize: 14, fontWeight: 700, color: '#111827', margin: '0 0 3px', fontFamily: 'monospace', letterSpacing: '0.05em' }}>
-                    {sample.barcode || sample.sample_id}
+                    {sample.barcode || sampleDisplayId(sample)}
                   </p>
                   {loc
                     ? <p style={{ fontSize: 11, color: '#6B7280', margin: 0 }}>{loc.storage_path.split(' / ').slice(-2).join(' / ')} • Slot {loc.slot_id}</p>
@@ -671,8 +672,8 @@ export default function ChainOfCustodyPage() {
             </div>
             <p style={{ fontSize: 11, color: '#6B7280', margin: '0 0 14px' }}>
               {assignMode === 'transfer'
-                ? `Enter the label code of the new location for ${sample.sample_id}. Confirming will move the sample out of its current slot.`
-                : `Enter a storage label code (box, rack or slot) for ${sample.sample_id}.`}
+                ? `Enter the label code of the new location for ${sampleDisplayId(sample)}. Confirming will move the sample out of its current slot.`
+                : `Enter a storage label code (box, rack or slot) for ${sampleDisplayId(sample)}.`}
             </p>
             <div className="flex gap-2">
               <input autoFocus value={labelInput}
@@ -716,7 +717,7 @@ export default function ChainOfCustodyPage() {
               <div className="flex items-center gap-2">
                 <MI name="history" size={16} color="#0154FC" />
                 <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>
-                  Full Custody History{sample ? ` — ${sample.sample_id}` : ''}
+                  Full Custody History{sample ? ` — ${sampleDisplayId(sample)}` : ''}
                 </span>
               </div>
               <button onClick={() => setHistoryOpen(false)} style={{ border: 'none', background: 'none', cursor: 'pointer' }}>

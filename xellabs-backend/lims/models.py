@@ -110,7 +110,54 @@ class Test(models.Model):
         return self.name
 
 
+class DynamicAnalysisSpecification(models.Model):
+    """Mirrors SENAITE's DynamicAnalysisSpec — an uploaded Excel file of
+    Keyword/min/max spec rows. Unlike Specification below, this one has no
+    meaningful existence without its SENAITE counterpart (the file itself
+    lives there, and SENAITE's own parsing is the only thing that can read
+    it back — see core/senaite_service.py push_dynamic_analysis_spec), so
+    senaite_uid is effectively required in practice, populated at create time
+    synchronously rather than via a background signal/task."""
+    name = models.CharField(max_length=200)
+    summary = models.TextField(blank=True)
+    file = models.FileField(upload_to="dynamic_analysis_specs/")
+    senaite_uid = models.CharField(max_length=100, blank=True, db_index=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "dynamic_analysis_specifications"
+
+    def __str__(self):
+        return self.name
+
+
+class AnalysisSpecification(models.Model):
+    """Header — mirrors SENAITE's own AnalysisSpecification (Title,
+    Description, Sample Type, optional Dynamic Analysis Specification link),
+    which contains a grid of many per-test Specification rows (below).
+    Replaces the old one-row-per-test model — see Specification's docstring."""
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    sample_type = models.ForeignKey(SampleType, on_delete=models.CASCADE, related_name="analysis_specifications")
+    dynamic_spec = models.ForeignKey(
+        DynamicAnalysisSpecification, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="analysis_specifications",
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "analysis_specifications"
+
+    def __str__(self):
+        return self.title
+
+
 class Specification(models.Model):
+    """A single test's row within an AnalysisSpecification's grid — mirrors
+    SENAITE's per-service spec row (Min/Max/Warn thresholds + the display
+    value/comment shown when a result falls outside range)."""
     OPERATOR_CHOICES = [
         (">=", "Greater than or equal (>=)"),
         (">", "Greater than (>)"),
@@ -118,12 +165,19 @@ class Specification(models.Model):
         ("<", "Less than (<)"),
     ]
 
+    specification = models.ForeignKey(AnalysisSpecification, on_delete=models.CASCADE, related_name="rows")
     test = models.ForeignKey(Test, on_delete=models.CASCADE, related_name="specifications")
-    sample_type = models.ForeignKey(SampleType, on_delete=models.CASCADE)
     min_value = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
     max_value = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
     min_operator = models.CharField(max_length=5, default=">=", choices=OPERATOR_CHOICES)
     max_operator = models.CharField(max_length=5, default="<=", choices=OPERATOR_CHOICES)
+    min_warn = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
+    max_warn = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
+    # Display value/comment shown in results/reports when a result falls
+    # outside range — mirrors SENAITE's "< Min" / "> Max" / "Out of range comment".
+    out_of_range_low = models.CharField(max_length=100, blank=True)
+    out_of_range_high = models.CharField(max_length=100, blank=True)
+    out_of_range_comment = models.CharField(max_length=500, blank=True)
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -215,7 +269,11 @@ class Sample(models.Model):
     batch_sub_group = models.CharField(max_length=100, blank=True)
     container_type = models.CharField(max_length=100, blank=True)
     preservation = models.CharField(max_length=100, blank=True)
-    analysis_specification = models.CharField(max_length=100, blank=True)
+    analysis_specification = models.ForeignKey(
+        AnalysisSpecification, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="samples",
+        db_column="analysis_specification",
+    )
     sample_point = models.CharField(max_length=200, blank=True)
     environmental_conditions = models.CharField(max_length=100, blank=True)
     composite = models.BooleanField(default=False)

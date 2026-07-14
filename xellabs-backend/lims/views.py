@@ -11,11 +11,13 @@ from core.permissions import (
 )
 from .models import (
     SampleType, SampleTemplate, AnalysisProfile, Method, Calculation, Test, Specification,
+    DynamicAnalysisSpecification, AnalysisSpecification,
     Sample, AnalysisRequest, Worksheet, WorksheetAssignment,
     Result, QCSample, ChainOfCustody,
 )
 from .serializers import (
     SampleTypeSerializer, SampleTemplateSerializer, AnalysisProfileSerializer, MethodSerializer, CalculationSerializer, TestSerializer, SpecificationSerializer,
+    DynamicAnalysisSpecificationSerializer, AnalysisSpecificationSerializer,
     SampleSerializer, AnalysisRequestSerializer, WorksheetSerializer,
     WorksheetAssignmentSerializer, ResultSerializer, QCSampleSerializer,
     ChainOfCustodySerializer,
@@ -158,13 +160,133 @@ class TestViewSet(viewsets.ModelViewSet):
     filterset_fields = ["is_active", "method"]
     search_fields = ["name", "code"]
 
+    @action(detail=False, methods=["post"], url_path="sync-from-senaite")
+    def sync_from_senaite(self, request):
+        """Create any SENAITE Analysis Services missing from Django's Test table,
+        matched by senaite_uid. Without this, Test rows created outside the Analyses
+        admin module (or seeded manually) never carry a senaite_uid, so Sample
+        Template / Analysis Specification auto-populate on the New Sample page can
+        never match anything — same "sync before dropdown" pattern as SampleType."""
+        if request.user.role not in ('admin', 'lab_manager'):
+            return Response(
+                {'detail': 'Only lab managers can sync tests from SENAITE.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        import base64, requests as http_requests
+        from django.conf import settings
+        senaite_url = settings.SENAITE_URL
+        user = settings.SENAITE_USER
+        pw = settings.SENAITE_PASSWORD
+        token = base64.b64encode(f"{user}:{pw}".encode()).decode()
+        try:
+            resp = http_requests.get(
+                f"{senaite_url}/@@API/senaite/v1/AnalysisService",
+                headers={"Authorization": f"Basic {token}"},
+                params={"complete": "yes", "b_size": 1000},
+                timeout=8,
+            )
+            resp.raise_for_status()
+            senaite_services = resp.json().get("items", [])
+        except Exception as e:
+            from core.senaite_service import _sanitize_error
+            logger.error("Test sync failed: %s", e)
+            return Response(
+                {"detail": f"The lab system is unreachable: {_sanitize_error(str(e))}"},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        created_names = []
+        skipped = []
+        for svc in senaite_services:
+            uid = svc.get("uid", "")
+            name = (svc.get("title") or "").strip()
+            code = (svc.get("Keyword") or name[:50] or "").strip()
+            if not name or not uid:
+                continue
+            try:
+                existing_by_uid = Test.objects.filter(senaite_uid=uid).first()
+                if existing_by_uid:
+                    continue
+                existing_by_code = Test.objects.filter(code=code).first()
+                if existing_by_code:
+                    if not existing_by_code.senaite_uid:
+                        # Pre-existing row with a matching code but no senaite_uid yet
+                        # (e.g. hand-seeded) — adopt the uid instead of colliding.
+                        existing_by_code.senaite_uid = uid
+                        existing_by_code.save(update_fields=["senaite_uid"])
+                    continue
+                Test.objects.create(
+                    name=name,
+                    code=code,
+                    unit=(svc.get("Unit") or "")[:50],
+                    senaite_uid=uid,
+                    is_active=True,
+                )
+                created_names.append(name)
+            except Exception as e:
+                logger.warning("Test sync skipped %r: %s", name, e)
+                skipped.append(name)
+
+        return Response({"synced": len(created_names), "created": created_names, "skipped": skipped})
+
+
+class DynamicAnalysisSpecificationViewSet(viewsets.ModelViewSet):
+    queryset = DynamicAnalysisSpecification.objects.all()
+    serializer_class = DynamicAnalysisSpecificationSerializer
+    permission_classes = [ReadOnlyOrLabManager]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ["is_active"]
+    search_fields = ["name"]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def create(self, request, *args, **kwargs):
+        # SENAITE first (source of truth for the file itself — see
+        # core/senaite_service.py push_dynamic_analysis_spec docstring for why
+        # this specific object type has to go through Plone's REST API). No
+        # Django row is created if SENAITE rejects it — same "no orphan
+        # Django-only records" discipline used for Sample registration.
+        from core.senaite_service import push_dynamic_analysis_spec
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        uploaded_file = serializer.validated_data["file"]
+        uploaded_file.seek(0)
+        result = push_dynamic_analysis_spec(
+            name=serializer.validated_data["name"],
+            summary=serializer.validated_data.get("summary", ""),
+            file_bytes=uploaded_file.read(),
+            filename=uploaded_file.name,
+        )
+        if not result.get("ok"):
+            return Response(
+                {"detail": f"The lab system rejected the file: {result.get('error')}"},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        uploaded_file.seek(0)
+        # DRF's auto-generated BooleanField doesn't reliably inherit the model's
+        # default=True when the client omits is_active entirely (confirmed live:
+        # came back False without this) — force the intended default explicitly
+        # unless the client actually sent a value for it.
+        is_active = True if "is_active" not in request.data else serializer.validated_data.get("is_active", True)
+        instance = serializer.save(senaite_uid=result["uid"], is_active=is_active)
+        return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)
+
+
+class AnalysisSpecificationViewSet(viewsets.ModelViewSet):
+    queryset = AnalysisSpecification.objects.select_related("sample_type", "dynamic_spec").prefetch_related("rows__test").all()
+    serializer_class = AnalysisSpecificationSerializer
+    permission_classes = [ReadOnlyOrLabManager]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ["sample_type", "is_active"]
+    search_fields = ["title"]
+
 
 class SpecificationViewSet(viewsets.ModelViewSet):
-    queryset = Specification.objects.select_related("test", "sample_type").all()
+    queryset = Specification.objects.select_related("test", "specification__sample_type").all()
     serializer_class = SpecificationSerializer
     permission_classes = [ReadOnlyOrLabManager]
     filter_backends = [DjangoFilterBackend]
-    filterset_fields = ["test", "sample_type", "is_active"]
+    filterset_fields = ["test", "specification", "is_active"]
 
 
 class SampleViewSet(viewsets.ModelViewSet):

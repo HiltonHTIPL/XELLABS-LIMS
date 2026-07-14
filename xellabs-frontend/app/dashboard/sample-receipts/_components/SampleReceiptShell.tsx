@@ -5,6 +5,7 @@ import { receiveLabSample, type LabSample } from '@/app/actions/lab-samples'
 import { assignSampleByLabel } from '@/app/actions/storage'
 import StorageLocationInput, { type SelectedStorage } from '@/app/dashboard/_components/StorageLocationInput'
 import LiveBarcode from '@/app/dashboard/_components/LiveBarcode'
+import { sampleDisplayId } from '@/app/lib/sampleDisplay'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -180,8 +181,8 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
             <p style={{ fontSize: 12, color: '#9CA3AF', marginTop: 3 }}>
               {sample
                 ? alreadyReceived
-                  ? `Receipt record for sample ${sample.sample_id}`
-                  : `Receiving sample ${sample.sample_id}`
+                  ? `Receipt record for sample ${sampleDisplayId(sample)}`
+                  : `Receiving sample ${sampleDisplayId(sample)}`
                 : 'Select a registered sample from Samples Overview to begin.'}
             </p>
           </div>
@@ -227,7 +228,7 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
 
           {/* Row 1 — read-only sample details */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 14 }}>
-            <LabelInput label="Sample ID" readOnly value={sample?.sample_id ?? '—'} />
+            <LabelInput label="Sample ID" readOnly value={sample ? sampleDisplayId(sample) : '—'} />
             <LabelInput label="Client" readOnly value={sample?.client_name ?? '—'} />
             <LabelInput label="Sample Type" readOnly value={sample?.sample_type_name ?? '—'} />
           </div>
@@ -379,10 +380,10 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
           <div className="px-4 py-4">
             <p style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', marginBottom: 6 }}>Barcode Preview</p>
             <div className="rounded-lg overflow-hidden mb-1" style={{ backgroundColor: '#fff', border: '1px solid #F3F4F6', padding: '8px 4px 4px' }}>
-              <Barcode label={sample?.sample_id ?? '—'} />
+              <Barcode label={sample ? sampleDisplayId(sample) : '—'} />
             </div>
             <p style={{ fontSize: 9, color: '#9CA3AF', textAlign: 'center', marginBottom: 16 }}>
-              {sample ? `${sample.sample_id} · ${sample.sample_type_name}` : 'No sample selected'}
+              {sample ? `${sampleDisplayId(sample)} · ${sample.sample_type_name}` : 'No sample selected'}
             </p>
             {sample && (
               <>

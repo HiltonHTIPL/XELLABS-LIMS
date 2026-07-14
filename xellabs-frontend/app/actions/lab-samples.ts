@@ -438,6 +438,12 @@ export async function syncSampleTypesFromSenaite(): Promise<void> {
   } catch { /* non-fatal — new sample page still loads */ }
 }
 
+export async function syncTestsFromSenaite(): Promise<void> {
+  try {
+    await djangoFetch('/api/lims/tests/sync-from-senaite/', { method: 'POST' })
+  } catch { /* non-fatal — new sample page still loads */ }
+}
+
 export async function patchLabSample(id: number, patch: Record<string, unknown>): Promise<{ ok: boolean; message?: string }> {
   try {
     const res = await djangoFetch(`/api/lims/samples/${id}/`, {

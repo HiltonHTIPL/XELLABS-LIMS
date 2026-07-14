@@ -72,11 +72,28 @@ def check_result_against_spec(result):
         )
 
     wa = result.worksheet_assignment
-    spec = Specification.objects.filter(
-        test=wa.test,
-        sample_type=wa.analysis_request.sample.sample_type,
-        is_active=True,
-    ).first()
+    sample = wa.analysis_request.sample
+
+    # Honor the specific Analysis Specification chosen at sample registration
+    # first — two specs can share a sample_type but carry different limits
+    # (e.g. "Drinking Water" vs "Irrigation Water"), so guessing by sample_type
+    # alone can silently check a result against the wrong thresholds. Only fall
+    # back to a sample_type-wide guess when no specification was selected.
+    spec = None
+    if sample.analysis_specification_id:
+        spec = Specification.objects.filter(
+            test=wa.test,
+            specification_id=sample.analysis_specification_id,
+            specification__is_active=True,
+            is_active=True,
+        ).first()
+    if not spec:
+        spec = Specification.objects.filter(
+            test=wa.test,
+            specification__sample_type=sample.sample_type,
+            specification__is_active=True,
+            is_active=True,
+        ).first()
 
     if not spec:
         return False

@@ -143,6 +143,15 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
                 .first()
             )
         if not sample_obj:
+            # Try the real SENAITE-assigned id — the UI displays this as "the"
+            # Sample ID (see app/lib/sampleDisplay.ts), so a user typing or
+            # scanning exactly what's on screen must resolve here too.
+            sample_obj = (
+                Sample.objects.select_related("sample_type", "client", "received_by")
+                .filter(senaite_ar_id=sample_id)
+                .first()
+            )
+        if not sample_obj:
             return Response({"error": f"Sample '{sample_id}' not found."}, status=status.HTTP_404_NOT_FOUND)
 
         # Use the canonical sample_id (barcode scan may have passed barcode value)
@@ -150,6 +159,7 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
 
         sample_data = {
             "sample_id": canonical_id,
+            "senaite_ar_id": sample_obj.senaite_ar_id or "",
             "status": sample_obj.status,
             "status_display": sample_obj.get_status_display(),
             "sample_type": sample_obj.sample_type.name if sample_obj.sample_type else "",

@@ -4,7 +4,6 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { T } from './tokens'
-import { ADMIN_SECTIONS } from './adminNav'
 
 function MI({ name, size = 16 }: { name: string; size?: number }) {
   return <span className="material-icons" style={{ fontSize: size, lineHeight: 1 }}>{name}</span>
@@ -56,23 +55,13 @@ const NAV: NavEntry[] = [
   // sidebar limited to: Dashboard, Clients, Samples, Methods, Batches, Worksheet,
   // Quality, Storage Manager, Instruments, Reports, Administration. Do not add a
   // new top-level entry here without asking first — see CLAUDE.md.
-  // Administration group — visibility is intentionally wide open (null) because
-  // several children below (Tasks, Results, Chain of Custody, Analysis Requests)
-  // are visible to roles (analyst/reviewer/client/receptionist) narrower than the
-  // classic admin/lab_manager set. Each child still gates itself via its own
-  // `roles` — this group-level gate must stay at least as wide as the widest child.
-  {
-    group: 'Administration',
-    icon: 'admin_panel_settings',
-    roles: null,
-    linkOnly: true,
-    href: '/dashboard/admin',
-    children: ADMIN_SECTIONS,
-    // Tenant Management nav entry hidden for the single-tenant demo phase — the
-    // route/backend/permissions are untouched and fully working, just not
-    // linked from nav. Re-add once real multi-tenant onboarding ships:
-    // { label: 'Tenant Management', href: '/dashboard/tenant-management', icon: 'corporate_fare', roles: ['admin'], superuserOnly: true },
-  },
+  // Administration is a single entry point (not a dropdown) — clicking it opens
+  // the /dashboard/admin grid page, which renders ADMIN_SECTIONS as tiles from
+  // the same single source (adminNav.ts). Visibility stays wide open (null)
+  // because the grid page itself gates each tile per its own roles, and several
+  // sections are visible to roles narrower than the classic admin/lab_manager
+  // set — the grid page filters them, so the entry point must not pre-gate.
+  { label: 'Administration', href: '/dashboard/admin', icon: 'admin_panel_settings', roles: null },
 ]
 
 interface Props {
@@ -87,12 +76,6 @@ export default function Sidebar({ onToggle, role, reportDraftCount, isSuperuser 
 
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
     const open = new Set<string>()
-    if ([
-      '/dashboard/admin', '/dashboard/sample-types', '/dashboard/sample-templates', '/dashboard/analyses', '/dashboard/analysis-profiles',
-      '/dashboard/tests', '/dashboard/specifications', '/dashboard/analysis-requests', '/dashboard/results',
-      '/dashboard/tasks', '/dashboard/chain-of-custody', '/dashboard/approvals', '/dashboard/audit-trail',
-      '/dashboard/master-data-import', '/dashboard/instrument-list', '/dashboard/storage-list', '/dashboard/settings', '/dashboard/tenant-management',
-    ].some(p => pathname.startsWith(p))) open.add('Administration')
     if (['/dashboard/samples-overview', '/dashboard/samples/new'].some(p => pathname.startsWith(p))) open.add('Samples')
     if (['/dashboard/inventory-items', '/dashboard/inventory-lots', '/dashboard/instrument-maintenance'].some(p => pathname.startsWith(p))) open.add('Instruments')
     return open

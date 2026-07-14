@@ -8,18 +8,11 @@ import { type AnalysisRequest } from '@/app/actions/analysis-requests'
 import LiveBarcode from '@/app/dashboard/_components/LiveBarcode'
 import { STICKER_TEMPLATES, printSticker, type StickerTemplate } from '@/app/lib/stickerTemplates'
 import { type CocSample } from '@/app/actions/storage'
+import { sampleDisplayId as displayId } from '@/app/lib/sampleDisplay'
 
 // renderSticker/printSticker were built for the chain-of-custody lookup shape
 // (CocSample) — adapt LabSample into it rather than writing a second sticker
 // renderer, so both pages print from the exact same templates/logic.
-// sample_id is Django's own locally-generated ID (prefix + today's date +
-// sequence, e.g. "E2E-20260714-0001") — cosmetically similar to but NOT the
-// real SENAITE-assigned ID (e.g. "E2E-0001"), which is stored separately in
-// senaite_ar_id. Always prefer the real SENAITE ID for anything user-facing;
-// fall back to sample_id only for samples created before senaite_ar_id existed.
-function displayId(s: LabSample): string {
-  return s.senaite_ar_id || s.sample_id
-}
 
 function toCocSample(s: LabSample): CocSample {
   return {

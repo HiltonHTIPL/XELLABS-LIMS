@@ -662,6 +662,62 @@ def import_storage_location_row(row: dict) -> dict:
         return {"ok": False, "title": title, "error": _sanitize_error(str(exc))}
 
 
+# In local dev, SENAITE_URL already includes the site path (e.g.
+# "http://senaite:8080/senaite"), so the parent path must NOT repeat "/senaite"
+# or it 404s ("...senaite/senaite/setup/..." — confirmed live). In production,
+# SENAITE_URL points at the host with no site path, so "/senaite" must be
+# included here instead. settings.DEBUG (True locally, False in production —
+# see config/settings.py) is what distinguishes the two environments.
+DYNAMIC_ANALYSIS_SPECS_PARENT_PATH = (
+    "/setup/dynamicanalysisspecs" if settings.DEBUG else "/senaite/setup/dynamicanalysisspecs"
+)
+
+
+def push_dynamic_analysis_spec(name: str, summary: str, file_bytes: bytes, filename: str) -> dict:
+    """
+    Create a SENAITE DynamicAnalysisSpec (an uploaded Excel file of Keyword/
+    min/max spec rows). Confirmed live via direct testing that this specific
+    content type's file field can ONLY be created through Plone's own native
+    REST API (POST to the parent folder path with {"@type": ..., field: {
+    "filename", "data": base64, "encoding": "base64", "content-type"}}) —
+    senaite.jsonapi's generic create verb does NOT correctly deserialize the
+    file field (fails with a base64 "Incorrect padding" error there every
+    time), while Plone's native API succeeds cleanly (confirmed via a real
+    201 + UID). This is the one object type in this codebase created via
+    Plone's REST API instead of senaite.jsonapi.
+    Returns {"ok": True, "uid": uid} or {"ok": False, "error": ...}.
+    """
+    import base64
+    s = _session()
+    s.headers.update({"Accept": "application/json"})
+    try:
+        resp = s.post(
+            f"{SENAITE_URL}{DYNAMIC_ANALYSIS_SPECS_PARENT_PATH}",
+            json={
+                "@type": "DynamicAnalysisSpec",
+                "title": name,
+                "description": summary or "",
+                "specs_file": {
+                    "filename": filename,
+                    "data": base64.b64encode(file_bytes).decode(),
+                    "encoding": "base64",
+                    "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                },
+            },
+            timeout=30,
+        )
+        if resp.status_code not in (200, 201):
+            return {"ok": False, "error": _sanitize_error(f"HTTP {resp.status_code}: {resp.text[:300]}")}
+        data = resp.json()
+        uid = data.get("UID") or data.get("uid")
+        if not uid:
+            return {"ok": False, "error": _sanitize_error(f"No UID returned: {data}")}
+        logger.info("SENAITE DynamicAnalysisSpec created: %s -> uid=%s", name, uid)
+        return {"ok": True, "uid": uid}
+    except Exception as exc:
+        return {"ok": False, "error": _sanitize_error(str(exc))}
+
+
 def delete_object(uid: str) -> dict:
     """
     Deactivate a SENAITE object by UID (SENAITE's JSON API 'delete' endpoint performs a

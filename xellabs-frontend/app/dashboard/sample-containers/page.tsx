@@ -1,16 +1,13 @@
-import { getSampleContainers, createSampleContainer } from '@/app/actions/reference-data'
-import ReferenceListShell from '../_components/ReferenceListShell'
+import { getSampleContainersPageData } from '@/app/actions/sample-containers'
+import SampleContainersShell from './_components/SampleContainersShell'
 
 export default async function SampleContainersPage() {
-  const items = await getSampleContainers()
+  const { sampleContainers, containerTypes, preservations } = await getSampleContainersPageData()
   return (
-    <ReferenceListShell
-      title="Sample Containers"
-      subtitle="Manage the container options offered when building sample templates"
-      entityLabel="Container"
-      icon="science"
-      initialItems={items}
-      createAction={createSampleContainer}
+    <SampleContainersShell
+      initialSampleContainers={sampleContainers}
+      containerTypes={containerTypes}
+      preservations={preservations}
     />
   )
 }

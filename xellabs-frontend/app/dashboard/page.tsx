@@ -4,6 +4,7 @@ import { getSampleStats, getLabSamples, getTatTrend } from '@/app/actions/lab-sa
 import { getOpenTasks } from '@/app/actions/tasks'
 import { TrendChart, StatusDonut } from './_components/DashboardCharts'
 import { T, MI, PageHeader, StatCard, Card, Chip, thStyle, tdStyle, linkStyle } from './_components/ui'
+import { sampleDisplayId } from '@/app/lib/sampleDisplay'
 
 const PRIORITY_LABEL: Record<string, 'High' | 'Medium' | 'Low'> = {
   urgent: 'High', high: 'High', normal: 'Medium', low: 'Low',
@@ -148,7 +149,7 @@ export default async function DashboardPage() {
                   const tone = STATUS_TONE[statusLabel] ?? 'gray'
                   return (
                     <tr key={s.id} className="hover:bg-slate-50">
-                      <td style={tdStyle}><Link href={`/dashboard/samples/${s.id}`} style={linkStyle}>{s.sample_id}</Link></td>
+                      <td style={tdStyle}><Link href={`/dashboard/samples/${s.id}`} style={linkStyle}>{sampleDisplayId(s)}</Link></td>
                       <td style={tdStyle}>{s.client_name || '—'}</td>
                       <td style={tdStyle}>{s.sample_type_name || '—'}</td>
                       <td style={tdStyle}><Chip tone={tone}>{statusLabel}</Chip></td>
