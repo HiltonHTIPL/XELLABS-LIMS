@@ -4,6 +4,7 @@ from .views import (
     ClientViewSet, UserViewSet, TenantListView, TenantUsersView, TenantDetailView, TenantLogoView,
     TenantManagementViewSet, ClientResetPasswordView, SenaiteInstrumentImportView,
     SenaiteStorageLocationImportView, SenaiteMasterDataDeleteView,
+    SenaiteGroupsView, SenaiteGroupDetailView, SenaiteGroupRoleView,
 )
 
 router = DefaultRouter()
@@ -23,4 +24,7 @@ urlpatterns = router.urls + [
     path('senaite-import/instruments/', SenaiteInstrumentImportView.as_view(), name='senaite-import-instruments'),
     path('senaite-import/storage-locations/', SenaiteStorageLocationImportView.as_view(), name='senaite-import-storage-locations'),
     path('senaite-import/delete/', SenaiteMasterDataDeleteView.as_view(), name='senaite-import-delete'),
+    path('senaite-groups/', SenaiteGroupsView.as_view(), name='senaite-groups'),
+    path('senaite-groups/<str:group_id>/', SenaiteGroupDetailView.as_view(), name='senaite-group-detail'),
+    path('senaite-groups/<str:group_id>/role/', SenaiteGroupRoleView.as_view(), name='senaite-group-role'),
 ]

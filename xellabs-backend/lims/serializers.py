@@ -2,7 +2,7 @@ from django.db import IntegrityError, transaction
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 from .models import (
-    SampleType, SampleTemplate, AnalysisProfile, Method, Test, Specification,
+    SampleType, SampleTemplate, AnalysisProfile, Method, Calculation, Test, Specification,
     Sample, AnalysisRequest, Worksheet, WorksheetAssignment,
     Result, QCSample, ChainOfCustody,
 )
@@ -61,10 +61,52 @@ class AnalysisProfileSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+class CalculationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Calculation
+        fields = "__all__"
+
+
 class MethodSerializer(serializers.ModelSerializer):
+    instruments = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = Method
         fields = "__all__"
+
+    def get_fields(self):
+        from instruments.models import Instrument
+        fields = super().get_fields()
+        fields["instrument_ids"] = serializers.PrimaryKeyRelatedField(
+            source="instruments", many=True, write_only=True, required=False,
+            queryset=Instrument.objects.all(),
+        )
+        return fields
+
+    def get_instruments(self, obj):
+        return list(obj.instrumentmethod_set.values_list("instrument_id", flat=True))
+
+    def _sync_instruments(self, method, instrument_list):
+        from instruments.models import InstrumentMethod
+        if instrument_list is None:
+            return
+        existing_ids = set(method.instrumentmethod_set.values_list("instrument_id", flat=True))
+        wanted_ids = {i.pk for i in instrument_list}
+        InstrumentMethod.objects.filter(method=method, instrument_id__in=existing_ids - wanted_ids).delete()
+        for instrument_id in wanted_ids - existing_ids:
+            InstrumentMethod.objects.create(method=method, instrument_id=instrument_id)
+
+    def create(self, validated_data):
+        instrument_list = validated_data.pop("instruments", None)
+        method = super().create(validated_data)
+        self._sync_instruments(method, instrument_list)
+        return method
+
+    def update(self, instance, validated_data):
+        instrument_list = validated_data.pop("instruments", None)
+        method = super().update(instance, validated_data)
+        self._sync_instruments(method, instrument_list)
+        return method
 
 
 class TestSerializer(serializers.ModelSerializer):

@@ -30,7 +30,7 @@ function MI({ name, size = 16, color }: { name: string; size?: number; color?: s
 }
 
 const TYPE_ICONS: Record<string, string> = {
-  room: 'meeting_room', fridge: 'thermostat', freezer: 'ac_unit',
+  building: 'apartment', room: 'meeting_room', fridge: 'thermostat', freezer: 'ac_unit',
   cabinet: 'inventory_2', shelf: 'view_agenda', box: 'grid_view',
 }
 

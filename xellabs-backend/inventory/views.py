@@ -14,6 +14,25 @@ from .serializers import (
 )
 
 
+def _queue_sample_storage_transition(sample_id: str, transition: str):
+    """Fire the SENAITE 'store'/'recover' transition for a sample's AnalysisRequest,
+    so a XelLabs slot assign/unassign is reflected as a real SENAITE workflow state
+    change (see core/senaite_service.py set_sample_storage_transition). Fire-and-forget
+    like every other SENAITE sync in this codebase — a sample not yet synced to
+    SENAITE (no senaite_uid) simply has nothing to transition, which is fine."""
+    from lims.models import AnalysisRequest
+    from inventory.tasks import sync_sample_storage_transition
+
+    ar = (
+        AnalysisRequest.objects.filter(sample__sample_id=sample_id)
+        .exclude(senaite_uid="")
+        .order_by("-pk")
+        .first()
+    )
+    if ar:
+        sync_sample_storage_transition.apply_async(args=[ar.senaite_uid, transition])
+
+
 def _assign_sample_to_slot(slot, sample_id, user):
     """Single owner of "a sample enters a slot": race-guarded occupy + audit log.
 
@@ -54,6 +73,8 @@ def _assign_sample_to_slot(slot, sample_id, user):
     for _sample in Sample.objects.filter(sample_id=sample_id):
         _sample.storage_location = storage_path
         _sample.save(update_fields=["storage_location", "updated_at"])
+
+    _queue_sample_storage_transition(sample_id, "store")
 
     from django.contrib.contenttypes.models import ContentType
     from audittrail.models import AuditEvent
@@ -416,6 +437,8 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
                 _sample.storage_location = ''
                 _sample.save(update_fields=["storage_location", "updated_at"])
 
+            _queue_sample_storage_transition(released_sample_id, "recover")
+
         from django.contrib.contenttypes.models import ContentType
         from audittrail.models import AuditEvent
         AuditEvent.objects.create(
@@ -445,7 +468,6 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
             StorageLocation.objects.filter(parent=box, location_type='box_location')
             .values_list('slot_id', flat=True)
         )
-        inherited = StorageLocation.slot_inherited_fields(box)
         to_create = []
         for r in range(rows):
             row_letter = chr(65 + r)
@@ -459,7 +481,6 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
                         slot_id=slot_id,
                         is_occupied=False,
                         label_code=StorageLocation.slot_label_code(box, slot_id),
-                        **inherited,
                     ))
         if to_create:
             StorageLocation.objects.bulk_create(to_create)

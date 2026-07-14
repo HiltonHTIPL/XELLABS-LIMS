@@ -59,10 +59,29 @@ class AnalysisProfile(models.Model):
         return self.name
 
 
+class Calculation(models.Model):
+    name = models.CharField(max_length=200)
+    code = models.CharField(max_length=50, unique=True)
+    formula = models.TextField(blank=True)
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "calculations"
+
+    def __str__(self):
+        return self.name
+
+
 class Method(models.Model):
     name = models.CharField(max_length=200)
     code = models.CharField(max_length=50, unique=True)
     description = models.TextField(blank=True)
+    accredited = models.BooleanField(default=False)
+    instructions = models.TextField(blank=True)
+    document = models.FileField(upload_to="method_documents/", blank=True, null=True)
+    calculations = models.ManyToManyField(Calculation, blank=True, related_name="methods")
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

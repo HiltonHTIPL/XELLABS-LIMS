@@ -152,6 +152,55 @@ def _find_active_by_title(portal_type: str, title: str) -> dict | None:
         return None
 
 
+def _ensure_client_contact(client, client_path: str) -> "str | None":
+    """
+    Every AnalysisRequest requires a Contact — SENAITE re-validates the AR's full
+    schema on every 'update' call, including a transition-only payload (confirmed
+    via live testing while wiring the senaite.storage store/recover transition:
+    every existing AR failed with "Contact is required" because this was never
+    set at creation time — a latent gap, since nothing called update() on an AR
+    itself until the storage rewire needed to). Reuses the client's existing
+    Contact if one exists; creates one from the client's own contact_* fields
+    otherwise.
+    Filters client-side rather than trusting a `path=` server-side query filter —
+    SENAITE list filters have repeatedly been found to silently ignore query
+    params instead of erroring (see _find_by_title's docstring / CLAUDE.md), and
+    trusting one here would risk creating a duplicate Contact on every sync.
+    """
+    s = _session()
+    try:
+        resp = s.get(_api("Contact"), params={"complete": "true", "limit": "1000", "review_state": "active"}, timeout=15)
+        resp.raise_for_status()
+        for item in resp.json().get("items") or []:
+            if item.get("parent_path") == client_path:
+                return item.get("uid")
+    except requests.RequestException as exc:
+        logger.warning("Contact lookup failed for client path '%s': %s", client_path, exc)
+
+    payload = {
+        "portal_type": "Contact",
+        "parent_path": client_path,
+        "Firstname": client.contact_first_name or client.name or "Lab",
+        "Surname": client.contact_last_name or "Contact",
+    }
+    if client.contact_email:
+        payload["EmailAddress"] = client.contact_email
+    if client.contact_phone:
+        payload["BusinessPhone"] = client.contact_phone
+    try:
+        resp = s.post(_api("create"), json=payload, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("success") is False:
+            logger.error("Could not create Contact for client path '%s': %s", client_path, data.get("message") or data)
+            return None
+        items = data.get("items") or []
+        return items[0].get("uid") if items else None
+    except requests.RequestException as exc:
+        logger.error("Could not create Contact for client path '%s': %s", client_path, exc)
+        return None
+
+
 def push_analysis_request(ar) -> str | None:
     """
     Push an AnalysisRequest + its Sample to SENAITE.
@@ -183,6 +232,11 @@ def push_analysis_request(ar) -> str | None:
             client_path = None
     if not client_path:
         logger.error("Cannot push AR %s — could not resolve client path in SENAITE.", ar.ar_id)
+        return None
+
+    contact_uid = _ensure_client_contact(client, client_path)
+    if not contact_uid:
+        logger.error("Cannot push AR %s — could not resolve/create a Contact for client '%s'.", ar.ar_id, client.name)
         return None
 
     # SampleType must be a UID, not a name.
@@ -222,6 +276,7 @@ def push_analysis_request(ar) -> str | None:
     payload = {
         "portal_type": "AnalysisRequest",
         "parent_path": client_path,
+        "Contact": contact_uid,
         "SampleType": sample_type_uid,
         "DateSampled": (sample.collection_date or timezone.now()).isoformat(),
         "ClientSampleID": sample.sample_id,
@@ -255,10 +310,10 @@ def push_analysis_request(ar) -> str | None:
         return None
 
 
-# ── Storage Location sync ─────────────────────────────────────────────────────
-
 def _build_storage_path(location) -> str:
-    """Walk up parent chain to build full path, e.g. 'Room 1 / Fridge A / Shelf 2'."""
+    """Walk up parent chain to build a human-readable path, e.g. 'Room 1 / Fridge A /
+    Shelf 2' — XelLabs-internal display only (denormalized onto Sample.storage_location),
+    no longer sent to SENAITE now that real hierarchy objects carry their own path."""
     from inventory.models import StorageLocation
     parts = [location.name]
     current = location
@@ -271,42 +326,135 @@ def _build_storage_path(location) -> str:
     return ' / '.join(parts)
 
 
-def _build_senaite_payload(location, title: str) -> dict:
+# ── Storage Location sync (senaite.storage add-on) ────────────────────────────
+#
+# XelLabs' StorageLocation tree maps onto senaite.storage's real content-type
+# hierarchy (Strategy pattern — dispatch table instead of an if/elif chain per
+# location_type, same shape as ROLE_TO_SENAITE_GROUP below):
+#
+#   building                 -> StorageFacility          (top-level, own site)
+#   room                     -> StoragePosition           (nestable placeholder, building-only)
+#   fridge/freezer/cabinet   -> StorageContainer          (has Temperature; nestable)
+#   shelf                    -> StorageContainer          (nested under fridge/freezer/cabinet)
+#   box                      -> StorageSamplesContainer   (terminal grid: Rows/Columns)
+#   box_location (slot)      -> not a separate SENAITE object at all — a slot is
+#                               represented inside its box's own PositionsLayout,
+#                               so push_storage_location() is a no-op for these
+#                               (the signal that queues sync already skips them).
+#
+# fridge/freezer/cabinet deliberately do NOT map to StoragePosition — confirmed
+# live that StoragePosition cannot directly hold a StorageSamplesContainer
+# ("Creation of 'StorageSamplesContainer' in '.../SP-xxxxx' is not allowed").
+# StorageContainer can hold either another StorageContainer or a
+# StorageSamplesContainer directly, so a box always has a valid parent no
+# matter how many tiers exist above it. StorageLocation.ALLOWED_PARENT_TYPES
+# (inventory/models.py) enforces the same rule at the XelLabs level: a box can
+# only be created under fridge/freezer/cabinet/shelf, never under building/room.
+STORAGE_ROOT_PATH = "/senaite/senaite_storage"
+
+LOCATION_TYPE_TO_PORTAL_TYPE = {
+    "building": "StorageFacility",
+    "room": "StoragePosition",
+    "fridge": "StorageContainer",
+    "freezer": "StorageContainer",
+    "cabinet": "StorageContainer",
+    "shelf": "StorageContainer",
+    "box": "StorageSamplesContainer",
+}
+
+
+def _resolve_path_by_uid(portal_type: str, uid: str) -> "str | None":
+    """Fallback UID->path lookup, same pattern already used for the AR's client_path
+    fallback — used only if a create response doesn't already include 'path'."""
+    s = _session()
+    try:
+        resp = s.get(_api(portal_type), params={"UID": uid, "complete": "true"}, timeout=15)
+        resp.raise_for_status()
+        items = resp.json().get("items") or []
+        return items[0].get("path") if items else None
+    except requests.RequestException:
+        return None
+
+
+def _build_storage_payload(location, portal_type: str) -> dict:
     payload = {
-        "title": title,
+        "title": location.name,
         "description": location.description or "",
     }
-    for field in [
-        "address", "site_title", "site_code", "site_description",
-        "location_title", "location_code", "location_description",
-        "shelf_title", "shelf_code", "shelf_description",
-    ]:
-        val = getattr(location, field, "")
-        if val:
-            payload[field] = val
-    if location.senaite_location_type:
-        payload["location_type"] = location.senaite_location_type
+    # Only StorageSamplesContainer (box) has a real Rows/Columns grid schema.
+    # Only StorageContainer (fridge/freezer/cabinet/shelf) has a real Temperature field.
+    # Only StorageFacility (building) has Phone/EmailAddress/Address.
+    # StoragePosition (room) has no extra fields beyond title/description.
+    if portal_type == "StorageSamplesContainer":
+        if location.rows:
+            payload["Rows"] = location.rows
+        if location.columns:
+            payload["Columns"] = location.columns
+    elif portal_type == "StorageContainer" and location.temperature is not None:
+        payload["Temperature"] = float(location.temperature)
+    elif portal_type == "StorageFacility":
+        if location.phone:
+            payload["Phone"] = location.phone
+        if location.email:
+            payload["EmailAddress"] = location.email
+        if location.address:
+            # Address is a compound AddressField (country/state/district/city/zip/
+            # address) — XelLabs only tracks one free-text line, so only that
+            # sub-key is sent; the rest stay blank until edited directly in SENAITE.
+            payload["Address"] = {"address": location.address}
     return payload
 
 
-def push_storage_location(location) -> "str | None":
+def push_storage_location(location) -> "tuple[str | None, str | None]":
     """
-    Create or update a StorageLocation in SENAITE.
-    Returns SENAITE UID on success, None on failure (non-fatal).
+    Create or update a StorageLocation node as its mapped senaite.storage content
+    object. Returns (uid, path) on success, (None, None) on failure or if this
+    location's parent hasn't synced yet (caller's Celery task retries, same as
+    before — the parent will have a uid/path by the next attempt).
+    box_location (slot) rows are never pushed here — occupancy lives entirely in
+    senaite.storage's PositionsLayout on the parent box, not as sibling objects.
     """
-    s = _session()
-    title = _build_storage_path(location)
+    portal_type = LOCATION_TYPE_TO_PORTAL_TYPE.get(location.location_type)
+    if not portal_type:
+        return None, None
 
-    try:
-        payload = _build_senaite_payload(location, title)
-
-        if location.senaite_uid:
+    if location.senaite_uid:
+        # Already created — just update title/description/grid size in place.
+        s = _session()
+        try:
+            payload = _build_storage_payload(location, portal_type)
             resp = s.post(_api(f"update/{location.senaite_uid}"), json=payload, timeout=15)
-        else:
-            payload["portal_type"] = "StorageLocation"
-            payload["parent_path"] = "/senaite/setup/storagelocations"
-            resp = s.post(_api("create"), json=payload, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("success") is False:
+                logger.error("SENAITE storage update failed for '%s': %s", location.name, data.get("message") or data)
+                return None, None
+            return location.senaite_uid, location.senaite_path
+        except Exception as exc:
+            logger.error("SENAITE storage update failed for '%s': %s", location.name, exc)
+            return None, None
 
+    # Determine parent_path — root Facilities go directly under STORAGE_ROOT_PATH;
+    # everything else needs its immediate parent already synced (has both a uid
+    # and a cached path) before it can be created as a child of it.
+    if location.parent_id:
+        parent = location.parent
+        if not parent.senaite_uid or not parent.senaite_path:
+            logger.info(
+                "SENAITE storage sync deferred for '%s' — parent '%s' not yet synced.",
+                location.name, parent.name,
+            )
+            return None, None
+        parent_path = parent.senaite_path
+    else:
+        parent_path = STORAGE_ROOT_PATH
+
+    s = _session()
+    try:
+        payload = _build_storage_payload(location, portal_type)
+        payload["portal_type"] = portal_type
+        payload["parent_path"] = parent_path
+        resp = s.post(_api("create"), json=payload, timeout=15)
         resp.raise_for_status()
         data = resp.json()
 
@@ -314,21 +462,51 @@ def push_storage_location(location) -> "str | None":
         # credentials, permission denied) — the real outcome is the body's
         # own `success` flag, not the HTTP status.
         if data.get("success") is False:
-            logger.error("SENAITE storage sync failed for '%s': %s", title, data.get("message") or data)
-            return None
+            logger.error("SENAITE storage sync failed for '%s': %s", location.name, data.get("message") or data)
+            return None, None
 
         items = data.get("items") or []
-        if items:
-            uid = items[0].get("uid") or items[0].get("UID")
-            logger.info("SENAITE storage sync OK: '%s' -> uid=%s", title, uid)
-            return uid
+        if not items:
+            logger.warning("SENAITE storage sync: unexpected response for '%s': %s", location.name, data)
+            return None, None
 
-        logger.warning("SENAITE storage sync: unexpected response for '%s': %s", title, data)
-        return None
+        uid = items[0].get("uid") or items[0].get("UID")
+        path = items[0].get("path") or (_resolve_path_by_uid(portal_type, uid) if uid else None)
+        if not uid or not path:
+            logger.warning("SENAITE storage sync: created '%s' but couldn't resolve uid/path: %s", location.name, data)
+            return None, None
+
+        logger.info("SENAITE storage sync OK: '%s' (%s) -> %s", location.name, portal_type, path)
+        return uid, path
 
     except Exception as exc:
-        logger.error("SENAITE storage sync failed for '%s': %s", title, exc)
-        return None
+        logger.error("SENAITE storage sync failed for '%s': %s", location.name, exc)
+        return None, None
+
+
+def set_sample_storage_transition(ar_uid: str, transition: str) -> dict:
+    """
+    Fire the 'store' or 'recover' workflow transition (added to the sample
+    workflow by the senaite.storage install) directly on an AnalysisRequest,
+    via the same {"transition": ...} update-endpoint mechanism already proven
+    in activate_object(). This is what actually reflects a XelLabs slot
+    assign/unassign as a real SENAITE sample state change.
+    Returns {"ok": True} or {"ok": False, "error": ...}. Never raises.
+    """
+    if not ar_uid:
+        return {"ok": False, "error": "Missing ar_uid"}
+    if transition not in ("store", "recover"):
+        return {"ok": False, "error": f"Unsupported storage transition '{transition}'"}
+    s = _session()
+    try:
+        resp = s.post(_api(f"update/{ar_uid}"), json={"transition": transition}, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("success", True):
+            return {"ok": True}
+        return {"ok": False, "error": _sanitize_error(str(data.get("message") or data))}
+    except Exception as exc:
+        return {"ok": False, "error": _sanitize_error(str(exc))}
 
 
 # ── Master data import (Instruments / Storage Locations) ─────────────────────
@@ -631,6 +809,107 @@ def list_senaite_users() -> list[dict]:
     except requests.RequestException as exc:
         logger.error("list_senaite_users failed: %s", _sanitize_error(str(exc)))
         return []
+
+
+def list_senaite_groups() -> list[dict]:
+    """
+    Fetch every SENAITE group with its current role grants and member count
+    (GET /@groups returns `roles` and `users` per group already — confirmed
+    via direct testing, no need for a per-group follow-up call).
+    Returns [] on any failure — a SENAITE outage must never break the Groups page.
+    """
+    s = _session()
+    try:
+        resp = s.get(_plone_rest_api("@groups"), headers={"Accept": "application/json"}, timeout=15)
+        resp.raise_for_status()
+        return [
+            {
+                "id": g.get("id") or g.get("groupname"),
+                "title": g.get("title") or g.get("id") or g.get("groupname"),
+                "roles": g.get("roles") or [],
+                "member_count": len(g.get("users") or []),
+            }
+            for g in resp.json()
+        ]
+    except requests.RequestException as exc:
+        logger.error("list_senaite_groups failed: %s", _sanitize_error(str(exc)))
+        return []
+
+
+def create_senaite_group(group_id: str, title: str = "") -> dict:
+    """
+    Create a new SENAITE group (Plone @groups POST) — the same operation as
+    SENAITE's own "Add New Group" button. Returns {"ok": True} or
+    {"ok": False, "error": ...}.
+    """
+    s = _session()
+    try:
+        resp = s.post(
+            _plone_rest_api("@groups"),
+            json={"groupname": group_id, "title": title or group_id},
+            headers={"Accept": "application/json"},
+            timeout=15,
+        )
+        if resp.status_code not in (200, 201):
+            return {"ok": False, "error": _sanitize_error(f"HTTP {resp.status_code} {resp.text[:200]}")}
+        return {"ok": True}
+    except requests.RequestException as exc:
+        return {"ok": False, "error": _sanitize_error(str(exc))}
+
+
+def delete_senaite_group(group_id: str) -> dict:
+    """Delete a SENAITE group (Plone @groups DELETE)."""
+    s = _session()
+    try:
+        resp = s.delete(
+            _plone_rest_api(f"@groups/{group_id}"),
+            headers={"Accept": "application/json"},
+            timeout=15,
+        )
+        if resp.status_code not in (200, 204):
+            return {"ok": False, "error": _sanitize_error(f"HTTP {resp.status_code} {resp.text[:200]}")}
+        return {"ok": True}
+    except requests.RequestException as exc:
+        return {"ok": False, "error": _sanitize_error(str(exc))}
+
+
+def set_senaite_group_role(group_id: str, role: str, enabled: bool) -> dict:
+    """
+    Grant or revoke a single SENAITE role on a group (the exact operation
+    SENAITE's own Groups-matrix checkboxes perform).
+
+    Unlike @users/<username> (where PATCH {"roles": {role: bool}} is a diff
+    against the user's current roles — confirmed in set_senaite_user_role),
+    @groups/<id> silently no-ops on that same dict-diff shape (returns 204 but
+    the role list is unchanged — confirmed via direct testing toggling a role
+    off and re-fetching the group). Groups instead require the full desired
+    `roles` list, so this reads the group's current roles first and PATCHes
+    the whole list back with just this one role added/removed.
+    Returns {"ok": True} or {"ok": False, "error": ...}.
+    """
+    if role not in SENAITE_USER_ROLES:
+        return {"ok": False, "error": f"Unknown SENAITE role '{role}'"}
+    s = _session()
+    try:
+        resp = s.get(_plone_rest_api(f"@groups/{group_id}"), headers={"Accept": "application/json"}, timeout=15)
+        resp.raise_for_status()
+        current_roles = set(resp.json().get("roles") or [])
+        if enabled:
+            current_roles.add(role)
+        else:
+            current_roles.discard(role)
+
+        resp = s.patch(
+            _plone_rest_api(f"@groups/{group_id}"),
+            json={"roles": sorted(current_roles)},
+            headers={"Accept": "application/json"},
+            timeout=15,
+        )
+        if resp.status_code not in (200, 204):
+            return {"ok": False, "error": _sanitize_error(f"HTTP {resp.status_code} {resp.text[:200]}")}
+        return {"ok": True}
+    except requests.RequestException as exc:
+        return {"ok": False, "error": _sanitize_error(str(exc))}
 
 
 def set_senaite_user_role(username: str, role: str, enabled: bool) -> dict:

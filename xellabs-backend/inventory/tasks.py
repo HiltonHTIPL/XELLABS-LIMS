@@ -57,13 +57,19 @@ def check_sample_expiry(days_ahead=7):
     return ids
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=30)
+@shared_task(bind=True, max_retries=6, default_retry_delay=30)
 def sync_storage_location_to_senaite(self, location_id: int, schema_name: str):
-    """Sync a single StorageLocation to SENAITE and store the returned UID.
+    """Sync a single StorageLocation to SENAITE (as its mapped senaite.storage
+    content type — see LOCATION_TYPE_TO_PORTAL_TYPE) and store the returned uid+path.
 
     StorageLocation is a tenant-app model — the Celery worker has no request
     context, so without schema_context() this runs against the 'public'
     schema (where the table doesn't exist) and silently fails every time.
+
+    max_retries raised from 3 to 6: a deep node (e.g. a shelf under a fridge
+    under a room) can now be blocked on its own parent's sync completing
+    first, not just a single flat push — a chain a few levels deep needs a
+    few more retry rounds to fully settle than the old flat-list sync did.
     """
     from django_tenants.utils import schema_context
     from inventory.models import StorageLocation
@@ -76,26 +82,27 @@ def sync_storage_location_to_senaite(self, location_id: int, schema_name: str):
             logger.warning("sync_storage_location_to_senaite: location %s not found in schema %s", location_id, schema_name)
             return
 
-        uid = push_storage_location(location)
-        if uid:
-            StorageLocation.objects.filter(id=location_id).update(senaite_uid=uid)
-            logger.info("Updated senaite_uid for location %s -> %s (schema=%s)", location_id, uid, schema_name)
+        uid, path = push_storage_location(location)
+        if uid and path:
+            StorageLocation.objects.filter(id=location_id).update(senaite_uid=uid, senaite_path=path)
+            logger.info("Updated senaite_uid/path for location %s -> %s (schema=%s)", location_id, path, schema_name)
         else:
-            logger.warning("SENAITE sync returned no UID for location %s, retrying... (schema=%s)", location_id, schema_name)
-            raise self.retry(exc=Exception(f"SENAITE sync returned no UID for location {location_id}"), countdown=30)
+            logger.warning("SENAITE sync returned no uid/path for location %s, retrying... (schema=%s)", location_id, schema_name)
+            raise self.retry(exc=Exception(f"SENAITE sync returned no uid/path for location {location_id}"), countdown=30)
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=30)
-def sync_box_slots_to_senaite(self, box_id: int, schema_name: str):
-    """Sync all slot children of a box to SENAITE (see schema_context note above)."""
-    from django_tenants.utils import schema_context
-    from inventory.models import StorageLocation
-    from core.senaite_service import push_storage_location
+@shared_task(bind=True, max_retries=3, default_retry_delay=15)
+def sync_sample_storage_transition(self, ar_uid: str, transition: str):
+    """Fire the 'store'/'recover' workflow transition on a SENAITE AnalysisRequest
+    to reflect a XelLabs slot assign/unassign as a real sample state change.
+    No schema_context needed — this only talks to SENAITE, no Django DB access."""
+    from core.senaite_service import set_sample_storage_transition
 
-    with schema_context(schema_name):
-        slots = StorageLocation.objects.filter(parent_id=box_id, location_type='box_location')
-        for slot in slots:
-            uid = push_storage_location(slot)
-            if uid:
-                StorageLocation.objects.filter(id=slot.id).update(senaite_uid=uid)
-        logger.info("Synced %d slots for box %s to SENAITE (schema=%s)", slots.count(), box_id, schema_name)
+    result = set_sample_storage_transition(ar_uid, transition)
+    if not result.get("ok"):
+        logger.warning(
+            "SENAITE '%s' transition failed for AR uid=%s: %s — retrying...",
+            transition, ar_uid, result.get("error"),
+        )
+        raise self.retry(exc=Exception(result.get("error")), countdown=15)
+    logger.info("SENAITE '%s' transition OK for AR uid=%s", transition, ar_uid)

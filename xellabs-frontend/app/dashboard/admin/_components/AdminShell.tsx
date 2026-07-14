@@ -1,8 +1,10 @@
 'use client'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { getStaffUsers, toggleStaffUserActive, toggleSenaiteRole, type StaffUser } from '@/app/actions/users'
+import { getSenaiteGroups, deleteSenaiteGroup, toggleSenaiteGroupRole, type SenaiteGroup } from '@/app/actions/groups'
 import { STAFF_ROLE_LABELS, SENAITE_USER_ROLES } from '@/app/lib/roles'
 import UserModal from './UserModal'
+import GroupModal from './GroupModal'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -21,8 +23,12 @@ function fmtDate(iso: string) {
 }
 
 export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[] }) {
+  const [tab, setTab] = useState<'users' | 'groups'>('users')
   const [users, setUsers] = useState<StaffUser[]>(initialUsers)
+  const [groups, setGroups] = useState<SenaiteGroup[]>([])
+  const [groupsLoaded, setGroupsLoaded] = useState(false)
   const [modal, setModal] = useState<{ editing: StaffUser | null } | null>(null)
+  const [groupModal, setGroupModal] = useState(false)
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
 
   function showToast(ok: boolean, msg: string) {
@@ -34,6 +40,36 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
     const fresh = await getStaffUsers()
     setUsers(fresh)
   }, [])
+
+  const refreshGroups = useCallback(async () => {
+    const fresh = await getSenaiteGroups()
+    setGroups(fresh)
+    setGroupsLoaded(true)
+  }, [])
+
+  useEffect(() => {
+    if (tab === 'groups' && !groupsLoaded) refreshGroups()
+  }, [tab, groupsLoaded, refreshGroups])
+
+  async function handleToggleGroupRole(group: SenaiteGroup, role: string) {
+    const enabled = !group.roles.includes(role)
+    setGroups(prev => prev.map(g => g.id !== group.id ? g : {
+      ...g,
+      roles: enabled ? [...g.roles, role] : g.roles.filter(r => r !== role),
+    }))
+    const result = await toggleSenaiteGroupRole(group.id, role, enabled)
+    if (!result.success) {
+      showToast(false, result.message ?? 'Failed to update group role.')
+      await refreshGroups()
+    }
+  }
+
+  async function handleDeleteGroup(group: SenaiteGroup) {
+    if (!confirm(`Remove group "${group.title}"? This cannot be undone.`)) return
+    const result = await deleteSenaiteGroup(group.id)
+    showToast(result.success, result.message)
+    if (result.success) await refreshGroups()
+  }
 
   async function handleToggleActive(user: StaffUser) {
     const result = await toggleStaffUserActive(user.id, !user.is_active)
@@ -61,16 +97,44 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
       <div className="flex items-center justify-between px-5 py-3" style={{ backgroundColor: '#fff', borderBottom: '1px solid #E5E7EB' }}>
         <div>
           <h1 className="text-lg font-bold" style={{ color: '#111827' }}>Administration</h1>
-          <p className="text-xs mt-0.5" style={{ color: '#6B7280' }}>Manage staff users and their lab roles</p>
+          <p className="text-xs mt-0.5" style={{ color: '#6B7280' }}>
+            {tab === 'users' ? 'Manage staff users and their lab roles' : 'Manage groups and the roles granted to their members'}
+          </p>
         </div>
-        <button
-          onClick={() => setModal({ editing: null })}
-          className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg text-white"
-          style={{ backgroundColor: '#0154FC', border: 'none', cursor: 'pointer' }}
-        >
-          <MI name="person_add" size={15} color="#fff" />
-          New User
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center rounded-lg" style={{ border: '1px solid #E5E7EB', padding: 2 }}>
+            {(['users', 'groups'] as const).map(t => (
+              <button key={t} onClick={() => setTab(t)}
+                className="text-xs font-medium px-3 py-1 rounded-md"
+                style={{
+                  border: 'none', cursor: 'pointer',
+                  backgroundColor: tab === t ? '#0154FC' : 'transparent',
+                  color: tab === t ? '#fff' : '#6B7280',
+                }}>
+                {t === 'users' ? 'Users' : 'Groups'}
+              </button>
+            ))}
+          </div>
+          {tab === 'users' ? (
+            <button
+              onClick={() => setModal({ editing: null })}
+              className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg text-white"
+              style={{ backgroundColor: '#0154FC', border: 'none', cursor: 'pointer' }}
+            >
+              <MI name="person_add" size={15} color="#fff" />
+              New User
+            </button>
+          ) : (
+            <button
+              onClick={() => setGroupModal(true)}
+              className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg text-white"
+              style={{ backgroundColor: '#0154FC', border: 'none', cursor: 'pointer' }}
+            >
+              <MI name="group_add" size={15} color="#fff" />
+              New Group
+            </button>
+          )}
+        </div>
       </div>
 
       {toast && (
@@ -82,6 +146,7 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
       )}
 
       <div style={{ flex: 1, overflow: 'auto', margin: '12px 20px 20px' }}>
+      {tab === 'users' ? (
         <div style={{ backgroundColor: '#fff', borderRadius: 12, border: '1px solid #E5E7EB', overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
@@ -150,6 +215,61 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
             </tbody>
           </table>
         </div>
+      ) : (
+        <div style={{ backgroundColor: '#fff', borderRadius: 12, border: '1px solid #E5E7EB', overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ backgroundColor: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>Group Name</th>
+                {SENAITE_USER_ROLES.map(role => (
+                  <th key={role} title={`SENAITE role: ${role}`} style={{ textAlign: 'center', padding: '10px 8px', fontSize: 10, fontWeight: 600, color: '#6B7280', whiteSpace: 'nowrap', borderLeft: '1px solid #F3F4F6' }}>{role}</th>
+                ))}
+                <th style={{ padding: '10px 14px' }} />
+              </tr>
+            </thead>
+            <tbody>
+              {!groupsLoaded ? (
+                <tr>
+                  <td colSpan={SENAITE_USER_ROLES.length + 2} style={{ padding: '32px', textAlign: 'center', color: '#9CA3AF' }}>
+                    Loading groups…
+                  </td>
+                </tr>
+              ) : groups.length === 0 ? (
+                <tr>
+                  <td colSpan={SENAITE_USER_ROLES.length + 2} style={{ padding: '32px', textAlign: 'center', color: '#9CA3AF' }}>
+                    No groups found.
+                  </td>
+                </tr>
+              ) : (
+                groups.map(g => (
+                  <tr key={g.id} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                    <td style={{ padding: '10px 14px', fontWeight: 500, color: '#111827' }}>
+                      {g.title}
+                      <span style={{ marginLeft: 6, fontSize: 10, color: '#9CA3AF' }}>({g.id})</span>
+                    </td>
+                    {SENAITE_USER_ROLES.map(role => (
+                      <td key={role} style={{ padding: '10px 8px', textAlign: 'center', borderLeft: '1px solid #F3F4F6' }}>
+                        <input
+                          type="checkbox"
+                          checked={g.roles.includes(role)}
+                          onChange={() => handleToggleGroupRole(g, role)}
+                          style={{ cursor: 'pointer' }}
+                        />
+                      </td>
+                    ))}
+                    <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                      <button onClick={() => handleDeleteGroup(g)} title="Remove group"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, borderRadius: 6 }}>
+                        <MI name="delete" size={14} color="#DC2626" />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
       </div>
 
       {modal && (
@@ -157,6 +277,13 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
           editing={modal.editing}
           onClose={() => setModal(null)}
           onDone={async (msg) => { showToast(true, msg); await refresh(); setModal(null) }}
+        />
+      )}
+
+      {groupModal && (
+        <GroupModal
+          onClose={() => setGroupModal(false)}
+          onDone={async (msg) => { showToast(true, msg); await refreshGroups() }}
         />
       )}
     </div>

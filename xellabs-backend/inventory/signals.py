@@ -44,7 +44,6 @@ def _register_box_slot_signal():
 
         rows = min(instance.rows, 26)
         cols = min(instance.columns, 99)
-        inherited = StorageLocation.slot_inherited_fields(instance)
 
         slots = []
         for r in range(rows):
@@ -58,19 +57,16 @@ def _register_box_slot_signal():
                     slot_id=slot_id,
                     is_occupied=False,
                     label_code=StorageLocation.slot_label_code(instance, slot_id),
-                    **inherited,
                 ))
 
         StorageLocation.objects.bulk_create(slots)
         logger.info("Auto-generated %d slots for box '%s' (pk=%s)", len(slots), instance.name, instance.pk)
 
-        # StorageLocation is a tenant-app model — capture the schema the save
-        # happened in now, since the Celery worker has no request context to
-        # infer it from later (it would otherwise default to 'public').
-        from inventory.tasks import sync_box_slots_to_senaite
-        pk = instance.pk
-        schema_name = connection.schema_name
-        transaction.on_commit(lambda: sync_box_slots_to_senaite.apply_async(args=[pk, schema_name], countdown=2))
+        # Slots are NOT pushed to SENAITE as their own objects — senaite.storage
+        # represents a slot as an entry inside its box's own PositionsLayout, not
+        # as a sibling content object. Nothing to sync here; occupancy is driven
+        # into SENAITE only at assign/unassign time via the 'store'/'recover'
+        # workflow transition (see inventory/views.py _assign_sample_to_slot).
 
 
 def _register_senaite_sync_signal():

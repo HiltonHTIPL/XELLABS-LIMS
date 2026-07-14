@@ -203,6 +203,12 @@ services:
     environment:
       - SITE=senaite
       - PASSWORD=${SENAITE_ADMIN_PASSWORD:?SENAITE_ADMIN_PASSWORD must be set in .env}
+      # senaite.storage add-on — installed via the base image's built-in
+      # docker-initialize.py mechanism (reads ADDONS/VERSIONS, runs buildout
+      # on first boot of a fresh container). Profile defaults to
+      # senaite.storage:default automatically since PROFILES isn't set.
+      - ADDONS=senaite.storage
+      - VERSIONS=senaite.storage=2.6.0
     volumes:
       - senaite_data:/data
     healthcheck:

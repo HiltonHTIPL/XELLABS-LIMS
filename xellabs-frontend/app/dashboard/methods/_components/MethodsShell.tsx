@@ -2,6 +2,8 @@
 import { useState, useActionState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createMethod, updateMethod, toggleMethodActive, type Method, type MethodFormState } from '@/app/actions/methods'
+import type { Calculation } from '@/app/actions/calculations'
+import type { InstrumentOption } from '@/app/actions/instrument-maintenance'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -28,10 +30,38 @@ function Field({ label, name, placeholder, required, error, value, onChange, as 
   )
 }
 
-type FV = { name: string; code: string; description: string }
-const blank = (): FV => ({ name: '', code: '', description: '' })
+function CheckboxList({ label, options, selected, onChange }: {
+  label: string; options: { id: number; name: string }[]; selected: number[]; onChange: (ids: number[]) => void
+}) {
+  function toggle(id: number) {
+    onChange(selected.includes(id) ? selected.filter(x => x !== id) : [...selected, id])
+  }
+  return (
+    <div>
+      <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>{label}</label>
+      <div className="rounded-lg overflow-y-auto" style={{ border: '1px solid #D1D5DB', maxHeight: 120 }}>
+        {options.length === 0
+          ? <p className="px-3 py-2 text-xs" style={{ color: '#9CA3AF' }}>None available</p>
+          : options.map(o => (
+              <label key={o.id} className="flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer hover:bg-gray-50" style={{ color: '#374151' }}>
+                <input type="checkbox" checked={selected.includes(o.id)} onChange={() => toggle(o.id)} />
+                {o.name}
+              </label>
+            ))}
+      </div>
+    </div>
+  )
+}
 
-export default function MethodsShell({ initialMethods }: { initialMethods: Method[] }) {
+type FV = {
+  name: string; code: string; description: string; instructions: string
+  accredited: boolean; instrumentIds: number[]; calculationIds: number[]
+}
+const blank = (): FV => ({ name: '', code: '', description: '', instructions: '', accredited: false, instrumentIds: [], calculationIds: [] })
+
+export default function MethodsShell({ initialMethods, calculations, instruments }: {
+  initialMethods: Method[]; calculations: Calculation[]; instruments: InstrumentOption[]
+}) {
   const router = useRouter()
   const [showDrawer, setShowDrawer] = useState(false)
   const [editing, setEditing] = useState<Method | null>(null)
@@ -70,7 +100,15 @@ export default function MethodsShell({ initialMethods }: { initialMethods: Metho
   )
 
   function openCreate() { setEditing(null); setVals(blank()); setFieldErrors({}); setShowDrawer(true) }
-  function openEdit(m: Method) { setEditing(m); setVals({ name: m.name, code: m.code, description: m.description ?? '' }); setFieldErrors({}); setShowDrawer(true) }
+  function openEdit(m: Method) {
+    setEditing(m)
+    setVals({
+      name: m.name, code: m.code, description: m.description ?? '', instructions: m.instructions ?? '',
+      accredited: m.accredited ?? false, instrumentIds: m.instruments ?? [], calculationIds: m.calculations ?? [],
+    })
+    setFieldErrors({})
+    setShowDrawer(true)
+  }
   function closeDrawer() { setShowDrawer(false) }
 
   // Per-row pending state — a single shared `busy` flag disabled every toggle
@@ -139,6 +177,32 @@ export default function MethodsShell({ initialMethods }: { initialMethods: Metho
               </div>
               <Field label="Description" name="description" as="textarea" placeholder="Describe this method…"
                 value={vals.description} onChange={v => setVal('description', v)} />
+              <Field label="Instructions" name="instructions" as="textarea" placeholder="Technical instructions for analysts…"
+                value={vals.instructions} onChange={v => setVal('instructions', v)} />
+
+              <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: '#374151' }}>
+                <input type="checkbox" name="accredited" checked={vals.accredited}
+                  onChange={e => setVals(prev => ({ ...prev, accredited: e.target.checked }))} />
+                Accredited
+              </label>
+
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Method Document</label>
+                <input type="file" name="document" className="w-full text-xs" />
+                {isEdit && editing!.document && (
+                  <a href={editing!.document} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs" style={{ color: '#2563EB' }}>
+                    View current document
+                  </a>
+                )}
+              </div>
+
+              {vals.instrumentIds.map(id => <input key={id} type="hidden" name="instrument_ids" value={id} />)}
+              <CheckboxList label="Instruments" options={instruments} selected={vals.instrumentIds}
+                onChange={ids => setVals(prev => ({ ...prev, instrumentIds: ids }))} />
+
+              {vals.calculationIds.map(id => <input key={id} type="hidden" name="calculation_ids" value={id} />)}
+              <CheckboxList label="Calculations" options={calculations} selected={vals.calculationIds}
+                onChange={ids => setVals(prev => ({ ...prev, calculationIds: ids }))} />
             </div>
 
             {/* Footer */}

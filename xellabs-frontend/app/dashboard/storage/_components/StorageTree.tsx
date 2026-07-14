@@ -27,6 +27,7 @@ export function buildTree(locations: StorageLocation[]): StorageNode[] {
 }
 
 const TYPE_ICONS: Record<string, string> = {
+  building:     'apartment',
   room:         'meeting_room',
   fridge:       'thermostat',
   freezer:      'ac_unit',

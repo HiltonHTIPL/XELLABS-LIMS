@@ -10,12 +10,12 @@ from core.permissions import (
     ReadOnlyOrLabManager, ReadOnlyOrAnalystOrAbove, ReadOnlyOrSampleHandler,
 )
 from .models import (
-    SampleType, SampleTemplate, AnalysisProfile, Method, Test, Specification,
+    SampleType, SampleTemplate, AnalysisProfile, Method, Calculation, Test, Specification,
     Sample, AnalysisRequest, Worksheet, WorksheetAssignment,
     Result, QCSample, ChainOfCustody,
 )
 from .serializers import (
-    SampleTypeSerializer, SampleTemplateSerializer, AnalysisProfileSerializer, MethodSerializer, TestSerializer, SpecificationSerializer,
+    SampleTypeSerializer, SampleTemplateSerializer, AnalysisProfileSerializer, MethodSerializer, CalculationSerializer, TestSerializer, SpecificationSerializer,
     SampleSerializer, AnalysisRequestSerializer, WorksheetSerializer,
     WorksheetAssignmentSerializer, ResultSerializer, QCSampleSerializer,
     ChainOfCustodySerializer,
@@ -134,6 +134,16 @@ class AnalysisProfileViewSet(viewsets.ModelViewSet):
 class MethodViewSet(viewsets.ModelViewSet):
     queryset = Method.objects.all()
     serializer_class = MethodSerializer
+    permission_classes = [ReadOnlyOrLabManager]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ["is_active"]
+    search_fields = ["name", "code"]
+    parser_classes = [MultiPartParser, FormParser]
+
+
+class CalculationViewSet(viewsets.ModelViewSet):
+    queryset = Calculation.objects.all()
+    serializer_class = CalculationSerializer
     permission_classes = [ReadOnlyOrLabManager]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ["is_active"]

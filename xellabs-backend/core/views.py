@@ -194,6 +194,69 @@ class UserViewSet(ModelViewSet):
         return Response({'role': role, 'enabled': enabled})
 
 
+class SenaiteGroupsView(APIView):
+    """
+    GET  /api/senaite-groups/   -> list every SENAITE group + its role matrix
+    POST /api/senaite-groups/   { "id": "MyGroup", "title": "My Group" } -> create a group
+    There is no Django model backing this — groups exist only inside SENAITE,
+    mirroring senaite_service.list_senaite_users()'s relationship to UserViewSet.
+    """
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated, IsLabManagerOrAbove]
+
+    def get(self, request):
+        from .senaite_service import list_senaite_groups
+        return Response(list_senaite_groups())
+
+    def post(self, request):
+        from .senaite_service import create_senaite_group
+        from rest_framework.exceptions import ValidationError as DRFValidationError
+
+        group_id = (request.data.get('id') or '').strip()
+        if not group_id:
+            raise DRFValidationError({'id': ['Group ID is required.']})
+
+        result = create_senaite_group(group_id, request.data.get('title', ''))
+        if not result['ok']:
+            return Response({'detail': result['error']}, status=502)
+        return Response({'id': group_id}, status=201)
+
+
+class SenaiteGroupDetailView(APIView):
+    """DELETE /api/senaite-groups/{id}/ -> remove a SENAITE group."""
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated, IsLabManagerOrAbove]
+
+    def delete(self, request, group_id=None):
+        from .senaite_service import delete_senaite_group
+        result = delete_senaite_group(group_id)
+        if not result['ok']:
+            return Response({'detail': result['error']}, status=502)
+        return Response(status=204)
+
+
+class SenaiteGroupRoleView(APIView):
+    """POST /api/senaite-groups/{id}/role/  { "role": "Analyst", "enabled": true }
+    Grants or revokes one SENAITE role on this group — the same operation as
+    ticking a checkbox on SENAITE's own Groups matrix."""
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated, IsLabManagerOrAbove]
+
+    def post(self, request, group_id=None):
+        from .senaite_service import set_senaite_group_role, SENAITE_USER_ROLES
+        from rest_framework.exceptions import ValidationError as DRFValidationError
+
+        role = request.data.get('role')
+        enabled = bool(request.data.get('enabled'))
+        if role not in SENAITE_USER_ROLES:
+            raise DRFValidationError({'role': [f'Must be one of {SENAITE_USER_ROLES}.']})
+
+        result = set_senaite_group_role(group_id, role, enabled)
+        if not result['ok']:
+            return Response({'detail': result['error']}, status=502)
+        return Response({'role': role, 'enabled': enabled})
+
+
 class ClientViewSet(ModelViewSet):
     """CRUD for Clients, scoped to the authenticated user's tenant."""
     serializer_class = ClientSerializer

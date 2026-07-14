@@ -5,7 +5,7 @@ import { djangoFetch } from '@/app/lib/django'
 export type StorageLocation = {
   id: number
   name: string
-  location_type: 'room' | 'fridge' | 'freezer' | 'cabinet' | 'shelf' | 'box' | 'box_location'
+  location_type: 'building' | 'room' | 'fridge' | 'freezer' | 'cabinet' | 'shelf' | 'box' | 'box_location'
   parent: number | null
   temperature: string
   notes: string
@@ -18,16 +18,8 @@ export type StorageLocation = {
   assigned_sample_id: string
   description: string
   address: string
-  site_title: string
-  site_code: string
-  site_description: string
-  location_title: string
-  location_code: string
-  location_description: string
-  senaite_location_type: string
-  shelf_title: string
-  shelf_code: string
-  shelf_description: string
+  phone: string
+  email: string
 }
 
 export type StorageFormState = {
@@ -36,12 +28,42 @@ export type StorageFormState = {
   errors?: Record<string, string[]>
 }
 
+// DRF returns {field: [messages]} for validation errors (e.g. the parent-type
+// rule enforced in StorageLocationSerializer.validate()) — forward it as-is
+// instead of only special-casing name/location_type, so a rejected
+// combination like "Box requires a parent location" surfaces on the right
+// field instead of a generic failure message.
+function mapDjangoErrors(err: Record<string, unknown>): Record<string, string[]> | null {
+  const errors: Record<string, string[]> = {}
+  for (const [key, val] of Object.entries(err)) {
+    if (Array.isArray(val)) errors[key] = val.map(String)
+    else if (typeof val === 'string') errors[key] = [val]
+  }
+  return Object.keys(errors).length ? errors : null
+}
+
 export async function getStorageLocations(): Promise<StorageLocation[]> {
+  // The Storage Manager tree needs the FULL location set to build parent-child
+  // relationships client-side — it is not a paginated list view. The API's
+  // default PageNumberPagination (page_size=50) was silently truncating this
+  // to page 1 once real usage pushed the count past 50 (a single 10x10 box
+  // alone is 100 box_location rows), so any location past page 1 (e.g. a Box
+  // sorted after its own room/shelf ancestors) would vanish from the tree
+  // with no error — confirmed via a direct API call showing count=104,
+  // results.length=50, and the box missing from that first page.
   try {
-    const res = await djangoFetch('/api/inventory/storage-locations/?ordering=name')
-    if (!res.ok) return []
-    const data = await res.json()
-    return Array.isArray(data) ? data : (data.results ?? [])
+    const all: StorageLocation[] = []
+    let page = 1
+    while (true) {
+      const res = await djangoFetch(`/api/inventory/storage-locations/?ordering=name&page=${page}`)
+      if (!res.ok) break
+      const data = await res.json()
+      if (Array.isArray(data)) { all.push(...data); break } // unpaginated response shape
+      all.push(...(data.results ?? []))
+      if (!data.next) break
+      page += 1
+    }
+    return all
   } catch { return [] }
 }
 
@@ -56,18 +78,10 @@ export async function createStorageLocation(
   const notes         = (formData.get('notes') as string)?.trim()
   const rows          = (formData.get('rows') as string)?.trim()
   const columns       = (formData.get('columns') as string)?.trim()
-  const description          = (formData.get('description') as string)?.trim() ?? ''
-  const address              = (formData.get('address') as string)?.trim() ?? ''
-  const site_title           = (formData.get('site_title') as string)?.trim() ?? ''
-  const site_code            = (formData.get('site_code') as string)?.trim() ?? ''
-  const site_description     = (formData.get('site_description') as string)?.trim() ?? ''
-  const location_title       = (formData.get('location_title') as string)?.trim() ?? ''
-  const location_code        = (formData.get('location_code') as string)?.trim() ?? ''
-  const location_description = (formData.get('location_description') as string)?.trim() ?? ''
-  const senaite_location_type = (formData.get('senaite_location_type') as string)?.trim() ?? ''
-  const shelf_title          = (formData.get('shelf_title') as string)?.trim() ?? ''
-  const shelf_code           = (formData.get('shelf_code') as string)?.trim() ?? ''
-  const shelf_description    = (formData.get('shelf_description') as string)?.trim() ?? ''
+  const description   = (formData.get('description') as string)?.trim() ?? ''
+  const address       = (formData.get('address') as string)?.trim() ?? ''
+  const phone         = (formData.get('phone') as string)?.trim() ?? ''
+  const email         = (formData.get('email') as string)?.trim() ?? ''
 
   const errors: Record<string, string[]> = {}
   if (!name)          errors.name          = ['Name is required']
@@ -83,24 +97,16 @@ export async function createStorageLocation(
     location_type,
     temperature: temperature ?? '',
     notes: notes ?? '',
+    description,
+    address,
+    phone,
+    email,
   }
   if (parent) body.parent = Number(parent)
   if (location_type === 'box') {
     body.rows    = Number(rows)
     body.columns = Number(columns)
   }
-  body.description           = description
-  body.address               = address
-  body.site_title            = site_title
-  body.site_code             = site_code
-  body.site_description      = site_description
-  body.location_title        = location_title
-  body.location_code         = location_code
-  body.location_description  = location_description
-  body.senaite_location_type = senaite_location_type
-  body.shelf_title           = shelf_title
-  body.shelf_code            = shelf_code
-  body.shelf_description     = shelf_description
 
   const res = await djangoFetch('/api/inventory/storage-locations/', {
     method: 'POST',
@@ -109,8 +115,8 @@ export async function createStorageLocation(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    if (err.name)          return { errors: { name: [err.name] } }
-    if (err.location_type) return { errors: { location_type: [err.location_type] } }
+    const errors = mapDjangoErrors(err)
+    if (errors) return { errors }
     return { message: 'Failed to create storage location.' }
   }
 
@@ -128,18 +134,10 @@ export async function updateStorageLocation(
   const parent        = (formData.get('parent') as string)?.trim()
   const temperature   = (formData.get('temperature') as string)?.trim()
   const notes         = (formData.get('notes') as string)?.trim()
-  const description          = (formData.get('description') as string)?.trim() ?? ''
-  const address              = (formData.get('address') as string)?.trim() ?? ''
-  const site_title           = (formData.get('site_title') as string)?.trim() ?? ''
-  const site_code            = (formData.get('site_code') as string)?.trim() ?? ''
-  const site_description     = (formData.get('site_description') as string)?.trim() ?? ''
-  const location_title       = (formData.get('location_title') as string)?.trim() ?? ''
-  const location_code        = (formData.get('location_code') as string)?.trim() ?? ''
-  const location_description = (formData.get('location_description') as string)?.trim() ?? ''
-  const senaite_location_type = (formData.get('senaite_location_type') as string)?.trim() ?? ''
-  const shelf_title          = (formData.get('shelf_title') as string)?.trim() ?? ''
-  const shelf_code           = (formData.get('shelf_code') as string)?.trim() ?? ''
-  const shelf_description    = (formData.get('shelf_description') as string)?.trim() ?? ''
+  const description   = (formData.get('description') as string)?.trim() ?? ''
+  const address       = (formData.get('address') as string)?.trim() ?? ''
+  const phone         = (formData.get('phone') as string)?.trim() ?? ''
+  const email         = (formData.get('email') as string)?.trim() ?? ''
 
   const errors: Record<string, string[]> = {}
   if (!name)          errors.name          = ['Name is required']
@@ -154,16 +152,8 @@ export async function updateStorageLocation(
     parent: parent ? Number(parent) : null,
     description,
     address,
-    site_title,
-    site_code,
-    site_description,
-    location_title,
-    location_code,
-    location_description,
-    senaite_location_type,
-    shelf_title,
-    shelf_code,
-    shelf_description,
+    phone,
+    email,
   }
 
   const res = await djangoFetch(`/api/inventory/storage-locations/${id}/`, {
@@ -173,8 +163,8 @@ export async function updateStorageLocation(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    if (err.name)          return { errors: { name: [err.name] } }
-    if (err.location_type) return { errors: { location_type: [err.location_type] } }
+    const errors = mapDjangoErrors(err)
+    if (errors) return { errors }
     return { message: 'Failed to update storage location.' }
   }
 

@@ -18,6 +18,7 @@ const TYPE_ICONS: Record<string, string> = {
 }
 
 const TYPE_LABELS: Record<string, string> = {
+  building:     'Building',
   room:         'Room',
   fridge:       'Refrigerator',
   freezer:      'Freezer',
@@ -240,6 +241,13 @@ export default function StorageDetail({
               <InfoRow label="Grid Size" value={`${location.rows} rows × ${location.columns} columns (${location.rows * location.columns} slots)`} />
             )}
             {location.slot_id && <InfoRow label="Slot ID" value={location.slot_id} />}
+            {location.location_type === 'building' && (
+              <>
+                <InfoRow label="Address" value={location.address} />
+                <InfoRow label="Phone" value={location.phone} />
+                <InfoRow label="Email" value={location.email} />
+              </>
+            )}
           </div>
         )}
       </div>
