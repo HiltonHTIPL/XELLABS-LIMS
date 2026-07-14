@@ -47,7 +47,7 @@ export async function createTest(_state: TestFormState, formData: FormData): Pro
   if (price && Number.isNaN(Number(price))) errors.price = ['Price must be a number']
   // Required so Sample creation (createSampleWithAnalyses) can actually attach this
   // test in SENAITE — an unlinked Test silently produces a sample with zero analyses.
-  if (!senaiteUid) errors.senaite_uid = ['Link this test to a SENAITE analysis service']
+  if (!senaiteUid) errors.senaite_uid = ['Link this test to a lab analysis service']
   if (Object.keys(errors).length) return { errors }
 
   try {
@@ -85,7 +85,7 @@ export async function updateTest(id: number, _state: TestFormState, formData: Fo
   if (!name) errors.name = ['Name is required']
   if (!code) errors.code = ['Code is required']
   if (price && Number.isNaN(Number(price))) errors.price = ['Price must be a number']
-  if (!senaiteUid) errors.senaite_uid = ['Link this test to a SENAITE analysis service']
+  if (!senaiteUid) errors.senaite_uid = ['Link this test to a lab analysis service']
   if (Object.keys(errors).length) return { errors }
 
   try {

@@ -1,7 +1,7 @@
 'use client'
 import { useState, useActionState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createSampleType, updateSampleType, createContainerType, type SampleTypeFormState, type CreateRefOptionState } from '@/app/actions/sample-types'
+import { createSampleType, updateSampleType, createContainerType, createSampleMatrix, type SampleTypeFormState, type CreateRefOptionState } from '@/app/actions/sample-types'
 import { type SenaiteSampleType, type SenaiteRefOption, STICKER_TEMPLATES } from '@/app/lib/senaite'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
@@ -93,6 +93,8 @@ export default function SampleTypesShell({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [containerTypeOptions, setContainerTypeOptions] = useState(containerTypes)
   const [newContainerType, setNewContainerType] = useState({ title: '', description: '' })
+  const [sampleMatrixOptions, setSampleMatrixOptions] = useState(sampleMatrices)
+  const [newSampleMatrix, setNewSampleMatrix] = useState({ title: '', description: '' })
 
   const isEdit = editing !== null
 
@@ -104,6 +106,24 @@ export default function SampleTypesShell({
         setVal('containerTypeUid', result.option.uid)
         setNewContainerType({ title: '', description: '' })
         setToast({ ok: true, msg: result.message ?? 'Container type created.' })
+        setTimeout(() => setToast(null), 4000)
+      } else if (result.message) {
+        setToast({ ok: false, msg: result.message })
+        setTimeout(() => setToast(null), 6000)
+      }
+      return result
+    },
+    {}
+  )
+
+  const [, createSampleMatrixAction, creatingSampleMatrix] = useActionState(
+    async (prev: CreateRefOptionState, fd: FormData) => {
+      const result = await createSampleMatrix(prev, fd)
+      if (result.success && result.option) {
+        setSampleMatrixOptions(prev => [...prev, result.option!])
+        setVal('sampleMatrixUid', result.option.uid)
+        setNewSampleMatrix({ title: '', description: '' })
+        setToast({ ok: true, msg: result.message ?? 'Sample matrix created.' })
         setTimeout(() => setToast(null), 4000)
       } else if (result.message) {
         setToast({ ok: false, msg: result.message })
@@ -268,7 +288,40 @@ export default function SampleTypesShell({
               </div>
 
               <SelectField label="Sample Matrix" name="sampleMatrixUid" value={vals.sampleMatrixUid}
-                onChange={v => setVal('sampleMatrixUid', v)} options={sampleMatrices} />
+                onChange={v => setVal('sampleMatrixUid', v)} options={sampleMatrixOptions} />
+
+              <div className="p-3 rounded-lg flex flex-col gap-2" style={{ backgroundColor: '#F9FAFB', border: '1px dashed #D1D5DB' }}>
+                <p className="text-xs font-medium" style={{ color: '#374151' }}>Create a new sample matrix</p>
+                <input
+                  placeholder="Name"
+                  value={newSampleMatrix.title}
+                  onChange={e => setNewSampleMatrix(prev => ({ ...prev, title: e.target.value }))}
+                  className="w-full px-3 py-2 text-xs rounded-lg outline-none"
+                  style={{ border: '1px solid #D1D5DB', color: '#111827' }}
+                />
+                <input
+                  placeholder="Description (optional)"
+                  value={newSampleMatrix.description}
+                  onChange={e => setNewSampleMatrix(prev => ({ ...prev, description: e.target.value }))}
+                  className="w-full px-3 py-2 text-xs rounded-lg outline-none"
+                  style={{ border: '1px solid #D1D5DB', color: '#111827' }}
+                />
+                <button
+                  type="button"
+                  disabled={!newSampleMatrix.title.trim() || creatingSampleMatrix}
+                  onClick={() => {
+                    const fd = new FormData()
+                    fd.set('title', newSampleMatrix.title.trim())
+                    fd.set('description', newSampleMatrix.description.trim())
+                    createSampleMatrixAction(fd)
+                  }}
+                  className="self-start flex items-center gap-1.5"
+                  style={{ fontSize: 12, fontWeight: 600, padding: '6px 14px', borderRadius: 8, backgroundColor: '#0154FC', color: '#fff', border: 'none', cursor: creatingSampleMatrix ? 'not-allowed' : 'pointer', opacity: (!newSampleMatrix.title.trim() || creatingSampleMatrix) ? 0.6 : 1 }}
+                >
+                  <MI name={creatingSampleMatrix ? 'hourglass_top' : 'add'} size={13} color="#fff" />
+                  {creatingSampleMatrix ? 'Creating…' : 'Add Sample Matrix'}
+                </button>
+              </div>
 
               <SelectField label="Default Container Type" name="containerTypeUid" value={vals.containerTypeUid}
                 onChange={v => setVal('containerTypeUid', v)} options={containerTypeOptions} />

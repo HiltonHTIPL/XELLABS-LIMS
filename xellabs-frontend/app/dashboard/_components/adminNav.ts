@@ -19,6 +19,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { label: 'Approvals',    href: '/dashboard/approvals',    icon: 'fact_check',  roles: ['admin', 'lab_manager', 'reviewer'] },
   { label: 'Audit Trail',  href: '/dashboard/audit-trail',  icon: 'history',     roles: ['admin', 'lab_manager'] },
   { label: 'Master Data Import', href: '/dashboard/master-data-import', icon: 'upload_file', roles: ['admin', 'lab_manager'] },
+  { label: 'Instrument Register', href: '/dashboard/instruments', icon: 'build_circle', roles: ['admin', 'lab_manager'] },
   { label: 'Instrument List', href: '/dashboard/instrument-list', icon: 'precision_manufacturing', roles: ['admin', 'lab_manager'] },
   { label: 'Storage List', href: '/dashboard/storage-list', icon: 'inventory_2', roles: ['admin', 'lab_manager'] },
   { label: 'Report Templates', href: '/dashboard/settings/report-templates', icon: 'description', roles: ['admin'] },

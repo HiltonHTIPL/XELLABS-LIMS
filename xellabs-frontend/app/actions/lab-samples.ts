@@ -60,6 +60,7 @@ export type LabSample = {
   attachment?: string | null
   created_at: string
   senaite_uid?: string
+  senaite_ar_id?: string
   // Extended intake fields
   contact_name: string
   cc_contact: string

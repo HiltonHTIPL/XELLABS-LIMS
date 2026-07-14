@@ -1,5 +1,7 @@
-import UnderDevelopment from '../_components/UnderDevelopment'
+import { getInstruments } from '@/app/actions/instruments'
+import InstrumentsShell from './_components/InstrumentsShell'
 
-export default function InstrumentsPage() {
-  return <UnderDevelopment title="Instruments" />
+export default async function InstrumentsPage() {
+  const instruments = await getInstruments()
+  return <InstrumentsShell initialInstruments={instruments} />
 }

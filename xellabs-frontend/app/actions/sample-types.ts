@@ -7,6 +7,7 @@ import {
   createSenaiteSampleType,
   updateSenaiteSampleType,
   createSenaiteContainerType,
+  createSenaiteSampleMatrix,
   SenaiteSampleType,
   SenaiteRefOption,
   SampleTypePayload,
@@ -154,4 +155,20 @@ export async function createContainerType(
   }
   revalidatePath('/dashboard/sample-types')
   return { success: true, message: `Container type "${title}" created.`, option: result.option }
+}
+
+export async function createSampleMatrix(
+  _state: CreateRefOptionState,
+  formData: FormData
+): Promise<CreateRefOptionState> {
+  const title = (formData.get('title') as string)?.trim()
+  const description = (formData.get('description') as string)?.trim()
+  if (!title) return { message: 'Name is required.' }
+
+  const result = await createSenaiteSampleMatrix(serverToken(), { title, description })
+  if (!result.success || !result.option) {
+    return { message: result.error ?? 'Failed to create sample matrix.' }
+  }
+  revalidatePath('/dashboard/sample-types')
+  return { success: true, message: `Sample matrix "${title}" created.`, option: result.option }
 }

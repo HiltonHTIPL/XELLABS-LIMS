@@ -319,6 +319,79 @@ export async function createSenaiteContainerType(
   } catch (e) { return { success: false, error: String(e) } }
 }
 
+// Confirmed live at /senaite/setup/{samplecontainers,samplepreservations,samplepoints}
+// with portal_type ids SampleContainer / SamplePreservation / SamplePoint.
+async function createSenaiteSetupRef(
+  token: string,
+  portalType: string,
+  parentPath: string,
+  payload: { title: string; description?: string },
+  notFoundLabel: string,
+): Promise<{ success: boolean; option?: SenaiteRefOption; error?: string }> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        portal_type: portalType,
+        parent_path: parentPath,
+        title: payload.title,
+        ...(payload.description ? { description: payload.description } : {}),
+        // SampleContainer.pre_preserved is required with a cross-field rule
+        // ("pre-preserved containers must have a preservation selected") —
+        // confirmed live: a quick-create with just title/description fails
+        // with "pre_preserved: required field" unless explicitly set. A bare
+        // inline-created container isn't pre-preserved by default; anyone
+        // needing that flag can set it later via SENAITE's own container edit.
+        ...(portalType === 'SampleContainer' ? { pre_preserved: false } : {}),
+      }),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok || data.success === false) {
+      return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    }
+    const items = (data.items as Record<string, unknown>[]) ?? []
+    if (!items.length) return { success: false, error: `No ${notFoundLabel} returned from the lab system.` }
+    return { success: true, option: { uid: (items[0].uid as string) ?? '', title: (items[0].title as string) ?? payload.title } }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+export const createSenaiteSampleContainer = (token: string, payload: { title: string; description?: string }) =>
+  createSenaiteSetupRef(token, 'SampleContainer', '/senaite/setup/samplecontainers', payload, 'sample container')
+
+export const createSenaiteSamplePreservation = (token: string, payload: { title: string; description?: string }) =>
+  createSenaiteSetupRef(token, 'SamplePreservation', '/senaite/setup/samplepreservations', payload, 'preservation')
+
+export const createSenaiteSamplePoint = (token: string, payload: { title: string; description?: string }) =>
+  createSenaiteSetupRef(token, 'SamplePoint', '/senaite/setup/samplepoints', payload, 'sample point')
+
+export async function createSenaiteSampleMatrix(
+  token: string,
+  payload: { title: string; description?: string }
+): Promise<{ success: boolean; option?: SenaiteRefOption; error?: string }> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        portal_type: 'SampleMatrix',
+        parent_path: '/senaite/setup/samplematrices',
+        title: payload.title,
+        ...(payload.description ? { description: payload.description } : {}),
+      }),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok || data.success === false) {
+      return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    }
+    const items = (data.items as Record<string, unknown>[]) ?? []
+    if (!items.length) return { success: false, error: 'No sample matrix returned from the lab system.' }
+    return { success: true, option: { uid: (items[0].uid as string) ?? '', title: (items[0].title as string) ?? payload.title } }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
 // SampleTemplate — a real SENAITE Dexterity content type (portal_type
 // "SampleTemplate", not the deprecated Archetypes "ARTemplate") living at
 // /senaite/setup/sampletemplates. Confirmed live via @types/SampleTemplate:
@@ -373,6 +446,22 @@ export type SampleTemplatePayload = {
   services: SampleTemplateService[]
 }
 
+// Full SampleTemplate body — safe to send in a single POST or PATCH.
+// Originally this required a two-step create-then-PATCH split because
+// partitions/services failed with "Wrong contained type" on the create POST.
+// Root cause (confirmed live 2026-07-14): the custom Zope adapter for
+// partitions/services (SampleTemplateDataGridFieldDeserializer, registered on
+// the bare `List` class) was shadowing plone.restapi's own more-specific
+// CollectionFieldDeserializer for every OTHER List-typed field on
+// SampleTemplate too — including `sampletype`/`samplepoint` — because it
+// subclassed the wrong base (DefaultFieldDeserializer instead of
+// CollectionFieldDeserializer). Fixed at the SENAITE adapter level
+// (senaite-rebrand/sampletemplate_datagrid_deserializer.py) — the adapter now
+// subclasses CollectionFieldDeserializer, so it only special-cases
+// partitions/services and correctly falls through to plone.restapi's real
+// per-item deserialization for every other field. Verified: title,
+// sampletype, partitions, and services now all persist correctly together in
+// a single create POST. See CLAUDE.md §16b/16c.
 function sampleTemplateRestBody(payload: SampleTemplatePayload): Record<string, unknown> {
   return {
     title: payload.title,
