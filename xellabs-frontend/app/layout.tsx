@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
+import ChunkErrorReloader from "./_components/ChunkErrorReloader";
 
 const jakarta = Plus_Jakarta_Sans({
   variable: "--font-jakarta",
@@ -29,7 +30,10 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <ChunkErrorReloader />
+        {children}
+      </body>
     </html>
   );
 }

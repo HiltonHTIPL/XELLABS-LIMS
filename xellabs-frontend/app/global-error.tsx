@@ -1,35 +1,21 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { isStaleBundleError, attemptGuardedReload, clearReloadGuard } from '@/app/lib/staleBundleRecovery'
 
-const STALE_BUNDLE_ERROR = /unexpected response|Failed to find/
-const RELOAD_GUARD_KEY = 'xellabs_stale_bundle_reload_at'
-// A plain reload() can be served from the browser's back-forward cache or disk
-// cache with the SAME stale bundle that just crashed — in that case the error
-// fires again immediately and this screen loops on "Reloading..." forever
-// (confirmed live: a tab open across two consecutive deploys got stuck here).
-// Two defenses: (1) bust any cache by navigating to a URL with a fresh query
-// param instead of calling reload() directly, (2) a sessionStorage timestamp
-// guard — if we already tried this within the last 10s, stop auto-retrying
-// and show a manual recovery link instead of silently looping.
-const RELOAD_GUARD_WINDOW_MS = 10_000
+// Detection + the cache-busting/loop-guarded reload itself live in
+// app/lib/staleBundleRecovery.ts, shared with app/_components/ChunkErrorReloader.tsx
+// (a global window-level listener) — a ChunkLoadError from a failed dynamic
+// import rejects a promise rather than throwing during render, so it never
+// reaches this boundary at all; that component is what actually catches it.
+// This boundary still matters for errors that DO throw synchronously during
+// render (e.g. Next's own "Failed to find Server Action").
 
 export default function GlobalError({ error }: { error: Error }) {
   const [loopDetected, setLoopDetected] = useState(false)
 
   useEffect(() => {
-    if (!STALE_BUNDLE_ERROR.test(error?.message ?? '')) return
-
-    const lastAttempt = Number(sessionStorage.getItem(RELOAD_GUARD_KEY) ?? 0)
-    const now = Date.now()
-    if (now - lastAttempt < RELOAD_GUARD_WINDOW_MS) {
-      setLoopDetected(true)
-      return
-    }
-
-    sessionStorage.setItem(RELOAD_GUARD_KEY, String(now))
-    const url = new URL(window.location.href)
-    url.searchParams.set('_r', String(now))
-    window.location.replace(url.toString())
+    if (!isStaleBundleError(error?.message)) return
+    if (!attemptGuardedReload()) setLoopDetected(true)
   }, [error])
 
   return (
@@ -43,7 +29,7 @@ export default function GlobalError({ error }: { error: Error }) {
                   This page couldn&apos;t recover automatically.
                 </p>
                 <button
-                  onClick={() => { sessionStorage.removeItem(RELOAD_GUARD_KEY); window.location.href = '/dashboard' }}
+                  onClick={() => { clearReloadGuard(); window.location.href = '/dashboard' }}
                   style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid #ccc', background: '#fff', cursor: 'pointer' }}
                 >
                   Return to Dashboard
