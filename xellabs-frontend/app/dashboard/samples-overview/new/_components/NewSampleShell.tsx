@@ -4,8 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createSampleWithAnalyses, type DjangoSampleType } from '@/app/actions/lab-samples'
 import { type DjangoClient } from '@/app/actions/clients'
 import { type LimsTest } from '@/app/actions/tests'
-import { type SampleTemplate } from '@/app/actions/sample-templates'
-import { type SenaiteBatch } from '@/app/lib/senaite'
+import { type SenaiteBatch, type SenaiteSampleTemplate, type SenaiteRefOption } from '@/app/lib/senaite'
 import StorageLocationInput from '@/app/dashboard/_components/StorageLocationInput'
 
 const CONTAINER_OPTIONS = [
@@ -92,9 +91,12 @@ function blankForm(): SampleForm {
   }
 }
 
-type Props = { sampleTypes: DjangoSampleType[]; clients: DjangoClient[]; tests: LimsTest[]; sampleTemplates: SampleTemplate[]; batches: SenaiteBatch[] }
+type Props = {
+  sampleTypes: DjangoSampleType[]; clients: DjangoClient[]; tests: LimsTest[]
+  sampleTemplates: SenaiteSampleTemplate[]; sampleContainers: SenaiteRefOption[]; batches: SenaiteBatch[]
+}
 
-export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemplates, batches }: Props) {
+export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemplates, sampleContainers, batches }: Props) {
   const router = useRouter()
   // Pre-select a Batch when arriving from that batch's "New Sample" button
   // (/dashboard/samples-overview/new?batch=<uid>) — only applied to the first
@@ -106,9 +108,9 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
   // list when no template is selected (manual mode).
   function sampleTypeOptionsFor(templateId: string): DjangoSampleType[] {
     if (!templateId) return sampleTypes
-    const template = sampleTemplates.find(t => String(t.id) === templateId)
-    if (!template?.sample_type_uid) return sampleTypes
-    const matched = sampleTypes.filter(st => st.senaite_uid === template.sample_type_uid)
+    const template = sampleTemplates.find(t => t.uid === templateId)
+    if (!template?.sampleTypeUid) return sampleTypes
+    const matched = sampleTypes.filter(st => st.senaite_uid === template.sampleTypeUid)
     return matched.length ? matched : sampleTypes
   }
 
@@ -313,10 +315,13 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
   // (matched via each Django record's senaite_uid — see Section 19 of CLAUDE.md:
   // never mix Django and SENAITE IDs directly).
   function handleTemplateChange(templateId: string) {
-    const template = sampleTemplates.find(t => String(t.id) === templateId)
-    const templateServices = template ? (template.partitions ?? []).flatMap(p => p.services) : []
-    const templateContainer = template ? (template.partitions ?? [])[0]?.container_name ?? '' : ''
-    const matchedSampleType = template ? sampleTypes.find(st => st.senaite_uid === template.sample_type_uid) : undefined
+    const template = sampleTemplates.find(t => t.uid === templateId)
+    const templateServices = template?.services ?? []
+    const firstContainerUid = template?.partitions?.[0]?.containerUid
+    const templateContainer = firstContainerUid
+      ? sampleContainers.find(c => c.uid === firstContainerUid)?.title ?? ''
+      : ''
+    const matchedSampleType = template ? sampleTypes.find(st => st.senaite_uid === template.sampleTypeUid) : undefined
     const matchedTests = template
       ? tests.filter(t => templateServices.some(a => a.uid === t.senaite_uid))
       : []
@@ -327,7 +332,7 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
       sampleTypeId: matchedSampleType ? String(matchedSampleType.id) : form.sampleTypeId,
       containerType: template ? (allowedContainers[0]?.value ?? '') : form.containerType,
       suggestedContainer: templateContainer,
-      analysisProfiles: template ? templateServices.map(a => a.title) : form.analysisProfiles,
+      analysisProfiles: template ? matchedTests.map(t => t.name) : form.analysisProfiles,
       selectedTests: matchedTests.length ? matchedTests : form.selectedTests,
     } : form))
   }
@@ -504,7 +509,7 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
                 <div style={field}><label style={lbl}>Sample Template</label>
                   <select value={f.sampleTemplateId} onChange={e => handleTemplateChange(e.target.value)} style={inp}>
                     <option value="">None — configure manually</option>
-                    {sampleTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    {sampleTemplates.map(t => <option key={t.uid} value={t.uid}>{t.title}</option>)}
                   </select>
                 </div>
                 <div style={field}><label style={lbl}>Analysis Profiles</label>

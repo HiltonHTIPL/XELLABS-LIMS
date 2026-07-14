@@ -287,7 +287,10 @@ async function fetchSenaiteRefList(token: string, portalType: string): Promise<S
 
 export const fetchSenaiteSampleMatrices = (token: string) => fetchSenaiteRefList(token, 'SampleMatrix')
 export const fetchSenaiteContainerTypes = (token: string) => fetchSenaiteRefList(token, 'ContainerType')
-export const fetchSenaitePreservations = (token: string) => fetchSenaiteRefList(token, 'Preservation')
+// The v1 API's portal_type is "SamplePreservation", not "Preservation" — the
+// latter 404s ("Not Found"), confirmed by direct probing.
+export const fetchSenaitePreservations = (token: string) => fetchSenaiteRefList(token, 'SamplePreservation')
+export const fetchSenaiteSampleContainers = (token: string) => fetchSenaiteRefList(token, 'SampleContainer')
 export const fetchSenaiteSamplePoints = (token: string) => fetchSenaiteRefList(token, 'SamplePoint')
 
 export async function createSenaiteContainerType(
@@ -316,6 +319,197 @@ export async function createSenaiteContainerType(
   } catch (e) { return { success: false, error: String(e) } }
 }
 
+// SampleTemplate — a real SENAITE Dexterity content type (portal_type
+// "SampleTemplate", not the deprecated Archetypes "ARTemplate") living at
+// /senaite/setup/sampletemplates. Confirmed live via @types/SampleTemplate:
+//   title, description, samplepoint (uid array), sampletype (uid array),
+//   composite (bool), sampling_required (bool), auto_partition (bool),
+//   partitions: [{part_id, container: [uid], preservation: [uid], sampletype: [uid]}],
+//   services: [{uid, hidden, part_id}]
+// Like SampleType.admitted_sticker_templates, `partitions`/`services` are
+// List(value_type=DataGridRow(...)) fields with no restapi deserializer —
+// fixed the same way via a custom Zope adapter (see CLAUDE.md 16b/16c).
+// v1 API list works for cheap bulk listing (SETUP_CATALOG is indexed there)
+// but plone.restapi's own folder listing returns 0 items for this setup
+// content (same broken-catalog-search issue as SampleType) — so listing
+// uses v1, and all create/update/read-of-partitions-and-services uses
+// plone.restapi directly against the object's own URL.
+export type SampleTemplatePartition = {
+  partId: string
+  containerUid: string
+  preservationUid: string
+  sampleTypeUid: string
+}
+
+export type SampleTemplateService = {
+  uid: string
+  hidden: boolean
+  partId: string
+}
+
+export type SenaiteSampleTemplate = {
+  uid: string
+  url: string
+  title: string
+  description: string
+  samplePointUid: string
+  sampleTypeUid: string
+  composite: boolean
+  samplingRequired: boolean
+  autoPartition: boolean
+  partitions: SampleTemplatePartition[]
+  services: SampleTemplateService[]
+}
+
+export type SampleTemplatePayload = {
+  title: string
+  description?: string
+  samplePointUid?: string
+  sampleTypeUid?: string
+  composite?: boolean
+  samplingRequired?: boolean
+  autoPartition?: boolean
+  partitions: SampleTemplatePartition[]
+  services: SampleTemplateService[]
+}
+
+function sampleTemplateRestBody(payload: SampleTemplatePayload): Record<string, unknown> {
+  return {
+    title: payload.title,
+    description: payload.description ?? '',
+    samplepoint: payload.samplePointUid ? [payload.samplePointUid] : [],
+    sampletype: payload.sampleTypeUid ? [payload.sampleTypeUid] : [],
+    composite: payload.composite ?? false,
+    sampling_required: payload.samplingRequired ?? false,
+    auto_partition: payload.autoPartition ?? false,
+    partitions: payload.partitions.map(p => ({
+      part_id: p.partId || 'part-1',
+      container: p.containerUid ? [p.containerUid] : [],
+      preservation: p.preservationUid ? [p.preservationUid] : [],
+      sampletype: p.sampleTypeUid ? [p.sampleTypeUid] : [],
+    })),
+    services: payload.services.map(s => ({ uid: s.uid, hidden: s.hidden, part_id: s.partId })),
+  }
+}
+
+function first(value: unknown): string {
+  if (Array.isArray(value)) return (value[0] as string) ?? ''
+  return (value as string) ?? ''
+}
+
+function mapSenaiteSampleTemplate(t: Record<string, unknown>): SenaiteSampleTemplate {
+  const partitions = ((t.partitions as Record<string, unknown>[]) ?? []).map(p => ({
+    partId: (p.part_id as string) ?? '',
+    containerUid: first(p.container),
+    preservationUid: first(p.preservation),
+    sampleTypeUid: first(p.sampletype),
+  }))
+  const services = ((t.services as Record<string, unknown>[]) ?? []).map(s => ({
+    uid: (s.uid as string) ?? '',
+    hidden: Boolean(s.hidden),
+    partId: (s.part_id as string) ?? '',
+  }))
+  return {
+    uid: (t.UID as string) ?? (t.uid as string) ?? '',
+    url: (t.url as string) ?? (t['@id'] as string) ?? '',
+    title: (t.title as string) ?? '',
+    description: (t.description as string) ?? '',
+    samplePointUid: first(t.samplepoint),
+    sampleTypeUid: first(t.sampletype),
+    composite: Boolean(t.composite),
+    samplingRequired: Boolean(t.sampling_required),
+    autoPartition: Boolean(t.auto_partition),
+    partitions,
+    services,
+  }
+}
+
+export async function fetchSenaiteSampleTemplates(token: string): Promise<SenaiteSampleTemplate[]> {
+  try {
+    // v1 list gives us the url/uid cheaply (SETUP_CATALOG-indexed); plone.restapi's
+    // folder listing returns 0 items here, same broken-catalog-search issue as
+    // SampleType, so we can't use it for bulk listing.
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/SampleTemplate?limit=1000`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    const stubs = (data.items ?? []) as Record<string, unknown>[]
+    // v1's own item shape lacks partitions/services (both come back null there),
+    // so fetch full detail per-object via restapi, same pattern as sample types.
+    const details = await Promise.all(stubs.map(async (stub) => {
+      const url = stub.url as string
+      const detailRes = await fetch(url, {
+        headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+        cache: 'no-store',
+      }).catch(() => null)
+      if (!detailRes || !detailRes.ok) return mapSenaiteSampleTemplate(stub)
+      const detail = await detailRes.json().catch(() => stub)
+      return mapSenaiteSampleTemplate(detail)
+    }))
+    return details
+  } catch { return [] }
+}
+
+export async function createSenaiteSampleTemplate(
+  token: string,
+  payload: SampleTemplatePayload
+): Promise<{ success: boolean; sampleTemplate?: SenaiteSampleTemplate; error?: string }> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/setup/sampletemplates`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json',
+      },
+      body: JSON.stringify({ '@type': 'SampleTemplate', ...sampleTemplateRestBody(payload) }),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok) {
+      return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    }
+    return { success: true, sampleTemplate: mapSenaiteSampleTemplate(data) }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+export async function updateSenaiteSampleTemplate(
+  token: string,
+  url: string,
+  payload: SampleTemplatePayload
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json',
+      },
+      body: JSON.stringify(sampleTemplateRestBody(payload)),
+      cache: 'no-store',
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>
+      return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    }
+    return { success: true }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+export async function deleteSenaiteSampleTemplate(token: string, url: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const res = await fetch(url, {
+      method: 'DELETE',
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>
+      return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    }
+    return { success: true }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
 export type SampleTypePayload = {
   title: string
   Prefix: string
@@ -332,6 +526,10 @@ function sampleTypeApiBody(payload: SampleTypePayload): Record<string, unknown> 
   return {
     title: payload.title,
     Prefix: payload.Prefix,
+    // Sent under both casings — mapSenaiteSampleType's read side already falls
+    // back MinimumVolume -> min_volume, confirming SENAITE's real field name
+    // is inconsistent/uncertain here; sending both avoids a silent write-miss.
+    MinimumVolume: payload.MinimumVolume || '1 ml',
     min_volume: payload.MinimumVolume || '1 ml',
     description: payload.description ?? '',
     hazardous: payload.hazardous ?? false,
@@ -350,26 +548,34 @@ function sampleTypeApiBody(payload: SampleTypePayload): Record<string, unknown> 
 
 // Patches retention_period + admitted_sticker_templates via plone.restapi,
 // the only API path that actually persists them (see sampleTypeApiBody above).
-async function patchSampleTypeExtras(token: string, url: string, payload: SampleTypePayload): Promise<void> {
-  if (!url) return
-  await fetch(url, {
-    method: 'PATCH',
-    headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({
-      retention_period: retentionPeriodToSeconds(payload.retentionPeriod ?? { days: 0, hours: 0, minutes: 0 }),
-      admitted_sticker_templates: [{
-        admitted: payload.stickerTemplates?.admitted ?? [],
-        small_default: payload.stickerTemplates?.smallDefault || null,
-        large_default: payload.stickerTemplates?.largeDefault || null,
-      }],
-    }),
-  }).catch(() => null) // non-fatal — the sample type itself already saved via v1
+async function patchSampleTypeExtras(
+  token: string, url: string, payload: SampleTypePayload
+): Promise<{ success: boolean; error?: string }> {
+  if (!url) return { success: false, error: 'Could not resolve sample type URL for retention/sticker update' }
+  try {
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        retention_period: retentionPeriodToSeconds(payload.retentionPeriod ?? { days: 0, hours: 0, minutes: 0 }),
+        admitted_sticker_templates: [{
+          admitted: payload.stickerTemplates?.admitted ?? [],
+          small_default: payload.stickerTemplates?.smallDefault || null,
+          large_default: payload.stickerTemplates?.largeDefault || null,
+        }],
+      }),
+    })
+    if (!res.ok) return { success: false, error: `Retention/sticker update failed (HTTP ${res.status})` }
+    return { success: true }
+  } catch (e) {
+    return { success: false, error: `Retention/sticker update failed: ${String(e)}` }
+  }
 }
 
 export async function createSenaiteSampleType(
   token: string,
   payload: SampleTypePayload
-): Promise<{ success: boolean; sampleType?: SenaiteSampleType; error?: string }> {
+): Promise<{ success: boolean; sampleType?: SenaiteSampleType; error?: string; warning?: string }> {
   try {
     const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
       method: 'POST',
@@ -390,9 +596,10 @@ export async function createSenaiteSampleType(
     const items = (data.items as Record<string, unknown>[]) ?? []
     if (!items.length) return { success: false, error: 'No sample type returned from SENAITE' }
     const created = items[0]
-    await patchSampleTypeExtras(token, (created.url as string) ?? '', payload)
+    const extras = await patchSampleTypeExtras(token, (created.url as string) ?? '', payload)
     return {
       success: true,
+      warning: extras.success ? undefined : extras.error,
       sampleType: {
         ...mapSenaiteSampleType(created),
         RetentionPeriod: payload.retentionPeriod ?? { days: 0, hours: 0, minutes: 0 },
@@ -406,7 +613,7 @@ export async function updateSenaiteSampleType(
   token: string,
   uid: string,
   payload: SampleTypePayload
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; warning?: string }> {
   try {
     const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update`, {
       method: 'POST',
@@ -427,8 +634,8 @@ export async function updateSenaiteSampleType(
     })
     const lookupData = await lookup.json().catch(() => ({})) as Record<string, unknown>
     const url = ((lookupData.items as Record<string, unknown>[]) ?? [])[0]?.url as string | undefined
-    if (url) await patchSampleTypeExtras(token, url, payload)
-    return { success: true }
+    const extras = await patchSampleTypeExtras(token, url ?? '', payload)
+    return { success: true, warning: extras.success ? undefined : extras.error }
   } catch (e) { return { success: false, error: String(e) } }
 }
 
@@ -444,23 +651,33 @@ export type SenaiteInstrument = {
   Model: string
   SerialNo: string
   AssetNumber: string
+  Location: string
   review_state: string
 }
 
+// Reference-data lookup maps (InstrumentType/Manufacturer/Supplier) change rarely —
+// cache them briefly in-process so every Instrument List page load doesn't re-fetch
+// all three full catalogs on top of the instrument list itself.
+const TITLE_MAP_TTL_MS = 5 * 60 * 1000
+const titleMapCache = new Map<string, { expires: number; map: Record<string, string> }>()
+
 async function fetchSenaiteTitleMap(token: string, portalType: string): Promise<Record<string, string>> {
+  const cached = titleMapCache.get(portalType)
+  if (cached && cached.expires > Date.now()) return cached.map
   try {
     const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/${portalType}?complete=true&limit=1000`, {
       headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
       cache: 'no-store',
     })
-    if (!res.ok) return {}
+    if (!res.ok) return cached?.map ?? {}
     const data = await res.json()
     const map: Record<string, string> = {}
     for (const item of data.items ?? []) {
       if (item.uid) map[item.uid] = item.title ?? ''
     }
+    titleMapCache.set(portalType, { expires: Date.now() + TITLE_MAP_TTL_MS, map })
     return map
-  } catch { return {} }
+  } catch { return cached?.map ?? {} }
 }
 
 export async function fetchSenaiteInstruments(token: string): Promise<SenaiteInstrument[]> {
@@ -473,11 +690,12 @@ export async function fetchSenaiteInstruments(token: string): Promise<SenaiteIns
     const data = await res.json()
     const items = (data.items ?? []) as Record<string, unknown>[]
 
-    // InstrumentType/Manufacturer/Supplier come back as {uid, url, api_url} refs, not titles.
-    const [typeMap, manufacturerMap, supplierMap] = await Promise.all([
+    // InstrumentType/Manufacturer/Supplier/Location come back as {uid, url, api_url} refs, not titles.
+    const [typeMap, manufacturerMap, supplierMap, locationMap] = await Promise.all([
       fetchSenaiteTitleMap(token, 'InstrumentType'),
       fetchSenaiteTitleMap(token, 'Manufacturer'),
       fetchSenaiteTitleMap(token, 'Supplier'),
+      fetchSenaiteTitleMap(token, 'StorageLocation'),
     ])
 
     const refTitle = (ref: unknown, map: Record<string, string>) => {
@@ -495,6 +713,7 @@ export async function fetchSenaiteInstruments(token: string): Promise<SenaiteIns
       Model:          (t.Model as string) ?? '',
       SerialNo:       (t.SerialNo as string) ?? '',
       AssetNumber:    (t.AssetNumber as string) ?? '',
+      Location:       refTitle(t.Location, locationMap),
       review_state:   (t.review_state as string) ?? '',
     }))
   } catch { return [] }

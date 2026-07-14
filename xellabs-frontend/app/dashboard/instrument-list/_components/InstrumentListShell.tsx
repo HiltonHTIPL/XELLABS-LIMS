@@ -144,6 +144,7 @@ export default function InstrumentListShell({ initialInstruments }: { initialIns
                     <th style={thStyle}>Model</th>
                     <th style={thStyle}>Serial No</th>
                     <th style={thStyle}>Asset No</th>
+                    <th style={thStyle}>Location</th>
                     <th style={thStyle}>Status</th>
                   </tr>
                 </thead>
@@ -160,6 +161,7 @@ export default function InstrumentListShell({ initialInstruments }: { initialIns
                       <td style={tdStyle}>{r.Model || '—'}</td>
                       <td style={tdStyle}>{r.SerialNo || '—'}</td>
                       <td style={tdStyle}>{r.AssetNumber || '—'}</td>
+                      <td style={tdStyle}>{r.Location || '—'}</td>
                       <td style={tdStyle}><StatusChip status={r.review_state || 'active'} /></td>
                     </tr>
                   ))}

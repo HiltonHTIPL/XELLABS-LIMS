@@ -11,6 +11,11 @@ const jakarta = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   title: "XelLabs LIMS",
   description: "Laboratory Information Management System — HIPAA-compliant",
+  icons: {
+    icon: "/xellabs-helix.png",
+    shortcut: "/xellabs-helix.png",
+    apple: "/xellabs-helix.png",
+  },
 };
 
 export default function RootLayout({

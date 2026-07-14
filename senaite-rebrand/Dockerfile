@@ -12,7 +12,18 @@ ENV BASE=${CORE}/browser
 COPY sampletype_stickers_deserializer.py ${CORE}/adapters/sampletype_stickers_deserializer.py
 COPY patch_sampletype_stickers_zcml.py /tmp/patch_sampletype_stickers_zcml.py
 RUN python2.7 /tmp/patch_sampletype_stickers_zcml.py
-RUN chown senaite:senaite ${CORE}/adapters/sampletype_stickers_deserializer.py ${CORE}/adapters/configure.zcml
+
+# Same root cause, different content type: SampleTemplate.partitions/services
+# are List(value_type=DataGridRow(...)) fields with no restapi deserializer —
+# see CLAUDE.md section 16b/16c.
+COPY sampletemplate_datagrid_deserializer.py ${CORE}/adapters/sampletemplate_datagrid_deserializer.py
+COPY patch_sampletemplate_zcml.py /tmp/patch_sampletemplate_zcml.py
+RUN python2.7 /tmp/patch_sampletemplate_zcml.py
+
+RUN chown senaite:senaite \
+    ${CORE}/adapters/sampletype_stickers_deserializer.py \
+    ${CORE}/adapters/sampletemplate_datagrid_deserializer.py \
+    ${CORE}/adapters/configure.zcml
 
 # Replace branding templates
 COPY logo.pt          ${BASE}/viewlets/templates/logo.pt

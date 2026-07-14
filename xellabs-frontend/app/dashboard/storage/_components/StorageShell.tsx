@@ -3,7 +3,7 @@ import { useState, useCallback, useMemo } from 'react'
 import QRCode from 'qrcode'
 import {
   deleteStorageLocation, getStorageLocations, lookupChainOfCustody, assignSampleToSlot,
-  releaseSampleFromSlot, resolveStorageLabel,
+  releaseSampleFromSlot, resolveStorageLabel, retryStorageSync,
   type StorageLocation, type ChainOfCustodyResult,
 } from '@/app/actions/storage'
 import StorageTree from './StorageTree'
@@ -198,6 +198,12 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
     const res = await assignSampleToSlot(freeSlot.id, sampleId)
     if (res.success) await refreshLocations()
     return { success: res.success, message: res.success ? `Stored in slot ${freeSlot.slot_id}` : res.message }
+  }
+
+  async function handleRetrySync(id: number) {
+    const res = await retryStorageSync(id)
+    showToast(res.success, res.message)
+    if (res.success) await refreshLocations()
   }
 
   async function handlePrintLabel() {
@@ -422,6 +428,22 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
                       {child.temperature && <p style={{ fontSize: 10, color: '#6B7280', marginTop: 2 }}>{child.temperature}</p>}
                       {child.location_type === 'box' && child.rows && child.columns && (
                         <p style={{ fontSize: 10, color: '#6B7280', marginTop: 2 }}>{child.rows}×{child.columns} slots</p>
+                      )}
+                      {child.senaite_sync_error && (
+                        <div
+                          title={child.senaite_sync_error}
+                          style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 6 }}
+                        >
+                          <span style={{ fontSize: 9, fontWeight: 600, color: '#EF4444', backgroundColor: '#FEF2F2', padding: '2px 6px', borderRadius: 5 }}>
+                            Sync failed
+                          </span>
+                          <button
+                            onClick={async (e) => { e.stopPropagation(); await handleRetrySync(child.id) }}
+                            style={{ fontSize: 9, fontWeight: 600, color: '#0154FC', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                          >
+                            Retry
+                          </button>
+                        </div>
                       )}
                     </button>
                   ))}

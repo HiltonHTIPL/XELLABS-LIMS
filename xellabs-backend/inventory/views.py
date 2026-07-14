@@ -493,6 +493,15 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
 
         return Response({"created": len(to_create), "total": rows * cols})
 
+    @action(detail=True, methods=["post"], url_path="retry-sync")
+    def retry_sync(self, request, pk=None):
+        """Re-dispatch the existing sync task for a location that failed to sync to SENAITE."""
+        location = self.get_object()
+        from django.db import connection
+        from .tasks import sync_storage_location_to_senaite
+        sync_storage_location_to_senaite.apply_async(args=[location.pk, connection.schema_name])
+        return Response({"message": "Sync retry queued."})
+
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
 

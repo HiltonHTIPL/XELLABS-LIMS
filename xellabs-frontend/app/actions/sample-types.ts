@@ -78,7 +78,7 @@ function parseSenaiteFieldErrors(raw: string): Record<string, string[]> | null {
   try {
     const parsed = JSON.parse(raw) as Record<string, string>
     const errors: Record<string, string[]> = {}
-    if (parsed.prefix) errors.Prefix = [parsed.prefix]
+    if (parsed.Prefix ?? parsed.prefix) errors.Prefix = [parsed.Prefix ?? parsed.prefix]
     if (parsed.title)  errors.title  = [parsed.title]
     return Object.keys(errors).length ? errors : null
   } catch { return null }
@@ -109,7 +109,8 @@ export async function createSampleType(
 
   revalidatePath('/dashboard/sample-types')
   revalidatePath('/dashboard/samples-overview')
-  return { success: true, message: `Sample type "${payload.title}" created.` }
+  const warning = result.warning ? ` Warning: retention period / sticker templates did not save (${result.warning}).` : ''
+  return { success: true, message: `Sample type "${payload.title}" created.${warning}` }
 }
 
 export async function updateSampleType(
@@ -129,7 +130,8 @@ export async function updateSampleType(
   }
   revalidatePath('/dashboard/sample-types')
   revalidatePath('/dashboard/samples-overview')
-  return { success: true, message: `Sample type "${payload.title}" updated.` }
+  const warning = result.warning ? ` Warning: retention period / sticker templates did not save (${result.warning}).` : ''
+  return { success: true, message: `Sample type "${payload.title}" updated.${warning}` }
 }
 
 export type CreateRefOptionState = {

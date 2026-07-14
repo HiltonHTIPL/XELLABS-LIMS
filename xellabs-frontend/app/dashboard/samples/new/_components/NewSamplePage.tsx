@@ -2,8 +2,7 @@
 import { useActionState, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createSample, SampleFormState } from '@/app/actions/samples'
-import { SenaiteSampleType, SenaiteAnalysisService } from '@/app/lib/senaite'
-import { SampleTemplate } from '@/app/actions/sample-templates'
+import { SenaiteSampleType, SenaiteAnalysisService, SenaiteSampleTemplate, SenaiteRefOption } from '@/app/lib/senaite'
 import { AnalysisProfile } from '@/app/actions/analysis-profiles'
 import { T, MI, Breadcrumb, Btn, SectionCard, Field, inputStyle, selectStyle, textareaStyle, TagChip } from '../../../_components/ui'
 
@@ -12,7 +11,8 @@ type Props = {
   clients: ClientOption[]
   sampleTypes: SenaiteSampleType[]
   analysisServices: SenaiteAnalysisService[]
-  sampleTemplates: SampleTemplate[]
+  sampleTemplates: SenaiteSampleTemplate[]
+  sampleContainers: SenaiteRefOption[]
   analysisProfiles: AnalysisProfile[]
 }
 
@@ -21,7 +21,7 @@ const PRIORITIES = [
   { value: '3', label: 'Normal' },   { value: '4', label: 'Low' }, { value: '5', label: 'Routine' },
 ]
 
-export default function NewSamplePage({ clients, sampleTypes, analysisServices, sampleTemplates, analysisProfiles }: Props) {
+export default function NewSamplePage({ clients, sampleTypes, analysisServices, sampleTemplates, sampleContainers, analysisProfiles }: Props) {
   const router = useRouter()
   const [selectedAnalyses, setSelectedAnalyses] = useState<string[]>([])
   const [remarks, setRemarks] = useState('')
@@ -33,12 +33,12 @@ export default function NewSamplePage({ clients, sampleTypes, analysisServices, 
 
   function handleTemplateChange(templateId: string) {
     setSelectedTemplateId(templateId)
-    const template = sampleTemplates.find(t => String(t.id) === templateId)
+    const template = sampleTemplates.find(t => t.uid === templateId)
     if (!template) return
-    if (template.sample_type_uid) setSampleTypeUid(template.sample_type_uid)
-    const partitions = template.partitions ?? []
-    setSelectedAnalyses(partitions.flatMap(p => p.services.map(a => a.uid)))
-    setContainer(partitions[0]?.container_name ?? '')
+    if (template.sampleTypeUid) setSampleTypeUid(template.sampleTypeUid)
+    setSelectedAnalyses((template.services ?? []).map(s => s.uid))
+    const firstContainerUid = template.partitions?.[0]?.containerUid
+    setContainer(sampleContainers.find(c => c.uid === firstContainerUid)?.title ?? '')
   }
 
   function handleProfileChange(profileId: string) {
@@ -118,7 +118,7 @@ export default function NewSamplePage({ clients, sampleTypes, analysisServices, 
                   <select value={selectedTemplateId} onChange={e => handleTemplateChange(e.target.value)}
                     style={selectStyle} className="w-full outline-none">
                     <option value="">None — configure manually</option>
-                    {sampleTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    {sampleTemplates.map(t => <option key={t.uid} value={t.uid}>{t.title}</option>)}
                   </select>
                 </Field>
                 <Field label="Analysis Profile" hint="adds a bundle of analyses on top of current selection">
