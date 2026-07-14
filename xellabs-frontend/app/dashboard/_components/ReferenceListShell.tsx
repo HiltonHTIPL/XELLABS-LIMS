@@ -1,7 +1,8 @@
 'use client'
 import { useState, useActionState } from 'react'
 import { useRouter } from 'next/navigation'
-import { type SenaiteRefOption, type CreateRefOptionState } from '@/app/actions/reference-data'
+import { type SenaiteRefOption } from '@/app/lib/senaite'
+import { type CreateRefOptionState } from '@/app/actions/reference-data'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>

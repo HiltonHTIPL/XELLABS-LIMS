@@ -2,8 +2,8 @@
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { toggleSenaiteClientActive, type SenaiteClientFull } from '@/app/actions/senaite-clients'
-import type { SenaiteAddress } from '@/app/lib/senaite'
+import { toggleSenaiteClientActive } from '@/app/actions/senaite-clients'
+import type { SenaiteClientFull, SenaiteAddress } from '@/app/lib/senaite'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>

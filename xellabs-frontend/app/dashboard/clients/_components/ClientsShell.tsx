@@ -4,8 +4,9 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   createSenaiteClient, updateSenaiteClient, toggleSenaiteClientActive,
-  type ClientFormState, type SenaiteClientFull,
+  type ClientFormState,
 } from '@/app/actions/senaite-clients'
+import { type SenaiteClientFull } from '@/app/lib/senaite'
 import { StatCard, Pagination, EmptyState } from '@/app/dashboard/_components/ui'
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
