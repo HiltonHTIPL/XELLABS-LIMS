@@ -30,6 +30,7 @@ export type StorageLocation = {
   shelf_title?: string
   shelf_code?: string
   shelf_description?: string
+  senaite_location_type?: string
 }
 
 export type StorageFormState = {
