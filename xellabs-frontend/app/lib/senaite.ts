@@ -137,13 +137,118 @@ export async function fetchSenaiteClients(token: string): Promise<SenaiteClient[
 
 // ─── Sample Types ────────────────────────────────────────────────────────────
 
+// Fixed sticker template codes — same list rendered by SENAITE's own
+// "Admitted sticker templates" datagrid widget (confirmed against the live
+// edit form: senaite/setup/sampletypes/<id>/edit). Not user-editable master
+// data, so hardcoded here rather than round-tripped from a vocabulary.
+export const STICKER_TEMPLATES: { value: string; label: string }[] = [
+  { value: 'Code_128_1x48mm.pt', label: 'Code 128 1x48mm' },
+  { value: 'Code_128_1x72mm.pt', label: 'Code 128 1x72mm' },
+  { value: 'Code_39_1x54mm.pt', label: 'Code 39 1x54mm' },
+  { value: 'Code_39_1x72mm.pt', label: 'Code 39 1x72mm' },
+  { value: 'Code_39_2ix1i.pt', label: 'Code 39 2ix1i' },
+  { value: 'Code_39_40x20mm.pt', label: 'Code 39 40x20mm' },
+  { value: 'Code_93_2x38mm.pt', label: 'Code 93 2x38mm' },
+  { value: 'DIN_Address_40x85mm.pt', label: 'DIN Address 40x85mm' },
+  { value: 'QR_1x14mmx39mm.pt', label: 'QR 1x14mmx39mm' },
+]
+
+export type RetentionPeriod = { days: number; hours: number; minutes: number }
+export type AdmittedStickerTemplates = { admitted: string[]; smallDefault: string; largeDefault: string }
+
 export type SenaiteSampleType = {
   uid: string
   id: string
+  url: string
   title: string
+  description: string
   Prefix: string
   MinimumVolume: string
-  RetentionPeriod: Record<string, unknown>
+  RetentionPeriod: RetentionPeriod
+  Hazardous: boolean
+  SampleMatrixUid: string
+  SampleMatrixTitle: string
+  ContainerTypeUid: string
+  ContainerTypeTitle: string
+  AdmittedStickerTemplates: AdmittedStickerTemplates
+}
+
+// retention_period comes back as a {days,hours,minutes} dict from the legacy
+// @@API/senaite/v1 read path, but as total seconds (a plain number) from
+// plone.restapi — accept both since we read via v1 and patch via restapi.
+function parseRetentionPeriod(raw: unknown): RetentionPeriod {
+  if (typeof raw === 'number') {
+    const totalMinutes = Math.floor(raw / 60)
+    return { days: Math.floor(totalMinutes / 1440), hours: Math.floor((totalMinutes % 1440) / 60), minutes: totalMinutes % 60 }
+  }
+  const o = (raw as Record<string, unknown>) ?? {}
+  return {
+    days: Number(o.days) || 0,
+    hours: Number(o.hours) || 0,
+    minutes: Number(o.minutes) || 0,
+  }
+}
+
+function retentionPeriodToSeconds(r: RetentionPeriod): number {
+  return r.days * 86400 + r.hours * 3600 + r.minutes * 60
+}
+
+function parseRef(raw: unknown): { uid: string; title: string } {
+  if (!raw || typeof raw !== 'object') return { uid: '', title: '' }
+  const o = raw as Record<string, unknown>
+  return { uid: (o.uid as string) ?? '', title: (o.title as string) ?? '' }
+}
+
+// admitted_sticker_templates is a DataGrid field — SENAITE stores it as a
+// list containing exactly one row: {admitted: [...], small_default, large_default}.
+function parseStickerTemplates(raw: unknown): AdmittedStickerTemplates {
+  const rows = (raw as Record<string, unknown>[]) ?? []
+  const row = rows[0] ?? {}
+  return {
+    admitted: (row.admitted as string[]) ?? [],
+    smallDefault: (row.small_default as string) ?? '',
+    largeDefault: (row.large_default as string) ?? '',
+  }
+}
+
+function mapSenaiteSampleType(t: Record<string, unknown>): SenaiteSampleType {
+  const matrix = parseRef(t.sample_matrix)
+  const container = parseRef(t.container_type)
+  return {
+    uid:           (t.uid as string) ?? '',
+    id:            (t.id as string) ?? '',
+    url:           (t.url as string) ?? '',
+    title:         (t.title as string) ?? '',
+    description:   (t.description as string) ?? '',
+    Prefix:        (t.Prefix as string) ?? (t.prefix as string) ?? '',
+    MinimumVolume: (t.MinimumVolume as string) ?? (t.min_volume as string) ?? '',
+    RetentionPeriod: parseRetentionPeriod(t.RetentionPeriod ?? t.retention_period),
+    Hazardous: Boolean(t.Hazardous ?? t.hazardous ?? false),
+    SampleMatrixUid: matrix.uid,
+    SampleMatrixTitle: matrix.title,
+    ContainerTypeUid: container.uid,
+    ContainerTypeTitle: container.title,
+    AdmittedStickerTemplates: parseStickerTemplates(t.AdmittedStickerTemplates ?? t.admitted_sticker_templates),
+  }
+}
+
+// retention_period and admitted_sticker_templates are never populated by the
+// legacy @@API/senaite/v1 read path (confirmed: reads back null even when the
+// field genuinely has a value) — only plone.restapi's own per-object GET
+// serializes them correctly, so fetch that too and let it win.
+async function fetchRestapiSampleTypeExtras(
+  token: string, url: string
+): Promise<{ RetentionPeriod: RetentionPeriod; AdmittedStickerTemplates: AdmittedStickerTemplates } | null> {
+  if (!url) return null
+  try {
+    const res = await fetch(url, { headers: { Authorization: `Basic ${token}`, Accept: 'application/json' }, cache: 'no-store' })
+    if (!res.ok) return null
+    const data = await res.json()
+    return {
+      RetentionPeriod: parseRetentionPeriod(data.retention_period),
+      AdmittedStickerTemplates: parseStickerTemplates(data.admitted_sticker_templates),
+    }
+  } catch { return null }
 }
 
 export async function fetchSenaiteSampleTypes(token: string): Promise<SenaiteSampleType[]> {
@@ -154,20 +259,116 @@ export async function fetchSenaiteSampleTypes(token: string): Promise<SenaiteSam
     })
     if (!res.ok) return []
     const data = await res.json()
-    return (data.items ?? []).map((t: Record<string, unknown>) => ({
-      uid:           (t.uid as string) ?? '',
-      id:            (t.id as string) ?? '',
-      title:         (t.title as string) ?? '',
-      Prefix:        (t.Prefix as string) ?? (t.prefix as string) ?? '',
-      MinimumVolume: (t.MinimumVolume as string) ?? (t.min_volume as string) ?? '',
-      RetentionPeriod: (t.RetentionPeriod as Record<string, unknown>) ?? (t.retention_period as Record<string, unknown>) ?? {},
-    }))
+    const sampleTypes: SenaiteSampleType[] = (data.items ?? []).map(mapSenaiteSampleType)
+    const extras = await Promise.all(sampleTypes.map(st => fetchRestapiSampleTypeExtras(token, st.url)))
+    return sampleTypes.map((st, i) => extras[i] ? { ...st, ...extras[i] } : st)
   } catch { return [] }
+}
+
+// SampleMatrix and ContainerType are simple reference lists (used by the
+// sample_matrix / container_type dropdowns) — same shape/fetch pattern as
+// fetchSenaiteDepartments below, just a different portal_type.
+export type SenaiteRefOption = { uid: string; title: string }
+
+async function fetchSenaiteRefList(token: string, portalType: string): Promise<SenaiteRefOption[]> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/${portalType}?limit=1000`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return (data.items ?? []).map((d: Record<string, unknown>) => ({
+      uid: (d.uid as string) ?? '',
+      title: (d.title as string) ?? '',
+    })).filter((d: SenaiteRefOption) => d.uid && d.title)
+  } catch { return [] }
+}
+
+export const fetchSenaiteSampleMatrices = (token: string) => fetchSenaiteRefList(token, 'SampleMatrix')
+export const fetchSenaiteContainerTypes = (token: string) => fetchSenaiteRefList(token, 'ContainerType')
+export const fetchSenaitePreservations = (token: string) => fetchSenaiteRefList(token, 'Preservation')
+export const fetchSenaiteSamplePoints = (token: string) => fetchSenaiteRefList(token, 'SamplePoint')
+
+export async function createSenaiteContainerType(
+  token: string,
+  payload: { title: string; description?: string }
+): Promise<{ success: boolean; option?: SenaiteRefOption; error?: string }> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        portal_type: 'ContainerType',
+        parent_path: '/senaite/setup/containertypes',
+        title: payload.title,
+        ...(payload.description ? { description: payload.description } : {}),
+      }),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok || data.success === false) {
+      return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    }
+    const items = (data.items as Record<string, unknown>[]) ?? []
+    if (!items.length) return { success: false, error: 'No container type returned from the lab system.' }
+    return { success: true, option: { uid: (items[0].uid as string) ?? '', title: (items[0].title as string) ?? payload.title } }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+export type SampleTypePayload = {
+  title: string
+  Prefix: string
+  MinimumVolume?: string
+  description?: string
+  retentionPeriod?: RetentionPeriod
+  hazardous?: boolean
+  sampleMatrixUid?: string
+  containerTypeUid?: string
+  stickerTemplates?: AdmittedStickerTemplates
+}
+
+function sampleTypeApiBody(payload: SampleTypePayload): Record<string, unknown> {
+  return {
+    title: payload.title,
+    Prefix: payload.Prefix,
+    min_volume: payload.MinimumVolume || '1 ml',
+    description: payload.description ?? '',
+    hazardous: payload.hazardous ?? false,
+    // Dexterity reference fields require the {uid: ...} shape, not a bare
+    // string — confirmed by the same probing noted in createSenaiteAnalysisCategory.
+    ...(payload.sampleMatrixUid ? { sample_matrix: { uid: payload.sampleMatrixUid } } : {}),
+    ...(payload.containerTypeUid ? { container_type: { uid: payload.containerTypeUid } } : {}),
+    // retention_period and admitted_sticker_templates are deliberately NOT sent
+    // here — the legacy @@API/senaite/v1 create/update endpoints silently drop
+    // both (no adapter for DurationField/DataGridField on this path). They're
+    // patched separately via plone.restapi in patchSampleTypeExtras() below,
+    // which does have a working deserializer (retention_period natively, and
+    // admitted_sticker_templates via our custom adapter).
+  }
+}
+
+// Patches retention_period + admitted_sticker_templates via plone.restapi,
+// the only API path that actually persists them (see sampleTypeApiBody above).
+async function patchSampleTypeExtras(token: string, url: string, payload: SampleTypePayload): Promise<void> {
+  if (!url) return
+  await fetch(url, {
+    method: 'PATCH',
+    headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      retention_period: retentionPeriodToSeconds(payload.retentionPeriod ?? { days: 0, hours: 0, minutes: 0 }),
+      admitted_sticker_templates: [{
+        admitted: payload.stickerTemplates?.admitted ?? [],
+        small_default: payload.stickerTemplates?.smallDefault || null,
+        large_default: payload.stickerTemplates?.largeDefault || null,
+      }],
+    }),
+  }).catch(() => null) // non-fatal — the sample type itself already saved via v1
 }
 
 export async function createSenaiteSampleType(
   token: string,
-  payload: { title: string; Prefix: string; MinimumVolume?: string }
+  payload: SampleTypePayload
 ): Promise<{ success: boolean; sampleType?: SenaiteSampleType; error?: string }> {
   try {
     const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
@@ -176,9 +377,7 @@ export async function createSenaiteSampleType(
       body: JSON.stringify({
         portal_type: 'SampleType',
         parent_path: '/senaite/setup/sampletypes',
-        title: payload.title,
-        Prefix: payload.Prefix,
-        min_volume: payload.MinimumVolume || '1 ml',
+        ...sampleTypeApiBody(payload),
       }),
       cache: 'no-store',
     })
@@ -190,16 +389,14 @@ export async function createSenaiteSampleType(
     }
     const items = (data.items as Record<string, unknown>[]) ?? []
     if (!items.length) return { success: false, error: 'No sample type returned from SENAITE' }
-    const t = items[0]
+    const created = items[0]
+    await patchSampleTypeExtras(token, (created.url as string) ?? '', payload)
     return {
       success: true,
       sampleType: {
-        uid: (t.uid as string) ?? '',
-        id: (t.id as string) ?? '',
-        title: (t.title as string) ?? '',
-        Prefix: (t.prefix as string) ?? (t.Prefix as string) ?? '',
-        MinimumVolume: (t.min_volume as string) ?? (t.MinimumVolume as string) ?? '',
-        RetentionPeriod: (t.retention_period as Record<string, unknown>) ?? {},
+        ...mapSenaiteSampleType(created),
+        RetentionPeriod: payload.retentionPeriod ?? { days: 0, hours: 0, minutes: 0 },
+        AdmittedStickerTemplates: payload.stickerTemplates ?? { admitted: [], smallDefault: '', largeDefault: '' },
       },
     }
   } catch (e) { return { success: false, error: String(e) } }
@@ -208,19 +405,29 @@ export async function createSenaiteSampleType(
 export async function updateSenaiteSampleType(
   token: string,
   uid: string,
-  payload: { title?: string; Prefix?: string; MinimumVolume?: string; min_volume?: string }
+  payload: SampleTypePayload
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update`, {
       method: 'POST',
       headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify([{ uid, ...payload }]),
+      body: JSON.stringify([{ uid, ...sampleTypeApiBody(payload) }]),
       cache: 'no-store',
     })
     const data = await res.json().catch(() => ({})) as Record<string, unknown>
     if (!res.ok || data.success === false) {
       return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
     }
+    // Update path only has the UID, not the object's URL — look it up so we
+    // can patch retention_period/admitted_sticker_templates via restapi
+    // (same limitation as create, see sampleTypeApiBody).
+    const lookup = await fetch(`${SENAITE_URL}/@@API/senaite/v1/SampleType?UID=${encodeURIComponent(uid)}&complete=true`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    const lookupData = await lookup.json().catch(() => ({})) as Record<string, unknown>
+    const url = ((lookupData.items as Record<string, unknown>[]) ?? [])[0]?.url as string | undefined
+    if (url) await patchSampleTypeExtras(token, url, payload)
     return { success: true }
   } catch (e) { return { success: false, error: String(e) } }
 }

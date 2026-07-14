@@ -220,11 +220,26 @@ class AnalysisRequestSerializer(serializers.ModelSerializer):
 
 
 class WorksheetAssignmentSerializer(serializers.ModelSerializer):
+    instrument_name = serializers.SerializerMethodField(read_only=True)
+    method_name = serializers.SerializerMethodField(read_only=True)
+
+    def get_instrument_name(self, obj):
+        return obj.instrument.name if obj.instrument else ""
+
+    def get_method_name(self, obj):
+        return obj.method.name if obj.method else ""
+
     class Meta:
         model = WorksheetAssignment
         fields = "__all__"
 
     def create(self, validated_data):
+        # Default instrument/method from the parent worksheet at assignment time,
+        # unless the caller explicitly set them — mirrors SENAITE's cascade-on-add.
+        worksheet = validated_data.get("worksheet")
+        if worksheet:
+            validated_data.setdefault("instrument", worksheet.instrument)
+            validated_data.setdefault("method", worksheet.method)
         instance = super().create(validated_data)
         # Assigning a test to a worksheet moves the sample into In Progress.
         from .services import refresh_sample_workflow_status
@@ -236,6 +251,8 @@ class WorksheetAssignmentSerializer(serializers.ModelSerializer):
 class WorksheetSerializer(serializers.ModelSerializer):
     assignments = WorksheetAssignmentSerializer(many=True, read_only=True)
     analyst_name = serializers.SerializerMethodField(read_only=True)
+    instrument_name = serializers.SerializerMethodField(read_only=True)
+    method_name = serializers.SerializerMethodField(read_only=True)
     ws_id = serializers.CharField(
         required=False, allow_blank=True,
         validators=[UniqueValidator(queryset=Worksheet.objects.all())],
@@ -246,6 +263,12 @@ class WorksheetSerializer(serializers.ModelSerializer):
             full = f"{obj.analyst.first_name} {obj.analyst.last_name}".strip()
             return full or obj.analyst.username
         return ""
+
+    def get_instrument_name(self, obj):
+        return obj.instrument.name if obj.instrument else ""
+
+    def get_method_name(self, obj):
+        return obj.method.name if obj.method else ""
 
     class Meta:
         model = Worksheet
@@ -258,6 +281,18 @@ class WorksheetSerializer(serializers.ModelSerializer):
         from .services import generate_ws_id
         validated_data["analyst"] = self.context["request"].user
         return _create_with_id_retry(validated_data, "ws_id", generate_ws_id, super().create)
+
+    def update(self, instance, validated_data):
+        instrument_changed = "instrument" in validated_data and validated_data["instrument"] != instance.instrument
+        method_changed = "method" in validated_data and validated_data["method"] != instance.method
+        instance = super().update(instance, validated_data)
+        # Cascade the worksheet's instrument/method to every assignment already on
+        # it, matching SENAITE's setInstrument()/setMethod() cascade-to-analyses.
+        if instrument_changed:
+            instance.assignments.update(instrument=instance.instrument)
+        if method_changed:
+            instance.assignments.update(method=instance.method)
+        return instance
 
 
 class ResultSerializer(RecordLockMixin, serializers.ModelSerializer):

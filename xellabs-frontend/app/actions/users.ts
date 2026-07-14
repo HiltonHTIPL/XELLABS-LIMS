@@ -69,7 +69,7 @@ export async function createStaffUser(
       return { message: err.detail ?? 'Failed to create user.' }
     }
     const created = await res.json()
-    revalidatePath('/dashboard/admin')
+    revalidatePath('/dashboard/admin/users')
     return {
       success: true,
       message: `User "${username}" created successfully.`,
@@ -110,7 +110,7 @@ export async function updateStaffUser(
       if (err.role) return { errors: { role: err.role } }
       return { message: err.detail ?? 'Failed to update user.' }
     }
-    revalidatePath('/dashboard/admin')
+    revalidatePath('/dashboard/admin/users')
     return { success: true, message: 'User updated successfully.' }
   } catch {
     return { message: 'Could not reach the server. Please try again.' }
@@ -127,7 +127,7 @@ export async function toggleStaffUserActive(
       body: JSON.stringify({ is_active }),
     })
     if (!res.ok) return { success: false, message: `Server error ${res.status}` }
-    revalidatePath('/dashboard/admin')
+    revalidatePath('/dashboard/admin/users')
     return { success: true, message: is_active ? 'User activated.' : 'User deactivated.' }
   } catch {
     return { success: false, message: 'Could not reach the server.' }
@@ -148,7 +148,7 @@ export async function toggleSenaiteRole(
       const err = await res.json().catch(() => ({}))
       return { success: false, message: err.detail ?? `Server error ${res.status}` }
     }
-    revalidatePath('/dashboard/admin')
+    revalidatePath('/dashboard/admin/users')
     return { success: true }
   } catch {
     return { success: false, message: 'Could not reach the server.' }

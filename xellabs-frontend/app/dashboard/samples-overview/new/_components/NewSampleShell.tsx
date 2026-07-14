@@ -314,18 +314,20 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
   // never mix Django and SENAITE IDs directly).
   function handleTemplateChange(templateId: string) {
     const template = sampleTemplates.find(t => String(t.id) === templateId)
+    const templateServices = template ? (template.partitions ?? []).flatMap(p => p.services) : []
+    const templateContainer = template ? (template.partitions ?? [])[0]?.container_name ?? '' : ''
     const matchedSampleType = template ? sampleTypes.find(st => st.senaite_uid === template.sample_type_uid) : undefined
     const matchedTests = template
-      ? tests.filter(t => template.analysis_services.some(a => a.uid === t.senaite_uid))
+      ? tests.filter(t => templateServices.some(a => a.uid === t.senaite_uid))
       : []
-    const allowedContainers = template ? containerOptionsFor(template.container) : CONTAINER_OPTIONS
+    const allowedContainers = template ? containerOptionsFor(templateContainer) : CONTAINER_OPTIONS
     setForms(prev => prev.map((form, i) => i === activeTab ? {
       ...form,
       sampleTemplateId: templateId,
       sampleTypeId: matchedSampleType ? String(matchedSampleType.id) : form.sampleTypeId,
       containerType: template ? (allowedContainers[0]?.value ?? '') : form.containerType,
-      suggestedContainer: template?.container ?? '',
-      analysisProfiles: template ? template.analysis_services.map(a => a.title) : form.analysisProfiles,
+      suggestedContainer: templateContainer,
+      analysisProfiles: template ? templateServices.map(a => a.title) : form.analysisProfiles,
       selectedTests: matchedTests.length ? matchedTests : form.selectedTests,
     } : form))
   }
@@ -775,7 +777,17 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
                 {f.selectedTests.map((t, i) => (
                   <tr key={t.id} style={{ borderBottom: '1px solid #F9FAFB' }}>
                     <td style={{ padding: '8px 12px', color: '#9CA3AF', fontWeight: 600 }}>{i + 1}</td>
-                    <td style={{ padding: '8px 8px', color: '#111827', fontWeight: 500 }}>{t.name}</td>
+                    <td style={{ padding: '8px 8px', color: '#111827', fontWeight: 500 }}>
+                      {t.name}
+                      {!t.senaite_uid && (
+                        <span
+                          title="Not linked to a lab analysis — this test will NOT be attached to the sample"
+                          style={{ marginLeft: 6, fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 999, backgroundColor: '#FEF2F2', color: '#991B1B' }}
+                        >
+                          Not linked
+                        </span>
+                      )}
+                    </td>
                     <td style={{ padding: '8px 8px', color: '#6B7280' }}>{t.method_code || t.code}</td>
                     <td style={{ padding: '8px 8px', textAlign: 'right', color: '#374151', fontWeight: 500 }}>{t.price ? `$${parseFloat(t.price).toFixed(2)}` : '—'}</td>
                     <td style={{ padding: '8px 6px' }}>
@@ -807,7 +819,17 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
                       <button key={t.id} type="button" onClick={() => addTest(t)}
                         style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '8px 10px', border: 'none', borderBottom: '1px solid #F9FAFB', background: '#fff', cursor: 'pointer', textAlign: 'left' }}>
                         <div>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>{t.name}</div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>
+                            {t.name}
+                            {!t.senaite_uid && (
+                              <span
+                                title="Not linked to a lab analysis — this test will NOT be attached to the sample"
+                                style={{ marginLeft: 5, fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 999, backgroundColor: '#FEF2F2', color: '#991B1B' }}
+                              >
+                                Not linked
+                              </span>
+                            )}
+                          </div>
                           <div style={{ fontSize: 11, color: '#9CA3AF' }}>{t.code}</div>
                         </div>
                         {t.price && <span style={{ fontSize: 12, color: '#374151', fontWeight: 500 }}>${parseFloat(t.price).toFixed(2)}</span>}

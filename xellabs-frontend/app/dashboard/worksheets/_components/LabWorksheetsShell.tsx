@@ -48,7 +48,7 @@ export default function LabWorksheetsShell({ initialWorksheets }: { initialWorks
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em', margin: 0 }}>Lab Worksheets</h1>
+          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em', margin: 0 }}>Worksheets</h1>
           <p style={{ fontSize: 13, color: '#6B7280', margin: '4px 0 0' }}>Create and manage worksheets for analysis result entry</p>
         </div>
         <button
@@ -85,6 +85,8 @@ export default function LabWorksheetsShell({ initialWorksheets }: { initialWorks
                 <tr style={{ background: '#F9FAFB' }}>
                   <th style={th}>Worksheet ID</th>
                   <th style={th}>Status</th>
+                  <th style={th}>Instrument</th>
+                  <th style={th}>Method</th>
                   <th style={th}>Assignments</th>
                   <th style={th}>Completed</th>
                   <th style={th}>Created</th>
@@ -96,13 +98,15 @@ export default function LabWorksheetsShell({ initialWorksheets }: { initialWorks
                   const badge = STATUS_BADGE[ws.status] || { bg: '#F3F4F6', color: '#6B7280', label: ws.status }
                   return (
                     <tr key={ws.id} style={{ background: ws.id % 2 === 0 ? '#fff' : '#FAFAFA' }}>
-                      <td style={{ ...td, fontWeight: 600, color: '#2563EB', cursor: 'pointer' }} onClick={() => router.push(`/dashboard/lab-worksheets/${ws.id}`)}>{ws.ws_id}</td>
+                      <td style={{ ...td, fontWeight: 600, color: '#2563EB', cursor: 'pointer' }} onClick={() => router.push(`/dashboard/worksheets/${ws.id}`)}>{ws.ws_id}</td>
                       <td style={td}><span style={{ background: badge.bg, color: badge.color, borderRadius: 20, padding: '3px 10px', fontWeight: 600, fontSize: 11 }}>{badge.label}</span></td>
+                      <td style={td}>{ws.instrument_name || '—'}</td>
+                      <td style={td}>{ws.method_name || '—'}</td>
                       <td style={td}>{ws.assignment_count}</td>
                       <td style={td}>{ws.completed_count} / {ws.assignment_count}</td>
                       <td style={td}>{fmt(ws.created_at)}</td>
                       <td style={td}>
-                        <button onClick={() => router.push(`/dashboard/lab-worksheets/${ws.id}`)} style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid #D1D5DB', background: '#fff', fontSize: 11, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
+                        <button onClick={() => router.push(`/dashboard/worksheets/${ws.id}`)} style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid #D1D5DB', background: '#fff', fontSize: 11, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
                           Open
                         </button>
                       </td>

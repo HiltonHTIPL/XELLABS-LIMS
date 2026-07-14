@@ -214,32 +214,6 @@ services:
     logging: *default-logging
     mem_limit: 2g
 
-  # Second, isolated SENAITE instance for testing SENAITE_URL switching locally.
-  # Own site name + own volume so it never shares data with the primary "senaite" service.
-  # Not wired into SENAITE_URL by default — set SENAITE_URL=http://senaite2:8080/senaite
-  # in the root .env and rebuild django/frontend to point the app at this instance.
-  senaite2:
-    build:
-      context: ./senaite-rebrand
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:8081:8080"
-    environment:
-      - SITE=senaite2
-      - ADMIN_USER=admin
-      - ADMIN_PASSWORD=${SENAITE_ADMIN_PASSWORD:?SENAITE_ADMIN_PASSWORD must be set in .env}
-    volumes:
-      - senaite2_data:/data
-    healthcheck:
-      test: ["CMD", "python2.7", "-c", "import urllib2,sys; sys.exit(0 if urllib2.urlopen('http://localhost:8080/senaite2', timeout=5).getcode() < 500 else 1)"]
-      interval: 15s
-      timeout: 5s
-      retries: 20
-      start_period: 60s
-    logging: *default-logging
-    mem_limit: 2g
-
   frontend:
     build:
       context: ./xellabs-frontend
@@ -273,7 +247,7 @@ services:
       retries: 15
       start_period: 120s
     logging: *default-logging
-    mem_limit: 2g
+    mem_limit: 6g
 
   # pgbouncer: intentionally removed (2026-07-08) — `bitnami/pgbouncer` no longer resolves
   # on Docker Hub under any tag (Bitnami restructured their image catalog); nothing in this
@@ -286,4 +260,3 @@ services:
 volumes:
   postgres_data:
   senaite_data:
-  senaite2_data:

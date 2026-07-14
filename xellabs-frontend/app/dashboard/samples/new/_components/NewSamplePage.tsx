@@ -36,8 +36,9 @@ export default function NewSamplePage({ clients, sampleTypes, analysisServices, 
     const template = sampleTemplates.find(t => String(t.id) === templateId)
     if (!template) return
     if (template.sample_type_uid) setSampleTypeUid(template.sample_type_uid)
-    setSelectedAnalyses(template.analysis_services.map(a => a.uid))
-    setContainer(template.container ?? '')
+    const partitions = template.partitions ?? []
+    setSelectedAnalyses(partitions.flatMap(p => p.services.map(a => a.uid)))
+    setContainer(partitions[0]?.container_name ?? '')
   }
 
   function handleProfileChange(profileId: string) {

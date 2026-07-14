@@ -21,7 +21,7 @@ type Props = {
 
 export default function AnalysisProfilesShell({ initialProfiles, analysisServices }: Props) {
   const router = useRouter()
-  const [showDrawer, setShowDrawer] = useState(false)
+  const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<AnalysisProfile | null>(null)
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
   const [vals, setVals] = useState<FV>(blank)
@@ -41,7 +41,7 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
       const id = fd.get('_editingId') as string | null
       const result = id ? await updateAnalysisProfile(Number(id), prev, fd) : await createAnalysisProfile(prev, fd)
       if (result.success) {
-        setShowDrawer(false)
+        setShowForm(false)
         setEditing(null)
         setVals(blank())
         setFieldErrors({})
@@ -72,14 +72,14 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
     {}
   )
 
-  function openCreate() { setEditing(null); setVals(blank()); setFieldErrors({}); setShowDrawer(true) }
+  function openCreate() { setEditing(null); setVals(blank()); setFieldErrors({}); setShowForm(true) }
   function openEdit(p: AnalysisProfile) {
     setEditing(p)
     setVals({ name: p.name, analysisServices: p.analysis_services ?? [] })
     setFieldErrors({})
-    setShowDrawer(true)
+    setShowForm(true)
   }
-  function closeDrawer() { setShowDrawer(false) }
+  function closeForm() { setShowForm(false); setEditing(null); setFieldErrors({}) }
 
   async function confirmDelete() {
     if (!deleteTarget) return
@@ -120,12 +120,10 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
         </div>
       )}
 
-      {/* ── Right Drawer ── */}
-      <div style={{ position: 'fixed', top: 0, bottom: 0, left: 0, right: 0, zIndex: 200, pointerEvents: showDrawer ? 'auto' : 'none' }}>
-        <div onClick={closeDrawer} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.30)', opacity: showDrawer ? 1 : 0, transition: 'opacity 0.25s ease' }} />
-        <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 440, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.12)', transform: showDrawer ? 'translateX(0)' : 'translateX(100%)', transition: 'transform 0.28s cubic-bezier(0.4,0,0.2,1)', display: 'flex', flexDirection: 'column' }}>
-
-          <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ borderBottom: '1px solid #F3F4F6' }}>
+      {/* ── Inline create/edit panel ── */}
+      {showForm && (
+        <div className="bg-white rounded-xl mb-3" style={{ border: '1px solid #E8EAF2' }}>
+          <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #F3F4F6' }}>
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: isEdit ? '#EFF6FF' : '#DBEAFE' }}>
                 <MI name={isEdit ? 'edit' : 'add'} size={16} color={isEdit ? '#2563EB' : '#0154FC'} />
@@ -139,16 +137,16 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
                 </p>
               </div>
             </div>
-            <button onClick={closeDrawer} className="p-1.5 rounded-lg hover:bg-gray-100">
+            <button onClick={closeForm} className="p-1.5 rounded-lg hover:bg-gray-100">
               <MI name="close" size={16} color="#9CA3AF" />
             </button>
           </div>
 
-          <form action={action} className="flex-1 overflow-y-auto flex flex-col min-h-0">
+          <form action={action}>
             {isEdit && <input type="hidden" name="_editingId" value={editing!.id} />}
             <input type="hidden" name="analysis_services" value={JSON.stringify(vals.analysisServices)} />
 
-            <div className="flex-1 px-5 py-4 flex flex-col gap-3">
+            <div className="px-5 py-4 flex flex-col gap-3">
               <div>
                 <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
                   Profile Name<span style={{ color: '#EF4444' }}> *</span>
@@ -158,7 +156,7 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
                   placeholder="e.g. Full Metals Panel"
                   value={vals.name}
                   onChange={e => setVal('name', e.target.value)}
-                  className="w-full px-3 py-2 text-xs rounded-lg outline-none"
+                  className="w-full max-w-md px-3 py-2 text-xs rounded-lg outline-none"
                   style={{ border: `1px solid ${fieldErrors.name ? '#EF4444' : '#D1D5DB'}`, color: '#111827' }}
                 />
                 {fieldErrors.name && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{fieldErrors.name}</p>}
@@ -169,25 +167,27 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
                   <label className="block text-xs font-medium" style={{ color: '#374151' }}>Analyses<span style={{ color: '#EF4444' }}> *</span></label>
                   <span style={{ fontSize: 10, color: '#9CA3AF' }}>{vals.analysisServices.length} selected</span>
                 </div>
-                <div className="rounded-lg" style={{ border: `1px solid ${fieldErrors.analysis_services ? '#EF4444' : '#D1D5DB'}`, maxHeight: 320, overflowY: 'auto' }}>
+                <div className="rounded-lg" style={{ border: `1px solid ${fieldErrors.analysis_services ? '#EF4444' : '#D1D5DB'}`, maxHeight: 280, overflowY: 'auto' }}>
                   {analysisServices.length === 0 ? (
                     <p className="px-3 py-3 text-xs" style={{ color: '#9CA3AF' }}>No analyses available.</p>
                   ) : (
-                    analysisServices.map(svc => (
-                      <label key={svc.uid} className="flex items-center gap-2 px-3 py-2 cursor-pointer" style={{ borderBottom: '1px solid #F3F4F6' }}>
-                        <input type="checkbox" checked={vals.analysisServices.some(a => a.uid === svc.uid)}
-                          onChange={() => toggleAnalysis(svc)} style={{ accentColor: '#0154FC' }} />
-                        <span className="text-xs" style={{ color: '#111827', flex: 1 }}>{svc.title}</span>
-                      </label>
-                    ))
+                    <div className="grid grid-cols-2 gap-x-3">
+                      {analysisServices.map(svc => (
+                        <label key={svc.uid} className="flex items-center gap-2 px-3 py-2 cursor-pointer" style={{ borderBottom: '1px solid #F3F4F6' }}>
+                          <input type="checkbox" checked={vals.analysisServices.some(a => a.uid === svc.uid)}
+                            onChange={() => toggleAnalysis(svc)} style={{ accentColor: '#0154FC' }} />
+                          <span className="text-xs" style={{ color: '#111827', flex: 1 }}>{svc.title}</span>
+                        </label>
+                      ))}
+                    </div>
                   )}
                 </div>
                 {fieldErrors.analysis_services && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{fieldErrors.analysis_services}</p>}
               </div>
             </div>
 
-            <div className="px-5 py-4 flex items-center justify-end gap-2 shrink-0" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#fff' }}>
-              <button type="button" onClick={closeDrawer} disabled={pending}
+            <div className="px-5 py-4 flex items-center justify-end gap-2" style={{ borderTop: '1px solid #F3F4F6' }}>
+              <button type="button" onClick={closeForm} disabled={pending}
                 style={{ fontSize: 12, fontWeight: 500, padding: '7px 16px', borderRadius: 8, border: '1px solid #E8EAF2', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
                 Cancel
               </button>
@@ -199,7 +199,7 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
             </div>
           </form>
         </div>
-      </div>
+      )}
 
       {/* ── Delete confirmation modal ── */}
       {deleteTarget && (

@@ -3,6 +3,7 @@ import { useState, useActionState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createTest, updateTest, type LimsTest, type TestFormState } from '@/app/actions/tests'
 import { type Method } from '@/app/actions/methods'
+import { type SenaiteAnalysisService } from '@/app/lib/senaite'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -29,10 +30,10 @@ function Field({ label, name, placeholder, required, error, value, onChange, as 
   )
 }
 
-type FV = { name: string; code: string; unit: string; price: string; method: string; description: string }
-const blank = (): FV => ({ name: '', code: '', unit: '', price: '', method: '', description: '' })
+type FV = { name: string; code: string; unit: string; price: string; method: string; description: string; senaite_uid: string }
+const blank = (): FV => ({ name: '', code: '', unit: '', price: '', method: '', description: '', senaite_uid: '' })
 
-export default function TestsShell({ initialTests, methods }: { initialTests: LimsTest[]; methods: Method[] }) {
+export default function TestsShell({ initialTests, methods, senaiteServices }: { initialTests: LimsTest[]; methods: Method[]; senaiteServices: SenaiteAnalysisService[] }) {
   const router = useRouter()
   const [showDrawer, setShowDrawer] = useState(false)
   const [editing, setEditing] = useState<LimsTest | null>(null)
@@ -72,7 +73,7 @@ export default function TestsShell({ initialTests, methods }: { initialTests: Li
   function openCreate() { setEditing(null); setVals(blank()); setFieldErrors({}); setShowDrawer(true) }
   function openEdit(t: LimsTest) {
     setEditing(t)
-    setVals({ name: t.name, code: t.code, unit: t.unit ?? '', price: t.price ?? '', method: t.method ? String(t.method) : '', description: t.description ?? '' })
+    setVals({ name: t.name, code: t.code, unit: t.unit ?? '', price: t.price ?? '', method: t.method ? String(t.method) : '', description: t.description ?? '', senaite_uid: t.senaite_uid ?? '' })
     setFieldErrors({})
     setShowDrawer(true)
   }
@@ -146,6 +147,24 @@ export default function TestsShell({ initialTests, methods }: { initialTests: Li
                   {fieldErrors.method && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{fieldErrors.method}</p>}
                 </div>
               </div>
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
+                  Lab Analysis Service<span style={{ color: '#EF4444' }}> *</span>
+                </label>
+                <select name="senaite_uid" value={vals.senaite_uid}
+                  onChange={e => setVal('senaite_uid', e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-lg outline-none"
+                  style={{ border: `1px solid ${fieldErrors.senaite_uid ? '#EF4444' : '#D1D5DB'}`, color: '#111827' }}>
+                  <option value="">— Select —</option>
+                  {senaiteServices.map(s => (
+                    <option key={s.uid} value={s.uid}>{s.title} ({s.Keyword})</option>
+                  ))}
+                </select>
+                {fieldErrors.senaite_uid && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{fieldErrors.senaite_uid}</p>}
+                <p className="mt-1" style={{ fontSize: 10, color: '#9CA3AF' }}>
+                  Required — links this test to a lab analysis so samples using it get the analysis attached.
+                </p>
+              </div>
               <Field label="Description" name="description" as="textarea" placeholder="Describe this test…"
                 error={fieldErrors.description} value={vals.description} onChange={v => setVal('description', v)} />
             </div>
@@ -191,7 +210,14 @@ export default function TestsShell({ initialTests, methods }: { initialTests: Li
             <tbody>
               {initialTests.map((t, i) => (
                 <tr key={t.id} style={{ borderBottom: i < initialTests.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
-                  <td className="px-3 py-2.5 text-xs font-medium" style={{ color: '#111827' }}>{t.name}</td>
+                  <td className="px-3 py-2.5 text-xs font-medium" style={{ color: '#111827' }}>
+                    {t.name}
+                    {!t.senaite_uid && (
+                      <span className="ml-1.5 px-1.5 py-0.5 rounded-full" style={{ fontSize: 9, fontWeight: 700, backgroundColor: '#FEF2F2', color: '#991B1B' }} title="Samples using this test won't get the analysis attached until it's linked">
+                        Not linked
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2.5"><span className="font-mono text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#EFF6FF', color: '#2563EB', fontWeight: 600 }}>{t.code}</span></td>
                   <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{t.unit || '—'}</td>
                   <td className="px-3 py-2.5 text-xs font-medium" style={{ color: '#111827' }}>{t.price ? `$${Number(t.price).toFixed(2)}` : '—'}</td>

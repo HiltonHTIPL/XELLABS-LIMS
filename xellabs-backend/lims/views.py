@@ -334,10 +334,12 @@ class WorksheetViewSet(viewsets.ModelViewSet):
         from .services import reject_worksheet
         ws = self.get_object()
         try:
-            reject_worksheet(ws, request.user)
+            ws, new_ws = reject_worksheet(ws, request.user)
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response(WorksheetSerializer(ws).data)
+        data = WorksheetSerializer(ws).data
+        data["new_worksheet"] = WorksheetSerializer(new_ws).data if new_ws else None
+        return Response(data)
 
 
 class WorksheetAssignmentViewSet(viewsets.ModelViewSet):
