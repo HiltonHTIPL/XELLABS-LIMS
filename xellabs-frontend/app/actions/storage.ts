@@ -21,6 +21,15 @@ export type StorageLocation = {
   phone: string
   email: string
   senaite_sync_error: string | null
+  site_title?: string
+  site_code?: string
+  site_description?: string
+  location_title?: string
+  location_code?: string
+  location_description?: string
+  shelf_title?: string
+  shelf_code?: string
+  shelf_description?: string
 }
 
 export type StorageFormState = {
