@@ -190,7 +190,7 @@ export type SenaiteClientFull = {
   contact: SenaiteContact | null
 }
 
-const CLIENTS_PATH = '/senaite/clients'
+const CLIENTS_PATH = `${SENAITE_SITE_PATH}/clients`
 
 function mapAddress(a: unknown): SenaiteAddress | null {
   if (!a || typeof a !== 'object') return null
@@ -616,7 +616,7 @@ export async function createSenaiteContainerType(
       headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
         portal_type: 'ContainerType',
-        parent_path: '/senaite/setup/containertypes',
+        parent_path: `${SENAITE_SITE_PATH}/setup/containertypes`,
         title: payload.title,
         ...(payload.description ? { description: payload.description } : {}),
       }),
@@ -691,10 +691,10 @@ async function createSenaiteSetupRef(
 }
 
 export const createSenaiteSampleContainer = (token: string, payload: { title: string; description?: string }) =>
-  createSenaiteSetupRef(token, 'SampleContainer', '/senaite/setup/samplecontainers', payload, 'sample container')
+  createSenaiteSetupRef(token, 'SampleContainer', `${SENAITE_SITE_PATH}/setup/samplecontainers`, payload, 'sample container')
 
 export const createSenaiteSamplePreservation = (token: string, payload: { title: string; description?: string }) =>
-  createSenaiteSetupRef(token, 'SamplePreservation', '/senaite/setup/samplepreservations', payload, 'preservation')
+  createSenaiteSetupRef(token, 'SamplePreservation', `${SENAITE_SITE_PATH}/setup/samplepreservations`, payload, 'preservation')
 
 // ─── Sample Containers — full CRUD (standalone admin page) ───────────────────
 // Beyond title/description (the only fields createSenaiteSampleContainer above
@@ -780,7 +780,7 @@ export async function createSenaiteSampleContainerFull(
       headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
         portal_type: 'SampleContainer',
-        parent_path: '/senaite/setup/samplecontainers',
+        parent_path: `${SENAITE_SITE_PATH}/setup/samplecontainers`,
         ...sampleContainerApiBody(payload),
       }),
       cache: 'no-store',
@@ -814,7 +814,7 @@ export async function updateSenaiteSampleContainer(
 }
 
 export const createSenaiteSamplePoint = (token: string, payload: { title: string; description?: string }) =>
-  createSenaiteSetupRef(token, 'SamplePoint', '/senaite/setup/samplepoints', payload, 'sample point')
+  createSenaiteSetupRef(token, 'SamplePoint', `${SENAITE_SITE_PATH}/setup/samplepoints`, payload, 'sample point')
 
 export async function createSenaiteSampleMatrix(
   token: string,
@@ -826,7 +826,7 @@ export async function createSenaiteSampleMatrix(
       headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
         portal_type: 'SampleMatrix',
-        parent_path: '/senaite/setup/samplematrices',
+        parent_path: `${SENAITE_SITE_PATH}/setup/samplematrices`,
         title: payload.title,
         ...(payload.description ? { description: payload.description } : {}),
       }),
@@ -1153,7 +1153,7 @@ export async function createSenaiteSampleType(
       headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
         portal_type: 'SampleType',
-        parent_path: '/senaite/setup/sampletypes',
+        parent_path: `${SENAITE_SITE_PATH}/setup/sampletypes`,
         ...sampleTypeApiBody(payload),
       }),
       cache: 'no-store',
@@ -1424,7 +1424,7 @@ export async function createSenaiteLabContact(
       headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
         portal_type: 'LabContact',
-        parent_path: '/senaite/bika_setup/bika_labcontacts',
+        parent_path: `${SENAITE_SITE_PATH}/bika_setup/bika_labcontacts`,
         Firstname: payload.firstName,
         Surname: payload.lastName,
       }),
@@ -1455,7 +1455,7 @@ export async function createSenaiteDepartment(
       headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
         portal_type: 'Department',
-        parent_path: '/senaite/setup/departments',
+        parent_path: `${SENAITE_SITE_PATH}/setup/departments`,
         title: payload.title,
         department_id: payload.departmentId,
         manager: { uid: payload.managerUid },
@@ -1505,7 +1505,7 @@ export async function createSenaiteAnalysisCategory(
       headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
         portal_type: 'AnalysisCategory',
-        parent_path: '/senaite/setup/analysiscategories',
+        parent_path: `${SENAITE_SITE_PATH}/setup/analysiscategories`,
         title: payload.title,
         department: { uid: payload.departmentUid },
       }),
@@ -1535,7 +1535,7 @@ export async function createSenaiteAnalysisService(
       headers,
       body: JSON.stringify({
         portal_type: 'AnalysisService',
-        parent_path: '/senaite/bika_setup/bika_analysisservices',
+        parent_path: `${SENAITE_SITE_PATH}/bika_setup/bika_analysisservices`,
         title: payload.title,
         Keyword: payload.Keyword,
         Category: payload.CategoryUid,
