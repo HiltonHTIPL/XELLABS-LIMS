@@ -5,11 +5,18 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
-from .models import Instrument, InstrumentMethod, Calibration, Maintenance, InstrumentRun, InstrumentResultImport
+from core.permissions import ReadOnlyOrLabManager, ReadOnlyOrAnalystOrAbove
+from .models import (
+    Instrument, InstrumentMethod, Calibration, Maintenance, InstrumentRun,
+    InstrumentResultImport, InstrumentType, InstrumentLocation, Certification,
+    ScheduledTask, Validation,
+)
 from .importers import parse_csv, parse_xml, build_preview, build_provenance_map
 from .serializers import (
     InstrumentSerializer, InstrumentMethodSerializer, CalibrationSerializer,
     MaintenanceSerializer, InstrumentRunSerializer, InstrumentResultImportSerializer,
+    InstrumentTypeSerializer, InstrumentLocationSerializer, CertificationSerializer,
+    ScheduledTaskSerializer, ValidationSerializer,
 )
 
 
@@ -233,3 +240,48 @@ class SampleInstrumentReportView(APIView):
             "instruments": list(instruments_seen.values()),
             "generated_at": timezone.now().isoformat(),
         })
+
+
+class InstrumentTypeViewSet(viewsets.ModelViewSet):
+    queryset = InstrumentType.objects.all()
+    serializer_class = InstrumentTypeSerializer
+    permission_classes = [ReadOnlyOrLabManager]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["name"]
+    ordering_fields = ["name"]
+
+
+class InstrumentLocationViewSet(viewsets.ModelViewSet):
+    queryset = InstrumentLocation.objects.all()
+    serializer_class = InstrumentLocationSerializer
+    permission_classes = [ReadOnlyOrLabManager]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["name"]
+    ordering_fields = ["name"]
+
+
+class CertificationViewSet(viewsets.ModelViewSet):
+    queryset = Certification.objects.select_related("instrument", "preparator", "validator").all()
+    serializer_class = CertificationSerializer
+    permission_classes = [ReadOnlyOrAnalystOrAbove]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ["instrument", "internal"]
+    ordering_fields = ["valid_from", "valid_to", "date"]
+
+
+class ScheduledTaskViewSet(viewsets.ModelViewSet):
+    queryset = ScheduledTask.objects.select_related("instrument").all()
+    serializer_class = ScheduledTaskSerializer
+    permission_classes = [ReadOnlyOrAnalystOrAbove]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ["instrument", "task_type"]
+    ordering_fields = ["next_due"]
+
+
+class ValidationViewSet(viewsets.ModelViewSet):
+    queryset = Validation.objects.select_related("instrument", "worker").all()
+    serializer_class = ValidationSerializer
+    permission_classes = [ReadOnlyOrAnalystOrAbove]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ["instrument"]
+    ordering_fields = ["date_issued"]
