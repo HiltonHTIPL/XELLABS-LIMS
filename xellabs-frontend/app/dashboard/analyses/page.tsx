@@ -3,7 +3,7 @@ import { getAnalysisProfiles } from '@/app/actions/analysis-profiles'
 import AnalysesTabsShell from './_components/AnalysesTabsShell'
 
 export default async function AnalysesPage() {
-  const [{ services, categories, departments, labContacts }, profiles] = await Promise.all([
+  const [{ services, categories, departments, labContacts, methods, instruments }, profiles] = await Promise.all([
     getAnalysesPageData(),
     getAnalysisProfiles(),
   ])
@@ -13,6 +13,8 @@ export default async function AnalysesPage() {
       categories={categories}
       departments={departments}
       labContacts={labContacts}
+      methods={methods}
+      instruments={instruments}
       initialProfiles={profiles}
     />
   )

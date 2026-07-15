@@ -191,12 +191,6 @@ class Sample(models.Model):
         ("broken", "Broken"),
         ("missing", "Missing"),
     ]
-    DEVIATION = [
-        ("none", "None"),
-        ("temperature_excursion", "Temperature Excursion"),
-        ("delayed_transport", "Delayed Transport"),
-        ("haemolysis", "Haemolysis"),
-    ]
     STORAGE_REQ = [
         ("2_8c", "2–8 °C (Refrigerated)"),
         ("minus_20c", "-20 °C (Frozen)"),
@@ -238,7 +232,7 @@ class Sample(models.Model):
     seal_number = models.CharField(max_length=100, blank=True)
     quantity_received = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
     quantity_unit = models.CharField(max_length=20, choices=QTY_UNIT, blank=True)
-    sampling_deviation = models.CharField(max_length=30, choices=DEVIATION, blank=True, default="none")
+    sampling_deviation = models.CharField(max_length=100, blank=True, default="none")
     storage_requirement = models.CharField(max_length=20, choices=STORAGE_REQ, blank=True)
     priority = models.CharField(max_length=10, choices=PRIORITY, blank=True, default="medium")
     hold_for_qa = models.BooleanField(default=False)

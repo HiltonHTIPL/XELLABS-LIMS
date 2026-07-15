@@ -94,10 +94,11 @@ function blankForm(): SampleForm {
 type Props = {
   sampleTypes: DjangoSampleType[]; clients: DjangoClient[]; services: SenaiteAnalysisService[]
   sampleTemplates: SenaiteSampleTemplate[]; sampleContainers: SenaiteRefOption[]; batches: SenaiteBatch[]
-  analysisSpecifications: AnalysisSpecification[]; preservations: SenaiteRefOption[]
+  analysisSpecifications: AnalysisSpecification[]; preservations: SenaiteRefOption[]; samplingDeviations: SenaiteRefOption[]
+  samplePoints: SenaiteRefOption[]
 }
 
-export default function NewSampleShell({ sampleTypes, clients, services, sampleTemplates, sampleContainers, batches, analysisSpecifications, preservations }: Props) {
+export default function NewSampleShell({ sampleTypes, clients, services, sampleTemplates, sampleContainers, batches, analysisSpecifications, preservations, samplingDeviations, samplePoints }: Props) {
   const router = useRouter()
   // Pre-select a Batch when arriving from that batch's "New Sample" button
   // (/dashboard/samples-overview/new?batch=<uid>) — only applied to the first
@@ -116,15 +117,18 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
   }
 
   // Batches offered for a given client — once a client is picked, only show
-  // that client's own batches plus any batch with no client assigned (a batch
-  // isn't necessarily client-specific). Before any client is picked, every
-  // open batch is shown so the field still works standalone.
+  // that client's own batches. A batch with no client assigned used to show
+  // for every client as a fallback ("a batch isn't necessarily client-specific"),
+  // but that read as "wrong client's batches showing up" in practice — a
+  // client's batch list should only ever contain that client's own batches.
+  // Before any client is picked, every open batch is shown so the field still
+  // works standalone.
   function batchOptionsFor(clientId: string): SenaiteBatch[] {
     const open = batches.filter(b => b.review_state === 'open')
     if (!clientId) return open
     const client = clients.find(c => String(c.id) === clientId)
-    if (!client?.senaite_uid) return open
-    return open.filter(b => !b.ClientUID || b.ClientUID === client.senaite_uid)
+    if (!client?.senaite_uid) return []
+    return open.filter(b => b.ClientUID === client.senaite_uid)
   }
 
   const [forms, setForms] = useState<SampleForm[]>(() => [{ ...blankForm(), batchUid: initialBatchUid }])
@@ -372,11 +376,20 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
     (s.title.toLowerCase().includes(analysisSearch.toLowerCase()) || s.Keyword.toLowerCase().includes(analysisSearch.toLowerCase()))
   )
 
-  // Pricing — active tab only
-  const VAT_RATE = 0.15
+  // Pricing — active tab only. Each test carries its own VAT rate from
+  // SENAITE's own AnalysisService.VAT; only fall back to the 15% default when
+  // a given test genuinely has none set, rather than assuming one flat rate
+  // for every line.
+  const DEFAULT_VAT_RATE = 0.15
   const subtotal = f.selectedTests.reduce((sum, t) => sum + parseFloat(t.Price || '0'), 0)
-  const vat = subtotal * VAT_RATE
+  const vat = f.selectedTests.reduce((sum, t) => {
+    const rate = t.VAT ? parseFloat(t.VAT) / 100 : DEFAULT_VAT_RATE
+    return sum + parseFloat(t.Price || '0') * rate
+  }, 0)
   const total = subtotal + vat
+  // Blended effective rate for the "VAT (X%)" label — falls back to the
+  // default display percentage when nothing is selected yet.
+  const vatDisplayPct = subtotal > 0 ? Math.round((vat / subtotal) * 100) : Math.round(DEFAULT_VAT_RATE * 100)
 
   const CONDITION_DOT: Record<string, string> = { good: '#0154FC', acceptable: '#3B82F6', compromised: '#EF4444', not_acceptable: '#EF4444' }
   const PRIORITY_DOT: Record<string, string> = { high: '#EF4444', medium: '#F59E0B', low: '#0154FC' }
@@ -523,7 +536,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                       ))}
                     </select>
                     {f.clientId && batchOptionsFor(f.clientId).length < batches.filter(b => b.review_state === 'open').length && (
-                      <span style={{ fontSize: 11, color: '#9CA3AF', marginTop: 3 }}>Filtered to this client&apos;s batches (and unassigned ones)</span>
+                      <span style={{ fontSize: 11, color: '#9CA3AF', marginTop: 3 }}>Filtered to this client&apos;s batches only</span>
                     )}</div>
                   <div style={field}><label style={lbl}>Batch Sub-group</label>
                     <input value={f.batchSubGroup} onChange={e => set('batchSubGroup', e.target.value)} placeholder="e.g. Stability Study" style={inp} /></div>
@@ -632,7 +645,10 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
               </select>
               <span style={{ fontSize: 11, color: '#9CA3AF', marginTop: 3 }}>Selecting one auto-fills Lab Analyses from its rows</span></div>
             <div style={field}><label style={lbl}>Sample Point</label>
-              <input value={f.samplePoint} onChange={e => set('samplePoint', e.target.value)} placeholder="e.g. Site A - Building 25" style={inp} /></div>
+              <select value={f.samplePoint} onChange={e => set('samplePoint', e.target.value)} style={inp}>
+                <option value="">— select —</option>
+                {samplePoints.map(p => <option key={p.uid} value={p.title}>{p.title}</option>)}
+              </select></div>
             <div style={field}><label style={lbl}>Storage Location</label>
               <StorageLocationInput
                 value={f.storageLocation ? { labelCode: f.storageLabelCode, display: f.storageLocation } : null}
@@ -645,9 +661,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
             <div style={field}><label style={lbl}>Sampling Deviation</label>
               <select value={f.samplingDeviation} onChange={e => set('samplingDeviation', e.target.value)} style={inp}>
                 <option value="none">None</option>
-                <option value="temperature_excursion">Temperature Excursion</option>
-                <option value="delayed_transport">Delayed Transport</option>
-                <option value="haemolysis">Haemolysis</option>
+                {samplingDeviations.map(d => <option key={d.uid} value={d.title}>{d.title}</option>)}
               </select></div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto auto', gap: 16, alignItems: 'end' }}>
@@ -864,7 +878,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
               <span>Subtotal</span><span style={{ fontWeight: 600 }}>${subtotal.toFixed(2)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#374151' }}>
-              <span>VAT (15%)</span><span style={{ fontWeight: 600 }}>${vat.toFixed(2)}</span>
+              <span>VAT ({vatDisplayPct}%)</span><span style={{ fontWeight: 600 }}>${vat.toFixed(2)}</span>
             </div>
             <div style={{ borderTop: '1px solid #E5E7EB', paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Total</span>

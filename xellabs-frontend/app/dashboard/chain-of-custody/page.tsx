@@ -57,13 +57,18 @@ function eventMeta(ev: CocEvent): { label: string; icon: string; color: string }
     case 'stored':            return { label: `Stored in ${(ev.details?.storage_path as string) ?? 'Storage'}`, icon: 'inventory_2', color: '#0154FC' }
     case 'released':          return { label: 'Released from Storage', icon: 'link_off',      color: '#EF4444' }
     case 'status_change': {
-      const nc = (ev.details?.changes as Array<{ field: string; new: string | null }>)?.find(c => c.field === 'status')?.new ?? ''
-      if (nc === 'in_progress') return { label: 'Released for Testing', icon: 'person',    color: '#8B5CF6' }
-      if (nc === 'reviewed')    return { label: 'Results Reviewed',     icon: 'verified',  color: '#0891B2' }
-      if (nc === 'published')   return { label: 'Results Published',    icon: 'publish',   color: '#22C55E' }
-      if (nc === 'rejected')    return { label: 'Sample Rejected',      icon: 'cancel',    color: '#EF4444' }
+      const nc = (ev.details?.new_status as string) ?? ''
+      if (nc === 'in_progress')      return { label: 'Released for Testing', icon: 'person',    color: '#8B5CF6' }
+      if (nc === 'results_pending')  return { label: 'Results Pending',      icon: 'hourglass_top', color: '#F59E0B' }
+      if (nc === 'reviewed')         return { label: 'Results Reviewed',     icon: 'verified',  color: '#0891B2' }
+      if (nc === 'published')        return { label: 'Results Published',    icon: 'publish',   color: '#22C55E' }
+      if (nc === 'rejected')         return { label: 'Sample Rejected',      icon: 'cancel',    color: '#EF4444' }
       return { label: ev.label, icon: 'swap_horiz', color: '#8B5CF6' }
     }
+    case 'result_submitted': return { label: ev.label, icon: 'science',      color: '#8B5CF6' }
+    case 'result_verified':  return { label: ev.label, icon: 'verified',     color: '#0891B2' }
+    case 'result_rejected':  return { label: ev.label, icon: 'cancel',       color: '#EF4444' }
+    case 'ar_completed':     return { label: ev.label, icon: 'task_alt',     color: '#22C55E' }
     default: return { label: ev.label, icon: 'edit', color: '#F59E0B' }
   }
 }
@@ -81,6 +86,17 @@ function eventRows(ev: CocEvent, sample: CocSample | null): Array<{ key: string;
   if (ev.event_type === 'released') {
     if (ev.details?.slot_id)      rows.push({ key: 'Container', value: `Slot ${ev.details.slot_id as string}` })
     if (sample?.barcode)          rows.push({ key: 'Barcode',   value: sample.barcode })
+  }
+  if (ev.event_type === 'result_submitted' || ev.event_type === 'result_verified') {
+    if (ev.details?.test)  rows.push({ key: 'Test',  value: ev.details.test as string })
+    if (ev.details?.value) rows.push({ key: 'Value', value: `${ev.details.value as string}${ev.details.unit ? ' ' + ev.details.unit : ''}` })
+  }
+  if (ev.event_type === 'result_rejected') {
+    if (ev.details?.test)    rows.push({ key: 'Test',    value: ev.details.test as string })
+    if (ev.details?.remarks) rows.push({ key: 'Remarks', value: ev.details.remarks as string })
+  }
+  if (ev.event_type === 'ar_completed' && ev.details?.ar_id) {
+    rows.push({ key: 'Analysis Request', value: ev.details.ar_id as string })
   }
   return rows
 }
@@ -372,6 +388,7 @@ export default function ChainOfCustodyPage() {
               {sample.received_by  && <><span style={{ fontSize: 10, color: '#9CA3AF', marginLeft: 16 }}>Received by</span><span style={{ fontSize: 10, fontWeight: 500, color: '#374151' }}>{sample.received_by}</span></>}
               {sample.condition    && <><span style={{ fontSize: 10, color: '#9CA3AF', marginLeft: 16 }}>Condition</span><span style={{ fontSize: 10, fontWeight: 500, color: '#374151' }}>{sample.condition}</span></>}
               {sample.priority     && <><span style={{ fontSize: 10, color: '#9CA3AF', marginLeft: 16 }}>Priority</span><span style={{ fontSize: 10, fontWeight: 500, color: '#374151' }}>{sample.priority}</span></>}
+              {sample.batch_id     && <><span style={{ fontSize: 10, color: '#9CA3AF', marginLeft: 16 }}>Batch</span><span style={{ fontSize: 10, fontWeight: 500, color: '#374151' }}>{sample.batch_id}{sample.batch_sub_group ? ` (${sample.batch_sub_group})` : ''}</span></>}
               {sample.hold_for_qa  && <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 999, backgroundColor: '#FEF3C7', color: '#92400E', marginLeft: 16 }}>QA Hold</span>}
             </div>
             {sample.receipt_notes && (

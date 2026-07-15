@@ -4,7 +4,7 @@ import { getAnalysisServices } from '@/app/actions/samples'
 import { getSampleTemplatesPageData } from '@/app/actions/sample-templates'
 import { getBatchesList } from '@/app/actions/batches'
 import { getAnalysisSpecifications } from '@/app/actions/specifications'
-import { getPreservations } from '@/app/actions/reference-data'
+import { getPreservations, getSamplingDeviations, getSamplePoints } from '@/app/actions/reference-data'
 import NewSampleShell from './_components/NewSampleShell'
 
 export default async function NewSamplePage() {
@@ -13,7 +13,7 @@ export default async function NewSamplePage() {
   // (by senaite_uid). Analysis services are fetched live, no sync needed.
   await syncSampleTypesFromSenaite()
 
-  const [sampleTypes, clients, services, templateData, batches, analysisSpecifications, preservations] = await Promise.all([
+  const [sampleTypes, clients, services, templateData, batches, analysisSpecifications, preservations, samplingDeviations, samplePoints] = await Promise.all([
     getDjangoSampleTypes(),
     getClients(),
     getAnalysisServices(),
@@ -21,6 +21,8 @@ export default async function NewSamplePage() {
     getBatchesList(),
     getAnalysisSpecifications(),
     getPreservations(),
+    getSamplingDeviations(),
+    getSamplePoints(),
   ])
   return (
     <NewSampleShell
@@ -32,6 +34,8 @@ export default async function NewSamplePage() {
       batches={batches}
       analysisSpecifications={analysisSpecifications.filter(s => s.is_active)}
       preservations={preservations}
+      samplingDeviations={samplingDeviations}
+      samplePoints={samplePoints}
     />
   )
 }

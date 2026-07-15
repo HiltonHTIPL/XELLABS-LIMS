@@ -1,8 +1,8 @@
 'use client'
-import { useState, useActionState } from 'react'
+import { useState, useActionState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { type SenaiteRefOption } from '@/app/lib/senaite'
-import { type CreateRefOptionState } from '@/app/actions/reference-data'
+import { type CreateRefOptionState, type ToggleRefOptionState } from '@/app/actions/reference-data'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -15,31 +15,43 @@ type Props = {
   icon: string
   initialItems: SenaiteRefOption[]
   createAction: (prev: CreateRefOptionState, formData: FormData) => Promise<CreateRefOptionState>
+  // Both optional — a consumer with neither still gets the original create-only
+  // behavior (matches the Sample Containers precedent this shell was built from).
+  updateAction?: (uid: string, prev: CreateRefOptionState, formData: FormData) => Promise<CreateRefOptionState>
+  toggleActiveAction?: (uid: string, active: boolean) => Promise<ToggleRefOptionState>
 }
 
-// Generic list + create page for a simple SENAITE setup reference list (name +
-// optional description, no edit/delete — matches the existing Container
-// Type/Sample Matrix precedent). Parameterized so Sample Containers,
-// Preservations, and Sample Points each get a thin page.tsx instead of three
-// near-duplicate components.
-export default function ReferenceListShell({ title, subtitle, entityLabel, icon, initialItems, createAction }: Props) {
+// Generic list + create/edit page for a simple SENAITE setup reference list
+// (name + optional description + active/inactive). Parameterized so Sample
+// Points, Preservations, and Sampling Deviations each get a thin page.tsx
+// instead of three near-duplicate components.
+export default function ReferenceListShell({ title, subtitle, entityLabel, icon, initialItems, createAction, updateAction, toggleActiveAction }: Props) {
   const router = useRouter()
+  const [isPending, startTransition] = useTransition()
   const [showDrawer, setShowDrawer] = useState(false)
   const [items, setItems] = useState(initialItems)
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [editing, setEditing] = useState<SenaiteRefOption | null>(null)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [nameError, setNameError] = useState('')
 
+  const isEditing = editing !== null
+
   const [, action, pending] = useActionState(
     async (prev: CreateRefOptionState, fd: FormData) => {
-      const result = await createAction(prev, fd)
+      const result = isEditing && updateAction
+        ? await updateAction(editing.uid, prev, fd)
+        : await createAction(prev, fd)
       if (result.success && result.option) {
-        setItems(prev => [...prev, result.option!])
+        setItems(prev => isEditing
+          ? prev.map(it => it.uid === result.option!.uid ? { ...it, ...result.option! } : it)
+          : [...prev, result.option!])
         setShowDrawer(false)
+        setEditing(null)
         setName('')
         setDescription('')
-        setToast({ ok: true, msg: result.message ?? `${entityLabel} created.` })
+        setToast({ ok: true, msg: result.message ?? `${entityLabel} ${isEditing ? 'updated' : 'created'}.` })
         setTimeout(() => setToast(null), 4000)
         router.refresh()
       } else if (result.message) {
@@ -50,8 +62,27 @@ export default function ReferenceListShell({ title, subtitle, entityLabel, icon,
     {}
   )
 
-  function openCreate() { setName(''); setDescription(''); setNameError(''); setShowDrawer(true) }
-  function closeDrawer() { setShowDrawer(false) }
+  function openCreate() { setEditing(null); setName(''); setDescription(''); setNameError(''); setShowDrawer(true) }
+  function openEdit(item: SenaiteRefOption) {
+    setEditing(item); setName(item.title); setDescription(item.description ?? ''); setNameError(''); setShowDrawer(true)
+  }
+  function closeDrawer() { setShowDrawer(false); setEditing(null) }
+
+  function handleToggleActive(item: SenaiteRefOption) {
+    if (!toggleActiveAction) return
+    const nextActive = item.review_state !== 'active'
+    startTransition(async () => {
+      const result = await toggleActiveAction(item.url ?? '', nextActive)
+      if (result.success) {
+        setItems(prev => prev.map(it => it.uid === item.uid ? { ...it, review_state: nextActive ? 'active' : 'inactive' } : it))
+        setToast({ ok: true, msg: result.message })
+      } else {
+        setToast({ ok: false, msg: result.message })
+      }
+      setTimeout(() => setToast(null), 4000)
+      router.refresh()
+    })
+  }
 
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
@@ -60,9 +91,16 @@ export default function ReferenceListShell({ title, subtitle, entityLabel, icon,
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>{title}</h1>
           <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>{subtitle}</p>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
-          <MI name="add" size={15} color="#fff" /> New {entityLabel}
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => router.refresh()} disabled={isPending}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium"
+            style={{ border: '1px solid #E8EAF2', color: '#374151', backgroundColor: '#fff', cursor: isPending ? 'not-allowed' : 'pointer' }}>
+            <MI name="refresh" size={15} color="#6B7280" /> Refresh
+          </button>
+          <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
+            <MI name="add" size={15} color="#fff" /> New {entityLabel}
+          </button>
+        </div>
       </div>
 
       {toast && (
@@ -80,12 +118,12 @@ export default function ReferenceListShell({ title, subtitle, entityLabel, icon,
 
           <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ borderBottom: '1px solid #F3F4F6' }}>
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#DBEAFE' }}>
-                <MI name="add" size={16} color="#0154FC" />
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: isEditing ? '#EFF6FF' : '#DBEAFE' }}>
+                <MI name={isEditing ? 'edit' : 'add'} size={16} color={isEditing ? '#2563EB' : '#0154FC'} />
               </div>
               <div>
-                <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>New {entityLabel}</h2>
-                <p style={{ fontSize: 10, color: '#9CA3AF' }}>Adds a lab-wide {entityLabel.toLowerCase()} option</p>
+                <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>{isEditing ? `Edit ${entityLabel}` : `New ${entityLabel}`}</h2>
+                <p style={{ fontSize: 10, color: '#9CA3AF' }}>{isEditing ? `Updates this ${entityLabel.toLowerCase()} option` : `Adds a lab-wide ${entityLabel.toLowerCase()} option`}</p>
               </div>
             </div>
             <button onClick={closeDrawer} className="p-1.5 rounded-lg hover:bg-gray-100">
@@ -129,9 +167,9 @@ export default function ReferenceListShell({ title, subtitle, entityLabel, icon,
                 Cancel
               </button>
               <button type="submit" disabled={pending} className="flex items-center gap-1.5"
-                style={{ fontSize: 12, fontWeight: 600, padding: '7px 18px', borderRadius: 8, backgroundColor: '#0154FC', color: '#fff', border: 'none', cursor: pending ? 'not-allowed' : 'pointer', opacity: pending ? 0.7 : 1 }}>
+                style={{ fontSize: 12, fontWeight: 600, padding: '7px 18px', borderRadius: 8, backgroundColor: isEditing ? '#2563EB' : '#0154FC', color: '#fff', border: 'none', cursor: pending ? 'not-allowed' : 'pointer', opacity: pending ? 0.7 : 1 }}>
                 <MI name={pending ? 'hourglass_top' : 'check'} size={13} color="#fff" />
-                {pending ? 'Creating…' : 'Create'}
+                {pending ? (isEditing ? 'Saving…' : 'Creating…') : isEditing ? 'Save Changes' : 'Create'}
               </button>
             </div>
           </form>
@@ -152,22 +190,61 @@ export default function ReferenceListShell({ title, subtitle, entityLabel, icon,
           <table className="w-full" style={{ borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                <th className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>Name</th>
+                <th className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', width: '26%' }}>Name</th>
+                <th className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>Description</th>
+                <th className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', width: 100 }}>Status</th>
+                <th className="px-3 py-2 text-right uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', width: 150 }}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {items.map((item, i) => (
-                <tr key={item.uid} style={{ borderBottom: i < items.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
-                  <td className="px-3 py-2.5">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: '#DBEAFE' }}>
-                        <MI name={icon} size={13} color="#0154FC" />
+              {items.map((item, i) => {
+                const active = item.review_state !== 'inactive'
+                return (
+                  <tr key={item.uid} style={{ borderBottom: i < items.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: '#DBEAFE' }}>
+                          <MI name={icon} size={13} color="#0154FC" />
+                        </div>
+                        <span className="text-xs font-medium" style={{ color: '#111827' }}>{item.title}</span>
                       </div>
-                      <span className="text-xs font-medium" style={{ color: '#111827' }}>{item.title}</span>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <span className="text-xs" style={{ color: item.description ? '#6B7280' : '#D1D5DB' }}>
+                        {item.description || '—'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ backgroundColor: active ? '#ECFDF5' : '#FFFBEB', color: active ? '#059669' : '#D97706' }}>
+                        {active ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button onClick={() => openEdit(item)} title="Edit"
+                          className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium hover:bg-gray-50"
+                          style={{ border: '1px solid #E8EAF2', background: '#fff', color: '#374151', cursor: 'pointer' }}>
+                          <MI name="edit" size={13} color="#6B7280" /> Edit
+                        </button>
+                        {toggleActiveAction && (
+                          <button onClick={() => handleToggleActive(item)} disabled={isPending} title={active ? 'Deactivate' : 'Activate'}
+                            className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium hover:opacity-80"
+                            style={{
+                              border: `1px solid ${active ? '#FCA5A5' : '#A7F3D0'}`,
+                              background: active ? '#FEF2F2' : '#ECFDF5',
+                              color: active ? '#DC2626' : '#059669',
+                              cursor: isPending ? 'not-allowed' : 'pointer',
+                              opacity: isPending ? 0.6 : 1,
+                            }}>
+                            <MI name={active ? 'block' : 'check_circle'} size={13} color={active ? '#DC2626' : '#059669'} />
+                            {active ? 'Deactivate' : 'Activate'}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
           <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>

@@ -201,6 +201,37 @@ def _ensure_client_contact(client, client_path: str) -> "str | None":
         return None
 
 
+def _find_ar_by_client_sample_id(client_sample_id: str) -> "dict | None":
+    """
+    Look up an existing AnalysisRequest by its ClientSampleID — set to the
+    Django Sample's own (globally unique) sample_id at creation time, see
+    push_analysis_request() below — so an exact match means "this Django AR
+    was already pushed to SENAITE". Guards push_analysis_request() against
+    creating a genuine duplicate AnalysisRequest when it runs again for the
+    same AR (e.g. a Celery retry after an earlier create POST actually
+    succeeded server-side but the client-side request timed out before
+    seeing the response — senaite.jsonapi's create response assembly can be
+    slow, confirmed as the live root cause of a real duplicate: one sample
+    created in XelLabs produced two AnalysisRequests in SENAITE).
+    Client-side filtered for the same reason _find_by_title is — SENAITE's
+    server-side query params can't be trusted to actually filter.
+    """
+    if not client_sample_id:
+        return None
+    s = _session()
+    try:
+        resp = s.get(_api("AnalysisRequest"), params={"complete": "true", "limit": "1000"}, timeout=15)
+        resp.raise_for_status()
+        items = resp.json().get("items") or []
+        for item in items:
+            if (item.get("ClientSampleID") or "") == client_sample_id:
+                return item
+        return None
+    except requests.RequestException as exc:
+        logger.warning("SENAITE AR lookup by ClientSampleID '%s' failed: %s", client_sample_id, exc)
+        return None
+
+
 def push_analysis_request(ar) -> str | None:
     """
     Push an AnalysisRequest + its Sample to SENAITE.
@@ -208,6 +239,18 @@ def push_analysis_request(ar) -> str | None:
     """
     sample = ar.sample
     client = sample.client
+
+    # Idempotency guard — see _find_ar_by_client_sample_id's docstring for why
+    # this matters: without it, any retry of this function (regardless of
+    # cause) unconditionally re-creates the AnalysisRequest in SENAITE.
+    existing = _find_ar_by_client_sample_id(sample.sample_id)
+    if existing and existing.get("uid"):
+        logger.info(
+            "SENAITE AR sync for %s: found an existing AnalysisRequest (uid=%s) "
+            "already created for this sample — reusing it instead of creating a duplicate.",
+            ar.ar_id, existing["uid"],
+        )
+        return existing["uid"]
 
     if not client.senaite_uid:
         logger.warning(
@@ -471,6 +514,59 @@ def push_storage_location(location) -> "tuple[str | None, str | None]":
     except Exception as exc:
         logger.error("SENAITE storage sync failed for '%s': %s", location.name, exc)
         return None, None
+
+
+def set_storage_position(box_uid: str, slot_id: str, ar_uid: str, occupy: bool) -> dict:
+    """
+    Write (or clear) the occupying sample's AR uid into the exact row/column
+    entry of a StorageSamplesContainer's own PositionsLayout — this is what
+    makes SENAITE's own storage box view show which slot holds which sample,
+    distinct from set_sample_storage_transition() below (which only fires the
+    'store'/'recover' workflow transition on the AR itself).
+
+    slot_id is the XelLabs "<Letter><Number>" id (e.g. "A1") — confirmed live
+    that this maps to PositionsLayout row=<letter index, A=0>/column=<number-1>.
+
+    Same read-modify-write requirement as set_senaite_group_role()'s roles
+    list — PositionsLayout has no partial-update support, so the full array
+    must be fetched, the one matching entry mutated, and the whole array sent
+    back. Returns {"ok": True} or {"ok": False, "error": ...}. Never raises.
+    """
+    if not box_uid or not slot_id or not ar_uid:
+        return {"ok": False, "error": "Missing box_uid, slot_id, or ar_uid"}
+    m = re.match(r"^([A-Za-z])(\d+)$", slot_id)
+    if not m:
+        return {"ok": False, "error": f"Unrecognized slot id '{slot_id}'"}
+    row = ord(m.group(1).upper()) - 65
+    column = int(m.group(2)) - 1
+
+    s = _session()
+    try:
+        resp = s.get(_api("StorageSamplesContainer"), params={"UID": box_uid, "complete": "true"}, timeout=15)
+        resp.raise_for_status()
+        items = resp.json().get("items") or []
+        if not items:
+            return {"ok": False, "error": f"Storage box {box_uid} not found"}
+        layout = items[0].get("PositionsLayout") or []
+
+        entry = next(
+            (e for e in layout if str(e.get("row")) == str(row) and str(e.get("column")) == str(column)),
+            None,
+        )
+        if entry is None:
+            return {"ok": False, "error": f"Position row={row}/column={column} not found in box layout"}
+
+        entry["uid"] = ar_uid if occupy else ""
+        entry["samples_utilization"] = 1 if occupy else 0
+
+        resp = s.post(_api(f"update/{box_uid}"), json={"PositionsLayout": layout}, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("success") is False:
+            return {"ok": False, "error": _sanitize_error(str(data.get("message") or data))}
+        return {"ok": True}
+    except requests.RequestException as exc:
+        return {"ok": False, "error": _sanitize_error(str(exc))}
 
 
 def set_sample_storage_transition(ar_uid: str, transition: str) -> dict:

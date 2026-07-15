@@ -1,4 +1,4 @@
-import { getPreservations, createPreservation } from '@/app/actions/reference-data'
+import { getPreservations, createPreservation, updatePreservation, togglePreservationActive } from '@/app/actions/reference-data'
 import ReferenceListShell from '../_components/ReferenceListShell'
 
 export default async function PreservationsPage() {
@@ -11,6 +11,8 @@ export default async function PreservationsPage() {
       icon="ac_unit"
       initialItems={items}
       createAction={createPreservation}
+      updateAction={updatePreservation}
+      toggleActiveAction={togglePreservationActive}
     />
   )
 }

@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Sidebar from './Sidebar'
+import CommandPalette from './CommandPalette'
 import { logout } from '@/app/actions/auth'
 import { ENV_OVERRIDE_EVENT, getEnvOverride, type EnvLabel } from '@/app/lib/envOverride'
 
@@ -57,6 +58,18 @@ export default function DashboardShell({ children, initials, displayName, roleLa
   const helpBtnRef = useRef<HTMLButtonElement>(null)
   const helpPanelRef = useRef<HTMLDivElement>(null)
   const [helpPos, setHelpPos] = useState<{ top: number; right: number } | null>(null)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPaletteOpen(o => !o)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const buildEnvLabel: EnvLabel = serverEnvLabel
     ?? ((process.env.NEXT_PUBLIC_APP_ENV ?? 'development').toLowerCase() === 'production' ? 'Production' : 'Development')
@@ -162,20 +175,17 @@ export default function DashboardShell({ children, initials, displayName, roleLa
             )
           })()}
 
-          {/* Search */}
-          <div
+          {/* Search — opens the universal command palette (⌘K / Ctrl+K) */}
+          <button
+            onClick={() => setPaletteOpen(true)}
             className="flex items-center flex-1 max-w-md gap-2 px-3 py-1.5 rounded-lg ml-1"
-            style={{ backgroundColor: '#F3F4F6', border: '1px solid #E5E7EB' }}
+            style={{ backgroundColor: '#F3F4F6', border: '1px solid #E5E7EB', cursor: 'pointer' }}
           >
             <span className="material-icons" style={{ fontSize: 16, color: '#9CA3AF' }}>search</span>
-            <input
-              type="text"
-              placeholder="Search samples, IDs, projects, users..."
-              className="flex-1 bg-transparent text-sm outline-none"
-              style={{ color: '#374151' }}
-            />
+            <span className="flex-1 text-left text-sm" style={{ color: '#9CA3AF' }}>Search samples, IDs, projects, users...</span>
             <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: '#E5E7EB', color: '#9CA3AF' }}>⌘ K</span>
-          </div>
+          </button>
+          <CommandPalette role={role} isSuperuser={isSuperuser} open={paletteOpen} onClose={() => setPaletteOpen(false)} />
 
           <div className="flex-1" />
 

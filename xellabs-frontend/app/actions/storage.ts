@@ -220,13 +220,16 @@ export type CocSample = {
   container_type: string
   preservation: string
   sample_point: string
+  batch_id: string
+  batch_sub_group: string
 }
 
 export type CocEvent = {
-  id: number
+  id: number | string
   timestamp: string
   user: string
   event_type: 'sample_registered' | 'sample_received' | 'status_change' | 'update' | 'stored' | 'released'
+    | 'result_submitted' | 'result_verified' | 'result_rejected' | 'ar_completed'
   label: string
   details: Record<string, unknown>
 }

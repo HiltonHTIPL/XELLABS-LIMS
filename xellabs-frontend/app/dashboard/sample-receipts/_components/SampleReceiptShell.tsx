@@ -6,6 +6,7 @@ import { assignSampleByLabel } from '@/app/actions/storage'
 import StorageLocationInput, { type SelectedStorage } from '@/app/dashboard/_components/StorageLocationInput'
 import LiveBarcode from '@/app/dashboard/_components/LiveBarcode'
 import { sampleDisplayId } from '@/app/lib/sampleDisplay'
+import { type SenaiteRefOption } from '@/app/lib/senaite'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -91,7 +92,7 @@ const conditionDot: Record<string, string> = { good: '#0154FC', acceptable: '#F5
 const sealDot: Record<string, string> = { intact: '#0154FC', broken: '#EF4444', missing: '#F59E0B' }
 const priorityDot: Record<string, string> = { high: '#EF4444', medium: '#F59E0B', low: '#0154FC' }
 
-export default function SampleReceiptShell({ sample, hasId }: { sample: LabSample | null; hasId: boolean }) {
+export default function SampleReceiptShell({ sample, hasId, samplingDeviations }: { sample: LabSample | null; hasId: boolean; samplingDeviations: SenaiteRefOption[] }) {
   const router = useRouter()
   const [submitting, setSubmitting] = useState(false)
   const [error, setError]           = useState('')
@@ -261,9 +262,7 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
             </div>
             <LabelSelect label="Sampling Deviation" value={deviation} onChange={setDeviation}>
               <option value="none">None</option>
-              <option value="temperature_excursion">Temperature Excursion</option>
-              <option value="delayed_transport">Delayed Transport</option>
-              <option value="haemolysis">Haemolysis</option>
+              {samplingDeviations.map(d => <option key={d.uid} value={d.title}>{d.title}</option>)}
             </LabelSelect>
           </div>
 

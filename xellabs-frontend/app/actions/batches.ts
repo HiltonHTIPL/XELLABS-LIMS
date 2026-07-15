@@ -8,6 +8,7 @@ import {
   fetchSenaiteSamples,
   fetchAllAnalyses,
   submitAnalysisResult,
+  updateSenaiteSample,
   type SenaiteBatch,
   type SenaiteSample,
   type SenaiteAnalysisFull,
@@ -48,6 +49,27 @@ export async function submitBatchResult(
 ): Promise<{ success: boolean; message?: string }> {
   const r = await submitAnalysisResult(serverToken(), analysisUid, result)
   return { success: r.success, message: r.error }
+}
+
+/** Samples with no Batch assigned yet — scoped to the batch's own client when
+ * it has one, otherwise every unassigned sample across all clients. */
+export async function getUnassignedSamples(clientUid?: string): Promise<SenaiteSample[]> {
+  const all = await fetchSenaiteSamples(serverToken(), { limit: '1000' })
+  return all.filter(s => !s.BatchUID && (!clientUid || s.ClientUID === clientUid))
+}
+
+export async function assignSamplesToBatch(
+  batchUid: string,
+  sampleUids: string[]
+): Promise<{ success: boolean; message: string }> {
+  if (sampleUids.length === 0) return { success: true, message: 'No samples selected.' }
+  const results = await Promise.all(sampleUids.map(uid => updateSenaiteSample(serverToken(), uid, { Batch: batchUid })))
+  const failed = results.filter(r => !r.success)
+  revalidatePath(`/dashboard/batches/${batchUid}`)
+  if (failed.length > 0) {
+    return { success: false, message: `${failed.length} of ${sampleUids.length} sample(s) failed: ${failed[0].error ?? 'unknown error'}` }
+  }
+  return { success: true, message: `${sampleUids.length} sample${sampleUids.length > 1 ? 's' : ''} added to batch.` }
 }
 
 export async function getBatchClientOptions(): Promise<{ uid: string; title: string }[]> {

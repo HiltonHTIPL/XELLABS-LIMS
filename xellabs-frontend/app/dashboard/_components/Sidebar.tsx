@@ -9,18 +9,18 @@ function MI({ name, size = 16 }: { name: string; size?: number }) {
   return <span className="material-icons" style={{ fontSize: size, lineHeight: 1 }}>{name}</span>
 }
 
-type NavItem = { label: string; href: string; icon: string; roles: string[] | null; exact?: boolean; superuserOnly?: boolean }
+export type NavItem = { label: string; href: string; icon: string; roles: string[] | null; exact?: boolean; superuserOnly?: boolean }
 // linkOnly groups (e.g. Administration) navigate straight to `href` on click
 // instead of expanding an in-sidebar submenu — `children` is still used to
 // compute the "any child active" highlight and by /dashboard/admin's own grid.
-type NavGroup = { group: string; icon: string; roles: string[] | null; children: NavItem[]; linkOnly?: boolean; href?: string }
-type NavEntry = NavItem | NavGroup
+export type NavGroup = { group: string; icon: string; roles: string[] | null; children: NavItem[]; linkOnly?: boolean; href?: string }
+export type NavEntry = NavItem | NavGroup
 
-function isGroup(entry: NavEntry): entry is NavGroup {
+export function isGroup(entry: NavEntry): entry is NavGroup {
   return 'children' in entry
 }
 
-const NAV: NavEntry[] = [
+export const NAV: NavEntry[] = [
   { label: 'Dashboard',        href: '/dashboard',                   icon: 'dashboard',               roles: null },
   { label: 'Clients',          href: '/dashboard/clients',           icon: 'business',                roles: ['admin', 'lab_manager', 'receptionist'] },
   // Sample workflow

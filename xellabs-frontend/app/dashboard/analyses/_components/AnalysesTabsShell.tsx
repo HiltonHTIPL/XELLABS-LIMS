@@ -8,6 +8,8 @@ import {
   type SenaiteAnalysisCategory,
   type SenaiteDepartment,
   type SenaiteLabContact,
+  type SenaiteRefOption,
+  type SenaiteInstrument,
 } from '@/app/lib/senaite'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
@@ -17,12 +19,14 @@ function MI({ name, size = 16, color }: { name: string; size?: number; color?: s
 type Tab = 'analyses' | 'profiles'
 
 export default function AnalysesTabsShell({
-  initialServices, categories, departments, labContacts, initialProfiles,
+  initialServices, categories, departments, labContacts, methods, instruments, initialProfiles,
 }: {
   initialServices: SenaiteAnalysisService[]
   categories: SenaiteAnalysisCategory[]
   departments: SenaiteDepartment[]
   labContacts: SenaiteLabContact[]
+  methods: SenaiteRefOption[]
+  instruments: SenaiteInstrument[]
   initialProfiles: AnalysisProfile[]
 }) {
   const [tab, setTab] = useState<Tab>('analyses')
@@ -59,6 +63,8 @@ export default function AnalysesTabsShell({
           categories={categories}
           departments={departments}
           labContacts={labContacts}
+          methods={methods}
+          instruments={instruments}
         />
       ) : (
         <AnalysisProfilesShell

@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { type SenaiteBatch, type SenaiteSample, type SenaiteAnalysisFull, mapSenaiteState, mapSenaitePriority } from '@/app/lib/senaite'
 import { receiveSample, cancelSample } from '@/app/actions/samples'
-import { getAnalysesByUids, submitBatchResult } from '@/app/actions/batches'
+import { getAnalysesByUids, submitBatchResult, getUnassignedSamples, assignSamplesToBatch } from '@/app/actions/batches'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -69,6 +69,14 @@ export default function BatchDetailShell({
   const [resultsList, setResultsList] = useState<SenaiteAnalysisFull[]>([])
   const [resultsValues, setResultsValues] = useState<Record<string, string>>({})
   const [resultsSubmitting, setResultsSubmitting] = useState(false)
+
+  // Add Samples — pick existing samples with no Batch assigned yet
+  const [addOpen, setAddOpen] = useState(false)
+  const [addLoading, setAddLoading] = useState(false)
+  const [addCandidates, setAddCandidates] = useState<SenaiteSample[]>([])
+  const [addSelected, setAddSelected] = useState<Set<string>>(new Set())
+  const [addSearch, setAddSearch] = useState('')
+  const [addSubmitting, setAddSubmitting] = useState(false)
 
   function showToast(ok: boolean, msg: string) {
     setToast({ ok, msg })
@@ -153,6 +161,48 @@ export default function BatchDetailShell({
     router.refresh()
   }
 
+  // batch.ClientUID scopes the picker to that client; an unassigned batch (no
+  // client) shows every unbatched sample across all clients — per spec.
+  async function openAdd() {
+    setAddOpen(true)
+    setAddLoading(true)
+    const candidates = await getUnassignedSamples(batch.ClientUID || undefined)
+    setAddCandidates(candidates)
+    setAddSelected(new Set())
+    setAddSearch('')
+    setAddLoading(false)
+  }
+
+  function closeAdd() {
+    setAddOpen(false)
+    setAddCandidates([])
+    setAddSelected(new Set())
+  }
+
+  function toggleAddSelected(uid: string) {
+    setAddSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(uid)) next.delete(uid); else next.add(uid)
+      return next
+    })
+  }
+
+  const addFiltered = addCandidates.filter(s => {
+    const q = addSearch.trim().toLowerCase()
+    if (!q) return true
+    return (s.id || s.title).toLowerCase().includes(q) || s.ClientTitle.toLowerCase().includes(q) || s.SampleTypeTitle.toLowerCase().includes(q)
+  })
+
+  async function submitAdd() {
+    if (addSelected.size === 0) { closeAdd(); return }
+    setAddSubmitting(true)
+    const result = await assignSamplesToBatch(batch.uid, Array.from(addSelected))
+    setAddSubmitting(false)
+    closeAdd()
+    showToast(result.success, result.message)
+    router.refresh()
+  }
+
   const toolbarBtn = {
     fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 8,
     border: '1px solid #D1D5DB', background: '#fff', color: '#374151', cursor: 'pointer',
@@ -182,9 +232,14 @@ export default function BatchDetailShell({
             </p>
           </div>
         </div>
-        <Link href={`/dashboard/samples-overview/new?batch=${batch.uid}`} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white shrink-0" style={{ backgroundColor: '#0154FC', textDecoration: 'none' }}>
-          <MI name="add" size={15} color="#fff" /> Add Samples
-        </Link>
+        <div className="flex items-center gap-2 shrink-0">
+          <button onClick={openAdd} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ backgroundColor: '#fff', color: '#374151', border: '1px solid #D1D5DB', cursor: 'pointer' }}>
+            <MI name="playlist_add" size={15} color="#374151" /> Add Samples
+          </button>
+          <Link href={`/dashboard/samples-overview/new?batch=${batch.uid}`} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC', textDecoration: 'none' }}>
+            <MI name="add" size={15} color="#fff" /> Create Sample
+          </Link>
+        </div>
       </div>
 
       {toast && (
@@ -250,10 +305,15 @@ export default function BatchDetailShell({
           <div className="flex flex-col items-center justify-center py-12">
             <MI name="science" size={32} color="#D1D5DB" />
             <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No samples in batch</p>
-            <p className="text-xs mt-0.5 mb-3" style={{ color: '#9CA3AF' }}>Register a new sample and assign it to this batch</p>
-            <Link href={`/dashboard/samples-overview/new?batch=${batch.uid}`} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC', textDecoration: 'none' }}>
-              <MI name="add" size={13} color="#fff" /> New Sample
-            </Link>
+            <p className="text-xs mt-0.5 mb-3" style={{ color: '#9CA3AF' }}>Add an existing unassigned sample, or register a new one for this batch</p>
+            <div className="flex items-center gap-2">
+              <button onClick={openAdd} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium" style={{ backgroundColor: '#fff', color: '#374151', border: '1px solid #D1D5DB', cursor: 'pointer' }}>
+                <MI name="playlist_add" size={13} color="#374151" /> Add Samples
+              </button>
+              <Link href={`/dashboard/samples-overview/new?batch=${batch.uid}`} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC', textDecoration: 'none' }}>
+                <MI name="add" size={13} color="#fff" /> Create Sample
+              </Link>
+            </div>
           </div>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -367,6 +427,101 @@ export default function BatchDetailShell({
                 style={{ fontSize: 12, fontWeight: 600, padding: '7px 18px', borderRadius: 8, backgroundColor: '#0154FC', color: '#fff', border: 'none', cursor: resultsSubmitting ? 'not-allowed' : 'pointer', opacity: resultsSubmitting ? 0.7 : 1 }}>
                 {resultsSubmitting ? 'Submitting…' : 'Submit Results'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Samples modal — pick from samples not yet assigned to any batch,
+          scoped to this batch's client when it has one, otherwise every client */}
+      {addOpen && (
+        <div onClick={closeAdd} style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 12, width: 680, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}>
+            <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #F3F4F6' }}>
+              <div>
+                <h2 style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Add Samples to Batch</h2>
+                <p style={{ fontSize: 11, color: '#9CA3AF' }}>
+                  {batch.ClientTitle ? `Showing unassigned samples for ${batch.ClientTitle}` : 'Showing unassigned samples across all clients'}
+                </p>
+              </div>
+              <button onClick={closeAdd} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                <MI name="close" size={16} color="#9CA3AF" />
+              </button>
+            </div>
+
+            <div className="px-5 pt-3">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ backgroundColor: '#F3F4F6', border: '1px solid #E5E7EB' }}>
+                <MI name="search" size={14} color="#9CA3AF" />
+                <input
+                  type="text"
+                  value={addSearch}
+                  onChange={e => setAddSearch(e.target.value)}
+                  placeholder="Search sample ID, client, sample type..."
+                  className="flex-1 bg-transparent text-xs outline-none"
+                  style={{ color: '#374151' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 20px' }}>
+              {addLoading ? (
+                <div className="flex items-center justify-center py-10">
+                  <p style={{ fontSize: 12, color: '#9CA3AF' }}>Loading unassigned samples…</p>
+                </div>
+              ) : addFiltered.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10">
+                  <MI name="science" size={28} color="#D1D5DB" />
+                  <p className="mt-2 text-sm" style={{ color: '#6B7280' }}>No unassigned samples found</p>
+                  <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>
+                    {batch.ClientTitle ? `Every sample for ${batch.ClientTitle} is already in a batch.` : 'Every sample is already assigned to a batch.'}
+                  </p>
+                </div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #F3F4F6' }}>
+                      <th className="px-2 py-2" style={{ width: 28 }}>
+                        <input
+                          type="checkbox"
+                          checked={addFiltered.length > 0 && addFiltered.every(s => addSelected.has(s.uid))}
+                          onChange={() => setAddSelected(prev => prev.size === addFiltered.length ? new Set() : new Set(addFiltered.map(s => s.uid)))}
+                          style={{ cursor: 'pointer' }}
+                        />
+                      </th>
+                      {['Sample ID', 'Client', 'Sample Type', 'Date Sampled', 'Status'].map(h => (
+                        <th key={h} className="px-2 py-2 text-left" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {addFiltered.map(s => (
+                      <tr key={s.uid} style={{ borderBottom: '1px solid #F9FAFB', backgroundColor: addSelected.has(s.uid) ? '#F0F7FF' : undefined, cursor: 'pointer' }} onClick={() => toggleAddSelected(s.uid)}>
+                        <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
+                          <input type="checkbox" checked={addSelected.has(s.uid)} onChange={() => toggleAddSelected(s.uid)} style={{ cursor: 'pointer' }} />
+                        </td>
+                        <td className="px-2 py-2 text-xs font-mono font-semibold" style={{ color: '#2563EB' }}>{s.id || s.title}</td>
+                        <td className="px-2 py-2 text-xs" style={{ color: '#6B7280' }}>{s.ClientTitle || '—'}</td>
+                        <td className="px-2 py-2 text-xs" style={{ color: '#6B7280' }}>{s.SampleTypeTitle || '—'}</td>
+                        <td className="px-2 py-2 text-xs" style={{ color: '#6B7280' }}>{fmtDate(s.DateSampled)}</td>
+                        <td className="px-2 py-2"><SampleStateBadge state={s.review_state} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="px-5 py-4 flex items-center justify-between gap-2" style={{ borderTop: '1px solid #F3F4F6' }}>
+              <span style={{ fontSize: 11, color: '#9CA3AF' }}>{addSelected.size} selected</span>
+              <div className="flex items-center gap-2">
+                <button onClick={closeAdd} disabled={addSubmitting} style={{ fontSize: 12, fontWeight: 500, padding: '7px 16px', borderRadius: 8, border: '1px solid #E8EAF2', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
+                  Cancel
+                </button>
+                <button onClick={submitAdd} disabled={addSubmitting || addSelected.size === 0}
+                  style={{ fontSize: 12, fontWeight: 600, padding: '7px 18px', borderRadius: 8, backgroundColor: '#0154FC', color: '#fff', border: 'none', cursor: addSubmitting ? 'not-allowed' : 'pointer', opacity: addSubmitting || addSelected.size === 0 ? 0.6 : 1 }}>
+                  {addSubmitting ? 'Adding…' : `Add ${addSelected.size || ''} Sample${addSelected.size === 1 ? '' : 's'}`}
+                </button>
+              </div>
             </div>
           </div>
         </div>

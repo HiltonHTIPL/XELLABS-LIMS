@@ -575,7 +575,7 @@ export async function fetchSenaiteSampleTypes(token: string): Promise<SenaiteSam
 // SampleMatrix and ContainerType are simple reference lists (used by the
 // sample_matrix / container_type dropdowns) — same shape/fetch pattern as
 // fetchSenaiteDepartments below, just a different portal_type.
-export type SenaiteRefOption = { uid: string; title: string }
+export type SenaiteRefOption = { uid: string; title: string; description?: string; review_state?: string; url?: string }
 
 async function fetchSenaiteRefList(token: string, portalType: string): Promise<SenaiteRefOption[]> {
   try {
@@ -588,12 +588,16 @@ async function fetchSenaiteRefList(token: string, portalType: string): Promise<S
     return (data.items ?? []).map((d: Record<string, unknown>) => ({
       uid: (d.uid as string) ?? '',
       title: (d.title as string) ?? '',
+      description: (d.description as string) ?? '',
+      review_state: (d.review_state as string) ?? 'active',
+      url: (d.url as string) ?? '',
     })).filter((d: SenaiteRefOption) => d.uid && d.title)
   } catch { return [] }
 }
 
 export const fetchSenaiteSampleMatrices = (token: string) => fetchSenaiteRefList(token, 'SampleMatrix')
 export const fetchSenaiteContainerTypes = (token: string) => fetchSenaiteRefList(token, 'ContainerType')
+export const fetchSenaiteMethods = (token: string) => fetchSenaiteRefList(token, 'Method')
 
 // Full Container Type record (uid/title/description) for the standalone admin
 // list page — fetchSenaiteRefList only returns uid/title, which is enough for
@@ -620,6 +624,7 @@ export async function fetchSenaiteContainerTypesFull(token: string): Promise<Sen
 export const fetchSenaitePreservations = (token: string) => fetchSenaiteRefList(token, 'SamplePreservation')
 export const fetchSenaiteSampleContainers = (token: string) => fetchSenaiteRefList(token, 'SampleContainer')
 export const fetchSenaiteSamplePoints = (token: string) => fetchSenaiteRefList(token, 'SamplePoint')
+export const fetchSenaiteSamplingDeviations = (token: string) => fetchSenaiteRefList(token, 'SamplingDeviation')
 
 export async function createSenaiteContainerType(
   token: string,
@@ -701,7 +706,64 @@ async function createSenaiteSetupRef(
     }
     const items = (data.items as Record<string, unknown>[]) ?? []
     if (!items.length) return { success: false, error: `No ${notFoundLabel} returned from the lab system.` }
-    return { success: true, option: { uid: (items[0].uid as string) ?? '', title: (items[0].title as string) ?? payload.title } }
+    const created = items[0]
+    return {
+      success: true,
+      option: {
+        uid: (created.uid as string) ?? '',
+        title: (created.title as string) ?? payload.title,
+        description: (created.description as string) ?? payload.description ?? '',
+        review_state: (created.review_state as string) ?? 'active',
+        url: (created.url as string) ?? '',
+      },
+    }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+// Update counterpart to createSenaiteSetupRef — same simple setup-reference
+// content types (title + optional description). Uses /update/<uid> with a
+// plain object body, NOT the bulk /update endpoint with a list body — the
+// latter 400s with "'list' object has no attribute 'update'" (same bug
+// documented for Batch/Result updates elsewhere in this codebase; confirmed
+// live that /update/<uid> + a single object is the shape that actually works).
+async function updateSenaiteSetupRef(
+  token: string,
+  uid: string,
+  payload: { title: string; description?: string },
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update/${uid}`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ title: payload.title, description: payload.description ?? '' }),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok || data.success === false) {
+      return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    }
+    return { success: true }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+// Generic activate/deactivate for any simple setup-reference content type.
+// The legacy v1 activate/deactivate-by-uid shortcut (used for Clients) 500s
+// for these setup-folder content types ("API has no member named
+// 'None_items'", confirmed live) — plone.restapi's own @workflow endpoint on
+// the object's URL works correctly for the same transition, so this uses that
+// instead, with the same verify-by-refetch discipline as setSenaiteClientActive.
+async function setSenaiteSetupRefActive(
+  token: string, url: string, active: boolean,
+): Promise<{ success: boolean; error?: string }> {
+  if (!url) return { success: false, error: 'Could not resolve this item\'s URL.' }
+  const headers = { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }
+  const transition = active ? 'activate' : 'deactivate'
+  try {
+    await fetch(`${url}/@workflow/${transition}`, { method: 'POST', headers, body: JSON.stringify({}), cache: 'no-store' })
+    const check = await fetch(url, { headers, cache: 'no-store' })
+    const state = ((await check.json()).review_state as string) ?? ''
+    const ok = active ? state === 'active' : state === 'inactive'
+    return ok ? { success: true } : { success: false, error: `Still '${state}'.` }
   } catch (e) { return { success: false, error: String(e) } }
 }
 
@@ -710,6 +772,22 @@ export const createSenaiteSampleContainer = (token: string, payload: { title: st
 
 export const createSenaiteSamplePreservation = (token: string, payload: { title: string; description?: string }) =>
   createSenaiteSetupRef(token, 'SamplePreservation', `${SENAITE_SITE_PATH}/setup/samplepreservations`, payload, 'preservation')
+
+// Only Preservations and Sampling Deviations are consumed via ReferenceListShell
+// (name+description only) — Sample Points and Sample Containers each have their
+// own richer bespoke admin page instead (Sample Point's own full-CRUD functions
+// are further below), so no update/toggle wrapper is added for those here.
+export const updateSenaiteSamplePreservation = (token: string, uid: string, payload: { title: string; description?: string }) =>
+  updateSenaiteSetupRef(token, uid, payload)
+export const updateSenaiteSamplingDeviation = (token: string, uid: string, payload: { title: string; description?: string }) =>
+  updateSenaiteSetupRef(token, uid, payload)
+
+export const setSenaiteSamplePreservationActive = (token: string, url: string, active: boolean) =>
+  setSenaiteSetupRefActive(token, url, active)
+export const setSenaiteSamplePointActive = (token: string, url: string, active: boolean) =>
+  setSenaiteSetupRefActive(token, url, active)
+export const setSenaiteSamplingDeviationActive = (token: string, url: string, active: boolean) =>
+  setSenaiteSetupRefActive(token, url, active)
 
 // ─── Sample Containers — full CRUD (standalone admin page) ───────────────────
 // Beyond title/description (the only fields createSenaiteSampleContainer above
@@ -828,8 +906,180 @@ export async function updateSenaiteSampleContainer(
   } catch (e) { return { success: false, error: String(e) } }
 }
 
-export const createSenaiteSamplePoint = (token: string, payload: { title: string; description?: string }) =>
-  createSenaiteSetupRef(token, 'SamplePoint', `${SENAITE_SITE_PATH}/setup/samplepoints`, payload, 'sample point')
+export const createSenaiteSamplingDeviation = (token: string, payload: { title: string; description?: string }) =>
+  createSenaiteSetupRef(token, 'SamplingDeviation', `${SENAITE_SITE_PATH}/setup/samplingdeviations`, payload, 'sampling deviation')
+
+// ─── Sample Points — full CRUD (standalone admin page) ───────────────────────
+// SamplePoint is a Dexterity content type (senaite/core/content/samplepoint.py),
+// not the older Archetypes style — title/description/elevation are plain
+// schema.TextLine/Text fields the legacy v1 API writes fine directly, but
+// sampling_frequency (a DurationField, same mechanic as SampleType's
+// RetentionPeriod — reused below), location (a GPSCoordinatesField, confirmed
+// live via v1 GET to read back as a plain {latitude, longitude} dict),
+// sample_types (a multi-valued UIDReferenceField) and attachment_file (a
+// NamedBlobFile) are custom schema types the legacy API can't reliably write —
+// same class of gap as SampleType's RetentionPeriod/AdmittedStickerTemplates,
+// so they're PATCHed separately via plone.restapi on the object's own URL.
+export type SamplePointAttachment = { data: string; filename: string; contentType: string }
+
+export type SamplePointPayload = {
+  title: string
+  description?: string
+  elevation?: string
+  latitude?: string
+  longitude?: string
+  samplingFrequency?: RetentionPeriod
+  sampleTypeUids?: string[]
+  composite?: boolean
+}
+
+export type SenaiteSamplePoint = {
+  uid: string
+  title: string
+  description: string
+  url: string
+  reviewState: string
+  elevation: string
+  latitude: string
+  longitude: string
+  samplingFrequency: RetentionPeriod
+  sampleTypeUids: string[]
+  composite: boolean
+  attachmentFilename: string
+}
+
+function samplePointScalarBody(payload: SamplePointPayload): Record<string, unknown> {
+  return {
+    title: payload.title,
+    description: payload.description ?? '',
+    elevation: payload.elevation ?? '',
+  }
+}
+
+// UIDReferenceField comes back as a list of {uid, ...} refs (or plain uid
+// strings, defensively handled the same way) — mirrors parseRef's approach.
+function parseUidRefList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map(r => (typeof r === 'string' ? r : (r as Record<string, unknown> | null)?.uid as string | undefined))
+    .filter((uid): uid is string => Boolean(uid))
+}
+
+function mapSenaiteSamplePoint(d: Record<string, unknown>): SenaiteSamplePoint {
+  const location = (d.location as Record<string, unknown>) ?? {}
+  const attachment = d.attachment_file as Record<string, unknown> | null
+  return {
+    uid: (d.uid as string) ?? '',
+    title: (d.title as string) ?? '',
+    description: (d.description as string) ?? '',
+    url: (d.url as string) ?? '',
+    reviewState: (d.review_state as string) ?? 'active',
+    elevation: (d.elevation as string) ?? '',
+    latitude: (location.latitude as string) ?? '',
+    longitude: (location.longitude as string) ?? '',
+    samplingFrequency: parseRetentionPeriod(d.sampling_frequency),
+    sampleTypeUids: parseUidRefList(d.sample_types),
+    composite: Boolean(d.composite ?? false),
+    attachmentFilename: (attachment?.filename as string) ?? '',
+  }
+}
+
+export async function fetchSenaiteSamplePointsFull(token: string): Promise<SenaiteSamplePoint[]> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/SamplePoint?complete=true&limit=1000`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return ((data.items ?? []) as Record<string, unknown>[]).map(mapSenaiteSamplePoint).filter(d => d.uid && d.title)
+  } catch { return [] }
+}
+
+async function patchSamplePointExtras(
+  token: string, url: string, payload: SamplePointPayload, attachment?: SamplePointAttachment,
+): Promise<{ success: boolean; error?: string }> {
+  if (!url) return { success: false, error: 'Could not resolve sample point URL for extended fields' }
+  const headers = { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }
+  try {
+    const body: Record<string, unknown> = {
+      location: { latitude: payload.latitude ?? '', longitude: payload.longitude ?? '' },
+      sampling_frequency: retentionPeriodToSeconds(payload.samplingFrequency ?? { days: 0, hours: 0, minutes: 0 }),
+      composite: payload.composite ?? false,
+      sample_types: payload.sampleTypeUids ?? [],
+    }
+    if (attachment) {
+      body.attachment_file = {
+        data: attachment.data, encoding: 'base64', filename: attachment.filename, 'content-type': attachment.contentType,
+      }
+    }
+    const res = await fetch(url, { method: 'PATCH', headers, body: JSON.stringify(body) })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>
+      return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    }
+    return { success: true }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+export async function createSenaiteSamplePointFull(
+  token: string, payload: SamplePointPayload, attachment?: SamplePointAttachment,
+): Promise<{ success: boolean; option?: SenaiteRefOption; error?: string; warning?: string }> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        portal_type: 'SamplePoint',
+        parent_path: `${SENAITE_SITE_PATH}/setup/samplepoints`,
+        ...samplePointScalarBody(payload),
+      }),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok || data.success === false) {
+      return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    }
+    const items = (data.items as Record<string, unknown>[]) ?? []
+    if (!items.length) return { success: false, error: 'No sample point returned from the lab system.' }
+    const created = items[0]
+    const url = (created.url as string) ?? ''
+    const option: SenaiteRefOption = {
+      uid: (created.uid as string) ?? '',
+      title: (created.title as string) ?? payload.title,
+      description: (created.description as string) ?? payload.description ?? '',
+      review_state: (created.review_state as string) ?? 'active',
+      url,
+    }
+    const extras = await patchSamplePointExtras(token, url, payload, attachment)
+    if (!extras.success) {
+      return { success: true, option, warning: `Sample point created, but extended fields could not be saved: ${extras.error}` }
+    }
+    return { success: true, option }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+export async function updateSenaiteSamplePointFull(
+  token: string, uid: string, url: string, payload: SamplePointPayload, attachment?: SamplePointAttachment,
+): Promise<{ success: boolean; error?: string; warning?: string }> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update/${uid}`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(samplePointScalarBody(payload)),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok || data.success === false) {
+      return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    }
+    const extras = await patchSamplePointExtras(token, url, payload, attachment)
+    if (!extras.success) {
+      return { success: true, warning: `Sample point updated, but extended fields could not be saved: ${extras.error}` }
+    }
+    return { success: true }
+  } catch (e) { return { success: false, error: String(e) } }
+}
 
 export async function createSenaiteSampleMatrix(
   token: string,
@@ -1377,14 +1627,158 @@ export async function fetchSenaiteStorageLocations(token: string): Promise<Senai
 
 // ─── Analysis Services ────────────────────────────────────────────────────────
 
+// Reference-field subfields come back from the v1 API as {uid, url, api_url}
+// when set, or {} when empty — never a bare string. Same shape for single
+// refs (Category/Department/Method/Instrument/Calculation) and, as an array
+// of these objects, for multi-refs (Methods/Instruments).
+function refUid(v: unknown): string {
+  return (v && typeof v === 'object' && 'uid' in (v as object)) ? ((v as Record<string, unknown>).uid as string) ?? '' : ''
+}
+function refTitle(v: unknown): string {
+  if (Array.isArray(v)) return ''
+  return (v && typeof v === 'object' && 'title' in (v as object)) ? ((v as Record<string, unknown>).title as string) ?? '' : (typeof v === 'string' ? v : '')
+}
+function refUidList(v: unknown): string[] {
+  return Array.isArray(v) ? v.map(refUid).filter(Boolean) : []
+}
+
+export type SenaiteUncertaintyRow = { intercept_min: string; intercept_max: string; errorvalue: string }
+export type SenaiteInterimFieldRow = {
+  keyword: string; title: string; value: string; choices: string; result_type: string
+  allow_empty: boolean; unit: string; report: boolean; hidden: boolean; wide: boolean
+}
+export type SenaiteConditionRow = {
+  title: string; description: string; type: string; value: string; choices: string; required: boolean
+}
+
 export type SenaiteAnalysisService = {
   uid: string
   id: string
   title: string
+  description: string
   Keyword: string
   Category: string
+  CategoryUid: string
   Price: string
   Unit: string
+  // Description tab
+  ShortTitle: string
+  SortKey: string
+  CommercialID: string
+  ProtocolID: string
+  ScientificName: string
+  // Analysis tab
+  Accredited: boolean
+  PointOfCapture: string
+  DepartmentUid: string
+  BulkPrice: string
+  VAT: string
+  // Limits tab
+  LowerDetectionLimit: string
+  LowerLimitOfQuantification: string
+  UpperLimitOfQuantification: string
+  UpperDetectionLimit: string
+  DetectionLimitSelector: boolean
+  AllowManualDetectionLimit: boolean
+  // Method tab
+  MethodUids: string[]
+  DefaultMethodUid: string
+  InstrumentUids: string[]
+  DefaultInstrumentUid: string
+  CalculationUid: string
+  // Uncertainties tab
+  Uncertainties: SenaiteUncertaintyRow[]
+  PrecisionFromUncertainty: boolean
+  AllowManualUncertainty: boolean
+  // Result options tab
+  ResultType: string
+  DefaultResult: string
+  InterimFields: SenaiteInterimFieldRow[]
+  Precision: string
+  ExponentialFormatPrecision: string
+  AttachmentRequired: boolean
+  MaxTimeAllowedDays: string
+  MaxTimeAllowedHours: string
+  MaxTimeAllowedMinutes: string
+  MaxHoldingTimeDays: string
+  MaxHoldingTimeHours: string
+  MaxHoldingTimeMinutes: string
+  DuplicateVariation: string
+  Hidden: boolean
+  SelfVerification: string
+  NumberOfRequiredVerifications: string
+  // Advanced tab
+  Conditions: SenaiteConditionRow[]
+}
+
+function timePart(v: Record<string, unknown> | undefined, key: string): string {
+  return v ? String(v[key] ?? '') : ''
+}
+
+function mapSenaiteAnalysisService(s: Record<string, unknown>): SenaiteAnalysisService {
+  const maxTime = s.MaxTimeAllowed as Record<string, unknown> | undefined
+  const maxHolding = s.MaxHoldingTime as Record<string, unknown> | undefined
+  return {
+    uid: (s.uid as string) ?? '',
+    id: (s.id as string) ?? '',
+    title: (s.title as string) ?? '',
+    description: (s.description as string) ?? '',
+    Keyword: (s.Keyword as string) ?? '',
+    Category: refTitle(s.Category),
+    CategoryUid: refUid(s.Category),
+    Price: (s.Price as string) ?? '',
+    Unit: (s.Unit as string) ?? '',
+    ShortTitle: (s.ShortTitle as string) ?? '',
+    SortKey: (s.SortKey as string) ?? '',
+    CommercialID: (s.CommercialID as string) ?? '',
+    ProtocolID: (s.ProtocolID as string) ?? '',
+    ScientificName: (s.ScientificName as string) ?? '',
+    Accredited: Boolean(s.Accredited),
+    PointOfCapture: (s.PointOfCapture as string) ?? 'lab',
+    DepartmentUid: refUid(s.Department),
+    BulkPrice: (s.BulkPrice as string) ?? '',
+    VAT: (s.VAT as string) ?? '',
+    LowerDetectionLimit: (s.LowerDetectionLimit as string) ?? '',
+    LowerLimitOfQuantification: (s.LowerLimitOfQuantification as string) ?? '',
+    UpperLimitOfQuantification: (s.UpperLimitOfQuantification as string) ?? '',
+    UpperDetectionLimit: (s.UpperDetectionLimit as string) ?? '',
+    DetectionLimitSelector: Boolean(s.DetectionLimitSelector),
+    AllowManualDetectionLimit: Boolean(s.AllowManualDetectionLimit),
+    MethodUids: refUidList(s.Methods),
+    DefaultMethodUid: refUid(s.Method),
+    InstrumentUids: refUidList(s.Instruments),
+    DefaultInstrumentUid: refUid(s.Instrument),
+    CalculationUid: refUid(s.Calculation),
+    Uncertainties: ((s.Uncertainties as Record<string, unknown>[]) ?? []).map(r => ({
+      intercept_min: String(r.intercept_min ?? ''), intercept_max: String(r.intercept_max ?? ''), errorvalue: String(r.errorvalue ?? ''),
+    })),
+    PrecisionFromUncertainty: Boolean(s.PrecisionFromUncertainty),
+    AllowManualUncertainty: Boolean(s.AllowManualUncertainty),
+    ResultType: (s.ResultType as string) ?? 'numeric',
+    DefaultResult: (s.DefaultResult as string) ?? '',
+    InterimFields: ((s.InterimFields as Record<string, unknown>[]) ?? []).map(r => ({
+      keyword: String(r.keyword ?? ''), title: String(r.title ?? ''), value: String(r.value ?? ''), choices: String(r.choices ?? ''),
+      result_type: String(r.result_type ?? 'string'), allow_empty: Boolean(r.allow_empty), unit: String(r.unit ?? ''),
+      report: Boolean(r.report), hidden: Boolean(r.hidden), wide: Boolean(r.wide),
+    })),
+    Precision: (s.Precision as string) ?? '',
+    ExponentialFormatPrecision: (s.ExponentialFormatPrecision as string) ?? '',
+    AttachmentRequired: Boolean(s.AttachmentRequired),
+    MaxTimeAllowedDays: timePart(maxTime, 'days'),
+    MaxTimeAllowedHours: timePart(maxTime, 'hours'),
+    MaxTimeAllowedMinutes: timePart(maxTime, 'minutes'),
+    MaxHoldingTimeDays: timePart(maxHolding, 'days'),
+    MaxHoldingTimeHours: timePart(maxHolding, 'hours'),
+    MaxHoldingTimeMinutes: timePart(maxHolding, 'minutes'),
+    DuplicateVariation: (s.DuplicateVariation as string) ?? '',
+    Hidden: Boolean(s.Hidden),
+    SelfVerification: (s.SelfVerification as string) ?? '0',
+    NumberOfRequiredVerifications: (s.NumberOfRequiredVerifications as string) ?? '1',
+    Conditions: ((s.Conditions as Record<string, unknown>[]) ?? []).map(r => ({
+      title: String(r.title ?? ''), description: String(r.description ?? ''), type: String(r.type ?? 'text'),
+      value: String(r.value ?? ''), choices: String(r.choices ?? ''), required: Boolean(r.required),
+    })),
+  }
 }
 
 export async function fetchSenaiteAnalysisServices(token: string): Promise<SenaiteAnalysisService[]> {
@@ -1395,15 +1789,7 @@ export async function fetchSenaiteAnalysisServices(token: string): Promise<Senai
     })
     if (!res.ok) return []
     const data = await res.json()
-    const all = (data.items ?? []).map((s: Record<string, unknown>) => ({
-      uid:      (s.uid as string) ?? '',
-      id:       (s.id as string) ?? '',
-      title:    (s.title as string) ?? '',
-      Keyword:  (s.Keyword as string) ?? '',
-      Category: typeof s.Category === 'object' && s.Category !== null ? ((s.Category as Record<string, unknown>).title as string) ?? '' : (s.Category as string) ?? '',
-      Price:    (s.Price as string) ?? '',
-      Unit:     (s.Unit as string) ?? '',
-    }))
+    const all = (data.items ?? []).map((s: Record<string, unknown>) => mapSenaiteAnalysisService(s))
     // SENAITE's headless create API for this content type intermittently produces
     // untitled orphan objects, and its delete endpoint doesn't reliably remove them
     // either — so filter blanks and dedupe by title here rather than depending on a
@@ -1572,9 +1958,119 @@ export async function createSenaiteAnalysisCategory(
   } catch (e) { return { success: false, error: String(e) } }
 }
 
+// Full payload shape for the 7-tab Add/Edit Analysis Service form. Optional
+// throughout — callers send only what a given tab's fields actually collected.
+export type AnalysisServicePayload = {
+  title: string
+  description?: string
+  Keyword: string
+  CategoryUid: string
+  Unit?: string
+  Price?: string
+  ShortTitle?: string
+  SortKey?: string
+  CommercialID?: string
+  ProtocolID?: string
+  ScientificName?: string
+  Accredited?: boolean
+  PointOfCapture?: string
+  DepartmentUid?: string
+  BulkPrice?: string
+  VAT?: string
+  LowerDetectionLimit?: string
+  LowerLimitOfQuantification?: string
+  UpperLimitOfQuantification?: string
+  UpperDetectionLimit?: string
+  DetectionLimitSelector?: boolean
+  AllowManualDetectionLimit?: boolean
+  MethodUids?: string[]
+  DefaultMethodUid?: string
+  InstrumentUids?: string[]
+  DefaultInstrumentUid?: string
+  CalculationUid?: string
+  Uncertainties?: SenaiteUncertaintyRow[]
+  PrecisionFromUncertainty?: boolean
+  AllowManualUncertainty?: boolean
+  ResultType?: string
+  DefaultResult?: string
+  InterimFields?: SenaiteInterimFieldRow[]
+  Precision?: string
+  ExponentialFormatPrecision?: string
+  AttachmentRequired?: boolean
+  MaxTimeAllowedDays?: string
+  MaxTimeAllowedHours?: string
+  MaxTimeAllowedMinutes?: string
+  MaxHoldingTimeDays?: string
+  MaxHoldingTimeHours?: string
+  MaxHoldingTimeMinutes?: string
+  DuplicateVariation?: string
+  Hidden?: boolean
+  SelfVerification?: string
+  NumberOfRequiredVerifications?: string
+  Conditions?: SenaiteConditionRow[]
+}
+
+function analysisServiceBody(payload: AnalysisServicePayload): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    title: payload.title,
+    description: payload.description ?? '',
+    Keyword: payload.Keyword,
+    Category: payload.CategoryUid,
+    Unit: payload.Unit ?? '',
+    Price: payload.Price ?? '0.00',
+    ShortTitle: payload.ShortTitle ?? '',
+    SortKey: payload.SortKey ?? '',
+    CommercialID: payload.CommercialID ?? '',
+    ProtocolID: payload.ProtocolID ?? '',
+    ScientificName: payload.ScientificName ?? '',
+    Accredited: payload.Accredited ?? false,
+    PointOfCapture: payload.PointOfCapture ?? 'lab',
+    BulkPrice: payload.BulkPrice ?? '0.00',
+    VAT: payload.VAT ?? '',
+    LowerDetectionLimit: payload.LowerDetectionLimit ?? '',
+    LowerLimitOfQuantification: payload.LowerLimitOfQuantification ?? '',
+    UpperLimitOfQuantification: payload.UpperLimitOfQuantification ?? '',
+    UpperDetectionLimit: payload.UpperDetectionLimit ?? '',
+    DetectionLimitSelector: payload.DetectionLimitSelector ?? false,
+    AllowManualDetectionLimit: payload.AllowManualDetectionLimit ?? false,
+    Methods: payload.MethodUids ?? [],
+    Instruments: payload.InstrumentUids ?? [],
+    Uncertainties: payload.Uncertainties ?? [],
+    PrecisionFromUncertainty: payload.PrecisionFromUncertainty ?? false,
+    AllowManualUncertainty: payload.AllowManualUncertainty ?? false,
+    ResultType: payload.ResultType ?? 'numeric',
+    DefaultResult: payload.DefaultResult ?? '',
+    InterimFields: payload.InterimFields ?? [],
+    Precision: payload.Precision ?? '',
+    ExponentialFormatPrecision: payload.ExponentialFormatPrecision ?? '',
+    AttachmentRequired: payload.AttachmentRequired ?? false,
+    // SENAITE parses each of these three parts as a float when computing due
+    // dates at AnalysisRequest-creation time — an empty string (rather than
+    // "0") crashes that calculation with "could not convert string to float"
+    // for every sample that includes this analysis, confirmed live. Always
+    // send a numeric default, never a blank string, for all three subfields.
+    MaxTimeAllowed: {
+      days: payload.MaxTimeAllowedDays || '0', hours: payload.MaxTimeAllowedHours || '0', minutes: payload.MaxTimeAllowedMinutes || '0',
+    },
+    MaxHoldingTime: {
+      days: payload.MaxHoldingTimeDays || '0', hours: payload.MaxHoldingTimeHours || '0', minutes: payload.MaxHoldingTimeMinutes || '0',
+    },
+    DuplicateVariation: payload.DuplicateVariation ?? '',
+    Hidden: payload.Hidden ?? false,
+    SelfVerification: payload.SelfVerification ?? '0',
+    NumberOfRequiredVerifications: payload.NumberOfRequiredVerifications ?? '1',
+    Conditions: payload.Conditions ?? [],
+  }
+  if (payload.DepartmentUid) body.Department = payload.DepartmentUid
+  if (payload.DefaultMethodUid) body.Method = payload.DefaultMethodUid
+  if (payload.DefaultInstrumentUid) body.Instrument = payload.DefaultInstrumentUid
+  if (payload.CalculationUid) body.Calculation = payload.CalculationUid
+  return body
+}
+
 export async function createSenaiteAnalysisService(
   token: string,
-  payload: { title: string; Keyword: string; CategoryUid: string; Unit?: string; Price?: string }
+  payload: AnalysisServicePayload
 ): Promise<{ success: boolean; service?: SenaiteAnalysisService; error?: string }> {
   const headers = { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }
   try {
@@ -1589,25 +2085,14 @@ export async function createSenaiteAnalysisService(
       body: JSON.stringify({
         portal_type: 'AnalysisService',
         parent_path: `${SENAITE_SITE_PATH}/bika_setup/bika_analysisservices`,
-        title: payload.title,
-        Keyword: payload.Keyword,
-        Category: payload.CategoryUid,
-        ...(payload.Unit ? { Unit: payload.Unit } : {}),
-        ...(payload.Price ? { Price: payload.Price } : {}),
+        ...analysisServiceBody(payload),
       }),
       cache: 'no-store',
     })
     const data = await res.json().catch(() => ({})) as Record<string, unknown>
     const items = (data.items as Record<string, unknown>[]) ?? []
     if (items.length > 0) {
-      const s = items[0]
-      return {
-        success: true,
-        service: {
-          uid: (s.uid as string) ?? '', id: (s.id as string) ?? '', title: (s.title as string) ?? '',
-          Keyword: (s.Keyword as string) ?? '', Category: '', Price: (s.Price as string) ?? '', Unit: (s.Unit as string) ?? '',
-        },
-      }
+      return { success: true, service: mapSenaiteAnalysisService(items[0]) }
     }
 
     // Bogus-error path: verify whether the service actually got created.
@@ -1622,17 +2107,33 @@ export async function createSenaiteAnalysisService(
         ((s.title as string) ?? '').trim().toLowerCase() === payload.title.trim().toLowerCase() &&
         (s.Keyword as string) === payload.Keyword
       )
-      if (match) {
-        return {
-          success: true,
-          service: {
-            uid: (match.uid as string) ?? '', id: (match.id as string) ?? '', title: (match.title as string) ?? '',
-            Keyword: (match.Keyword as string) ?? '', Category: '', Price: (match.Price as string) ?? '', Unit: (match.Unit as string) ?? '',
-          },
-        }
-      }
+      if (match) return { success: true, service: mapSenaiteAnalysisService(match) }
     }
     return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+export async function updateSenaiteAnalysisService(
+  token: string,
+  uid: string,
+  payload: AnalysisServicePayload
+): Promise<{ success: boolean; service?: SenaiteAnalysisService; error?: string }> {
+  const headers = { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }
+  try {
+    // Same bogus-error-on-success behavior as create (confirmed live) — the
+    // update call itself is not trustworthy, so always verify by re-fetching
+    // the object afterward rather than trusting res.ok/data.success.
+    await fetch(`${SENAITE_URL}/@@API/senaite/v1/update/${uid}`, {
+      method: 'POST', headers, body: JSON.stringify(analysisServiceBody(payload)), cache: 'no-store',
+    })
+    const check = await fetch(`${SENAITE_URL}/@@API/senaite/v1/AnalysisService?UID=${encodeURIComponent(uid)}&complete=true`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' }, cache: 'no-store',
+    })
+    const item = ((await check.json().catch(() => ({}))).items ?? [])[0]
+    if (!item) return { success: false, error: 'Could not verify the update.' }
+    const updated = mapSenaiteAnalysisService(item)
+    const ok = updated.title === payload.title && updated.Keyword === payload.Keyword
+    return ok ? { success: true, service: updated } : { success: false, error: 'Update did not persist as expected.' }
   } catch (e) { return { success: false, error: String(e) } }
 }
 
@@ -1793,7 +2294,7 @@ export async function createSenaiteSample(
 export async function updateSenaiteSample(
   token: string,
   uid: string,
-  fields: { DateSampled?: string; SampleType?: string; ClientSampleID?: string }
+  fields: { DateSampled?: string; SampleType?: string; ClientSampleID?: string; Batch?: string }
 ): Promise<{ success: boolean; error?: string }> {
   const headers = { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }
   try {
@@ -1817,7 +2318,7 @@ export async function updateSenaiteSample(
       if (item) {
         const applied = Object.entries(fields).every(([k, v]) => {
           const got = item[k]
-          if (k === 'SampleType') return (got as { uid?: string } | null)?.uid === v
+          if (k === 'SampleType' || k === 'Batch') return (got as { uid?: string } | null)?.uid === v
           if (k === 'DateSampled') return typeof got === 'string' && typeof v === 'string' && got.slice(0, 10) === v.slice(0, 10)
           return got === v
         })

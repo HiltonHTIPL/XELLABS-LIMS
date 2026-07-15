@@ -106,3 +106,22 @@ def sync_sample_storage_transition(self, ar_uid: str, transition: str):
         )
         raise self.retry(exc=Exception(result.get("error")), countdown=15)
     logger.info("SENAITE '%s' transition OK for AR uid=%s", transition, ar_uid)
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=15)
+def sync_sample_storage_position(self, box_uid: str, slot_id: str, ar_uid: str, occupy: bool):
+    """Write/clear the occupying sample's AR uid into the exact row/column entry
+    of a storage box's own PositionsLayout, so SENAITE's own storage box view
+    (not just the AR's workflow state, see sync_sample_storage_transition above)
+    shows which slot holds which sample. No schema_context needed — this only
+    talks to SENAITE, no Django DB access."""
+    from core.senaite_service import set_storage_position
+
+    result = set_storage_position(box_uid, slot_id, ar_uid, occupy)
+    if not result.get("ok"):
+        logger.warning(
+            "SENAITE storage position sync failed for box=%s slot=%s occupy=%s: %s — retrying...",
+            box_uid, slot_id, occupy, result.get("error"),
+        )
+        raise self.retry(exc=Exception(result.get("error")), countdown=15)
+    logger.info("SENAITE storage position sync OK: box=%s slot=%s occupy=%s", box_uid, slot_id, occupy)
