@@ -59,11 +59,7 @@ async function listNamed(resource: string): Promise<NamedItem[]> {
     return Array.isArray(data) ? data : (data.results ?? [])
   } catch { return [] }
 }
-export async function getInstrumentTypes() { return listNamed('instrument-types') }
-export async function getInstrumentLocations() { return listNamed('instrument-locations') }
 
-// Returns the created item on success so the caller can add + select it inline
-// (no navigation needed).
 async function createNamed(resource: string, name: string, description = ''): Promise<{ ok: boolean; message: string; item?: NamedItem }> {
   const trimmed = name.trim()
   if (!trimmed) return { ok: false, message: 'Name is required.' }
@@ -82,5 +78,13 @@ async function createNamed(resource: string, name: string, description = ''): Pr
     return { ok: true, message: 'Added.', item: { id: Number(data.id), name: String(data.name), description: String(data.description ?? '') } }
   } catch (e) { return { ok: false, message: String(e) } }
 }
+
+export async function getInstrumentTypes() { return listNamed('instrument-types') }
+export async function getInstrumentLocations() { return listNamed('instrument-locations') }
+export async function getManufacturers() { return listNamed('manufacturers') }
+export async function getSuppliers() { return listNamed('suppliers') }
+
 export async function createInstrumentType(name: string, description = '') { return createNamed('instrument-types', name, description) }
 export async function createInstrumentLocation(name: string, description = '') { return createNamed('instrument-locations', name, description) }
+export async function createManufacturer(name: string, description = '') { return createNamed('manufacturers', name, description) }
+export async function createSupplier(name: string, description = '') { return createNamed('suppliers', name, description) }

@@ -5,11 +5,13 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
-from core.permissions import ReadOnlyOrLabManager, ReadOnlyOrAnalystOrAbove
+from core.permissions import (
+    ReadOnlyOrLabManager, ReadOnlyOrAnalystOrAbove, IsAdminRole, IsAnalystOrAbove,
+)
 from .models import (
     Instrument, InstrumentMethod, Calibration, Maintenance, InstrumentRun,
     InstrumentResultImport, InstrumentType, InstrumentLocation, Certification,
-    ScheduledTask, Validation,
+    ScheduledTask, Validation, InstrumentManufacturer, InstrumentSupplier,
 )
 from .importers import parse_csv, parse_xml, build_preview, build_provenance_map
 from .serializers import (
@@ -17,16 +19,25 @@ from .serializers import (
     MaintenanceSerializer, InstrumentRunSerializer, InstrumentResultImportSerializer,
     InstrumentTypeSerializer, InstrumentLocationSerializer, CertificationSerializer,
     ScheduledTaskSerializer, ValidationSerializer,
+    InstrumentManufacturerSerializer, InstrumentSupplierSerializer,
 )
 
 
 class InstrumentViewSet(viewsets.ModelViewSet):
-    queryset = Instrument.objects.all()
+    queryset = Instrument.objects.select_related(
+        "instrument_type", "instrument_location", "manufacturer_org", "supplier_org"
+    ).all()
     serializer_class = InstrumentSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["status"]
-    search_fields = ["name", "instrument_id", "serial_number"]
+    search_fields = ["name", "instrument_id", "serial_number", "manufacturer", "supplier"]
     ordering_fields = ["name", "next_calibration", "next_maintenance"]
+
+    def get_permissions(self):
+        # Registration writes = admin only; analysts can still list for maintenance/import UX.
+        if self.action in ("create", "update", "partial_update", "destroy"):
+            return [IsAdminRole()]
+        return [IsAnalystOrAbove()]
 
     @action(detail=False, methods=["get"], url_path="calibration-due")
     def calibration_due(self, request):
@@ -285,3 +296,21 @@ class ValidationViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ["instrument"]
     ordering_fields = ["date_issued"]
+
+
+class InstrumentManufacturerViewSet(viewsets.ModelViewSet):
+    queryset = InstrumentManufacturer.objects.all()
+    serializer_class = InstrumentManufacturerSerializer
+    permission_classes = [ReadOnlyOrLabManager]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["name"]
+    ordering_fields = ["name"]
+
+
+class InstrumentSupplierViewSet(viewsets.ModelViewSet):
+    queryset = InstrumentSupplier.objects.all()
+    serializer_class = InstrumentSupplierSerializer
+    permission_classes = [ReadOnlyOrLabManager]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["name"]
+    ordering_fields = ["name"]

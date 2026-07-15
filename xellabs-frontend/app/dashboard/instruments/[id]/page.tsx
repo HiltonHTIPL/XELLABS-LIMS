@@ -1,4 +1,5 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
+import { getSession } from '@/app/lib/session'
 import { djangoFetch } from '@/app/lib/django'
 import {
   getCertifications, getScheduledTasks, getValidations, getCalibrations, getMaintenances,
@@ -15,6 +16,10 @@ async function getInstrument(id: string) {
 }
 
 export default async function InstrumentDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const session = await getSession()
+  if (!session) redirect('/login')
+  if (session.role !== 'admin') redirect('/dashboard')
+
   const { id } = await params
   const instrument = await getInstrument(id)
   if (!instrument) notFound()

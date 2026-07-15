@@ -45,9 +45,10 @@ const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
 }
 
 type FV = {
-  name: string; instrument_id: string; model: string; manufacturer: string
+  name: string; instrument_id: string; model: string
+  manufacturer_org: string; supplier_org: string
   serial_number: string; instrument_type: string; instrument_location: string
-  supplier: string; asset_number: string
+  asset_number: string
   location: string; status: string; purchase_date: string
   installation_date: string
   data_interface: string; import_data_interface: string; result_files_folder: string
@@ -56,8 +57,9 @@ type FV = {
   notes: string
 }
 const blank = (): FV => ({
-  name: '', instrument_id: '', model: '', manufacturer: '',
-  serial_number: '', instrument_type: '', instrument_location: '', supplier: '', asset_number: '',
+  name: '', instrument_id: '', model: '',
+  manufacturer_org: '', supplier_org: '',
+  serial_number: '', instrument_type: '', instrument_location: '', asset_number: '',
   location: '', status: 'active', purchase_date: '', installation_date: '',
   data_interface: '', import_data_interface: '', result_files_folder: '',
   dispose_until_next_calibration: false,
@@ -66,8 +68,14 @@ const blank = (): FV => ({
 })
 
 export default function InstrumentsShell(
-  { initialInstruments, types, locations }:
-  { initialInstruments: Instrument[]; types: NamedItem[]; locations: NamedItem[] }
+  { initialInstruments, types, locations, manufacturers, suppliers }:
+  {
+    initialInstruments: Instrument[]
+    types: NamedItem[]
+    locations: NamedItem[]
+    manufacturers: NamedItem[]
+    suppliers: NamedItem[]
+  }
 ) {
   const router = useRouter()
   const [showDrawer, setShowDrawer] = useState(false)
@@ -138,11 +146,13 @@ export default function InstrumentsShell(
   function openEdit(i: Instrument) {
     setEditing(i)
     setVals({
-      name: i.name, instrument_id: i.instrument_id, model: i.model, manufacturer: i.manufacturer,
+      name: i.name, instrument_id: i.instrument_id, model: i.model,
+      manufacturer_org: i.manufacturer_org != null ? String(i.manufacturer_org) : '',
+      supplier_org: i.supplier_org != null ? String(i.supplier_org) : '',
       serial_number: i.serial_number,
       instrument_type: i.instrument_type != null ? String(i.instrument_type) : '',
       instrument_location: i.instrument_location != null ? String(i.instrument_location) : '',
-      supplier: i.supplier ?? '', asset_number: i.asset_number ?? '',
+      asset_number: i.asset_number ?? '',
       location: i.location, status: i.status,
       purchase_date: i.purchase_date ?? '',
       installation_date: i.installation_date ?? '',
@@ -215,8 +225,14 @@ export default function InstrumentsShell(
                   error={fieldErrors.instrument_id} value={vals.instrument_id} onChange={v => setVal('instrument_id', v)} />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Manufacturer" name="manufacturer" placeholder="e.g. Agilent"
-                  error={fieldErrors.manufacturer} value={vals.manufacturer} onChange={v => setVal('manufacturer', v)} />
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Manufacturer</label>
+                  <select name="manufacturer_org" value={vals.manufacturer_org} onChange={e => setVal('manufacturer_org', e.target.value)}
+                    className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827' }}>
+                    <option value="">Select manufacturer…</option>
+                    {manufacturers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  </select>
+                </div>
                 <Field label="Model" name="model" placeholder="e.g. 1260 Infinity II"
                   error={fieldErrors.model} value={vals.model} onChange={v => setVal('model', v)} />
               </div>
@@ -231,8 +247,14 @@ export default function InstrumentsShell(
                     <option value="__add__">+ Add new type…</option>
                   </select>
                 </div>
-                <Field label="Supplier" name="supplier" placeholder="e.g. Agilent Technologies"
-                  error={fieldErrors.supplier} value={vals.supplier} onChange={v => setVal('supplier', v)} />
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Supplier</label>
+                  <select name="supplier_org" value={vals.supplier_org} onChange={e => setVal('supplier_org', e.target.value)}
+                    className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827' }}>
+                    <option value="">Select supplier…</option>
+                    {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Serial Number" name="serial_number" placeholder="e.g. SN-48213"
@@ -305,6 +327,16 @@ export default function InstrumentsShell(
                   className="w-full px-3 py-2 text-xs rounded-lg outline-none resize-none"
                   style={{ border: '1px solid #D1D5DB', color: '#111827' }} />
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Photo</label>
+                  <input name="photo" type="file" accept="image/*" className="w-full text-xs" style={{ fontSize: 12 }} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Installation certificate</label>
+                  <input name="installation_certificate" type="file" className="w-full text-xs" style={{ fontSize: 12 }} />
+                </div>
+              </div>
               <div>
                 <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Notes</label>
                 <textarea name="notes" rows={3} placeholder="Additional notes…" value={vals.notes}
@@ -314,7 +346,7 @@ export default function InstrumentsShell(
               </div>
               {isEdit && (
                 <p style={{ fontSize: 10, color: '#9CA3AF' }}>
-                  Photo and installation certificate uploads are supported on the API. Cert/calibration/validation history is on the instrument detail page.
+                  Cert/calibration/validation history is on the instrument detail page.
                 </p>
               )}
             </div>
@@ -431,7 +463,7 @@ export default function InstrumentsShell(
                       <Link href={`/dashboard/instruments/${i.id}`} style={{ color: '#0154FC', fontWeight: 600 }}>{i.name}</Link>
                     </td>
                     <td className="px-3 py-2.5"><span className="font-mono text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#EFF6FF', color: '#2563EB', fontWeight: 600 }}>{i.instrument_id}</span></td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#374151' }}>{i.manufacturer || '—'}</td>
+                    <td className="px-3 py-2.5 text-xs" style={{ color: '#374151' }}>{i.manufacturer_org_name || i.manufacturer || '—'}</td>
                     <td className="px-3 py-2.5 text-xs" style={{ color: '#374151' }}>{i.model || '—'}</td>
                     <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{i.instrument_location_name || i.location || '—'}</td>
                     <td className="px-3 py-2.5">

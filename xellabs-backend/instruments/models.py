@@ -31,6 +31,34 @@ class InstrumentLocation(models.Model):
         return self.name
 
 
+class InstrumentManufacturer(models.Model):
+    """SENAITE-parity setup catalog: instrument manufacturers."""
+    name = models.CharField(max_length=200, unique=True)
+    description = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "instrument_manufacturers"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class InstrumentSupplier(models.Model):
+    """SENAITE-parity setup catalog: instrument suppliers/vendors."""
+    name = models.CharField(max_length=200, unique=True)
+    description = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "instrument_suppliers"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
 class Instrument(models.Model):
     STATUS = [
         ("active", "Active"),
@@ -41,7 +69,10 @@ class Instrument(models.Model):
     name = models.CharField(max_length=200)
     instrument_id = models.CharField(max_length=50, unique=True)
     model = models.CharField(max_length=200, blank=True)
-    manufacturer = models.CharField(max_length=200, blank=True)
+    manufacturer = models.CharField(max_length=200, blank=True)  # denormalized display cache
+    manufacturer_org = models.ForeignKey(
+        InstrumentManufacturer, on_delete=models.SET_NULL, null=True, blank=True, related_name="instruments"
+    )
     serial_number = models.CharField(max_length=100, blank=True)
     instrument_type = models.ForeignKey(
         InstrumentType, on_delete=models.SET_NULL, null=True, blank=True, related_name="instruments"
@@ -49,7 +80,10 @@ class Instrument(models.Model):
     instrument_location = models.ForeignKey(
         InstrumentLocation, on_delete=models.SET_NULL, null=True, blank=True, related_name="instruments"
     )
-    supplier = models.CharField(max_length=200, blank=True)
+    supplier = models.CharField(max_length=200, blank=True)  # denormalized display cache
+    supplier_org = models.ForeignKey(
+        InstrumentSupplier, on_delete=models.SET_NULL, null=True, blank=True, related_name="instruments"
+    )
     asset_number = models.CharField(max_length=100, blank=True)
     location = models.CharField(max_length=200, blank=True)
     status = models.CharField(max_length=20, choices=STATUS, default="active")
@@ -94,6 +128,14 @@ class Instrument(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.instrument_id})"
+
+    def save(self, *args, **kwargs):
+        # Keep string caches in sync with catalog FKs for list/report columns.
+        if self.manufacturer_org_id:
+            self.manufacturer = self.manufacturer_org.name
+        if self.supplier_org_id:
+            self.supplier = self.supplier_org.name
+        super().save(*args, **kwargs)
 
 
 class InstrumentMethod(models.Model):

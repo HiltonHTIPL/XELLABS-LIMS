@@ -6,6 +6,7 @@ from .views import (
     SampleInstrumentReportView,
     InstrumentTypeViewSet, InstrumentLocationViewSet, CertificationViewSet,
     ScheduledTaskViewSet, ValidationViewSet,
+    InstrumentManufacturerViewSet, InstrumentSupplierViewSet,
 )
 
 router = DefaultRouter()
@@ -17,6 +18,8 @@ router.register("runs", InstrumentRunViewSet)
 router.register("result-imports", InstrumentResultImportViewSet)
 router.register("instrument-types", InstrumentTypeViewSet)
 router.register("instrument-locations", InstrumentLocationViewSet)
+router.register("manufacturers", InstrumentManufacturerViewSet)
+router.register("suppliers", InstrumentSupplierViewSet)
 router.register("certifications", CertificationViewSet)
 router.register("scheduled-tasks", ScheduledTaskViewSet)
 router.register("validations", ValidationViewSet)

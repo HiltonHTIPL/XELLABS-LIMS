@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import (
     Instrument, InstrumentMethod, Calibration, Maintenance, InstrumentRun,
     InstrumentResultImport, InstrumentType, InstrumentLocation, Certification,
-    ScheduledTask, Validation,
+    ScheduledTask, Validation, InstrumentManufacturer, InstrumentSupplier,
 )
 
 
@@ -20,10 +20,26 @@ class InstrumentLocationSerializer(serializers.ModelSerializer):
         read_only_fields = ("created_at",)
 
 
+class InstrumentManufacturerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InstrumentManufacturer
+        fields = "__all__"
+        read_only_fields = ("created_at",)
+
+
+class InstrumentSupplierSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InstrumentSupplier
+        fields = "__all__"
+        read_only_fields = ("created_at",)
+
+
 class InstrumentSerializer(serializers.ModelSerializer):
     # Read-friendly names alongside the FK ids (white-label: plain labels, no SENAITE refs)
     instrument_type_name = serializers.CharField(source="instrument_type.name", read_only=True, default="")
     instrument_location_name = serializers.CharField(source="instrument_location.name", read_only=True, default="")
+    manufacturer_org_name = serializers.CharField(source="manufacturer_org.name", read_only=True, default="")
+    supplier_org_name = serializers.CharField(source="supplier_org.name", read_only=True, default="")
 
     class Meta:
         model = Instrument

@@ -128,12 +128,24 @@ export default function InstrumentDetailShell(
 
       {/* Instrument header */}
       <div className="bg-white mb-4" style={{ border: '1px solid #E8EAF2', borderRadius: 12, padding: 18 }}>
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 style={{ fontSize: 22, fontWeight: 800, color: '#14265E' }}>{name}</h1>
-            <p style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>
-              {String(instrument.instrument_id ?? '')} · {String(instrument.manufacturer ?? '—')} {String(instrument.model ?? '')}
-            </p>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            {typeof instrument.photo === 'string' && instrument.photo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={instrument.photo} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid #E8EAF2' }} />
+            ) : null}
+            <div>
+              <h1 style={{ fontSize: 22, fontWeight: 800, color: '#14265E' }}>{name}</h1>
+              <p style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>
+                {String(instrument.instrument_id ?? '')} · {String(instrument.manufacturer_org_name || instrument.manufacturer || '—')} {String(instrument.model ?? '')}
+              </p>
+              {typeof instrument.installation_certificate === 'string' && instrument.installation_certificate ? (
+                <a href={String(instrument.installation_certificate)} target="_blank" rel="noreferrer"
+                  style={{ fontSize: 11, color: '#0154FC', fontWeight: 600, display: 'inline-block', marginTop: 6 }}>
+                  Installation certificate
+                </a>
+              ) : null}
+            </div>
           </div>
           <span style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 999, backgroundColor: '#ECFDF5', color: '#059669', textTransform: 'capitalize' }}>
             {String(instrument.status ?? 'active')}
@@ -142,7 +154,7 @@ export default function InstrumentDetailShell(
         <div className="grid grid-cols-4 gap-4 mt-3" style={{ fontSize: 12 }}>
           <Meta label="Type" value={String(instrument.instrument_type_name || '—')} />
           <Meta label="Location" value={String(instrument.instrument_location_name || instrument.location || '—')} />
-          <Meta label="Supplier" value={String(instrument.supplier || '—')} />
+          <Meta label="Supplier" value={String(instrument.supplier_org_name || instrument.supplier || '—')} />
           <Meta label="Asset No." value={String(instrument.asset_number || '—')} />
           <Meta label="Installed" value={instrument.installation_date ? String(instrument.installation_date).slice(0, 10) : '—'} />
           <Meta label="Import interface" value={String(instrument.import_data_interface || '—')} />
