@@ -12,6 +12,9 @@ start-commands.txt
 # Local change tracking (cleared after every push — never commit)
 pending-changes.md
 
+# Multi-instance coordination log (local-machine only — never commit)
+ACTIVE-CLAUDE-SESSIONS.md
+
 # Bug backlog (local only — worked from directly, never committed)
 needtofixbugs.md
 

@@ -71,7 +71,7 @@ export async function getDjangoWorksheets(): Promise<EnrichedWorksheet[]> {
       fetchAllPages<Worksheet>('/api/lims/worksheets/?page_size=500&ordering=-created_at'),
       fetchAllPages<WorksheetAssignment>('/api/lims/worksheet-assignments/?page_size=500'),
       fetchAllPages<{ id: number; ar_id: string; sample: number }>('/api/lims/analysis-requests/?page_size=500'),
-      fetchAllPages<{ id: number; sample_id: string }>('/api/lims/samples/?page_size=500'),
+      fetchAllPages<{ id: number; sample_id: string; senaite_ar_id: string }>('/api/lims/samples/?page_size=500'),
       fetchAllPages<{ id: number; worksheet_assignment: number; value: string; status: string; submitted_at: string | null; verified_at: string | null }>('/api/lims/results/?page_size=500'),
       fetchAllPages<StaffUser>('/api/users/?page_size=500'),
     ])
@@ -99,7 +99,7 @@ export async function getDjangoWorksheets(): Promise<EnrichedWorksheet[]> {
         return {
           ...a,
           ar_id: ar?.ar_id ?? '',
-          sample_id: sample?.sample_id ?? '',
+          sample_id: (sample?.senaite_ar_id || sample?.sample_id) ?? '',
           result_id: result?.id ?? null,
           result_value: result?.value ?? '',
           result_status: result?.status ?? 'pending',
@@ -162,8 +162,9 @@ export async function assignToWorksheet(
       }),
     })
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}))
-      return { success: false, message: (data as Record<string, unknown>).detail as string ?? 'Failed to assign' }
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>
+      const nonField = data.non_field_errors as string[] | undefined
+      return { success: false, message: (data.detail as string) ?? nonField?.[0] ?? 'Failed to assign' }
     }
     // Result is a required OneToOne on WorksheetAssignment and is never auto-created
     // by the backend — create the pending row now so result entry has something to PATCH/submit.

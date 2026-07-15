@@ -304,8 +304,9 @@ export default function BatchDetailShell({
 
       {/* Results entry modal — single sample or multiple, same table */}
       {resultsOpen && (
-        <div onClick={closeResults} style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 12, width: 640, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1000 }}>
+          <div onClick={closeResults} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)' }} />
+          <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', top: 0, right: 0, bottom: 0, background: '#fff', width: 640, maxWidth: '90vw', display: 'flex', flexDirection: 'column', boxShadow: '-6px 0 32px rgba(0,0,0,0.18)' }}>
             <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #F3F4F6' }}>
               <div>
                 <h2 style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>{selectedSamples.length === 1 ? 'Enter Results' : 'Multi Results'}</h2>

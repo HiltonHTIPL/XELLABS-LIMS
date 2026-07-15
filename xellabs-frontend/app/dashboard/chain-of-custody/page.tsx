@@ -659,9 +659,9 @@ export default function ChainOfCustodyPage() {
 
       {/* ── Assign / Transfer storage modal ── */}
       {assignOpen && sample && (
-        <div onClick={e => { if (e.currentTarget === e.target) setAssignOpen(false) }}
-          style={{ position: 'fixed', inset: 0, zIndex: 100, backgroundColor: 'rgba(17,24,39,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div className="bg-white rounded-2xl" style={{ width: 420, maxWidth: '92vw', padding: 20 }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100 }}>
+          <div onClick={() => setAssignOpen(false)} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(17,24,39,0.55)' }} />
+          <div className="bg-white" style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 420, maxWidth: '92vw', padding: 20, boxShadow: '-6px 0 32px rgba(0,0,0,0.15)', overflowY: 'auto' }}>
             <div className="flex items-center justify-between mb-1">
               <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>
                 {assignMode === 'transfer' ? 'Transfer Custody' : 'Assign Storage'}

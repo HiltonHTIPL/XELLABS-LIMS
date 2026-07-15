@@ -25,6 +25,19 @@ RUN chown senaite:senaite \
     ${CORE}/adapters/sampletemplate_datagrid_deserializer.py \
     ${CORE}/adapters/configure.zcml
 
+# Calculation.Formula's registered validator reads request.form["InterimFields"]
+# (raw classic Zope form data), which plone.restapi's JSON body never
+# populates — any formula referencing an interim keyword is rejected via every
+# REST path. Custom views call bika.lims.api.create()/edit(), which set AT
+# fields via their mutators (bypassing field.validate() and its validators=
+# list entirely) — see calculation_views.py docstring.
+COPY calculation_views.py ${CORE}/adapters/calculation_views.py
+COPY patch_calculation_zcml.py /tmp/patch_calculation_zcml.py
+RUN python2.7 /tmp/patch_calculation_zcml.py
+RUN chown senaite:senaite \
+    ${CORE}/adapters/calculation_views.py \
+    ${CORE}/adapters/configure.zcml
+
 # Replace branding templates
 COPY logo.pt          ${BASE}/viewlets/templates/logo.pt
 COPY toolbar.pt       ${BASE}/viewlets/templates/toolbar.pt

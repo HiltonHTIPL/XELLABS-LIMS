@@ -21,6 +21,21 @@ export async function getSenaiteClient(uid: string): Promise<SenaiteClientFull |
   return fetchSenaiteClientByUid(serverToken(), uid)
 }
 
+// SENAITE does NOT enforce ClientID uniqueness itself (confirmed: creating a
+// second Client with an already-used ClientID succeeds silently) — this app
+// owns that constraint. Checked both live in the UI (on blur / before Next)
+// and again here on submit as the authoritative guard.
+export async function checkClientIdAvailable(clientId: string, excludeUid?: string): Promise<boolean | null> {
+  const trimmed = clientId.trim().toUpperCase()
+  if (!trimmed) return true
+  try {
+    const clients = await fetchSenaiteClientsFull(serverToken())
+    return !clients.some(c => c.ClientID?.toUpperCase() === trimmed && c.uid !== excludeUid)
+  } catch {
+    return null // network/API error — UI should treat as "couldn't verify", not fail-open
+  }
+}
+
 function addr(fd: FormData, prefix: string) {
   const g = (k: string) => (fd.get(`${prefix}_${k}`) as string)?.trim() ?? ''
   return { address: g('street'), city: g('city'), state: g('state'), zip: g('zip'), country: g('country') }
@@ -63,14 +78,21 @@ function buildPayloads(fd: FormData): { client: SenaiteClientPayload; contact: S
   return { client, contact }
 }
 
-function validate(fd: FormData): Record<string, string[]> {
+async function validate(fd: FormData, excludeUid?: string): Promise<Record<string, string[]>> {
   const errors: Record<string, string[]> = {}
   if (!(fd.get('name') as string)?.trim()) errors.name = ['Client name is required']
+  const clientId = (fd.get('client_id') as string)?.trim()
+  if (!clientId) {
+    errors.client_id = ['Client ID is required']
+  } else {
+    const available = await checkClientIdAvailable(clientId, excludeUid)
+    if (available === false) errors.client_id = ['This Client ID is already in use — choose a different one.']
+  }
   return errors
 }
 
 export async function createSenaiteClient(_state: ClientFormState, fd: FormData): Promise<ClientFormState> {
-  const errors = validate(fd)
+  const errors = await validate(fd)
   if (Object.keys(errors).length) return { errors }
   const { client, contact } = buildPayloads(fd)
   const res = await createSenaiteClientObj(serverToken(), client, contact)
@@ -83,7 +105,7 @@ export async function updateSenaiteClient(
   uid: string, clientPath: string, existingContactUid: string | null,
   _state: ClientFormState, fd: FormData,
 ): Promise<ClientFormState> {
-  const errors = validate(fd)
+  const errors = await validate(fd, uid)
   if (Object.keys(errors).length) return { errors }
   const { client, contact } = buildPayloads(fd)
   const res = await updateSenaiteClientObj(serverToken(), uid, clientPath, client, contact, existingContactUid)

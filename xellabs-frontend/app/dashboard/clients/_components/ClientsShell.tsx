@@ -3,7 +3,7 @@ import { useState, useActionState, useTransition, useRef, useEffect } from 'reac
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  createSenaiteClient, updateSenaiteClient, toggleSenaiteClientActive,
+  createSenaiteClient, updateSenaiteClient, toggleSenaiteClientActive, checkClientIdAvailable,
   type ClientFormState,
 } from '@/app/actions/senaite-clients'
 import { type SenaiteClientFull } from '@/app/lib/senaite'
@@ -189,6 +189,8 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
   const [editing, setEditing] = useState<SenaiteClientFull | null>(null)
   const [vals, setVals] = useState<FV>(blankFV)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [clientIdCheck, setClientIdCheck] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle')
+  const [checkingNext, setCheckingNext] = useState(false)
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
@@ -244,7 +246,19 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
       } else if (result.errors) {
         const fe: Record<string, string> = {}
         for (const [k, msgs] of Object.entries(result.errors)) { if (msgs?.length) fe[k] = msgs[0] }
-        setFieldErrors(fe); setStep(0)
+        setFieldErrors(fe)
+        // Jump to whichever step actually owns the first errored field, instead
+        // of always resetting to step 0 — the error must surface where the
+        // field lives, not just on a step that may not even contain it.
+        const step1Fields = ['name', 'client_id', 'email', 'phone', 'fax', 'tax_number']
+        const step2Fields = ['salutation', 'contact_first_name', 'contact_last_name', 'contact_email', 'contact_phone', 'contact_mobile', 'contact_fax', 'contact_job_title', 'contact_department']
+        const step4Fields = ['account_name', 'account_number', 'account_type', 'bank_name', 'bank_branch', 'bulk_discount', 'member_discount', 'decimal_mark']
+        const errKeys = Object.keys(fe)
+        if (errKeys.some(k => step1Fields.includes(k))) setStep(0)
+        else if (errKeys.some(k => step2Fields.includes(k))) setStep(1)
+        else if (errKeys.some(k => k.startsWith('physical_') || k.startsWith('postal_') || k.startsWith('billing_'))) setStep(2)
+        else if (errKeys.some(k => step4Fields.includes(k))) setStep(3)
+        else setStep(4)
       } else if (result.message) {
         showToast(false, result.message)
       }
@@ -253,16 +267,46 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
     {},
   )
 
-  function openCreate() { setEditing(null); setVals(blankFV()); setFieldErrors({}); setStep(0); setShowForm(true) }
-  function openEdit(c: SenaiteClientFull) { setEditing(c); setVals(clientToFV(c)); setFieldErrors({}); setStep(0); setShowForm(true) }
-  function closeForm() { setShowForm(false); setStep(0); setEditing(null); setFieldErrors({}) }
+  function openCreate() { setEditing(null); setVals(blankFV()); setFieldErrors({}); setClientIdCheck('idle'); setStep(0); setShowForm(true) }
+  function openEdit(c: SenaiteClientFull) { setEditing(c); setVals(clientToFV(c)); setFieldErrors({}); setClientIdCheck('idle'); setStep(0); setShowForm(true) }
+  function closeForm() { setShowForm(false); setStep(0); setEditing(null); setFieldErrors({}); setClientIdCheck('idle') }
 
   const isFirst = step === 0
   const isLast = step === STEPS.length - 1
   const isEditing = editing !== null
 
-  function handleNext() {
-    if (step === 0 && !vals.name?.trim()) { setFieldErrors(prev => ({ ...prev, name: 'Client name is required' })); return }
+  // Live duplicate check as the user leaves the Client ID field — SENAITE itself
+  // does not enforce ClientID uniqueness (confirmed: it silently accepts a
+  // duplicate), so this app owns the constraint and must catch it before the
+  // user moves on, not just at final submit.
+  async function handleClientIdBlur(value: string) {
+    const trimmed = value.trim()
+    if (!trimmed) { setClientIdCheck('idle'); return }
+    setClientIdCheck('checking')
+    const available = await checkClientIdAvailable(trimmed, editing?.uid)
+    setClientIdCheck(available === false ? 'taken' : 'available')
+    if (available === false) {
+      setFieldErrors(prev => ({ ...prev, client_id: 'This Client ID is already in use — choose a different one.' }))
+    }
+  }
+
+  async function handleNext() {
+    if (step === 0) {
+      const errs: Record<string, string> = {}
+      if (!vals.name?.trim()) errs.name = 'Client name is required'
+      const clientId = vals.client_id?.trim()
+      if (!clientId) errs.client_id = 'Client ID is required'
+      if (Object.keys(errs).length) { setFieldErrors(prev => ({ ...prev, ...errs })); return }
+
+      setCheckingNext(true)
+      const available = await checkClientIdAvailable(clientId, editing?.uid)
+      setCheckingNext(false)
+      setClientIdCheck(available === false ? 'taken' : 'available')
+      if (available === false) {
+        setFieldErrors(prev => ({ ...prev, client_id: 'This Client ID is already in use — choose a different one.' }))
+        return
+      }
+    }
     setStep(s => s + 1)
   }
 
@@ -341,7 +385,7 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
       </div>
 
       {/* ── Drawer ── */}
-      <div style={{ position: 'fixed', top: 56, bottom: 40, left: 0, right: 0, zIndex: 200, pointerEvents: showForm ? 'auto' : 'none' }}>
+      <div style={{ position: 'fixed', top: 0, bottom: 0, left: 0, right: 0, zIndex: 200, pointerEvents: showForm ? 'auto' : 'none' }}>
         <div onClick={closeForm} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.30)', opacity: showForm ? 1 : 0, transition: 'opacity 0.25s ease' }} />
         <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 500, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.12)', transform: showForm ? 'translateX(0)' : 'translateX(100%)', transition: 'transform 0.28s cubic-bezier(0.4,0,0.2,1)', display: 'flex', flexDirection: 'column' }}>
           <div className="flex items-center justify-between px-6 py-4 shrink-0" style={{ borderBottom: '1px solid #F3F4F6' }}>
@@ -359,7 +403,20 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
 
           <div className="px-6 pt-4 shrink-0"><StepBar step={step} /></div>
 
-          <form action={action} className="flex flex-col flex-1 min-h-0">
+          <form
+            action={action}
+            className="flex flex-col flex-1 min-h-0"
+            onKeyDown={e => {
+              // The whole multi-step wizard is one <form>; without this, pressing
+              // Enter in any text input triggers an implicit submit and creates the
+              // client prematurely (e.g. while still filling an earlier step or
+              // typing CC emails on the Notes step). Only the explicit Create/Save
+              // button should submit. Textareas keep Enter for newlines.
+              if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
+                e.preventDefault()
+              }
+            }}
+          >
             {Object.entries(vals).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
 
             <div className="flex-1 overflow-y-auto px-6 pb-4 space-y-1">
@@ -368,7 +425,29 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
                 <div className="space-y-3">
                   <Row>
                     <Field label="Client Name" name="_name" placeholder="e.g. Green Valley Farms" required value={vals.name} onChange={v => setVal('name', v)} error={fieldErrors.name} />
-                    <Field label="Client ID" name="_client_id" placeholder="e.g. CL-001" value={vals.client_id} onChange={v => setVal('client_id', v)} />
+                    <div className="flex-1 min-w-0">
+                      <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
+                        Client ID<span style={{ color: '#EF4444' }}> *</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          placeholder="e.g. CL-001" required value={vals.client_id}
+                          onChange={e => { setVal('client_id', e.target.value); setClientIdCheck('idle') }}
+                          onBlur={e => handleClientIdBlur(e.target.value)}
+                          className="w-full px-3 py-2 text-xs rounded-lg outline-none"
+                          style={{ border: `1px solid ${fieldErrors.client_id ? '#FCA5A5' : '#D1D5DB'}`, color: '#111827' }}
+                        />
+                        {clientIdCheck === 'checking' && (
+                          <span className="absolute right-2.5" style={{ top: '50%', transform: 'translateY(-50%)', fontSize: 9, color: '#9CA3AF' }}>checking…</span>
+                        )}
+                        {clientIdCheck === 'available' && (
+                          <span className="absolute right-2.5" style={{ top: '50%', transform: 'translateY(-50%)' }}>
+                            <MI name="check_circle" size={13} color="#0154FC" />
+                          </span>
+                        )}
+                      </div>
+                      {fieldErrors.client_id && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{fieldErrors.client_id}</p>}
+                    </div>
                   </Row>
                   <Row>
                     <Field label="Email Address" name="_email" type="email" placeholder="contact@client.com" value={vals.email} onChange={v => setVal('email', v)} />
@@ -475,11 +554,28 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
               </button>
               <div className="flex-1" />
               {!isLast ? (
-                <button type="button" onClick={handleNext} className="flex items-center gap-1.5 px-4 py-2 text-xs rounded-lg font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
-                  Next<MI name="arrow_forward" size={13} color="#fff" />
+                <button key="wizard-next" type="button" onClick={handleNext} disabled={checkingNext}
+                  className="flex items-center gap-1.5 px-4 py-2 text-xs rounded-lg font-medium text-white"
+                  style={{ backgroundColor: checkingNext ? '#DBEAFE' : '#0154FC', cursor: checkingNext ? 'not-allowed' : 'pointer' }}>
+                  {checkingNext ? 'Checking…' : 'Next'}
+                  <MI name={checkingNext ? 'hourglass_top' : 'arrow_forward'} size={13} color="#fff" />
                 </button>
               ) : (
-                <button type="submit" disabled={pending} className="flex items-center gap-1.5 px-4 py-2 text-xs rounded-lg font-medium text-white"
+                // Distinct `key` from the Next button above is load-bearing, not
+                // cosmetic: without it React reuses the same <button> DOM node
+                // across the isLast flip and just patches its `type` attribute
+                // button -> submit. Clicking "Next" on the second-to-last step
+                // flips isLast to true via a synchronous setState, so React
+                // patches the node's type to "submit" DURING that same click's
+                // synchronous handler execution — and the browser's native click
+                // default-action (which decides whether to submit) reads the
+                // attribute AFTER React's synchronous re-render, sees "submit",
+                // and submits the form immediately, with whatever step you were
+                // just leaving. This is what silently created clients before the
+                // user ever reached the Notes step. A distinct key forces React
+                // to unmount the old node and mount a genuinely new one instead
+                // of patching type in place, closing the race entirely.
+                <button key="wizard-submit" type="submit" disabled={pending} className="flex items-center gap-1.5 px-4 py-2 text-xs rounded-lg font-medium text-white"
                   style={{ backgroundColor: pending ? '#DBEAFE' : isEditing ? '#2563EB' : '#0154FC', cursor: pending ? 'not-allowed' : 'pointer' }}>
                   <MI name={pending ? 'hourglass_top' : 'check'} size={13} color="#fff" />
                   {pending ? (isEditing ? 'Saving…' : 'Creating…') : isEditing ? 'Save Changes' : 'Create Client'}

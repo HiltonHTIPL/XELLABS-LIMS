@@ -262,6 +262,12 @@ class AnalysisRequestSerializer(serializers.ModelSerializer):
         validators=[UniqueValidator(queryset=AnalysisRequest.objects.all())],
     )
     analyses = AnalysisRequestAnalysisSerializer(many=True, required=False)
+    sample_id = serializers.SerializerMethodField(read_only=True)
+
+    def get_sample_id(self, obj):
+        # Prefer SENAITE's own assigned sample/AR id once synced; falls back to
+        # Django's locally-generated id until the SENAITE sync has run.
+        return obj.sample.senaite_ar_id or obj.sample.sample_id
 
     class Meta:
         model = AnalysisRequest
@@ -316,6 +322,18 @@ class WorksheetAssignmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorksheetAssignment
         fields = "__all__"
+
+    def validate(self, attrs):
+        ar = attrs.get("analysis_request")
+        service_uid = attrs.get("senaite_service_uid", "")
+        if ar and WorksheetAssignment.objects.filter(
+            analysis_request=ar, senaite_service_uid=service_uid
+        ).exclude(pk=self.instance.pk if self.instance else None).exists():
+            raise serializers.ValidationError(
+                f"Sample {ar.sample.sample_id} already has this test assigned — "
+                "it cannot be assigned twice."
+            )
+        return attrs
 
     def create(self, validated_data):
         # Default instrument/method from the parent worksheet at assignment time,

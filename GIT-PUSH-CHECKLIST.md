@@ -10,33 +10,33 @@ gets lost, forgotten, or silently overwritten by a future `git pull`/merge.
 
 ---
 
-## Status as of 2026-07-15
+## Status as of 2026-07-15 (later)
 
 **Uncommitted local work — not yet committed or pushed.** Last push was
-commit `5b576ae` (2026-07-14).
+commit `7066bc8`.
 
-Since then: removed the Django `Test` catalog model entirely, re-keyed
-`Specification`/`WorksheetAssignment`/`QCSample`/`AnalysisRequest` onto live
-SENAITE analysis services instead (see `Codetrackbypriciple.txt` entry
-2026-07-15 for full detail). Touches:
-- Backend: `lims/models.py`, `lims/serializers.py`, `lims/views.py`,
-  `lims/urls.py`, `lims/admin.py`, `lims/services.py`, `lims/senaite_sync.py`,
-  `lims/tests.py`, `core/tests.py`, `core/tasks.py`, `core/senaite_service.py`,
-  `instruments/importers.py`, `instruments/tasks.py`, `reporting/tasks.py`,
-  `reporting/templates/reporting/coa.html`, new migration
-  `lims/migrations/0023_remove_test_model_use_senaite_services.py`.
-- Frontend: deleted `app/actions/tests.ts` + `app/dashboard/tests/`; rewired
-  `app/dashboard/specifications`, `app/dashboard/worksheets/[id]`,
-  `app/dashboard/quality`, `app/dashboard/analysis-requests`,
-  `app/dashboard/samples-overview/new`, plus `app/actions/analysis-requests.ts`,
-  `app/actions/quality.ts`, `app/actions/django-worksheets.ts`,
-  `app/actions/results.ts`, `app/actions/lab-samples.ts`,
-  `app/dashboard/_components/adminNav.ts`,
-  `app/dashboard/samples-overview/[id]/_components/SampleOverviewDetail.tsx`.
+Since then: new fully SENAITE-backed **Calculations** admin grid at
+`/dashboard/calculations`, matching SENAITE's own Calculation flow (Interim
+Fields, Formula, auto-derived Dependent Services). Required a genuine SENAITE-
+side fix — two new custom Zope browser views baked into the SENAITE Docker
+image (`senaite-rebrand/calculation_views.py` + `patch_calculation_zcml.py`)
+to bypass a broken validator that rejects interim-keyword formulas via every
+REST path. Touches:
+- `senaite-rebrand/calculation_views.py` (new), `senaite-rebrand/patch_calculation_zcml.py` (new), `senaite-rebrand/Dockerfile` (new COPY/RUN steps) — **SENAITE image already rebuilt and redeployed** (`docker compose build senaite` + `up -d senaite`), not just source changes.
+- `xellabs-frontend/app/lib/senaite.ts` (new Calculation types + adapters), new `app/actions/calculations-senaite.ts`, new `app/dashboard/calculations/page.tsx` + `_components/CalculationsShell.tsx`, `app/dashboard/_components/adminNav.ts` (new nav entry).
 
-Verified: `tsc --noEmit` clean, frontend production build succeeded (53/53
-pages), Django `test lims core` — 24/24 passed, migration applied cleanly to
-both `public` and `demo` schemas.
+The pre-existing Django-only `Calculation` model (used by Method's M2M
+picker) was deliberately left untouched — out of scope for this request.
+
+Follow-up: completed remaining schema fields the user flagged as missing —
+Additional Python Libraries editor + a Test Calculation panel (TestParameters/
+TestResult). Required a third custom Zope view (`@@test-calculation`) since
+SENAITE's own objectmodified subscriber that computes these never fires for
+direct API calls — SENAITE image rebuilt/redeployed a second time.
+
+Verified: live create/update/mixed-formula round trip via curl, a live
+test-calculation run (3+4=7, correct), `tsc --noEmit` clean, frontend prod
+build succeeded, all test orphan objects deactivated.
 
 Not yet asked to commit/push — awaiting explicit go-ahead per Section 13b.
 (Local-only, not pushed by design: `.orphaned-migrations-backup/` — gitignored.)

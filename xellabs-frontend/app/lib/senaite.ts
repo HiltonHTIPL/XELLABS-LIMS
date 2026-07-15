@@ -253,7 +253,12 @@ function mapContact(c: Record<string, unknown>): SenaiteContact {
 export async function fetchSenaiteClientsFull(token: string): Promise<SenaiteClientFull[]> {
   const headers = { Authorization: `Basic ${token}`, Accept: 'application/json' }
   try {
-    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Client?complete=true&limit=1000&review_state=active`, {
+    // Fetch BOTH active and inactive clients — the Clients page computes the
+    // Active/Inactive stat cards and status filter client-side, so filtering
+    // to review_state=active here would hide deactivated clients entirely
+    // (Inactive count stuck at 0, "Inactive" filter empty, a just-deactivated
+    // client vanishing instead of moving to Inactive).
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Client?complete=true&limit=1000`, {
       headers, cache: 'no-store',
     })
     if (!res.ok) return []
@@ -409,21 +414,31 @@ export async function updateSenaiteContactObj(
   } catch (e) { return { success: false, error: String(e) } }
 }
 
-/** Activate or deactivate a client via the SENAITE workflow. */
+/** Activate or deactivate a client via the SENAITE workflow.
+ *
+ * This SENAITE 2.6 build has NO jsonapi workflow route (senaite.jsonapi only
+ * registers create/update/delete) — a POST to `.../v1/deactivate/<uid>` returns
+ * 200 with an error embedded in the body and does NOT actually transition.
+ * The real mechanism is the classic Zope `content_status_modify` view POSTed
+ * as a form field on the object's own path (same approach as
+ * senaiteWorkflowAction); success is confirmed by re-reading review_state. */
 export async function setSenaiteClientActive(
   token: string, uid: string, active: boolean,
 ): Promise<{ success: boolean; error?: string }> {
   const headers = { Authorization: `Basic ${token}`, Accept: 'application/json' }
-  const transition = active ? 'activate' : 'deactivate'
+  const workflowAction = active ? 'activate' : 'deactivate'
   try {
-    // The workflow route can return a non-200 while still committing the
-    // transition, so we verify the resulting review_state rather than trust the status.
-    await fetch(`${SENAITE_URL}/@@API/senaite/v1/${transition}/${uid}`, { method: 'POST', headers, cache: 'no-store' })
+    const path = await _resolvePath(token, 'Client', uid)
+    if (!path) return { success: false, error: 'Client not found in the lab system.' }
+
+    const ok = await _contentStatusModify(token, path, workflowAction)
+    if (!ok) return { success: false, error: 'Failed to trigger the status change.' }
+
     const check = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Client?UID=${encodeURIComponent(uid)}`, { headers, cache: 'no-store' })
     const item = ((await check.json()).items ?? [])[0]
     const state = (item?.review_state as string) ?? ''
-    const ok = active ? state === 'active' : state === 'inactive'
-    return ok ? { success: true } : { success: false, error: `Client is still '${state}'.` }
+    const good = active ? state === 'active' : state === 'inactive'
+    return good ? { success: true } : { success: false, error: `Status is still '${state}'.` }
   } catch (e) { return { success: false, error: String(e) } }
 }
 
@@ -1285,7 +1300,10 @@ async function fetchSenaiteTitleMap(token: string, portalType: string): Promise<
 
 export async function fetchSenaiteInstruments(token: string): Promise<SenaiteInstrument[]> {
   try {
-    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Instrument?complete=true&limit=1000&review_state=active`, {
+    // No review_state filter: the Instrument List shows a status column + Active
+    // stat card and must include inactive instruments too, or the count/status
+    // are meaningless (same class of bug as the Clients list).
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Instrument?complete=true&limit=1000`, {
       headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
       cache: 'no-store',
     })
@@ -1338,7 +1356,10 @@ export async function fetchSenaiteStorageLocations(token: string): Promise<Senai
     // limit=1000 — SENAITE's jsonapi ignores an unsupported `page` param and just
     // re-returns page 1, so looping on `page` silently duplicated results instead
     // of paging forward; keep this as one bounded request.
-    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/StorageLocation?limit=1000&review_state=active`, {
+    // No review_state filter: the Storage List shows a status column + Active
+    // stat card, so inactive locations must load too (same class of bug as the
+    // Clients list). Still no `complete=true` — keep it a cheap catalog query.
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/StorageLocation?limit=1000`, {
       headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
       cache: 'no-store',
     })
@@ -2351,5 +2372,249 @@ export async function setSenaiteBatchState(
       return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
     }
     return { success: true }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+// ─── Calculations ────────────────────────────────────────────────────────────
+//
+// SENAITE's Calculation.Formula field has a registered validator
+// ("formulavalidator") that reads request.form["InterimFields"] — raw classic
+// Zope form-POST data — to decide whether a bracketed [keyword] in the formula
+// is a valid interim variable. plone.restapi's JSON body never populates
+// request.form, so every REST path (legacy v1 create, restapi POST/PATCH, any
+// field ordering) rejects any formula referencing an interim keyword —
+// confirmed via direct testing against a live instance. Two custom Zope views
+// (senaite-rebrand/calculation_views.py, baked into the SENAITE image) call
+// bika.lims.api.create()/edit() instead, which set AT fields via their
+// mutators and never invoke that validator — Calculation.setFormula() is
+// already safe to call directly, it just extracts real service keywords for
+// DependentServices and silently ignores anything else (interim keywords
+// included). List/read still goes through the normal v1 API.
+
+// Full real subfield set, confirmed from SENAITE's own field class
+// (bika/lims/browser/fields/interimfieldsfield.py InterimFieldsField) — not
+// the trimmed 4-field version this shipped with first, which the user caught
+// missing choices/control type/allow empty/unit/report/apply-wide.
+export type SenaiteInterimControlType =
+  '' | 'string' | 'datetime' | 'select' | 'multiselect' | 'multiselect_duplicates' | 'multichoice' | 'multivalue'
+
+export type SenaiteCalculationInterimField = {
+  keyword: string
+  title: string
+  value: string
+  choices: string
+  resultType: SenaiteInterimControlType
+  allowEmpty: boolean
+  unit: string
+  report: boolean
+  hidden: boolean
+  wide: boolean
+}
+
+export type SenaiteCalculationDependentService = {
+  uid: string
+  title: string
+  keyword: string
+}
+
+export type SenaiteCalculationPythonImport = {
+  module: string
+  function: string
+}
+
+export type SenaiteCalculationTestParameter = {
+  keyword: string
+  value: string
+}
+
+export type SenaiteCalculation = {
+  uid: string
+  id: string
+  title: string
+  description: string
+  formula: string
+  interimFields: SenaiteCalculationInterimField[]
+  dependentServiceUids: string[]
+  pythonImports: SenaiteCalculationPythonImport[]
+  testParameters: SenaiteCalculationTestParameter[]
+  testResult: string
+  isActive: boolean
+}
+
+function mapInterimField(f: Record<string, unknown>): SenaiteCalculationInterimField {
+  return {
+    keyword: (f.keyword as string) ?? '',
+    title: (f.title as string) ?? '',
+    value: (f.value as string) ?? '',
+    choices: (f.choices as string) ?? '',
+    resultType: ((f.result_type as string) ?? '') as SenaiteInterimControlType,
+    allowEmpty: Boolean(f.allow_empty),
+    unit: (f.unit as string) ?? '',
+    report: Boolean(f.report),
+    hidden: Boolean(f.hidden),
+    wide: Boolean(f.wide),
+  }
+}
+
+export async function fetchSenaiteCalculations(token: string): Promise<SenaiteCalculation[]> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Calculation?complete=true&limit=1000`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    const all: SenaiteCalculation[] = (data.items ?? []).map((c: Record<string, unknown>) => ({
+      uid: (c.uid as string) ?? '',
+      id: (c.id as string) ?? '',
+      title: (c.title as string) ?? '',
+      description: (c.description as string) ?? '',
+      formula: (c.Formula as string) ?? '',
+      interimFields: ((c.InterimFields as Record<string, unknown>[]) ?? []).map(mapInterimField),
+      dependentServiceUids: ((c.DependentServices as Record<string, unknown>[]) ?? [])
+        .map(d => (d.uid as string) ?? '').filter(Boolean),
+      pythonImports: ((c.PythonImports as Record<string, unknown>[]) ?? []).map(p => ({
+        module: (p.module as string) ?? '', function: (p.function as string) ?? '',
+      })),
+      testParameters: ((c.TestParameters as Record<string, unknown>[]) ?? []).map(p => ({
+        keyword: (p.keyword as string) ?? '', value: String(p.value ?? ''),
+      })),
+      testResult: (c.TestResult as string) ?? '',
+      isActive: c.review_state === 'active',
+    }))
+    // Same unreliable-headless-create caveat as AnalysisService — a failed
+    // create call can still leave an untitled orphan behind. Filter blanks.
+    return all.filter(c => c.uid && c.title)
+  } catch { return [] }
+}
+
+export type CalculationPayload = {
+  title: string
+  description?: string
+  formula: string
+  interimFields: SenaiteCalculationInterimField[]
+  pythonImports?: SenaiteCalculationPythonImport[]
+}
+
+function calculationFromViewResponse(d: Record<string, unknown>): SenaiteCalculation {
+  return {
+    uid: (d.uid as string) ?? '',
+    id: (d.id as string) ?? '',
+    title: (d.title as string) ?? '',
+    description: (d.description as string) ?? '',
+    formula: (d.formula as string) ?? '',
+    interimFields: ((d.interim_fields as Record<string, unknown>[]) ?? []).map(mapInterimField),
+    dependentServiceUids: ((d.dependent_services as Record<string, unknown>[]) ?? [])
+      .map(s => (s.uid as string) ?? '').filter(Boolean),
+    pythonImports: ((d.python_imports as Record<string, unknown>[]) ?? []).map(p => ({
+      module: (p.module as string) ?? '', function: (p.function as string) ?? '',
+    })),
+    testParameters: ((d.test_parameters as Record<string, unknown>[]) ?? []).map(p => ({
+      keyword: (p.keyword as string) ?? '', value: String(p.value ?? ''),
+    })),
+    testResult: (d.test_result as string) ?? '',
+    isActive: Boolean(d.is_active),
+  }
+}
+
+// Wire format for AT's InterimFields RecordsField uses SENAITE's own
+// snake_case subfield names (result_type, allow_empty) — not the camelCase
+// TS property names.
+function interimFieldToWire(f: SenaiteCalculationInterimField): Record<string, unknown> {
+  return {
+    keyword: f.keyword, title: f.title, value: f.value, choices: f.choices,
+    result_type: f.resultType, allow_empty: f.allowEmpty, unit: f.unit,
+    report: f.report, hidden: f.hidden, wide: f.wide,
+  }
+}
+
+export async function createSenaiteCalculation(
+  token: string, payload: CalculationPayload
+): Promise<{ success: boolean; calculation?: SenaiteCalculation; error?: string }> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/bika_setup/bika_calculations/@@create-calculation`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: payload.title,
+        description: payload.description ?? '',
+        formula: payload.formula,
+        interim_fields: payload.interimFields.map(interimFieldToWire),
+        ...(payload.pythonImports ? { python_imports: payload.pythonImports } : {}),
+      }),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok || !data.success) return { success: false, error: (data.error as string) ?? `HTTP ${res.status}` }
+    return { success: true, calculation: calculationFromViewResponse(data) }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+export async function updateSenaiteCalculation(
+  token: string, uid: string, payload: Partial<CalculationPayload>
+): Promise<{ success: boolean; calculation?: SenaiteCalculation; error?: string }> {
+  try {
+    const path = await _resolvePath(token, 'Calculation', uid)
+    if (!path) return { success: false, error: 'Calculation not found in the lab system.' }
+
+    const body: Record<string, unknown> = {}
+    if (payload.title !== undefined) body.title = payload.title
+    if (payload.description !== undefined) body.description = payload.description
+    if (payload.formula !== undefined) body.formula = payload.formula
+    if (payload.interimFields !== undefined) body.interim_fields = payload.interimFields.map(interimFieldToWire)
+    if (payload.pythonImports !== undefined) body.python_imports = payload.pythonImports
+
+    const res = await fetch(`${SENAITE_URL}${path}/@@update-calculation`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok || !data.success) return { success: false, error: (data.error as string) ?? `HTTP ${res.status}` }
+    return { success: true, calculation: calculationFromViewResponse(data) }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+/** Run the formula against test values (mirrors SENAITE's own "Test
+ * Parameters" / "Test Result" panel). SENAITE normally computes this via an
+ * objectmodified event subscriber that never fires for our direct API calls,
+ * so the custom @@test-calculation view replicates it explicitly. */
+export async function runSenaiteCalculationTest(
+  token: string, uid: string, testParameters: SenaiteCalculationTestParameter[]
+): Promise<{ success: boolean; calculation?: SenaiteCalculation; error?: string }> {
+  try {
+    const path = await _resolvePath(token, 'Calculation', uid)
+    if (!path) return { success: false, error: 'Calculation not found in the lab system.' }
+
+    const res = await fetch(`${SENAITE_URL}${path}/@@test-calculation`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ test_parameters: testParameters }),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok || !data.success) return { success: false, error: (data.error as string) ?? `HTTP ${res.status}` }
+    return { success: true, calculation: calculationFromViewResponse(data) }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+export async function setSenaiteCalculationActive(
+  token: string, uid: string, active: boolean,
+): Promise<{ success: boolean; error?: string }> {
+  const headers = { Authorization: `Basic ${token}`, Accept: 'application/json' }
+  const workflowAction = active ? 'activate' : 'deactivate'
+  try {
+    const path = await _resolvePath(token, 'Calculation', uid)
+    if (!path) return { success: false, error: 'Calculation not found in the lab system.' }
+
+    const ok = await _contentStatusModify(token, path, workflowAction)
+    if (!ok) return { success: false, error: 'Failed to trigger the status change.' }
+
+    const check = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Calculation?UID=${encodeURIComponent(uid)}`, { headers, cache: 'no-store' })
+    const item = ((await check.json()).items ?? [])[0]
+    const state = (item?.review_state as string) ?? ''
+    const good = active ? state === 'active' : state === 'inactive'
+    return good ? { success: true } : { success: false, error: `Status is still '${state}'.` }
   } catch (e) { return { success: false, error: String(e) } }
 }

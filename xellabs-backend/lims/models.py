@@ -386,6 +386,15 @@ class WorksheetAssignment(models.Model):
             models.Index(fields=["worksheet"], name="wa_worksheet_idx"),
             models.Index(fields=["analysis_request"], name="wa_ar_idx"),
         ]
+        constraints = [
+            # Same sample (AR) can't have the same test assigned twice —
+            # regardless of which worksheet, since each assignment carries its
+            # own single Result row (see Result model below).
+            models.UniqueConstraint(
+                fields=["analysis_request", "senaite_service_uid"],
+                name="uniq_ar_service_assignment",
+            ),
+        ]
 
 
 class Result(models.Model):

@@ -1,9 +1,20 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import Sidebar from './Sidebar'
 import { logout } from '@/app/actions/auth'
 import { ENV_OVERRIDE_EVENT, getEnvOverride, type EnvLabel } from '@/app/lib/envOverride'
+
+// Simple list/table pages where short (or filtered/last-page) results should
+// let the footer follow the content instead of being pinned to the viewport
+// bottom, which otherwise leaves a large empty gap above it. Deliberately an
+// allowlist, not the default — most pages (Storage Manager, Worksheet, etc.)
+// rely on `main` being a fixed-height container to drive their own internal
+// full-height split-pane/grid layouts, and switching that globally silently
+// collapses those to near-zero height instead (confirmed regression, reverted
+// once already — do not flip the default without re-checking every page that
+// uses height:'100%'/similar inside `main`).
+const NATURAL_HEIGHT_ROUTES = ['/dashboard/clients']
 
 const ENV_BADGE_STYLE: Record<EnvLabel, { bg: string; border: string; dot: string; text: string }> = {
   Development: { bg: '#DCFCE7', border: '#86EFAC', dot: '#16A34A', text: '#16A34A' },
@@ -34,6 +45,8 @@ interface Props {
 
 export default function DashboardShell({ children, initials, displayName, roleLabel, role, reportDraftCount, isSuperuser, serverEnvLabel, notifications = [] }: Props) {
   const router = useRouter()
+  const pathname = usePathname()
+  const naturalHeight = NATURAL_HEIGHT_ROUTES.some(p => pathname?.startsWith(p))
   const [open, setOpen] = useState(true)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const userMenuRef = useRef<HTMLDivElement>(null)
@@ -109,13 +122,20 @@ export default function DashboardShell({ children, initials, displayName, roleLa
         </div>
       </div>
 
-      {/* Main column */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      {/* Main column — most pages keep `main` as a fixed-height flex-1 scroll
+          container (needed by split-pane pages like Storage Manager, whose
+          internal panels fill it via height:'100%'). Pages listed in
+          NATURAL_HEIGHT_ROUTES instead scroll as a single column so their
+          footer follows short content instead of sitting pinned far below it. */}
+      <div className={`flex-1 flex flex-col min-w-0 ${naturalHeight ? 'overflow-y-auto' : 'overflow-hidden'}`}>
 
         {/* Navbar */}
         <header
           className="flex items-center gap-3 px-4 h-14 shrink-0"
-          style={{ backgroundColor: '#fff', borderBottom: '1px solid #E8EAF2', zIndex: 10 }}
+          style={{
+            backgroundColor: '#fff', borderBottom: '1px solid #E8EAF2', zIndex: 10,
+            ...(naturalHeight ? { position: 'sticky' as const, top: 0 } : {}),
+          }}
         >
           {/* Hamburger */}
           <button
@@ -334,7 +354,7 @@ export default function DashboardShell({ children, initials, displayName, roleLa
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto">
+        <main className={naturalHeight ? '' : 'flex-1 overflow-y-auto'}>
           {children}
         </main>
 

@@ -14,6 +14,10 @@ type Props = {
   sampleTemplates: SenaiteSampleTemplate[]
   sampleContainers: SenaiteRefOption[]
   analysisProfiles: AnalysisProfile[]
+  // Set when embedded in a drawer (e.g. SamplesShell) instead of the standalone
+  // /dashboard/samples/new route — swaps router.push navigation for closing the drawer.
+  onClose?: () => void
+  onCreated?: () => void
 }
 
 const PRIORITIES = [
@@ -21,7 +25,7 @@ const PRIORITIES = [
   { value: '3', label: 'Normal' },   { value: '4', label: 'Low' }, { value: '5', label: 'Routine' },
 ]
 
-export default function NewSamplePage({ clients, sampleTypes, analysisServices, sampleTemplates, sampleContainers, analysisProfiles }: Props) {
+export default function NewSamplePage({ clients, sampleTypes, analysisServices, sampleTemplates, sampleContainers, analysisProfiles, onClose, onCreated }: Props) {
   const router = useRouter()
   const [selectedAnalyses, setSelectedAnalyses] = useState<string[]>([])
   const [remarks, setRemarks] = useState('')
@@ -56,7 +60,8 @@ export default function NewSamplePage({ clients, sampleTypes, analysisServices, 
     for (let i = 1; i < sampleCount; i++) {
       await createSample(prev, fd)
     }
-    router.push('/dashboard/samples')
+    if (onCreated) onCreated()
+    else router.push('/dashboard/samples')
     return result
   }
   const [state, action, isPending] = useActionState(handleCreate, {})
@@ -70,7 +75,7 @@ export default function NewSamplePage({ clients, sampleTypes, analysisServices, 
   return (
     <div style={{ backgroundColor: T.pageBg, minHeight: '100%', padding: 20 }}>
 
-      <Breadcrumb items={[{ label: 'Samples', href: '/dashboard/samples' }, { label: 'New Sample' }]} />
+      {!onClose && <Breadcrumb items={[{ label: 'Samples', href: '/dashboard/samples' }, { label: 'New Sample' }]} />}
 
       {/* Header */}
       <div className="flex items-end justify-between gap-4 mb-6 flex-wrap">
@@ -79,6 +84,11 @@ export default function NewSamplePage({ clients, sampleTypes, analysisServices, 
           <p className="mt-1" style={{ fontSize: 13, color: T.muted }}>Register and receive incoming laboratory samples.</p>
         </div>
         <div className="flex items-center gap-3">
+          {onClose && (
+            <button type="button" onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100" style={{ marginRight: 4 }}>
+              <MI name="close" size={18} color="#9CA3AF" />
+            </button>
+          )}
           <span style={{ fontSize: 12, color: T.muted }}>Number of samples</span>
           <div className="flex items-center gap-1">
             <button type="button" onClick={() => setSampleCount(c => Math.max(1, c - 1))}
@@ -201,7 +211,7 @@ export default function NewSamplePage({ clients, sampleTypes, analysisServices, 
                 <span style={{ color: T.danger }}>*</span> Required fields
               </p>
               <div className="flex items-center gap-2">
-                <Btn type="button" variant="outline" onClick={() => router.push('/dashboard/samples')}>Clear Form</Btn>
+                <Btn type="button" variant="outline" onClick={() => (onClose ? onClose() : router.push('/dashboard/samples'))}>Clear Form</Btn>
                 <Btn type="submit" variant="primary" disabled={isPending}>{isPending ? 'Saving…' : 'Save Draft'}</Btn>
                 <Btn type="submit" variant="success" icon="check" disabled={isPending}>{isPending ? 'Logging…' : sampleCount > 1 ? `Log ${sampleCount} Samples` : 'Log Sample'}</Btn>
               </div>

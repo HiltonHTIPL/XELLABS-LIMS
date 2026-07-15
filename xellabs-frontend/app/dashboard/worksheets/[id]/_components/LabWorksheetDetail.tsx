@@ -348,8 +348,9 @@ export default function LabWorksheetDetail({ worksheet: initialWs, ars, services
 
       {/* Assign modal */}
       {showAssignModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: '#fff', borderRadius: 12, padding: 24, width: 400, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1000 }}>
+          <div onClick={() => setShowAssignModal(false)} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)' }} />
+          <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 420, background: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.15)', overflowY: 'auto', padding: 24 }}>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: '#14265E', margin: '0 0 16px' }}>Assign Test to Worksheet</h3>
             <div style={{ marginBottom: 16 }}>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>Analysis Request</label>
@@ -374,11 +375,16 @@ export default function LabWorksheetDetail({ worksheet: initialWs, ars, services
                 style={{ width: '100%', padding: '8px 10px', border: '1px solid #D1D5DB', borderRadius: 6, fontSize: 13, outline: 'none' }}
               >
                 <option value="">Select…</option>
-                {services.map(s => (
-                  <option key={s.uid} value={s.uid}>
-                    {s.title} ({s.Keyword})
-                  </option>
-                ))}
+                {services.map(s => {
+                  const alreadyAssigned = selectedAr && initialWs.assignments.some(
+                    a => a.analysis_request === Number(selectedAr) && a.senaite_service_uid === s.uid
+                  )
+                  return (
+                    <option key={s.uid} value={s.uid} disabled={!!alreadyAssigned}>
+                      {s.title} ({s.Keyword}){alreadyAssigned ? ' — already assigned' : ''}
+                    </option>
+                  )
+                })}
               </select>
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
