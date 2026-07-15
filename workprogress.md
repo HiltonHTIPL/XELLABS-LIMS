@@ -5,12 +5,10 @@
 
 ---
 
-## 2026-06-30
+## 2026-07-15
 
-- Identified Django Admin superuser username: `admin` (email: `admin@xellabs.com`)
-- Diagnosed that `changepassword` fails non-interactively in Docker; used Django shell `set_password()` workaround instead
-- Reset Django Admin superuser password to `admin123` via shell
-- Explained how to create a Sample Type via REST API and Django Admin
-- Diagnosed "Not available for global schema" issue in Django Admin — caused by multi-tenant setup with only the `public` schema existing
-- Guided tenant creation: schema `liji_groups`, name `Lijish wilson group of companies`
-- Explained full tenant onboarding flow: create tenant → add domain → update Windows hosts file → access tenant admin at `http://liji-groups.localhost:8001/admin/`
+- Fixed Sample ID display mismatch on Samples Overview and Sample Detail pages — both now show the real SENAITE-assigned ID (`senaite_ar_id`) instead of Django's own internal date-stamped `sample_id`.
+- Removed the Django `Test` catalog model entirely (present since the repo's initial commit) — it was a Django-native table for analysis catalog data, only loosely/manually synced to SENAITE.
+- Re-keyed `Specification`, `WorksheetAssignment`, `QCSample`, and `AnalysisRequest` to reference live SENAITE analysis services directly (uid + name) instead of the old Django `Test` foreign key/M2M.
+- Rewired 5 frontend features to match: Specifications, Worksheet assignment, Quality (QC samples), Analysis Requests, and New Sample creation.
+- Wrote a data migration preserving existing rows' display names before dropping the old columns; verified via Django test suite (24/24 passed) and a full frontend production build (53/53 pages).

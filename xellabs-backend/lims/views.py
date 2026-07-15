@@ -10,13 +10,13 @@ from core.permissions import (
     ReadOnlyOrLabManager, ReadOnlyOrAnalystOrAbove, ReadOnlyOrSampleHandler,
 )
 from .models import (
-    SampleType, SampleTemplate, AnalysisProfile, Method, Calculation, Test, Specification,
+    SampleType, SampleTemplate, AnalysisProfile, Method, Calculation, Specification,
     DynamicAnalysisSpecification, AnalysisSpecification,
     Sample, AnalysisRequest, Worksheet, WorksheetAssignment,
     Result, QCSample, ChainOfCustody,
 )
 from .serializers import (
-    SampleTypeSerializer, SampleTemplateSerializer, AnalysisProfileSerializer, MethodSerializer, CalculationSerializer, TestSerializer, SpecificationSerializer,
+    SampleTypeSerializer, SampleTemplateSerializer, AnalysisProfileSerializer, MethodSerializer, CalculationSerializer, SpecificationSerializer,
     DynamicAnalysisSpecificationSerializer, AnalysisSpecificationSerializer,
     SampleSerializer, AnalysisRequestSerializer, WorksheetSerializer,
     WorksheetAssignmentSerializer, ResultSerializer, QCSampleSerializer,
@@ -152,84 +152,6 @@ class CalculationViewSet(viewsets.ModelViewSet):
     search_fields = ["name", "code"]
 
 
-class TestViewSet(viewsets.ModelViewSet):
-    queryset = Test.objects.select_related("method").all()
-    serializer_class = TestSerializer
-    permission_classes = [ReadOnlyOrLabManager]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ["is_active", "method"]
-    search_fields = ["name", "code"]
-
-    @action(detail=False, methods=["post"], url_path="sync-from-senaite")
-    def sync_from_senaite(self, request):
-        """Create any SENAITE Analysis Services missing from Django's Test table,
-        matched by senaite_uid. Without this, Test rows created outside the Analyses
-        admin module (or seeded manually) never carry a senaite_uid, so Sample
-        Template / Analysis Specification auto-populate on the New Sample page can
-        never match anything — same "sync before dropdown" pattern as SampleType."""
-        if request.user.role not in ('admin', 'lab_manager'):
-            return Response(
-                {'detail': 'Only lab managers can sync tests from SENAITE.'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        import base64, requests as http_requests
-        from django.conf import settings
-        senaite_url = settings.SENAITE_URL
-        user = settings.SENAITE_USER
-        pw = settings.SENAITE_PASSWORD
-        token = base64.b64encode(f"{user}:{pw}".encode()).decode()
-        try:
-            resp = http_requests.get(
-                f"{senaite_url}/@@API/senaite/v1/AnalysisService",
-                headers={"Authorization": f"Basic {token}"},
-                params={"complete": "yes", "b_size": 1000},
-                timeout=8,
-            )
-            resp.raise_for_status()
-            senaite_services = resp.json().get("items", [])
-        except Exception as e:
-            from core.senaite_service import _sanitize_error
-            logger.error("Test sync failed: %s", e)
-            return Response(
-                {"detail": f"The lab system is unreachable: {_sanitize_error(str(e))}"},
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
-
-        created_names = []
-        skipped = []
-        for svc in senaite_services:
-            uid = svc.get("uid", "")
-            name = (svc.get("title") or "").strip()
-            code = (svc.get("Keyword") or name[:50] or "").strip()
-            if not name or not uid:
-                continue
-            try:
-                existing_by_uid = Test.objects.filter(senaite_uid=uid).first()
-                if existing_by_uid:
-                    continue
-                existing_by_code = Test.objects.filter(code=code).first()
-                if existing_by_code:
-                    if not existing_by_code.senaite_uid:
-                        # Pre-existing row with a matching code but no senaite_uid yet
-                        # (e.g. hand-seeded) — adopt the uid instead of colliding.
-                        existing_by_code.senaite_uid = uid
-                        existing_by_code.save(update_fields=["senaite_uid"])
-                    continue
-                Test.objects.create(
-                    name=name,
-                    code=code,
-                    unit=(svc.get("Unit") or "")[:50],
-                    senaite_uid=uid,
-                    is_active=True,
-                )
-                created_names.append(name)
-            except Exception as e:
-                logger.warning("Test sync skipped %r: %s", name, e)
-                skipped.append(name)
-
-        return Response({"synced": len(created_names), "created": created_names, "skipped": skipped})
-
-
 class DynamicAnalysisSpecificationViewSet(viewsets.ModelViewSet):
     queryset = DynamicAnalysisSpecification.objects.all()
     serializer_class = DynamicAnalysisSpecificationSerializer
@@ -273,7 +195,7 @@ class DynamicAnalysisSpecificationViewSet(viewsets.ModelViewSet):
 
 
 class AnalysisSpecificationViewSet(viewsets.ModelViewSet):
-    queryset = AnalysisSpecification.objects.select_related("sample_type", "dynamic_spec").prefetch_related("rows__test").all()
+    queryset = AnalysisSpecification.objects.select_related("sample_type", "dynamic_spec").prefetch_related("rows").all()
     serializer_class = AnalysisSpecificationSerializer
     permission_classes = [ReadOnlyOrLabManager]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
@@ -282,11 +204,11 @@ class AnalysisSpecificationViewSet(viewsets.ModelViewSet):
 
 
 class SpecificationViewSet(viewsets.ModelViewSet):
-    queryset = Specification.objects.select_related("test", "specification__sample_type").all()
+    queryset = Specification.objects.select_related("specification__sample_type").all()
     serializer_class = SpecificationSerializer
     permission_classes = [ReadOnlyOrLabManager]
     filter_backends = [DjangoFilterBackend]
-    filterset_fields = ["test", "specification", "is_active"]
+    filterset_fields = ["senaite_service_uid", "specification", "is_active"]
 
 
 class SampleViewSet(viewsets.ModelViewSet):
@@ -417,7 +339,7 @@ class SampleViewSet(viewsets.ModelViewSet):
 
 
 class AnalysisRequestViewSet(viewsets.ModelViewSet):
-    queryset = AnalysisRequest.objects.select_related("sample", "created_by").prefetch_related("tests").all()
+    queryset = AnalysisRequest.objects.select_related("sample", "created_by").prefetch_related("analyses").all()
     serializer_class = AnalysisRequestSerializer
     permission_classes = [ReadOnlyOrSampleHandler]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -475,11 +397,11 @@ class WorksheetViewSet(viewsets.ModelViewSet):
 
 
 class WorksheetAssignmentViewSet(viewsets.ModelViewSet):
-    queryset = WorksheetAssignment.objects.select_related("worksheet", "analysis_request", "test").all()
+    queryset = WorksheetAssignment.objects.select_related("worksheet", "analysis_request").all()
     serializer_class = WorksheetAssignmentSerializer
     permission_classes = [ReadOnlyOrAnalystOrAbove]
     filter_backends = [DjangoFilterBackend]
-    filterset_fields = ["worksheet", "test"]
+    filterset_fields = ["worksheet", "senaite_service_uid"]
 
 
 class ResultViewSet(viewsets.ModelViewSet):
@@ -524,11 +446,11 @@ class ResultViewSet(viewsets.ModelViewSet):
 
 
 class QCSampleViewSet(viewsets.ModelViewSet):
-    queryset = QCSample.objects.select_related("test", "worksheet", "run_by").all()
+    queryset = QCSample.objects.select_related("worksheet", "run_by").all()
     serializer_class = QCSampleSerializer
     permission_classes = [ReadOnlyOrAnalystOrAbove]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ["qc_type", "status", "test", "worksheet"]
+    filterset_fields = ["qc_type", "status", "senaite_service_uid", "worksheet"]
     search_fields = ["qc_id"]
 
     @action(detail=True, methods=["post"], permission_classes=[IsReviewerOrAbove])
@@ -575,7 +497,8 @@ class QCSampleViewSet(viewsets.ModelViewSet):
             from .models import QCSample
             new_qc = QCSample.objects.create(
                 qc_type=qc_sample.qc_type,
-                test=qc_sample.test,
+                senaite_service_uid=qc_sample.senaite_service_uid,
+                senaite_service_name=qc_sample.senaite_service_name,
                 worksheet=qc_sample.worksheet,
                 lot_number=qc_sample.lot_number,
                 expiry_date=qc_sample.expiry_date,

@@ -3,7 +3,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { type EnrichedWorksheet, assignToWorksheet, submitResultValue, verifyResult, submitWorksheetForReview, verifyWorksheet, rejectWorksheet, assignWorksheetAnalyst, assignWorksheetInstrument, assignWorksheetMethod } from '@/app/actions/django-worksheets'
 import { type AnalysisRequest } from '@/app/actions/analysis-requests'
-import { type LimsTest } from '@/app/actions/tests'
+import { type SenaiteAnalysisService } from '@/app/lib/senaite'
 import { type InstrumentOption } from '@/app/actions/instrument-maintenance'
 import { type Method } from '@/app/actions/methods'
 
@@ -27,15 +27,15 @@ const RESULT_STATUS_BADGE: Record<string, { bg: string; color: string }> = {
 }
 
 type Props = {
-  worksheet: EnrichedWorksheet; ars: AnalysisRequest[]; tests: LimsTest[]; users: { id: number; name: string }[]
+  worksheet: EnrichedWorksheet; ars: AnalysisRequest[]; services: SenaiteAnalysisService[]; users: { id: number; name: string }[]
   instruments: InstrumentOption[]; methods: Method[]
 }
 
-export default function LabWorksheetDetail({ worksheet: initialWs, ars, tests, users, instruments, methods }: Props) {
+export default function LabWorksheetDetail({ worksheet: initialWs, ars, services, users, instruments, methods }: Props) {
   const router = useRouter()
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [selectedAr, setSelectedAr] = useState('')
-  const [selectedTest, setSelectedTest] = useState('')
+  const [selectedService, setSelectedService] = useState('')
   const [resultValues, setResultValues] = useState<Record<number, string>>({})
   const [busy, startTransition] = useTransition()
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
@@ -46,13 +46,15 @@ export default function LabWorksheetDetail({ worksheet: initialWs, ars, tests, u
   }
 
   function handleAssign() {
-    if (!selectedAr || !selectedTest) return
+    if (!selectedAr || !selectedService) return
+    const service = services.find(s => s.uid === selectedService)
+    if (!service) return
     startTransition(async () => {
-      const res = await assignToWorksheet(initialWs.id, Number(selectedAr), Number(selectedTest))
+      const res = await assignToWorksheet(initialWs.id, Number(selectedAr), service.uid, service.title)
       if (res.success) {
         showToast(true, res.message)
         setSelectedAr('')
-        setSelectedTest('')
+        setSelectedService('')
         setShowAssignModal(false)
         router.refresh()
       } else {
@@ -294,7 +296,7 @@ export default function LabWorksheetDetail({ worksheet: initialWs, ars, tests, u
                     <tr key={a.id} style={{ background: i % 2 === 0 ? '#fff' : '#FAFAFA', borderBottom: '1px solid #F3F4F6' }}>
                       <td style={{ padding: '12px 14px', fontSize: 13, color: '#2563EB', fontWeight: 600 }}>{a.ar_id}</td>
                       <td style={{ padding: '12px 14px', fontSize: 13, color: '#374151' }}>{a.sample_id}</td>
-                      <td style={{ padding: '12px 14px', fontSize: 13, color: '#374151' }}>{a.test_name}</td>
+                      <td style={{ padding: '12px 14px', fontSize: 13, color: '#374151' }}>{a.senaite_service_name}</td>
                       <td style={{ padding: '12px 14px', fontSize: 13, color: '#374151' }}>{a.instrument_name || '—'}</td>
                       <td style={{ padding: '12px 14px', fontSize: 13, color: '#374151' }}>{a.method_name || '—'}</td>
                       <td style={{ padding: '12px 14px' }}>
@@ -367,14 +369,14 @@ export default function LabWorksheetDetail({ worksheet: initialWs, ars, tests, u
             <div style={{ marginBottom: 16 }}>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>Test</label>
               <select
-                value={selectedTest}
-                onChange={e => setSelectedTest(e.target.value)}
+                value={selectedService}
+                onChange={e => setSelectedService(e.target.value)}
                 style={{ width: '100%', padding: '8px 10px', border: '1px solid #D1D5DB', borderRadius: 6, fontSize: 13, outline: 'none' }}
               >
                 <option value="">Select…</option>
-                {tests.filter(t => t.is_active).map(t => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} ({t.code})
+                {services.map(s => (
+                  <option key={s.uid} value={s.uid}>
+                    {s.title} ({s.Keyword})
                   </option>
                 ))}
               </select>
@@ -388,8 +390,8 @@ export default function LabWorksheetDetail({ worksheet: initialWs, ars, tests, u
               </button>
               <button
                 onClick={handleAssign}
-                disabled={busy || !selectedAr || !selectedTest}
-                style={{ padding: '8px 16px', borderRadius: 6, border: 'none', background: '#0154FC', color: '#fff', fontSize: 12, fontWeight: 600, cursor: busy || !selectedAr || !selectedTest ? 'not-allowed' : 'pointer', opacity: busy || !selectedAr || !selectedTest ? 0.6 : 1 }}
+                disabled={busy || !selectedAr || !selectedService}
+                style={{ padding: '8px 16px', borderRadius: 6, border: 'none', background: '#0154FC', color: '#fff', fontSize: 12, fontWeight: 600, cursor: busy || !selectedAr || !selectedService ? 'not-allowed' : 'pointer', opacity: busy || !selectedAr || !selectedService ? 0.6 : 1 }}
               >
                 {busy ? 'Assigning…' : 'Assign'}
               </button>

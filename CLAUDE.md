@@ -529,9 +529,12 @@ When the user says to push the code, follow these steps in order — do not skip
 3. **Pull that branch** — `git pull <remote> <branch>`.
 4. **Merge the pulled code into the project** — resolve any conflicts with the user if they come up; never silently discard either side.
 5. **Merge the stash back in** — `git stash pop` — resolve any stash-vs-pull conflicts the same way.
-6. **Ask the user which branch to push to** if not already stated, then push — `git push <remote> <branch>`.
+6. **Run the pre-push checks BEFORE pushing** — run the `.githooks/pre-push` suite (see Section 15b) and confirm it passes: no `.env`/secrets staged → Django `check` → `makemigrations --check --dry-run` → Django tests → `tsc --noEmit` → ESLint (warns only) → `npm run build`. If `git config core.hooksPath .githooks` is set for this clone, `git push` runs it automatically; if not, run the checks explicitly first (or run `bash .githooks/pre-push`). **Never push while any blocking check is failing** — fix the failure first (only `git push --no-verify` for a genuinely urgent push, and only if the user explicitly says so).
+7. **Ask the user which branch to push to** if not already stated, then push — `git push <remote> <branch>`.
 
-Never reorder this (e.g. never push before pulling/merging), and never force-push (`--force`/`-f`) unless the user explicitly asks for it in that exact request.
+Never reorder this (e.g. never push before pulling/merging or before the pre-push checks pass), and never force-push (`--force`/`-f`) unless the user explicitly asks for it in that exact request.
+
+**One-time per clone (does NOT carry over from another machine — the hook file being present in the repo is not enough on its own):** run `git config core.hooksPath .githooks` once so `git push` actually runs the pre-push checks. Without it, the hook is silently skipped. Pass this along to any colleague who hasn't set it up.
 
 ---
 

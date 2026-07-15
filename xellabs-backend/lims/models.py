@@ -92,24 +92,6 @@ class Method(models.Model):
         return self.name
 
 
-class Test(models.Model):
-    name = models.CharField(max_length=200)
-    code = models.CharField(max_length=50, unique=True)
-    description = models.TextField(blank=True)
-    unit = models.CharField(max_length=50, blank=True)
-    price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    method = models.ForeignKey(Method, null=True, blank=True, on_delete=models.SET_NULL)
-    is_active = models.BooleanField(default=True)
-    senaite_uid = models.CharField(max_length=100, blank=True, db_index=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table = "tests"
-
-    def __str__(self):
-        return self.name
-
-
 class DynamicAnalysisSpecification(models.Model):
     """Mirrors SENAITE's DynamicAnalysisSpec — an uploaded Excel file of
     Keyword/min/max spec rows. Unlike Specification below, this one has no
@@ -166,7 +148,10 @@ class Specification(models.Model):
     ]
 
     specification = models.ForeignKey(AnalysisSpecification, on_delete=models.CASCADE, related_name="rows")
-    test = models.ForeignKey(Test, on_delete=models.CASCADE, related_name="specifications")
+    # References a SENAITE AnalysisService (uid) directly — SENAITE is the single
+    # source of truth for "what analyses exist", not a mirrored Django table.
+    senaite_service_uid = models.CharField(max_length=100, db_index=True, default="", blank=True)
+    senaite_service_name = models.CharField(max_length=200, blank=True)
     min_value = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
     max_value = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
     min_operator = models.CharField(max_length=5, default=">=", choices=OPERATOR_CHOICES)
@@ -317,7 +302,6 @@ class AnalysisRequest(models.Model):
     ]
     ar_id = models.CharField(max_length=50, unique=True)
     sample = models.ForeignKey(Sample, on_delete=models.CASCADE, related_name="analysis_requests")
-    tests = models.ManyToManyField(Test, related_name="analysis_requests")
     status = models.CharField(max_length=20, choices=STATUS, default="pending")
     priority = models.CharField(max_length=20, default="normal",
                                 choices=[("low", "Low"), ("normal", "Normal"), ("high", "High"), ("urgent", "Urgent")])
@@ -338,6 +322,21 @@ class AnalysisRequest(models.Model):
 
     def __str__(self):
         return self.ar_id
+
+
+class AnalysisRequestAnalysis(models.Model):
+    """One SENAITE analysis service requested on an AnalysisRequest — replaces
+    the old tests M2M (SENAITE is the source of truth for analyses, not a
+    mirrored Django table)."""
+    analysis_request = models.ForeignKey(AnalysisRequest, on_delete=models.CASCADE, related_name="analyses")
+    senaite_service_uid = models.CharField(max_length=100, db_index=True, default="", blank=True)
+    senaite_service_name = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        db_table = "analysis_request_analyses"
+        indexes = [
+            models.Index(fields=["analysis_request"], name="ara_ar_idx"),
+        ]
 
 
 class Worksheet(models.Model):
@@ -369,7 +368,8 @@ class Worksheet(models.Model):
 class WorksheetAssignment(models.Model):
     worksheet = models.ForeignKey(Worksheet, on_delete=models.CASCADE, related_name="assignments")
     analysis_request = models.ForeignKey(AnalysisRequest, on_delete=models.CASCADE)
-    test = models.ForeignKey(Test, on_delete=models.PROTECT)
+    senaite_service_uid = models.CharField(max_length=100, db_index=True, default="", blank=True)
+    senaite_service_name = models.CharField(max_length=200, blank=True)
     # Defaulted from the parent worksheet's instrument/method at assignment-creation
     # time (see WorksheetAssignmentSerializer.create), then kept in sync whenever the
     # worksheet's own instrument/method changes (see WorksheetSerializer.update) —
@@ -433,7 +433,8 @@ class QCSample(models.Model):
     ]
     qc_id = models.CharField(max_length=50, unique=True)
     qc_type = models.CharField(max_length=20, choices=QC_TYPE)
-    test = models.ForeignKey(Test, on_delete=models.PROTECT, related_name="qc_samples")
+    senaite_service_uid = models.CharField(max_length=100, db_index=True, default="", blank=True)
+    senaite_service_name = models.CharField(max_length=200, blank=True)
     worksheet = models.ForeignKey(Worksheet, null=True, blank=True, on_delete=models.SET_NULL, related_name="qc_samples")
     lot_number = models.CharField(max_length=100, blank=True)
     expiry_date = models.DateField(null=True, blank=True)

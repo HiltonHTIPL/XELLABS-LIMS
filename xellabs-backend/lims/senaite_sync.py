@@ -83,7 +83,7 @@ def pull_samples_and_results():
     and Result values.
     Returns a dict summary: {synced, skipped, errors}
     """
-    from lims.models import Sample, AnalysisRequest, Result, WorksheetAssignment, Test
+    from lims.models import Sample, AnalysisRequest, Result, WorksheetAssignment
 
     senaite_url, _, _ = _senaite_creds()
     if not senaite_url:
@@ -170,7 +170,7 @@ def _sync_results(session, sample, ar_uid: str):
     update/create Result records in Django.
     """
     from lims.models import (
-        AnalysisRequest, WorksheetAssignment, Result, Test, Worksheet
+        AnalysisRequest, WorksheetAssignment, Result, Worksheet
     )
     from django.contrib.auth import get_user_model
     User = get_user_model()
@@ -222,18 +222,14 @@ def _sync_results(session, sample, ar_uid: str):
         }
         result_status = result_status_map.get(ana_state, "pending")
 
-        # Find matching test in Django by name
-        test = Test.objects.filter(name__iexact=test_title).first()
-        if not test:
-            logger.debug("No Django Test matching '%s' — skipping result", test_title)
-            continue
-
-        # Find WorksheetAssignment for this test + AR, locking it against a
+        # Find WorksheetAssignment for this analysis + AR, locking it against a
         # concurrent instrument-import task writing to the same Result.
+        # Matched by SENAITE service name directly (no Django Test mirror
+        # table anymore — SENAITE is the sole source of truth for analyses).
         with transaction.atomic():
             wa = WorksheetAssignment.objects.select_for_update().filter(
                 analysis_request=django_ar,
-                test=test,
+                senaite_service_name__iexact=test_title,
             ).first()
 
             if not wa:
@@ -248,7 +244,7 @@ def _sync_results(session, sample, ar_uid: str):
                 worksheet_assignment=wa,
                 defaults={
                     "value": result_value,
-                    "unit": result_unit or test.unit,
+                    "unit": result_unit,
                     "status": result_status,
                     "is_out_of_range": is_out_of_range,
                 },
@@ -256,7 +252,7 @@ def _sync_results(session, sample, ar_uid: str):
 
             if not created and not result.is_locked:
                 result.value = result_value
-                result.unit = result_unit or test.unit
+                result.unit = result_unit
                 result.status = result_status
                 result.is_out_of_range = is_out_of_range
                 result.save(update_fields=["value", "unit", "status", "is_out_of_range"])

@@ -53,14 +53,13 @@ class RBACTest(TenantAPITestCase):
         self.assertEqual(r.status_code, status.HTTP_200_OK)
 
     def test_analyst_cannot_verify_result(self):
-        from lims.models import SampleType, Method, Test, Sample, AnalysisRequest, Worksheet, WorksheetAssignment, Result
+        from lims.models import SampleType, Method, Sample, AnalysisRequest, Worksheet, WorksheetAssignment, Result
         from core.models import Client
 
         _, admin_key = make_user("rbac_admin2", role="admin")
         client_obj = Client.objects.create(name="RBAC Client")
         st = SampleType.objects.create(name="RBAC ST", prefix="RB")
-        method = Method.objects.create(name="RBAC Method", code="RB-MTH")
-        test = Test.objects.create(name="RBAC Test", code="RB-TST", method=method)
+        Method.objects.create(name="RBAC Method", code="RB-MTH")
 
         admin_user = User.objects.get(username="rbac_admin2")
         sample = Sample.objects.create(
@@ -69,9 +68,10 @@ class RBACTest(TenantAPITestCase):
         ar = AnalysisRequest.objects.create(
             ar_id="AR-RB-001", sample=sample, created_by=admin_user
         )
-        ar.tests.add(test)
         ws = Worksheet.objects.create(ws_id="WS-RB-001", analyst=admin_user)
-        wa = WorksheetAssignment.objects.create(worksheet=ws, analysis_request=ar, test=test)
+        wa = WorksheetAssignment.objects.create(
+            worksheet=ws, analysis_request=ar, senaite_service_uid="rb-tst-uid", senaite_service_name="RBAC Test"
+        )
         result = Result.objects.create(worksheet_assignment=wa, value="5.2", status="submitted")
 
         self._auth("analyst")
@@ -79,14 +79,13 @@ class RBACTest(TenantAPITestCase):
         self.assertEqual(r.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_reviewer_can_verify_result(self):
-        from lims.models import SampleType, Method, Test, Sample, AnalysisRequest, Worksheet, WorksheetAssignment, Result
+        from lims.models import SampleType, Method, Sample, AnalysisRequest, Worksheet, WorksheetAssignment, Result
         from core.models import Client
 
         _, admin_key = make_user("rbac_admin3", role="admin")
         client_obj = Client.objects.create(name="RBAC Client 2")
         st = SampleType.objects.create(name="RBAC ST2", prefix="RC")
-        method = Method.objects.create(name="RBAC Method2", code="RC-MTH")
-        test = Test.objects.create(name="RBAC Test2", code="RC-TST", method=method)
+        Method.objects.create(name="RBAC Method2", code="RC-MTH")
 
         admin_user = User.objects.get(username="rbac_admin3")
         sample = Sample.objects.create(
@@ -95,9 +94,10 @@ class RBACTest(TenantAPITestCase):
         ar = AnalysisRequest.objects.create(
             ar_id="AR-RC-001", sample=sample, created_by=admin_user
         )
-        ar.tests.add(test)
         ws = Worksheet.objects.create(ws_id="WS-RC-001", analyst=admin_user)
-        wa = WorksheetAssignment.objects.create(worksheet=ws, analysis_request=ar, test=test)
+        wa = WorksheetAssignment.objects.create(
+            worksheet=ws, analysis_request=ar, senaite_service_uid="rc-tst-uid", senaite_service_name="RBAC Test2"
+        )
         result = Result.objects.create(worksheet_assignment=wa, value="5.2", status="submitted")
 
         self._auth("reviewer")

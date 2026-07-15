@@ -176,7 +176,7 @@
         <tr>
           <td>{{ qc.qc_id }}</td>
           <td>{{ qc.get_qc_type_display }}</td>
-          <td>{{ qc.test.name }}</td>
+          <td>{{ qc.senaite_service_name }}</td>
           <td>{{ qc.target_value|default:"—" }}</td>
           <td>{{ qc.actual_value|default:"—" }}</td>
           <td>{% if qc.tolerance_percent %}± {{ qc.tolerance_percent }}%{% else %}—{% endif %}</td>

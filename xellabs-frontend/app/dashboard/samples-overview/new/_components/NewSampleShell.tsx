@@ -3,9 +3,8 @@ import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createSampleWithAnalyses, type DjangoSampleType } from '@/app/actions/lab-samples'
 import { type DjangoClient } from '@/app/actions/clients'
-import { type LimsTest } from '@/app/actions/tests'
 import { type AnalysisSpecification } from '@/app/actions/specifications'
-import { type SenaiteBatch, type SenaiteSampleTemplate, type SenaiteRefOption } from '@/app/lib/senaite'
+import { type SenaiteBatch, type SenaiteSampleTemplate, type SenaiteRefOption, type SenaiteAnalysisService } from '@/app/lib/senaite'
 import StorageLocationInput from '@/app/dashboard/_components/StorageLocationInput'
 
 const CONTAINER_OPTIONS = [
@@ -77,7 +76,7 @@ type SampleForm = {
   containerType: string; preservation: string; analysisSpec: string; samplePoint: string
   storageLocation: string; storageLabelCode: string; samplingDeviation: string; condition: string; priority: string
   envConditions: string; composite: boolean; internalUse: boolean; clientOrderNum: string
-  clientReference: string; clientSampleId: string; remarks: string; selectedTests: LimsTest[]
+  clientReference: string; clientSampleId: string; remarks: string; selectedTests: SenaiteAnalysisService[]
 }
 
 function blankForm(): SampleForm {
@@ -93,12 +92,12 @@ function blankForm(): SampleForm {
 }
 
 type Props = {
-  sampleTypes: DjangoSampleType[]; clients: DjangoClient[]; tests: LimsTest[]
+  sampleTypes: DjangoSampleType[]; clients: DjangoClient[]; services: SenaiteAnalysisService[]
   sampleTemplates: SenaiteSampleTemplate[]; sampleContainers: SenaiteRefOption[]; batches: SenaiteBatch[]
   analysisSpecifications: AnalysisSpecification[]; preservations: SenaiteRefOption[]
 }
 
-export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemplates, sampleContainers, batches, analysisSpecifications, preservations }: Props) {
+export default function NewSampleShell({ sampleTypes, clients, services, sampleTemplates, sampleContainers, batches, analysisSpecifications, preservations }: Props) {
   const router = useRouter()
   // Pre-select a Batch when arriving from that batch's "New Sample" button
   // (/dashboard/samples-overview/new?batch=<uid>) — only applied to the first
@@ -234,8 +233,7 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
           client_senaite_uid: client?.senaite_uid || undefined,
           sample_type_senaite_uid: sampleType?.senaite_uid || undefined,
         },
-        asDraft ? [] : f.selectedTests.map(t => t.id),
-        asDraft ? [] : f.selectedTests.map(t => t.senaite_uid).filter((u): u is string => Boolean(u)),
+        asDraft ? [] : f.selectedTests.map(t => ({ uid: t.uid, name: t.title })),
       )
     })
     setSubmitting(false)
@@ -324,8 +322,8 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
       ? sampleContainers.find(c => c.uid === firstContainerUid)?.title ?? ''
       : ''
     const matchedSampleType = template ? sampleTypes.find(st => st.senaite_uid === template.sampleTypeUid) : undefined
-    const matchedTests = template
-      ? tests.filter(t => templateServices.some(a => a.uid === t.senaite_uid))
+    const matchedServices = template
+      ? services.filter(s => templateServices.some(a => a.uid === s.uid))
       : []
     const allowedContainers = template ? containerOptionsFor(templateContainer) : CONTAINER_OPTIONS
     setForms(prev => prev.map((form, i) => i === activeTab ? {
@@ -334,8 +332,8 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
       sampleTypeId: matchedSampleType ? String(matchedSampleType.id) : form.sampleTypeId,
       containerType: template ? (allowedContainers[0]?.value ?? '') : form.containerType,
       suggestedContainer: templateContainer,
-      analysisProfiles: template ? matchedTests.map(t => t.name) : form.analysisProfiles,
-      selectedTests: matchedTests.length ? matchedTests : form.selectedTests,
+      analysisProfiles: template ? matchedServices.map(s => s.title) : form.analysisProfiles,
+      selectedTests: matchedServices.length ? matchedServices : form.selectedTests,
     } : form))
   }
 
@@ -349,34 +347,34 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
   }
 
   // Selecting an Analysis Specification auto-fills Lab Analyses from its rows —
-  // rows already store Django Test ids directly (no senaite_uid matching needed,
-  // unlike Sample Template above, since Specification rows are Django-only).
+  // rows store the SENAITE service uid directly, matched against the live
+  // services list (same pattern as Sample Template above).
   function handleAnalysisSpecChange(specId: string) {
     const spec = analysisSpecifications.find(s => String(s.id) === specId)
-    const matchedTests = spec
-      ? tests.filter(t => spec.rows.some(r => r.test === t.id))
+    const matchedServices = spec
+      ? services.filter(sv => spec.rows.some(r => r.senaite_service_uid === sv.uid))
       : []
     setForms(prev => prev.map((form, i) => i === activeTab ? {
       ...form,
       analysisSpec: specId,
-      selectedTests: matchedTests.length ? matchedTests : form.selectedTests,
+      selectedTests: matchedServices.length ? matchedServices : form.selectedTests,
     } : form))
   }
 
-  function addTest(t: LimsTest) {
-    if (!f.selectedTests.find(x => x.id === t.id)) set('selectedTests', [...f.selectedTests, t])
+  function addTest(s: SenaiteAnalysisService) {
+    if (!f.selectedTests.find(x => x.uid === s.uid)) set('selectedTests', [...f.selectedTests, s])
     setShowAddAnalysis(false); setAnalysisSearch('')
   }
-  function removeTest(id: number) { set('selectedTests', f.selectedTests.filter(t => t.id !== id)) }
+  function removeTest(uid: string) { set('selectedTests', f.selectedTests.filter(t => t.uid !== uid)) }
 
-  const filteredTests = tests.filter(t =>
-    !f.selectedTests.find(s => s.id === t.id) &&
-    (t.name.toLowerCase().includes(analysisSearch.toLowerCase()) || t.code.toLowerCase().includes(analysisSearch.toLowerCase()))
+  const filteredTests = services.filter(s =>
+    !f.selectedTests.find(x => x.uid === s.uid) &&
+    (s.title.toLowerCase().includes(analysisSearch.toLowerCase()) || s.Keyword.toLowerCase().includes(analysisSearch.toLowerCase()))
   )
 
   // Pricing — active tab only
   const VAT_RATE = 0.15
-  const subtotal = f.selectedTests.reduce((sum, t) => sum + parseFloat(t.price ?? '0'), 0)
+  const subtotal = f.selectedTests.reduce((sum, t) => sum + parseFloat(t.Price || '0'), 0)
   const vat = subtotal * VAT_RATE
   const total = subtotal + vat
 
@@ -801,23 +799,13 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
               </thead>
               <tbody>
                 {f.selectedTests.map((t, i) => (
-                  <tr key={t.id} style={{ borderBottom: '1px solid #F9FAFB' }}>
+                  <tr key={t.uid} style={{ borderBottom: '1px solid #F9FAFB' }}>
                     <td style={{ padding: '8px 12px', color: '#9CA3AF', fontWeight: 600 }}>{i + 1}</td>
-                    <td style={{ padding: '8px 8px', color: '#111827', fontWeight: 500 }}>
-                      {t.name}
-                      {!t.senaite_uid && (
-                        <span
-                          title="Not linked to a lab analysis — this test will NOT be attached to the sample"
-                          style={{ marginLeft: 6, fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 999, backgroundColor: '#FEF2F2', color: '#991B1B' }}
-                        >
-                          Not linked
-                        </span>
-                      )}
-                    </td>
-                    <td style={{ padding: '8px 8px', color: '#6B7280' }}>{t.method_code || t.code}</td>
-                    <td style={{ padding: '8px 8px', textAlign: 'right', color: '#374151', fontWeight: 500 }}>{t.price ? `$${parseFloat(t.price).toFixed(2)}` : '—'}</td>
+                    <td style={{ padding: '8px 8px', color: '#111827', fontWeight: 500 }}>{t.title}</td>
+                    <td style={{ padding: '8px 8px', color: '#6B7280' }}>{t.Keyword}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right', color: '#374151', fontWeight: 500 }}>{t.Price ? `$${parseFloat(t.Price).toFixed(2)}` : '—'}</td>
                     <td style={{ padding: '8px 6px' }}>
-                      <button type="button" onClick={() => removeTest(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                      <button type="button" onClick={() => removeTest(t.uid)} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                         <MI name="delete_outline" size={16} color="#9CA3AF" />
                       </button>
                     </td>
@@ -842,23 +830,13 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
                   {filteredTests.length === 0
                     ? <div style={{ padding: '10px', fontSize: 12, color: '#9CA3AF', textAlign: 'center' }}>No tests found</div>
                     : filteredTests.slice(0, 20).map(t => (
-                      <button key={t.id} type="button" onClick={() => addTest(t)}
+                      <button key={t.uid} type="button" onClick={() => addTest(t)}
                         style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '8px 10px', border: 'none', borderBottom: '1px solid #F9FAFB', background: '#fff', cursor: 'pointer', textAlign: 'left' }}>
                         <div>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>
-                            {t.name}
-                            {!t.senaite_uid && (
-                              <span
-                                title="Not linked to a lab analysis — this test will NOT be attached to the sample"
-                                style={{ marginLeft: 5, fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 999, backgroundColor: '#FEF2F2', color: '#991B1B' }}
-                              >
-                                Not linked
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ fontSize: 11, color: '#9CA3AF' }}>{t.code}</div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>{t.title}</div>
+                          <div style={{ fontSize: 11, color: '#9CA3AF' }}>{t.Keyword}</div>
                         </div>
-                        {t.price && <span style={{ fontSize: 12, color: '#374151', fontWeight: 500 }}>${parseFloat(t.price).toFixed(2)}</span>}
+                        {t.Price && <span style={{ fontSize: 12, color: '#374151', fontWeight: 500 }}>${parseFloat(t.Price).toFixed(2)}</span>}
                       </button>
                     ))
                   }

@@ -235,10 +235,9 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
   const badge = STATUS_BADGE[sample.status] ?? { bg: '#F3F4F6', color: '#374151', label: sample.status }
   const pBadge = PRIORITY_BADGE[sample.priority] ?? { bg: '#F3F4F6', color: '#374151' }
 
-  // Flatten analysis requests -> one row per test
+  // Flatten analysis requests -> one row per analysis
   const analysisRows = analysisRequests.flatMap(ar =>
-    (ar.tests_detail?.length ? ar.tests_detail : ar.test_names?.map((n, i) => ({ id: i, name: n, code: '', unit: '' })) ?? [])
-      .map(t => ({ test: t, ar }))
+    ar.analyses.map(a => ({ test: { name: a.senaite_service_name }, ar }))
   )
 
   return (

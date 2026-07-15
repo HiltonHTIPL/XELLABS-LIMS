@@ -1,9 +1,8 @@
 from django.contrib import admin
-from .models import SampleType, Method, Test, Specification, AnalysisSpecification, Sample, AnalysisRequest, Worksheet, WorksheetAssignment, Result
+from .models import SampleType, Method, Specification, AnalysisSpecification, Sample, AnalysisRequest, Worksheet, WorksheetAssignment, Result
 
 admin.site.register(SampleType)
 admin.site.register(Method)
-admin.site.register(Test)
 admin.site.register(Specification)
 admin.site.register(AnalysisSpecification)
 

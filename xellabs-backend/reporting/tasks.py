@@ -68,7 +68,7 @@ def generate_coa_pdf(self, report_id, schema_name="public"):
                 assignments = WorksheetAssignment.objects.filter(
                     analysis_request__sample=sample
                 ).select_related(
-                    "test__method",
+                    "method",
                     "analysis_request",
                     "worksheet__analyst",
                     "result__submitted_by",
@@ -76,16 +76,16 @@ def generate_coa_pdf(self, report_id, schema_name="public"):
                 )
 
                 # Fetch every relevant spec in one query instead of one query per row (N+1).
-                test_ids = assignments.values_list("test_id", flat=True)
-                specs_by_test = {}
+                service_uids = assignments.values_list("senaite_service_uid", flat=True)
+                specs_by_service = {}
                 for spec in Specification.objects.filter(
-                    test_id__in=test_ids, sample_type=sample.sample_type, is_active=True
+                    senaite_service_uid__in=service_uids, specification__sample_type=sample.sample_type, is_active=True
                 ):
-                    specs_by_test.setdefault(spec.test_id, spec)
+                    specs_by_service.setdefault(spec.senaite_service_uid, spec)
 
                 for wa in assignments:
                     result = getattr(wa, "result", None)
-                    spec = specs_by_test.get(wa.test_id)
+                    spec = specs_by_service.get(wa.senaite_service_uid)
 
                     spec_str = ""
                     if spec:
@@ -97,10 +97,10 @@ def generate_coa_pdf(self, report_id, schema_name="public"):
                         spec_str = "  ".join(parts)
 
                     results.append({
-                        "test_name": wa.test.name,
-                        "method_name": wa.test.method.name if wa.test.method else "",
+                        "test_name": wa.senaite_service_name,
+                        "method_name": wa.method.name if wa.method else "",
                         "value": result.value if result else "",
-                        "unit": result.unit if result else wa.test.unit,
+                        "unit": result.unit if result else "",
                         "spec": spec_str,
                         "status": result.status if result else "pending",
                         "is_out_of_range": result.is_out_of_range if result else False,
@@ -117,7 +117,6 @@ def generate_coa_pdf(self, report_id, schema_name="public"):
                 worksheet_ids = assignments.values_list("worksheet_id", flat=True).distinct()
                 qc_samples = list(
                     QCSample.objects.filter(worksheet_id__in=worksheet_ids)
-                    .select_related("test")
                     .order_by("created_at")
                 )
 

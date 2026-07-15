@@ -252,23 +252,12 @@ def push_analysis_request(ar) -> str | None:
         )
         return None
 
-    # Analyses must be a list of Analysis Service UIDs, not {"title": ...} objects.
-    analysis_uids = []
-    missing_tests = []
-    for test in ar.tests.all():
-        svc = _find_by_title("AnalysisService", test.name)
-        if svc and svc.get("uid"):
-            analysis_uids.append(svc["uid"])
-        else:
-            missing_tests.append(test.name)
-    if missing_tests:
-        logger.warning(
-            "AR %s: no SENAITE Analysis Service found for test(s) %s — create them in SENAITE "
-            "(Setup > Analysis Services) with a title exactly matching the Test name.",
-            ar.ar_id, missing_tests,
-        )
+    # Analyses must be a list of Analysis Service UIDs — already stored directly
+    # on each AnalysisRequestAnalysis row (picked from a live SENAITE services
+    # list on the frontend), no name-matching lookup needed anymore.
+    analysis_uids = [a.senaite_service_uid for a in ar.analyses.all() if a.senaite_service_uid]
     if not analysis_uids:
-        logger.error("Cannot push AR %s — none of its tests have a matching SENAITE Analysis Service.", ar.ar_id)
+        logger.error("Cannot push AR %s — it has no analyses with a SENAITE service UID.", ar.ar_id)
         return None
 
     from django.utils import timezone

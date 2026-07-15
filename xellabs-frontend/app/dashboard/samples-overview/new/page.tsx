@@ -1,6 +1,6 @@
-import { getDjangoSampleTypes, syncSampleTypesFromSenaite, syncTestsFromSenaite } from '@/app/actions/lab-samples'
+import { getDjangoSampleTypes, syncSampleTypesFromSenaite } from '@/app/actions/lab-samples'
 import { getClients } from '@/app/actions/clients'
-import { getTests } from '@/app/actions/tests'
+import { getAnalysisServices } from '@/app/actions/samples'
 import { getSampleTemplatesPageData } from '@/app/actions/sample-templates'
 import { getBatchesList } from '@/app/actions/batches'
 import { getAnalysisSpecifications } from '@/app/actions/specifications'
@@ -8,15 +8,15 @@ import { getPreservations } from '@/app/actions/reference-data'
 import NewSampleShell from './_components/NewSampleShell'
 
 export default async function NewSamplePage() {
-  // Sync SENAITE types/services to Django silently before fetching — ensures all configured
-  // types and analysis services are available for Sample Template / Analysis Specification
-  // auto-populate to actually find a match (they match by senaite_uid on the Test row).
-  await Promise.all([syncSampleTypesFromSenaite(), syncTestsFromSenaite()])
+  // Sync SENAITE sample types to Django silently before fetching — ensures all
+  // configured types are available for Sample Template auto-populate to match
+  // (by senaite_uid). Analysis services are fetched live, no sync needed.
+  await syncSampleTypesFromSenaite()
 
-  const [sampleTypes, clients, tests, templateData, batches, analysisSpecifications, preservations] = await Promise.all([
+  const [sampleTypes, clients, services, templateData, batches, analysisSpecifications, preservations] = await Promise.all([
     getDjangoSampleTypes(),
     getClients(),
-    getTests(),
+    getAnalysisServices(),
     getSampleTemplatesPageData(),
     getBatchesList(),
     getAnalysisSpecifications(),
@@ -26,7 +26,7 @@ export default async function NewSamplePage() {
     <NewSampleShell
       sampleTypes={sampleTypes}
       clients={clients}
-      tests={tests.filter(t => t.is_active)}
+      services={services}
       sampleTemplates={templateData.sampleTemplates}
       sampleContainers={templateData.sampleContainers}
       batches={batches}

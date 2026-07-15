@@ -116,11 +116,13 @@ function senaitePriority(priority: string): string {
   return '3'
 }
 
+export type SelectedAnalysis = { uid: string; name: string }
+
 export async function createSampleWithAnalyses(
   payload: NewSamplePayload,
-  testIds: number[],
-  testSenaiteUids: string[] = [],
+  analyses: SelectedAnalysis[],
 ): Promise<{ success: boolean; message: string; sample_id?: string; id?: number }> {
+  const testSenaiteUids = analyses.map(a => a.uid).filter(Boolean)
   try {
     // ── SENAITE is the source of truth for samples ────────────────────────────
     // Step 1: create the sample in SENAITE FIRST. If SENAITE rejects it (or the
@@ -193,12 +195,12 @@ export async function createSampleWithAnalyses(
     }
 
     // Step 3: Django analysis-request record if tests selected
-    if (testIds.length > 0) {
+    if (analyses.length > 0) {
       const arRes = await djangoFetch('/api/lims/analysis-requests/', {
         method: 'POST',
         body: JSON.stringify({
           sample: sampleId,
-          tests: testIds,
+          analyses: analyses.map(a => ({ senaite_service_uid: a.uid, senaite_service_name: a.name })),
           status: 'pending',
           priority: payload.priority === 'high' ? 'high' : payload.priority === 'low' ? 'low' : 'normal',
         }),
@@ -435,12 +437,6 @@ export async function uploadSampleAttachment(sampleId: string, formData: FormDat
 export async function syncSampleTypesFromSenaite(): Promise<void> {
   try {
     await djangoFetch('/api/lims/sample-types/sync-from-senaite/', { method: 'POST' })
-  } catch { /* non-fatal — new sample page still loads */ }
-}
-
-export async function syncTestsFromSenaite(): Promise<void> {
-  try {
-    await djangoFetch('/api/lims/tests/sync-from-senaite/', { method: 'POST' })
   } catch { /* non-fatal — new sample page still loads */ }
 }
 

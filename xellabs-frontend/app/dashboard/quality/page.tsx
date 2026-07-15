@@ -1,12 +1,12 @@
 import { getQCSamples, getQCWorksheets } from '@/app/actions/quality'
-import { getTests } from '@/app/actions/tests'
+import { getAnalysisServices } from '@/app/actions/samples'
 import QualityShell from './_components/QualityShell'
 
 export default async function QualityPage() {
-  const [qcSamples, tests, worksheets] = await Promise.all([
+  const [qcSamples, services, worksheets] = await Promise.all([
     getQCSamples(),
-    getTests(),
+    getAnalysisServices(),
     getQCWorksheets(),
   ])
-  return <QualityShell initialQCSamples={qcSamples} tests={tests} worksheets={worksheets} />
+  return <QualityShell initialQCSamples={qcSamples} services={services} worksheets={worksheets} />
 }

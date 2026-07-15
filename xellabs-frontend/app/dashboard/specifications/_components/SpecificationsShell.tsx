@@ -9,7 +9,7 @@ import {
   type SpecificationRow,
   type SpecificationFormState,
 } from '@/app/actions/specifications'
-import type { LimsTest } from '@/app/actions/tests'
+import type { SenaiteAnalysisService } from '@/app/lib/senaite'
 import type { DjangoSampleType } from '@/app/actions/lab-samples'
 import type { DynamicAnalysisSpecification } from '@/app/actions/dynamic-analysis-specifications'
 import { ConfirmModal } from '@/app/dashboard/_components/ui'
@@ -41,17 +41,17 @@ function inputStyle(error?: string) {
 
 type RowState = SpecificationRow & { selected: boolean }
 
-function blankRow(testId: number): RowState {
+function blankRow(uid: string, name: string): RowState {
   return {
-    test: testId, min_value: null, max_value: null, min_operator: '>=', max_operator: '<=',
+    senaite_service_uid: uid, senaite_service_name: name, min_value: null, max_value: null, min_operator: '>=', max_operator: '<=',
     min_warn: null, max_warn: null, out_of_range_low: '', out_of_range_high: '', out_of_range_comment: '',
     is_active: true, selected: false,
   }
 }
 
-function SpecificationModal({ editing, tests, sampleTypes, dynamicSpecs, onClose, onDone }: {
+function SpecificationModal({ editing, services, sampleTypes, dynamicSpecs, onClose, onDone }: {
   editing: AnalysisSpecification | null
-  tests: LimsTest[]
+  services: SenaiteAnalysisService[]
   sampleTypes: DjangoSampleType[]
   dynamicSpecs: DynamicAnalysisSpecification[]
   onClose: () => void
@@ -60,18 +60,19 @@ function SpecificationModal({ editing, tests, sampleTypes, dynamicSpecs, onClose
   const isEdit = editing !== null
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
-  // One row per known test — pre-checked/pre-filled for tests already in
-  // `editing.rows`, unchecked+blank otherwise. Only checked rows get submitted.
+  // One row per known SENAITE analysis service — pre-checked/pre-filled for
+  // services already in `editing.rows`, unchecked+blank otherwise. Only
+  // checked rows get submitted.
   const [rows, setRows] = useState<RowState[]>(() => {
-    const existingByTest = new Map((editing?.rows ?? []).map(r => [r.test, r]))
-    return tests.map(t => {
-      const existing = existingByTest.get(t.id)
-      return existing ? { ...blankRow(t.id), ...existing, selected: true } : blankRow(t.id)
+    const existingByUid = new Map((editing?.rows ?? []).map(r => [r.senaite_service_uid, r]))
+    return services.map(s => {
+      const existing = existingByUid.get(s.uid)
+      return existing ? { ...blankRow(s.uid, s.title), ...existing, selected: true } : blankRow(s.uid, s.title)
     })
   })
 
-  function updateRow(testId: number, patch: Partial<RowState>) {
-    setRows(prev => prev.map(r => (r.test === testId ? { ...r, ...patch } : r)))
+  function updateRow(uid: string, patch: Partial<RowState>) {
+    setRows(prev => prev.map(r => (r.senaite_service_uid === uid ? { ...r, ...patch } : r)))
   }
 
   const createAction = async (prev: SpecificationFormState, fd: FormData) => {
@@ -162,30 +163,30 @@ function SpecificationModal({ editing, tests, sampleTypes, dynamicSpecs, onClose
                   </tr>
                 </thead>
                 <tbody>
-                  {tests.map(t => {
-                    const row = rows.find(r => r.test === t.id)!
+                  {services.map(s => {
+                    const row = rows.find(r => r.senaite_service_uid === s.uid)!
                     const dis = !row.selected
                     return (
-                      <tr key={t.id} style={{ borderBottom: '1px solid #F3F4F6' }}>
-                        <td className="px-2 py-1.5"><input type="checkbox" checked={row.selected} onChange={e => updateRow(t.id, { selected: e.target.checked })} /></td>
-                        <td className="px-2 py-1.5 text-xs" style={{ color: '#111827', whiteSpace: 'nowrap' }}>{t.name}</td>
-                        <td className="px-1 py-1"><input disabled={dis} value={row.min_warn ?? ''} onChange={e => updateRow(t.id, { min_warn: e.target.value || null })} className={inputCls} style={{ width: 64, ...inputStyle() }} /></td>
-                        <td className="px-1 py-1"><input disabled={dis} value={row.min_value ?? ''} onChange={e => updateRow(t.id, { min_value: e.target.value || null })} className={inputCls} style={{ width: 64, ...inputStyle() }} /></td>
+                      <tr key={s.uid} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                        <td className="px-2 py-1.5"><input type="checkbox" checked={row.selected} onChange={e => updateRow(s.uid, { selected: e.target.checked })} /></td>
+                        <td className="px-2 py-1.5 text-xs" style={{ color: '#111827', whiteSpace: 'nowrap' }}>{s.title}</td>
+                        <td className="px-1 py-1"><input disabled={dis} value={row.min_warn ?? ''} onChange={e => updateRow(s.uid, { min_warn: e.target.value || null })} className={inputCls} style={{ width: 64, ...inputStyle() }} /></td>
+                        <td className="px-1 py-1"><input disabled={dis} value={row.min_value ?? ''} onChange={e => updateRow(s.uid, { min_value: e.target.value || null })} className={inputCls} style={{ width: 64, ...inputStyle() }} /></td>
                         <td className="px-1 py-1">
-                          <select disabled={dis} value={row.min_operator} onChange={e => updateRow(t.id, { min_operator: e.target.value })} className={inputCls} style={{ width: 56, ...inputStyle() }}>
+                          <select disabled={dis} value={row.min_operator} onChange={e => updateRow(s.uid, { min_operator: e.target.value })} className={inputCls} style={{ width: 56, ...inputStyle() }}>
                             {OPERATORS.map(op => <option key={op} value={op}>{op}</option>)}
                           </select>
                         </td>
-                        <td className="px-1 py-1"><input disabled={dis} value={row.max_value ?? ''} onChange={e => updateRow(t.id, { max_value: e.target.value || null })} className={inputCls} style={{ width: 64, ...inputStyle() }} /></td>
-                        <td className="px-1 py-1"><input disabled={dis} value={row.max_warn ?? ''} onChange={e => updateRow(t.id, { max_warn: e.target.value || null })} className={inputCls} style={{ width: 64, ...inputStyle() }} /></td>
+                        <td className="px-1 py-1"><input disabled={dis} value={row.max_value ?? ''} onChange={e => updateRow(s.uid, { max_value: e.target.value || null })} className={inputCls} style={{ width: 64, ...inputStyle() }} /></td>
+                        <td className="px-1 py-1"><input disabled={dis} value={row.max_warn ?? ''} onChange={e => updateRow(s.uid, { max_warn: e.target.value || null })} className={inputCls} style={{ width: 64, ...inputStyle() }} /></td>
                         <td className="px-1 py-1">
-                          <select disabled={dis} value={row.max_operator} onChange={e => updateRow(t.id, { max_operator: e.target.value })} className={inputCls} style={{ width: 56, ...inputStyle() }}>
+                          <select disabled={dis} value={row.max_operator} onChange={e => updateRow(s.uid, { max_operator: e.target.value })} className={inputCls} style={{ width: 56, ...inputStyle() }}>
                             {OPERATORS.map(op => <option key={op} value={op}>{op}</option>)}
                           </select>
                         </td>
-                        <td className="px-1 py-1"><input disabled={dis} value={row.out_of_range_low} onChange={e => updateRow(t.id, { out_of_range_low: e.target.value })} className={inputCls} style={{ width: 64, ...inputStyle() }} /></td>
-                        <td className="px-1 py-1"><input disabled={dis} value={row.out_of_range_high} onChange={e => updateRow(t.id, { out_of_range_high: e.target.value })} className={inputCls} style={{ width: 64, ...inputStyle() }} /></td>
-                        <td className="px-1 py-1"><input disabled={dis} value={row.out_of_range_comment} onChange={e => updateRow(t.id, { out_of_range_comment: e.target.value })} className={inputCls} style={{ width: 100, ...inputStyle() }} /></td>
+                        <td className="px-1 py-1"><input disabled={dis} value={row.out_of_range_low} onChange={e => updateRow(s.uid, { out_of_range_low: e.target.value })} className={inputCls} style={{ width: 64, ...inputStyle() }} /></td>
+                        <td className="px-1 py-1"><input disabled={dis} value={row.out_of_range_high} onChange={e => updateRow(s.uid, { out_of_range_high: e.target.value })} className={inputCls} style={{ width: 64, ...inputStyle() }} /></td>
+                        <td className="px-1 py-1"><input disabled={dis} value={row.out_of_range_comment} onChange={e => updateRow(s.uid, { out_of_range_comment: e.target.value })} className={inputCls} style={{ width: 100, ...inputStyle() }} /></td>
                       </tr>
                     )
                   })}
@@ -214,9 +215,9 @@ function SpecificationModal({ editing, tests, sampleTypes, dynamicSpecs, onClose
   )
 }
 
-export default function SpecificationsShell({ initialSpecifications, tests, sampleTypes, dynamicSpecs }: {
+export default function SpecificationsShell({ initialSpecifications, services, sampleTypes, dynamicSpecs }: {
   initialSpecifications: AnalysisSpecification[]
-  tests: LimsTest[]
+  services: SenaiteAnalysisService[]
   sampleTypes: DjangoSampleType[]
   dynamicSpecs: DynamicAnalysisSpecification[]
 }) {
@@ -285,7 +286,7 @@ export default function SpecificationsShell({ initialSpecifications, tests, samp
         </select>
       </div>
 
-      {showModal && <SpecificationModal editing={editing} tests={tests} sampleTypes={sampleTypes} dynamicSpecs={dynamicSpecs} onClose={closeModal} onDone={handleDone} />}
+      {showModal && <SpecificationModal editing={editing} services={services} sampleTypes={sampleTypes} dynamicSpecs={dynamicSpecs} onClose={closeModal} onDone={handleDone} />}
       {deleting && (
         <ConfirmModal
           title="Delete Specification"

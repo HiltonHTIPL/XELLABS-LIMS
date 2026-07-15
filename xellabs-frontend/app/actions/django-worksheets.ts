@@ -20,7 +20,8 @@ export type WorksheetAssignment = {
   id: number
   worksheet: number
   analysis_request: number
-  test: number
+  senaite_service_uid: string
+  senaite_service_name: string
   status: string
   created_at: string
   instrument: number | null
@@ -32,8 +33,6 @@ export type WorksheetAssignment = {
 export type EnrichedAssignment = WorksheetAssignment & {
   ar_id: string
   sample_id: string
-  test_name: string
-  test_code: string
   result_id: number | null
   result_value: string
   result_status: string
@@ -68,12 +67,11 @@ async function fetchAllPages<T>(path: string): Promise<T[]> {
 
 export async function getDjangoWorksheets(): Promise<EnrichedWorksheet[]> {
   try {
-    const [worksheets, assignments, ars, samples, tests, results, users] = await Promise.all([
+    const [worksheets, assignments, ars, samples, results, users] = await Promise.all([
       fetchAllPages<Worksheet>('/api/lims/worksheets/?page_size=500&ordering=-created_at'),
       fetchAllPages<WorksheetAssignment>('/api/lims/worksheet-assignments/?page_size=500'),
       fetchAllPages<{ id: number; ar_id: string; sample: number }>('/api/lims/analysis-requests/?page_size=500'),
       fetchAllPages<{ id: number; sample_id: string }>('/api/lims/samples/?page_size=500'),
-      fetchAllPages<{ id: number; name: string; code: string }>('/api/lims/tests/?page_size=500'),
       fetchAllPages<{ id: number; worksheet_assignment: number; value: string; status: string; submitted_at: string | null; verified_at: string | null }>('/api/lims/results/?page_size=500'),
       fetchAllPages<StaffUser>('/api/users/?page_size=500'),
     ])
@@ -81,7 +79,6 @@ export async function getDjangoWorksheets(): Promise<EnrichedWorksheet[]> {
     const assignmentMap = new Map(assignments.map(a => [a.id, a]))
     const arMap = new Map(ars.map(a => [a.id, a]))
     const sampleMap = new Map(samples.map(s => [s.id, s]))
-    const testMap = new Map(tests.map(t => [t.id, t]))
     const resultMap = new Map(results.map(r => [r.worksheet_assignment, r]))
     const userMap = new Map(users.map(u => [u.id, u]))
 
@@ -98,14 +95,11 @@ export async function getDjangoWorksheets(): Promise<EnrichedWorksheet[]> {
       const enriched = wsAssignments.map(a => {
         const ar = arMap.get(a.analysis_request)
         const sample = ar ? sampleMap.get(ar.sample) : undefined
-        const test = testMap.get(a.test)
         const result = resultMap.get(a.id)
         return {
           ...a,
           ar_id: ar?.ar_id ?? '',
           sample_id: sample?.sample_id ?? '',
-          test_name: test?.name ?? '',
-          test_code: test?.code ?? '',
           result_id: result?.id ?? null,
           result_value: result?.value ?? '',
           result_status: result?.status ?? 'pending',
@@ -154,14 +148,17 @@ export async function createDjangoWorksheet(): Promise<{ success: boolean; works
   }
 }
 
-export async function assignToWorksheet(worksheetId: number, analysisRequestId: number, testId: number): Promise<{ success: boolean; message: string }> {
+export async function assignToWorksheet(
+  worksheetId: number, analysisRequestId: number, serviceUid: string, serviceName: string
+): Promise<{ success: boolean; message: string }> {
   try {
     const res = await djangoFetch('/api/lims/worksheet-assignments/', {
       method: 'POST',
       body: JSON.stringify({
         worksheet: worksheetId,
         analysis_request: analysisRequestId,
-        test: testId,
+        senaite_service_uid: serviceUid,
+        senaite_service_name: serviceName,
       }),
     })
     if (!res.ok) {

@@ -82,14 +82,14 @@ def check_result_against_spec(result):
     spec = None
     if sample.analysis_specification_id:
         spec = Specification.objects.filter(
-            test=wa.test,
+            senaite_service_uid=wa.senaite_service_uid,
             specification_id=sample.analysis_specification_id,
             specification__is_active=True,
             is_active=True,
         ).first()
     if not spec:
         spec = Specification.objects.filter(
-            test=wa.test,
+            senaite_service_uid=wa.senaite_service_uid,
             specification__sample_type=sample.sample_type,
             specification__is_active=True,
             is_active=True,

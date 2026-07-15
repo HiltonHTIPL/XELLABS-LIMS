@@ -112,7 +112,7 @@ def sync_analysis_request_to_senaite(self, ar_id: int, schema_name: str):
         try:
             ar = AnalysisRequest.objects.select_related(
                 "sample", "sample__client", "sample__sample_type"
-            ).prefetch_related("tests").get(pk=ar_id)
+            ).prefetch_related("analyses").get(pk=ar_id)
         except AnalysisRequest.DoesNotExist:
             logger.warning("sync_analysis_request_to_senaite: AR %s not found in schema %s.", ar_id, schema_name)
             return

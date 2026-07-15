@@ -4,7 +4,8 @@ import { djangoFetch } from '@/app/lib/django'
 
 export type SpecificationRow = {
   id?: number
-  test: number
+  senaite_service_uid: string
+  senaite_service_name: string
   min_value: string | null
   max_value: string | null
   min_operator: string

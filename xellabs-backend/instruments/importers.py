@@ -107,31 +107,61 @@ def parse_xml(file_content: bytes) -> tuple[list[dict], list[dict]]:
     return rows, errors
 
 
+def _fetch_senaite_services_by_keyword() -> dict:
+    """Live SENAITE AnalysisServices keyed by Keyword (the instrument-file
+    test code) — replaces the old Django Test.code lookup now that SENAITE
+    is the sole source of truth for analyses."""
+    import base64
+    import requests as http_requests
+    from django.conf import settings
+
+    token = base64.b64encode(f"{settings.SENAITE_USER}:{settings.SENAITE_PASSWORD}".encode()).decode()
+    try:
+        resp = http_requests.get(
+            f"{settings.SENAITE_URL}/@@API/senaite/v1/AnalysisService",
+            headers={"Authorization": f"Basic {token}"},
+            params={"complete": "yes", "b_size": 1000},
+            timeout=8,
+        )
+        resp.raise_for_status()
+        items = resp.json().get("items", [])
+    except Exception:
+        logger.exception("Could not reach SENAITE to resolve analysis services for instrument import.")
+        return {}
+    return {
+        (svc.get("Keyword") or "").strip(): {"uid": svc.get("uid", ""), "title": (svc.get("title") or "").strip()}
+        for svc in items if svc.get("Keyword")
+    }
+
+
 def map_results(rows: list[dict]) -> tuple[list[dict], list[dict]]:
     """
-    Map parsed rows to existing Sample + Test database objects.
-    Returns (mapped, errors) where mapped rows have sample_pk, test_pk added.
+    Map parsed rows to existing Sample database objects and live SENAITE
+    analysis services (matched by Keyword/test_code).
+    Returns (mapped, errors) where mapped rows have sample_pk,
+    senaite_service_uid, senaite_service_name added.
     """
-    from lims.models import Sample, Test
+    from lims.models import Sample
 
     mapped, errors = [], []
     # Build lookup caches
     sample_cache = {s.sample_id: s for s in Sample.objects.filter(
         sample_id__in={r["sample_id"] for r in rows}
     )}
-    test_cache = {t.code: t for t in Test.objects.filter(
-        code__in={r["test_code"] for r in rows}
-    )}
+    service_cache = _fetch_senaite_services_by_keyword()
 
     for i, row in enumerate(rows, start=1):
         sample = sample_cache.get(row["sample_id"])
         if not sample:
             errors.append({"row": i, "detail": f"Sample '{row['sample_id']}' not found."})
             continue
-        test = test_cache.get(row["test_code"])
-        if not test:
+        service = service_cache.get(row["test_code"])
+        if not service:
             errors.append({"row": i, "detail": f"Test code '{row['test_code']}' not found."})
             continue
-        mapped.append({**row, "sample_pk": sample.pk, "test_pk": test.pk})
+        mapped.append({
+            **row, "sample_pk": sample.pk,
+            "senaite_service_uid": service["uid"], "senaite_service_name": service["title"],
+        })
 
     return mapped, errors

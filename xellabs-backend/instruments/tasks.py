@@ -64,7 +64,7 @@ def process_instrument_import(self, import_id: int):
                 # Find an open WorksheetAssignment for this sample + test
                 wa = WorksheetAssignment.objects.select_for_update().filter(
                     analysis_request__sample__pk=row["sample_pk"],
-                    test__pk=row["test_pk"],
+                    senaite_service_uid=row["senaite_service_uid"],
                 ).first()
 
                 if not wa:

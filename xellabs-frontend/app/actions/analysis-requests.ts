@@ -2,14 +2,18 @@
 import { revalidatePath } from 'next/cache'
 import { djangoFetch } from '@/app/lib/django'
 
+export type AnalysisRequestAnalysis = {
+  id?: number
+  senaite_service_uid: string
+  senaite_service_name: string
+}
+
 export type AnalysisRequest = {
   id: number
   ar_id: string
   sample: number
   sample_id: string
-  tests: number[]
-  test_names: string[]
-  tests_detail: { id: number; name: string; code: string; unit: string }[]
+  analyses: AnalysisRequestAnalysis[]
   status: string
   priority: string
   due_date: string | null
@@ -42,17 +46,23 @@ export async function getAnalysisRequestsForSample(sampleId: number): Promise<An
   } catch { return [] }
 }
 
+function parseAnalyses(formData: FormData): AnalysisRequestAnalysis[] {
+  try {
+    return JSON.parse((formData.get('analyses_json') as string) || '[]')
+  } catch { return [] }
+}
+
 export async function createAnalysisRequest(_state: ARFormState, formData: FormData): Promise<ARFormState> {
   const sample   = (formData.get('sample') as string)?.trim()
-  const tests    = formData.getAll('tests') as string[]
+  const analyses = parseAnalyses(formData)
   const status   = (formData.get('status') as string)?.trim() || 'pending'
   const priority = (formData.get('priority') as string)?.trim() || 'normal'
   const due_date = (formData.get('due_date') as string)?.trim()
   const notes    = (formData.get('notes') as string)?.trim()
 
   const errors: Record<string, string[]> = {}
-  if (!sample)       errors.sample = ['Sample is required']
-  if (!tests.length) errors.tests  = ['At least one test is required']
+  if (!sample)          errors.sample   = ['Sample is required']
+  if (!analyses.length) errors.analyses = ['At least one test is required']
   if (Object.keys(errors).length) return { errors }
 
   try {
@@ -60,7 +70,7 @@ export async function createAnalysisRequest(_state: ARFormState, formData: FormD
       method: 'POST',
       body: JSON.stringify({
         sample: Number(sample),
-        tests: tests.map(Number),
+        analyses,
         status,
         priority,
         ...(due_date ? { due_date } : {}),
@@ -69,7 +79,7 @@ export async function createAnalysisRequest(_state: ARFormState, formData: FormD
     })
     const data = await res.json().catch(() => ({})) as Record<string, unknown>
     if (!res.ok) {
-      return { message: (data.sample as string[])?.[0] ?? (data.tests as string[])?.[0] ?? (data.detail as string) ?? 'Failed to create analysis request.' }
+      return { message: (data.sample as string[])?.[0] ?? (data.analyses as string[])?.[0] ?? (data.detail as string) ?? 'Failed to create analysis request.' }
     }
     revalidatePath('/dashboard/analysis-requests')
     return { success: true, message: `Analysis request ${data.ar_id} created.` }
@@ -80,18 +90,18 @@ export async function createAnalysisRequest(_state: ARFormState, formData: FormD
 }
 
 export async function updateAnalysisRequest(id: number, _state: ARFormState, formData: FormData): Promise<ARFormState> {
-  const tests    = formData.getAll('tests') as string[]
+  const analyses = parseAnalyses(formData)
   const priority = (formData.get('priority') as string)?.trim() || 'normal'
   const due_date = (formData.get('due_date') as string)?.trim()
   const notes    = (formData.get('notes') as string)?.trim()
 
-  if (!tests.length) return { errors: { tests: ['At least one test is required'] } }
+  if (!analyses.length) return { errors: { analyses: ['At least one test is required'] } }
 
   try {
     const res = await djangoFetch(`/api/lims/analysis-requests/${id}/`, {
       method: 'PATCH',
       body: JSON.stringify({
-        tests: tests.map(Number),
+        analyses,
         priority,
         due_date: due_date || null,
         notes: notes ?? '',
@@ -101,7 +111,7 @@ export async function updateAnalysisRequest(id: number, _state: ARFormState, for
     if (!res.ok) {
       const msg =
         (Array.isArray(data) ? String(data[0]) : undefined) ??
-        (data.tests as string[])?.[0] ??
+        (data.analyses as string[])?.[0] ??
         (data.detail as string) ??
         Object.values(data).flat().map(String)[0] ??
         'Failed to update analysis request.'

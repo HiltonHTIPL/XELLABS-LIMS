@@ -2,9 +2,9 @@ from django.db import IntegrityError, transaction
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 from .models import (
-    SampleType, SampleTemplate, AnalysisProfile, Method, Calculation, Test, Specification,
+    SampleType, SampleTemplate, AnalysisProfile, Method, Calculation, Specification,
     DynamicAnalysisSpecification, AnalysisSpecification,
-    Sample, AnalysisRequest, Worksheet, WorksheetAssignment,
+    Sample, AnalysisRequest, AnalysisRequestAnalysis, Worksheet, WorksheetAssignment,
     Result, QCSample, ChainOfCustody,
 )
 
@@ -108,15 +108,6 @@ class MethodSerializer(serializers.ModelSerializer):
         method = super().update(instance, validated_data)
         self._sync_instruments(method, instrument_list)
         return method
-
-
-class TestSerializer(serializers.ModelSerializer):
-    method_name = serializers.CharField(source="method.name", read_only=True)
-    method_code = serializers.CharField(source="method.code", read_only=True)
-
-    class Meta:
-        model = Test
-        fields = "__all__"
 
 
 class DynamicAnalysisSpecificationSerializer(serializers.ModelSerializer):
@@ -258,12 +249,19 @@ class SampleSerializer(RecordLockMixin, serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
 
+class AnalysisRequestAnalysisSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AnalysisRequestAnalysis
+        fields = "__all__"
+        extra_kwargs = {"analysis_request": {"required": False}}  # set by the parent AnalysisRequestSerializer
+
+
 class AnalysisRequestSerializer(serializers.ModelSerializer):
     ar_id = serializers.CharField(
         required=False, allow_blank=True,
         validators=[UniqueValidator(queryset=AnalysisRequest.objects.all())],
     )
-    tests_detail = TestSerializer(source="tests", many=True, read_only=True)
+    analyses = AnalysisRequestAnalysisSerializer(many=True, required=False)
 
     class Meta:
         model = AnalysisRequest
@@ -272,32 +270,37 @@ class AnalysisRequestSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         from .services import generate_ar_id
+        analyses_data = validated_data.pop("analyses", [])
         validated_data["created_by"] = self.context["request"].user
-        return _create_with_id_retry(validated_data, "ar_id", generate_ar_id, super().create)
+        instance = _create_with_id_retry(validated_data, "ar_id", generate_ar_id, super().create)
+        for row in analyses_data:
+            AnalysisRequestAnalysis.objects.create(analysis_request=instance, **row)
+        return instance
 
     def update(self, instance, validated_data):
         # Analyses are editable until the sample is received; afterwards only
         # admin/lab_manager may correct them (mirrors the Sample detail rule).
+        analyses_data = validated_data.pop("analyses", None)
         if instance.sample and instance.sample.status != "registered":
             user = self.context["request"].user
             if getattr(user, "role", None) not in UNLOCK_ROLES:
-                guarded = ("tests", "sample", "priority", "due_date", "notes")
-                changed = []
-                for f in guarded:
-                    if f not in validated_data:
-                        continue
-                    if f == "tests":
-                        new_ids = {t.pk for t in validated_data["tests"]}
-                        if new_ids != set(instance.tests.values_list("pk", flat=True)):
-                            changed.append(f)
-                    elif validated_data[f] != getattr(instance, f):
-                        changed.append(f)
+                guarded = ("sample", "priority", "due_date", "notes")
+                changed = [f for f in guarded if f in validated_data and validated_data[f] != getattr(instance, f)]
+                if analyses_data is not None:
+                    new_uids = {row["senaite_service_uid"] for row in analyses_data}
+                    if new_uids != set(instance.analyses.values_list("senaite_service_uid", flat=True)):
+                        changed.append("analyses")
                 if changed:
                     raise serializers.ValidationError(
                         "Analyses can no longer be edited after the sample has been "
                         "received. Contact a lab manager to make corrections."
                     )
-        return super().update(instance, validated_data)
+        instance = super().update(instance, validated_data)
+        if analyses_data is not None:
+            instance.analyses.all().delete()
+            for row in analyses_data:
+                AnalysisRequestAnalysis.objects.create(analysis_request=instance, **row)
+        return instance
 
 
 class WorksheetAssignmentSerializer(serializers.ModelSerializer):
