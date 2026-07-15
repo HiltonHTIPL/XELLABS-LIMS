@@ -896,23 +896,21 @@ export type SampleTemplatePayload = {
   services: SampleTemplateService[]
 }
 
-// Full SampleTemplate body — safe to send in a single POST or PATCH.
-// Originally this required a two-step create-then-PATCH split because
-// partitions/services failed with "Wrong contained type" on the create POST.
-// Root cause (confirmed live 2026-07-14): the custom Zope adapter for
-// partitions/services (SampleTemplateDataGridFieldDeserializer, registered on
-// the bare `List` class) was shadowing plone.restapi's own more-specific
-// CollectionFieldDeserializer for every OTHER List-typed field on
-// SampleTemplate too — including `sampletype`/`samplepoint` — because it
-// subclassed the wrong base (DefaultFieldDeserializer instead of
-// CollectionFieldDeserializer). Fixed at the SENAITE adapter level
-// (senaite-rebrand/sampletemplate_datagrid_deserializer.py) — the adapter now
-// subclasses CollectionFieldDeserializer, so it only special-cases
-// partitions/services and correctly falls through to plone.restapi's real
-// per-item deserialization for every other field. Verified: title,
-// sampletype, partitions, and services now all persist correctly together in
-// a single create POST. See CLAUDE.md §16b/16c.
-function sampleTemplateRestBody(payload: SampleTemplatePayload): Record<string, unknown> {
+// SampleTemplate write body, split in two because the two write paths behave
+// differently for partitions/services (both DataGridFields):
+//  - PATCH to an existing template: traversal context IS already an
+//    ISampleTemplate, so SampleTemplateDataGridFieldDeserializer (registered
+//    for (List, ISampleTemplate, IBrowserRequest)) fires correctly and the
+//    full body (scalars + partitions/services) can go in one request.
+//  - POST to create a new template: traversal context is the `sampletemplates`
+//    *folder*, not yet an ISampleTemplate — the adapter never fires, SENAITE's
+//    default (broken, for this field type) deserializer handles
+//    partitions/services instead and rejects them with "Wrong contained type"
+//    (confirmed live on a real deploy, 2026-07-15). So create must go
+//    scalars-only first, then PATCH partitions/services onto the now-existing
+//    object — same two-step shape already used for SampleType's own
+//    DataGridField extras, see patchSampleTypeExtras() above.
+function sampleTemplateScalarBody(payload: SampleTemplatePayload): Record<string, unknown> {
   return {
     title: payload.title,
     description: payload.description ?? '',
@@ -921,6 +919,11 @@ function sampleTemplateRestBody(payload: SampleTemplatePayload): Record<string, 
     composite: payload.composite ?? false,
     sampling_required: payload.samplingRequired ?? false,
     auto_partition: payload.autoPartition ?? false,
+  }
+}
+
+function sampleTemplateGridBody(payload: SampleTemplatePayload): Record<string, unknown> {
+  return {
     partitions: payload.partitions.map(p => ({
       part_id: p.partId || 'part-1',
       container: p.containerUid ? [p.containerUid] : [],
@@ -929,6 +932,10 @@ function sampleTemplateRestBody(payload: SampleTemplatePayload): Record<string, 
     })),
     services: payload.services.map(s => ({ uid: s.uid, hidden: s.hidden, part_id: s.partId })),
   }
+}
+
+function sampleTemplateRestBody(payload: SampleTemplatePayload): Record<string, unknown> {
+  return { ...sampleTemplateScalarBody(payload), ...sampleTemplateGridBody(payload) }
 }
 
 function first(value: unknown): string {
@@ -994,21 +1001,46 @@ export async function fetchSenaiteSampleTemplates(token: string): Promise<Senait
 export async function createSenaiteSampleTemplate(
   token: string,
   payload: SampleTemplatePayload
-): Promise<{ success: boolean; sampleTemplate?: SenaiteSampleTemplate; error?: string }> {
+): Promise<{ success: boolean; sampleTemplate?: SenaiteSampleTemplate; error?: string; warning?: string }> {
+  const headers = {
+    Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json',
+  }
   try {
+    // Scalars only — see sampleTemplateScalarBody's comment for why partitions/
+    // services can't go in this same request.
     const res = await fetch(`${SENAITE_URL}/setup/sampletemplates`, {
       method: 'POST',
-      headers: {
-        Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json',
-      },
-      body: JSON.stringify({ '@type': 'SampleTemplate', ...sampleTemplateRestBody(payload) }),
+      headers,
+      body: JSON.stringify({ '@type': 'SampleTemplate', ...sampleTemplateScalarBody(payload) }),
       cache: 'no-store',
     })
     const data = await res.json().catch(() => ({})) as Record<string, unknown>
     if (!res.ok) {
       return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
     }
-    return { success: true, sampleTemplate: mapSenaiteSampleTemplate(data) }
+    const created = mapSenaiteSampleTemplate(data)
+
+    let warning: string | undefined
+    const hasGrids = payload.partitions.length > 0 || payload.services.length > 0
+    if (hasGrids) {
+      if (!created.url) {
+        warning = 'Template created, but its URL could not be resolved to save partitions/services.'
+      } else {
+        const gridRes = await fetch(created.url, {
+          method: 'PATCH', headers, body: JSON.stringify(sampleTemplateGridBody(payload)), cache: 'no-store',
+        })
+        if (!gridRes.ok) {
+          const gridData = await gridRes.json().catch(() => ({})) as Record<string, unknown>
+          warning = (gridData.message as string) ?? `Partitions/services could not be saved (HTTP ${gridRes.status})`
+        }
+      }
+    }
+
+    return {
+      success: true,
+      warning,
+      sampleTemplate: { ...created, partitions: warning ? created.partitions : payload.partitions, services: warning ? created.services : payload.services },
+    }
   } catch (e) { return { success: false, error: String(e) } }
 }
 

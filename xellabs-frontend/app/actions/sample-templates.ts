@@ -90,7 +90,12 @@ export async function createSampleTemplate(
   }
   revalidatePath('/dashboard/sample-templates')
   revalidatePath('/dashboard/samples/new')
-  return { success: true, message: `Sample template "${payload.title}" created.` }
+  return {
+    success: true,
+    message: result.warning
+      ? `Sample template "${payload.title}" created, but: ${result.warning}`
+      : `Sample template "${payload.title}" created.`,
+  }
 }
 
 export async function updateSampleTemplate(
