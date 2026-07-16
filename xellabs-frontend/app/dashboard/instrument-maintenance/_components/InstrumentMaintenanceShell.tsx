@@ -1,5 +1,5 @@
 'use client'
-import { useState, useActionState, useTransition, useEffect, useMemo } from 'react'
+import { useState, useActionState, useTransition, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   createCalibration, updateCalibration, deleteCalibration,
@@ -268,6 +268,8 @@ function ImportModal({ instruments, onClose, onDone }: {
     return r
   }
   const [state, action, pending] = useActionState(create, {})
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [fileName, setFileName] = useState('')
 
   return (
     <ModalShell title="New Result Import" subtitle="Upload an instrument result file" icon="upload_file" onClose={onClose}>
@@ -282,7 +284,14 @@ function ImportModal({ instruments, onClose, onDone }: {
           </select>
         </Field>
         <Field label="File" required>
-          <input type="file" name="file" required style={{ fontSize: 13, color: T.text }} />
+          <input ref={fileInputRef} type="file" name="file" required className="hidden"
+            onChange={e => setFileName(e.target.files?.[0]?.name ?? '')} />
+          <div className="flex items-center gap-2">
+            <Btn type="button" variant="outline" icon="upload_file" onClick={() => fileInputRef.current?.click()}>
+              Choose File
+            </Btn>
+            <span style={{ fontSize: 13, color: fileName ? T.text : T.muted }}>{fileName || 'No file chosen'}</span>
+          </div>
         </Field>
         <ModalActions onClose={onClose} pending={pending} isEdit={false} />
       </form>
@@ -585,7 +594,9 @@ export default function InstrumentMaintenanceShell({
                     <tr key={i.id}>
                       <td style={tdStyle}>{instrumentLabel(instruments, i.instrument)}</td>
                       <td style={tdStyle}>{i.file_format.toUpperCase()}</td>
-                      <td style={tdStyle}><StatusChip status={i.status} /></td>
+                      <td style={tdStyle} title={i.status === 'failed' ? i.error_log : undefined}>
+                        <StatusChip status={i.status} />
+                      </td>
                       <td style={tdStyle}>{fmtDate(i.created_at)}</td>
                       <td style={tdStyle}>
                         <div className="flex items-center gap-1">

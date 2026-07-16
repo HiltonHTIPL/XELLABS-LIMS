@@ -33,11 +33,11 @@ export default function UserModal({
   )
 
   useEffect(() => {
-    if (state.success && !state.login_password) {
+    if (state.success) {
       onDone(state.message ?? 'Saved.')
       onClose()
     }
-  }, [state.success, state.login_password, state.message, onDone, onClose])
+  }, [state.success, state.message, onDone, onClose])
 
   const err = state.errors ?? {}
 
@@ -54,7 +54,7 @@ export default function UserModal({
             </div>
             <div>
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>{editing ? `Edit ${editing.username}` : 'New Staff User'}</h2>
-              <p style={{ fontSize: 10, color: '#9CA3AF' }}>{editing ? 'Update role and profile details' : 'Create a staff account and assign a role'}</p>
+              <p style={{ fontSize: 10, color: '#9CA3AF' }}>{editing ? 'Update role and profile details' : 'Create a staff account'}</p>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100">
@@ -62,32 +62,7 @@ export default function UserModal({
           </button>
         </div>
 
-        {state.login_password ? (
-          <div className="px-5 py-4 flex flex-col gap-3">
-            <div className="px-4 py-3 rounded-xl" style={{ backgroundColor: '#ECFDF5', border: '1px solid #A7F3D0' }}>
-              <div className="flex items-center gap-2 mb-2">
-                <MI name="check_circle" size={16} color="#10B981" />
-                <span className="text-sm font-semibold" style={{ color: '#065F46' }}>User created</span>
-              </div>
-              <p style={{ fontSize: 11, color: '#065F46', marginBottom: 8 }}>
-                Share these credentials now — the password will not be shown again.
-              </p>
-              <div style={{ fontSize: 12, fontFamily: 'monospace', backgroundColor: '#fff', border: '1px solid #A7F3D0', borderRadius: 8, padding: '8px 10px' }}>
-                <div>Username: <strong>{state.login_username}</strong></div>
-                <div>Password: <strong style={{ letterSpacing: '0.03em' }}>{state.login_password}</strong></div>
-              </div>
-            </div>
-            <div className="flex justify-end">
-              <button
-                onClick={() => { onDone(state.message ?? 'User created.'); onClose() }}
-                style={{ fontSize: 12, fontWeight: 600, padding: '7px 18px', borderRadius: 8, backgroundColor: '#0154FC', color: '#fff', border: 'none', cursor: 'pointer' }}
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        ) : (
-          <form action={action} className="px-5 py-4 flex flex-col gap-3">
+        <form action={action} className="px-5 py-4 flex flex-col gap-3">
             {state.message && (
               <div className="px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#991B1B' }}>
                 {state.message}
@@ -99,6 +74,9 @@ export default function UserModal({
                 <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
                   Username <span style={{ color: '#EF4444' }}>*</span>
                 </label>
+                <p className="mb-1" style={{ fontSize: 10.5, color: '#6B7280', lineHeight: 1.4 }}>
+                  Usually something like &lsquo;jsmith&rsquo;. No spaces or special characters — this is the name used to log in, to both XelLabs and SENAITE.
+                </p>
                 <input
                   name="username"
                   defaultValue={editing ? (editing as StaffUser).username : ''}
@@ -124,25 +102,68 @@ export default function UserModal({
 
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Email</label>
+              <p className="mb-1" style={{ fontSize: 10.5, color: '#6B7280', lineHeight: 1.4 }}>
+                Used for account recovery and notifications. Not shared with any third party.
+              </p>
               <input name="email" type="email" defaultValue={editing?.email ?? ''} placeholder="jane@xellabs.com" className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827' }} />
             </div>
 
-            <div>
-              <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
-                Role <span style={{ color: '#EF4444' }}>*</span>
-              </label>
-              <select
-                name="role"
-                defaultValue={editing?.role ?? 'analyst'}
-                className="w-full px-3 py-2 text-xs rounded-lg outline-none"
-                style={{ border: `1px solid ${err.role ? '#EF4444' : '#D1D5DB'}`, color: '#111827', backgroundColor: '#fff' }}
-              >
-                {ROLE_OPTIONS.map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
-                ))}
-              </select>
-              {err.role && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{err.role[0]}</p>}
-            </div>
+            {editing && (
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
+                  Role <span style={{ color: '#EF4444' }}>*</span>
+                </label>
+                <p className="mb-1" style={{ fontSize: 10.5, color: '#6B7280', lineHeight: 1.4 }}>
+                  Sets default permissions in XelLabs and the matching SENAITE group this user is added to (e.g. Analyst → SENAITE Analysts group).
+                </p>
+                <select
+                  name="role"
+                  defaultValue={editing?.role ?? 'analyst'}
+                  className="w-full px-3 py-2 text-xs rounded-lg outline-none"
+                  style={{ border: `1px solid ${err.role ? '#EF4444' : '#D1D5DB'}`, color: '#111827', backgroundColor: '#fff' }}
+                >
+                  {ROLE_OPTIONS.map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+                {err.role && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{err.role[0]}</p>}
+              </div>
+            )}
+
+            {!editing && (
+              <>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
+                    Password <span style={{ color: '#EF4444' }}>*</span>
+                  </label>
+                  <input
+                    name="password"
+                    type="password"
+                    className="w-full px-3 py-2 text-xs rounded-lg outline-none"
+                    style={{ border: `1px solid ${err.password ? '#EF4444' : '#D1D5DB'}`, color: '#111827' }}
+                  />
+                  {err.password && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{err.password[0]}</p>}
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
+                    Confirm Password <span style={{ color: '#EF4444' }}>*</span>
+                  </label>
+                  <input
+                    name="confirm_password"
+                    type="password"
+                    className="w-full px-3 py-2 text-xs rounded-lg outline-none"
+                    style={{ border: `1px solid ${err.confirm_password ? '#EF4444' : '#D1D5DB'}`, color: '#111827' }}
+                  />
+                  {err.confirm_password && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{err.confirm_password[0]}</p>}
+                </div>
+                <div className="px-3 py-2.5 rounded-lg" style={{ backgroundColor: '#F9FAFB', border: '1px solid #E5E7EB' }}>
+                  <p style={{ fontSize: 10.5, color: '#4B5563', lineHeight: 1.5 }}>
+                    This account is also created in SENAITE with the same password, so it works for logging into both.
+                    Role/permissions can be assigned afterward by editing this user.
+                  </p>
+                </div>
+              </>
+            )}
 
             <div className="flex items-center justify-end gap-2 pt-1" style={{ borderTop: '1px solid #F3F4F6' }}>
               <button type="button" onClick={onClose} disabled={pending}
@@ -156,8 +177,7 @@ export default function UserModal({
                 {pending ? 'Saving…' : editing ? 'Save Changes' : 'Create User'}
               </button>
             </div>
-          </form>
-        )}
+        </form>
       </div>
     </div>
   )

@@ -126,7 +126,13 @@ class InstrumentResultImportViewSet(viewsets.ModelViewSet):
             return Response({"detail": "A file is required."}, status=status.HTTP_400_BAD_REQUEST)
 
         content = upload.read()
-        rows, parse_errors = (parse_xml(content) if file_format == "xml" else parse_csv(content))
+        try:
+            rows, parse_errors = (parse_xml(content) if file_format == "xml" else parse_csv(content))
+        except Exception as e:
+            return Response(
+                {"detail": f"File could not be parsed — check the File Format matches the actual file: {e}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         if not rows and any(e.get("row") == 0 for e in parse_errors):
             return Response(
                 {"detail": parse_errors[0]["detail"], "summary": {"total": 0, "valid": 0, "invalid": 0}, "rows": []},
@@ -176,8 +182,10 @@ class InstrumentResultImportViewSet(viewsets.ModelViewSet):
         imp = self.get_object()
         if imp.status == "processed":
             return Response({"detail": "Already processed."}, status=status.HTTP_400_BAD_REQUEST)
+        from django.db import connection
         from .tasks import process_instrument_import
-        task = process_instrument_import.delay(imp.pk)
+        # Capture the tenant schema now (request context has it) — the worker doesn't.
+        task = process_instrument_import.delay(imp.pk, connection.schema_name)
         return Response({"task_id": task.id, "import_id": imp.pk, "status": "queued"})
 
     @action(detail=True, methods=["get"])

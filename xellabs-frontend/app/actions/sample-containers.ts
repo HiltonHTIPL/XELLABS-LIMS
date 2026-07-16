@@ -33,6 +33,7 @@ export async function getSampleContainersPageData(): Promise<SampleContainersPag
 export type SampleContainerFormState = {
   success?: boolean
   message?: string
+  warning?: string
   errors?: Record<string, string[]>
 }
 
@@ -71,22 +72,23 @@ export async function createSampleContainerFull(
   if (!result.success) return { message: result.error ?? 'Failed to create sample container.' }
 
   revalidatePath('/dashboard/sample-containers')
-  return { success: true, message: `Sample container "${payload.title}" created.` }
+  return { success: true, message: `Sample container "${payload.title}" created.`, warning: result.warning }
 }
 
 export async function updateSampleContainerFull(
   uid: string,
+  url: string,
   _state: SampleContainerFormState,
   formData: FormData
 ): Promise<SampleContainerFormState> {
   const { payload, errors } = parsePayload(formData)
   if (Object.keys(errors).length) return { errors }
 
-  const result = await updateSenaiteSampleContainer(serverToken(), uid, payload)
+  const result = await updateSenaiteSampleContainer(serverToken(), uid, url, payload)
   if (!result.success) return { message: result.error ?? 'Failed to update sample container.' }
 
   revalidatePath('/dashboard/sample-containers')
-  return { success: true, message: `Sample container "${payload.title}" updated.` }
+  return { success: true, message: `Sample container "${payload.title}" updated.`, warning: result.warning }
 }
 
 export type CreateRefOptionState = {

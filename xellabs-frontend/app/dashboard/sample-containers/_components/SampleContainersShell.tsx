@@ -148,11 +148,13 @@ export default function SampleContainersShell({
   const [state, action, pending] = useActionState(
     async (prev: SampleContainerFormState, formData: FormData) => {
       const uid = formData.get('_uid') as string | null
-      const result = uid
-        ? await updateSampleContainerFull(uid, prev, formData)
+      const url = formData.get('_url') as string | null
+      const result = uid && url
+        ? await updateSampleContainerFull(uid, url, prev, formData)
         : await createSampleContainerFull(prev, formData)
       if (result.success) {
         setShowForm(false); setEditing(null); setVals(blank())
+        showToast(true, result.warning ? `${result.message} ${result.warning}` : (result.message ?? 'Saved.'))
         router.refresh()
       }
       return result
@@ -179,6 +181,9 @@ export default function SampleContainersShell({
 
       <div className="flex items-center justify-between mb-3">
         <div>
+          <button onClick={() => router.push('/dashboard/admin')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280', display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, marginBottom: 4, padding: 0 }}>
+            <MI name="arrow_back" size={16} /> Back
+          </button>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Sample Containers</h1>
           <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Manage physical sample containers</p>
         </div>
@@ -212,6 +217,7 @@ export default function SampleContainersShell({
 
           <form action={action} className="flex flex-col flex-1 min-h-0">
             {isEditing && <input type="hidden" name="_uid" value={editing.uid} />}
+            {isEditing && <input type="hidden" name="_url" value={editing.url} />}
             <input type="hidden" name="title" value={vals.title} />
             <input type="hidden" name="description" value={vals.description} />
             <input type="hidden" name="capacity" value={vals.capacity} />
@@ -280,14 +286,6 @@ export default function SampleContainersShell({
         </div>
       </div>
 
-      {state.success && (
-        <div className="mb-3 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#DBEAFE', border: '1px solid #93C5FD', color: '#0154FC' }}>
-          <div className="flex items-center gap-2">
-            <MI name="check_circle" size={13} color="#0154FC" /><span>{state.message}</span>
-          </div>
-        </div>
-      )}
-
       {initialSampleContainers.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="science" size={36} color="#D1D5DB" />
@@ -312,20 +310,29 @@ export default function SampleContainersShell({
               </tr>
             </thead>
             <tbody>
-              {initialSampleContainers.map((c, i) => (
+              {initialSampleContainers.map((c, i) => {
+                // The legacy v1 API's containertype/preservation reference objects
+                // only carry {url, uid, api_url} — never a title — so the table
+                // (unlike the edit drawer's <select>, which matches by uid) needs
+                // to resolve the display title itself from the already-fetched
+                // option lists rather than trusting c.containerTypeTitle/preservationTitle.
+                const containerTypeTitle = containerTypeOptions.find(o => o.uid === c.containerTypeUid)?.title || c.containerTypeTitle
+                const preservationTitle = preservationOptions.find(o => o.uid === c.preservationUid)?.title || c.preservationTitle
+                return (
                 <tr key={c.uid} style={{ borderBottom: i < initialSampleContainers.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
                   <td className="px-3 py-2 text-xs font-medium truncate" style={{ color: '#111827' }}>{c.title}</td>
-                  <td className="px-3 py-2 text-xs truncate" style={{ color: '#6B7280' }}>{c.containerTypeTitle || '—'}</td>
+                  <td className="px-3 py-2 text-xs truncate" style={{ color: '#6B7280' }}>{containerTypeTitle || '—'}</td>
                   <td className="px-3 py-2 text-xs" style={{ color: '#6B7280' }}>{c.capacity || '—'}</td>
                   <td className="px-3 py-2 text-xs" style={{ color: c.prePreserved ? '#0154FC' : '#6B7280' }}>{c.prePreserved ? 'Yes' : 'No'}</td>
-                  <td className="px-3 py-2 text-xs truncate" style={{ color: '#6B7280' }}>{c.preservationTitle || '—'}</td>
+                  <td className="px-3 py-2 text-xs truncate" style={{ color: '#6B7280' }}>{preservationTitle || '—'}</td>
                   <td className="px-3 py-2">
                     <button onClick={() => openEdit(c)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
                       <MI name="edit" size={14} color="#6B7280" />
                     </button>
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
           <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>

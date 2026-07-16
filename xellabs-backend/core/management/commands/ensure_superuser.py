@@ -44,3 +44,11 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(
             f"Superadmin '{username}' {'created' if created else 'updated'} from environment."
         ))
+
+        # Mirror into SENAITE on first creation only — this command re-syncs the
+        # Django password on every container start, but re-POSTing to SENAITE's
+        # @users on every restart would just fail with "already exists" for no
+        # benefit. Same one-shot-on-create pattern as UserViewSet.perform_create.
+        if created:
+            from core.tasks import sync_staff_user_to_senaite
+            sync_staff_user_to_senaite.apply_async(args=[user.pk, password], countdown=2)

@@ -47,13 +47,22 @@ STAFF_ROLES = ['admin', 'lab_manager', 'analyst', 'reviewer', 'receptionist']
 
 class StaffUserSerializer(serializers.ModelSerializer):
     """CRUD for staff accounts (admin/lab_manager/analyst/reviewer/receptionist) — excludes 'client' role,
-    which is only created as a side effect of ClientViewSet (see core/views.py ClientViewSet.perform_create)."""
+    which is only created as a side effect of ClientViewSet (see core/views.py ClientViewSet.perform_create).
+
+    `role` is optional here (defaults to 'analyst' in UserViewSet.perform_create) — matching SENAITE's own
+    "Add New User" form, which has no role concept at creation at all; the lab-permission-style role is
+    assigned/changed afterward via the edit flow, same as SENAITE's separate Users/Groups checkbox matrix."""
     full_name = serializers.SerializerMethodField()
-    role = serializers.ChoiceField(choices=[(r, r) for r in STAFF_ROLES])
+    role = serializers.ChoiceField(choices=[(r, r) for r in STAFF_ROLES], required=False)
+    password = serializers.CharField(write_only=True, required=False)
+    confirm_password = serializers.CharField(write_only=True, required=False)
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'full_name', 'role', 'is_active', 'date_joined']
+        fields = [
+            'id', 'username', 'email', 'first_name', 'last_name', 'full_name', 'role',
+            'password', 'confirm_password', 'is_active', 'date_joined',
+        ]
         read_only_fields = ['date_joined']
 
     def get_full_name(self, obj):

@@ -93,6 +93,17 @@ def sync_staff_user_to_senaite(self, user_id: int, temp_password: str):
     result = push_staff_user(user, temp_password)
     if result["ok"]:
         logger.info("Staff user '%s' synced to SENAITE.", user.username)
+    elif result.get("permanent"):
+        # Username collision with SENAITE's own reserved account (typically its
+        # built-in service user, "admin" by default) — will never succeed no
+        # matter how many times it's retried. Most common with the platform
+        # superadmin when DJANGO_SUPERUSER_USERNAME matches SENAITE_ADMIN_USER
+        # (both default to "admin" — see .env.example).
+        logger.warning(
+            "Staff user '%s' cannot be mirrored into SENAITE — username collides with an "
+            "existing SENAITE account (often SENAITE's own service user). Not retrying: %s",
+            user.username, result.get("error"),
+        )
     else:
         logger.error("Staff user '%s' SENAITE sync failed: %s — will retry.", user.username, result.get("error"))
         raise self.retry()

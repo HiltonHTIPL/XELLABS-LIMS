@@ -138,11 +138,12 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
   // the template's SENAITE sample type via senaite_uid. Falls back to the full
   // list when no template is selected (manual mode).
   function sampleTypeOptionsFor(templateId: string): DjangoSampleType[] {
-    if (!templateId) return sampleTypes
+    const active = sampleTypes.filter(st => st.is_active !== false)
+    if (!templateId) return active
     const template = sampleTemplates.find(t => t.uid === templateId)
-    if (!template?.sampleTypeUid) return sampleTypes
-    const matched = sampleTypes.filter(st => st.senaite_uid === template.sampleTypeUid)
-    return matched.length ? matched : sampleTypes
+    if (!template?.sampleTypeUid) return active
+    const matched = active.filter(st => st.senaite_uid === template.sampleTypeUid)
+    return matched.length ? matched : active
   }
 
   // Batches offered for a given client — once a client is picked, only show
@@ -458,6 +459,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
   function removeTest(uid: string) { set('selectedTests', f.selectedTests.filter(t => t.uid !== uid)) }
 
   const filteredTests = services.filter(s =>
+    s.review_state !== 'inactive' &&
     !f.selectedTests.find(x => x.uid === s.uid) &&
     (s.title.toLowerCase().includes(analysisSearch.toLowerCase()) || s.Keyword.toLowerCase().includes(analysisSearch.toLowerCase()))
   )
@@ -618,7 +620,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                 <div style={field}><label style={lbl}>Client *</label>
                   <select value={f.clientId} onChange={e => handleClientChange(e.target.value)} style={{ ...inp, borderColor: !f.clientId && error ? '#EF4444' : '#D1D5DB' }}>
                     <option value="">— select —</option>
-                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    {clients.filter(c => c.is_active).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select></div>
                 <div style={field}><label style={lbl}>Contact *</label>
                   <input value={f.contactName} onChange={e => set('contactName', e.target.value)} placeholder="e.g. Jane Doe" style={inp} /></div>
@@ -753,7 +755,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
             <div style={field}><label style={lbl}>Preservation</label>
               <select value={f.preservation} onChange={e => set('preservation', e.target.value)} style={inp}>
                 <option value="">None</option>
-                {preservations.map(p => <option key={p.uid} value={p.title}>{p.title}</option>)}
+                {preservations.filter(p => p.review_state !== 'inactive').map(p => <option key={p.uid} value={p.title}>{p.title}</option>)}
               </select></div>
           </div>
           <div style={{ ...grid4, marginBottom: 16 }}>
@@ -766,7 +768,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
             <div style={field}><label style={lbl}>Sample Point</label>
               <select value={f.samplePoint} onChange={e => set('samplePoint', e.target.value)} style={inp}>
                 <option value="">— select —</option>
-                {samplePoints.map(p => <option key={p.uid} value={p.title}>{p.title}</option>)}
+                {samplePoints.filter(p => p.review_state !== 'inactive').map(p => <option key={p.uid} value={p.title}>{p.title}</option>)}
               </select></div>
             <div style={field}><label style={lbl}>Storage Location</label>
               <StorageLocationInput
@@ -780,7 +782,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
             <div style={field}><label style={lbl}>Sampling Deviation</label>
               <select value={f.samplingDeviation} onChange={e => set('samplingDeviation', e.target.value)} style={inp}>
                 <option value="none">None</option>
-                {samplingDeviations.map(d => <option key={d.uid} value={d.title}>{d.title}</option>)}
+                {samplingDeviations.filter(d => d.review_state !== 'inactive').map(d => <option key={d.uid} value={d.title}>{d.title}</option>)}
               </select></div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto auto', gap: 16, alignItems: 'end' }}>

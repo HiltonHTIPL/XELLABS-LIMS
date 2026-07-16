@@ -23,6 +23,29 @@ class ParseError(Exception):
         super().__init__(f"Row {row_number}: {detail}")
 
 
+def _build_sample_cache(sample_ids: set) -> dict:
+    """Resolve samples by sample_id, senaite_ar_id, or barcode — the UI displays
+    the SENAITE-style id as "the" Sample ID (see app/lib/sampleDisplay.ts), so an
+    instrument's own export (or a user typing what's on screen) will routinely
+    reference that one, not Django's own internal sample_id. Confirmed live: a
+    real instrument export used the SENAITE id ("SO-0002") and every row failed
+    with "Sample not found" under a sample_id-only lookup. Same 3-way resolution
+    chain_of_custody's lookup and inventory/views.py's
+    _resolve_canonical_sample_id() already use."""
+    from django.db.models import Q
+    from lims.models import Sample
+
+    cache: dict = {}
+    matches = Sample.objects.filter(
+        Q(sample_id__in=sample_ids) | Q(senaite_ar_id__in=sample_ids) | Q(barcode__in=sample_ids)
+    )
+    for s in matches:
+        for key in (s.sample_id, s.senaite_ar_id, s.barcode):
+            if key:
+                cache[key] = s
+    return cache
+
+
 def parse_csv(file_content: bytes) -> tuple[list[dict], list[dict]]:
     """
     Parse a CSV instrument export.
@@ -137,17 +160,13 @@ def _fetch_senaite_services_by_keyword() -> dict:
 def map_results(rows: list[dict]) -> tuple[list[dict], list[dict]]:
     """
     Map parsed rows to existing Sample database objects and live SENAITE
-    analysis services (matched by Keyword/test_code).
+    analysis services (matched by Keyword/test_code). Samples resolved by
+    sample_id, senaite_ar_id, or barcode — see _build_sample_cache().
     Returns (mapped, errors) where mapped rows have sample_pk,
     senaite_service_uid, senaite_service_name added.
     """
-    from lims.models import Sample
-
     mapped, errors = [], []
-    # Build lookup caches
-    sample_cache = {s.sample_id: s for s in Sample.objects.filter(
-        sample_id__in={r["sample_id"] for r in rows}
-    )}
+    sample_cache = _build_sample_cache({r["sample_id"] for r in rows})
     service_cache = _fetch_senaite_services_by_keyword()
 
     for i, row in enumerate(rows, start=1):
@@ -178,14 +197,17 @@ def build_preview(rows: list[dict], parse_errors: list[dict]) -> tuple[list[dict
 
     Returns (preview_rows, summary) where summary = {total, valid, invalid}.
     """
-    from lims.models import Sample, WorksheetAssignment
+    from lims.models import WorksheetAssignment
 
     sample_ids = {r["sample_id"] for r in rows}
-    sample_cache = {s.sample_id: s for s in Sample.objects.filter(sample_id__in=sample_ids)}
+    sample_cache = _build_sample_cache(sample_ids)
     service_cache = _fetch_senaite_services_by_keyword()
+    # Resolved to canonical sample_id here (not the raw CSV/XML id, which may be
+    # a senaite_ar_id/barcode) so the membership check below lines up correctly.
+    canonical_ids = {s.sample_id for s in sample_cache.values()}
     assignment_pairs = set(
         WorksheetAssignment.objects.filter(
-            analysis_request__sample__sample_id__in=sample_ids,
+            analysis_request__sample__sample_id__in=canonical_ids,
         ).values_list("analysis_request__sample__sample_id", "senaite_service_uid")
     )
 
@@ -216,7 +238,7 @@ def build_preview(rows: list[dict], parse_errors: list[dict]) -> tuple[list[dict
             continue
         base["test_name"] = service["title"]
         base["sample_status"] = sample.status
-        if (row["sample_id"], service["uid"]) not in assignment_pairs:
+        if (sample.sample_id, service["uid"]) not in assignment_pairs:
             preview.append({**base, "status": "error",
                             "detail": "No open worksheet assignment for this sample and test."})
             continue

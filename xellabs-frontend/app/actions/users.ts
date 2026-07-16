@@ -19,8 +19,6 @@ export type StaffUser = {
 export type StaffUserFormState = {
   success?: boolean
   message?: string
-  login_username?: string
-  login_password?: string
   errors?: Record<string, string[]>
 }
 
@@ -40,18 +38,23 @@ export async function createStaffUser(
   formData: FormData
 ): Promise<StaffUserFormState> {
   const g = (key: string) => (formData.get(key) as string)?.trim() ?? ''
+  // Not trimmed — a password legitimately may start/end with a space.
+  const raw = (key: string) => (formData.get(key) as string) ?? ''
 
   const username = g('username')
-  const role     = g('role')
+  const password = raw('password')
+  const confirmPassword = raw('confirm_password')
 
   const errors: Record<string, string[]> = {}
   if (!username) errors.username = ['Username is required']
-  if (!role)     errors.role     = ['Role is required']
+  if (!password) errors.password = ['Password is required']
+  if (password && password !== confirmPassword) errors.confirm_password = ['Passwords do not match']
   if (Object.keys(errors).length) return { errors }
 
   const payload = {
     username,
-    role,
+    password,
+    confirm_password: confirmPassword,
     email: g('email'),
     first_name: g('first_name'),
     last_name: g('last_name'),
@@ -65,17 +68,12 @@ export async function createStaffUser(
     if (!res.ok) {
       const err = await res.json().catch(() => ({}))
       if (err.username) return { errors: { username: err.username } }
-      if (err.role)     return { errors: { role: err.role } }
+      if (err.password) return { errors: { password: err.password } }
+      if (err.confirm_password) return { errors: { confirm_password: err.confirm_password } }
       return { message: err.detail ?? 'Failed to create user.' }
     }
-    const created = await res.json()
     revalidatePath('/dashboard/admin/users')
-    return {
-      success: true,
-      message: `User "${username}" created successfully.`,
-      login_username: created.username,
-      login_password: created.login_password ?? '',
-    }
+    return { success: true, message: `User "${username}" created successfully.` }
   } catch {
     return { message: 'Could not reach the server. Please try again.' }
   }

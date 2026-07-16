@@ -130,7 +130,7 @@ class UserViewSet(ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        from django.utils.crypto import get_random_string
+        from django.contrib.auth.password_validation import validate_password
         from rest_framework.exceptions import ValidationError as DRFValidationError
 
         username = serializer.validated_data.get('username', '').strip()
@@ -139,27 +139,37 @@ class UserViewSet(ModelViewSet):
         if User.objects.filter(username__iexact=username).exists():
             raise DRFValidationError({'username': [f'A user with username "{username}" already exists.']})
 
-        temp_password = get_random_string(20)
+        # password/confirm_password are write-only serializer fields, not real
+        # columns on User (the model's own `password` field stores a hash, never
+        # the plaintext) — pop them out here so ModelSerializer.save() never
+        # touches that column directly; set_password() below is the only path.
+        password = serializer.validated_data.pop('password', '')
+        confirm_password = serializer.validated_data.pop('confirm_password', '')
+        if not password:
+            raise DRFValidationError({'password': ['Password is required.']})
+        if password != confirm_password:
+            raise DRFValidationError({'confirm_password': ['Passwords do not match.']})
+        try:
+            validate_password(password)
+        except Exception as exc:
+            raise DRFValidationError({'password': list(exc.messages)})
+
+        # No role concept at creation, matching SENAITE's own "Add New User" form —
+        # assigned/changed afterward via the edit flow. Default matches the
+        # frontend form's own default so a fresh account isn't accidentally
+        # under-permissioned relative to what the UI implies.
+        role = serializer.validated_data.setdefault('role', 'analyst')
+
         user = serializer.save(tenant=self.request.user.tenant)
-        user.set_password(temp_password)
+        user.set_password(password)
         user.save(update_fields=['password'])
-        logger.info("Created staff user '%s' with role '%s' by '%s'.", user.username, user.role, self.request.user.username)
-        # Surfaced once in the create response, same one-time-reveal pattern as
-        # ClientViewSet.perform_create — never logged, never returned again.
-        self.request._created_staff_password = temp_password
+        logger.info("Created staff user '%s' with role '%s' by '%s'.", user.username, role, self.request.user.username)
 
         # Mirror this staff user into SENAITE (matching Group = real SENAITE
-        # permissions for their role) — temp_password only exists in-memory
-        # right now, so it must be passed through immediately, not re-derived later.
+        # permissions for their role) — the admin-supplied password is the same
+        # one used here, so the same credentials log into both systems.
         from core.tasks import sync_staff_user_to_senaite
-        sync_staff_user_to_senaite.apply_async(args=[user.pk, temp_password], countdown=2)
-
-    def create(self, request, *args, **kwargs):
-        response = super().create(request, *args, **kwargs)
-        password = getattr(request, '_created_staff_password', None)
-        if password:
-            response.data['login_password'] = password
-        return response
+        sync_staff_user_to_senaite.apply_async(args=[user.pk, password], countdown=2)
 
     def list(self, request, *args, **kwargs):
         """Merge each user's live SENAITE roles into the list response — one

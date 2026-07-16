@@ -122,6 +122,16 @@ export async function getClient(id: number): Promise<DjangoClient | null> {
 }
 
 export async function getClients(): Promise<DjangoClient[]> {
+  // The /dashboard/clients admin page is fully SENAITE-native (senaite-clients.ts
+  // never calls Django), so a client created or edited there never gets a Django
+  // mirror row — invisible to every other feature reading this function (New
+  // Sample's dropdown, Reports, Samples pages) until synced. syncClientsFromSenaite()
+  // already existed for exactly this (committed since 89c3be6) but was never
+  // actually called from anywhere — same "sync before dropdown" pattern as
+  // syncSampleTypesFromSenaite(), just never wired in. Best-effort: a sync
+  // failure (e.g. not logged in as a XelLabs user) just means this returns
+  // whatever Django already has, not a hard error for the caller.
+  await syncClientsFromSenaite().catch(() => null)
   // Follow DRF pagination — a single unparameterised fetch returned only the
   // first 50 clients, truncating every client dropdown.
   try {

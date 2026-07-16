@@ -135,7 +135,41 @@ export function StatCard({
 }
 
 /** Clickable icon+label tile — used by grid launcher pages (e.g. /dashboard/admin). */
-export function LinkTile({ href, icon, label }: { href: string; icon: string; label: string }) {
+/** Small hover-triggered popover anchored to its trigger icon. Shared by every
+ *  (?) / interlink icon so tooltip markup/positioning lives in exactly one place. */
+export function InfoTooltip({ icon, color, text }: { icon: string; color: string; text: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <span
+      className="relative inline-flex items-center justify-center shrink-0"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+      onClick={e => e.preventDefault()}
+    >
+      <MI name={icon} size={16} color={color} />
+      {open && (
+        <span
+          role="tooltip"
+          className="absolute z-10"
+          style={{
+            bottom: '130%', right: -8, width: 220,
+            backgroundColor: '#111827', color: '#F9FAFB',
+            fontSize: 11, fontWeight: 500, lineHeight: 1.4,
+            borderRadius: 8, padding: '8px 10px',
+            boxShadow: '0 4px 12px rgba(16,24,40,0.18)',
+            whiteSpace: 'normal',
+          }}
+        >
+          {text}
+        </span>
+      )}
+    </span>
+  )
+}
+
+export function LinkTile({ href, icon, label, description, dependsOn }: {
+  href: string; icon: string; label: string; description?: string; dependsOn?: string[]
+}) {
   return (
     <a
       href={href}
@@ -151,7 +185,13 @@ export function LinkTile({ href, icon, label }: { href: string; icon: string; la
       >
         <MI name={icon} size={20} color={T.primary} />
       </div>
-      <span style={{ fontSize: 13, fontWeight: 700, color: T.primary }}>{label}</span>
+      <span className="flex-1" style={{ fontSize: 13, fontWeight: 700, color: T.primary }}>{label}</span>
+      {dependsOn && dependsOn.length > 0 && (
+        <InfoTooltip icon="account_tree" color={T.muted} text={`Interlinked with: ${dependsOn.join(', ')}`} />
+      )}
+      {description && (
+        <InfoTooltip icon="help_outline" color={T.muted} text={description} />
+      )}
     </a>
   )
 }

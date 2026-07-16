@@ -1,5 +1,5 @@
 'use client'
-import { useState, useActionState } from 'react'
+import { useState, useActionState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   createSamplePointFull, updateSamplePointFull, toggleSamplePointActiveFull,
@@ -55,6 +55,8 @@ export default function SamplePointsShell({
   const [vals, setVals] = useState<FV>(blank)
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
   const [toggling, setToggling] = useState<string | null>(null)
+  const attachmentInputRef = useRef<HTMLInputElement>(null)
+  const [attachmentName, setAttachmentName] = useState('')
   const isEditing = editing !== null
 
   function setVal<K extends keyof FV>(key: K, value: FV[K]) {
@@ -93,8 +95,8 @@ export default function SamplePointsShell({
     }
   }
 
-  function openCreate() { setEditing(null); setVals(blank()); setShowForm(true) }
-  function openEdit(p: SenaiteSamplePoint) { setEditing(p); setVals(pointToFV(p)); setShowForm(true) }
+  function openCreate() { setEditing(null); setVals(blank()); setAttachmentName(''); setShowForm(true) }
+  function openEdit(p: SenaiteSamplePoint) { setEditing(p); setVals(pointToFV(p)); setAttachmentName(''); setShowForm(true) }
   function closeForm() { setShowForm(false); setEditing(null) }
 
   async function handleToggleActive(p: SenaiteSamplePoint) {
@@ -212,7 +214,16 @@ export default function SamplePointsShell({
 
               <div>
                 <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Attachment</label>
-                <input type="file" name="attachment" className="w-full text-xs" />
+                <input ref={attachmentInputRef} type="file" name="attachment" className="hidden"
+                  onChange={e => setAttachmentName(e.target.files?.[0]?.name ?? '')} />
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => attachmentInputRef.current?.click()}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
+                    style={{ border: '1px solid #D1D5DB', color: '#374151', background: '#fff', cursor: 'pointer' }}>
+                    <MI name="upload_file" size={13} color="#6B7280" /> Choose File
+                  </button>
+                  <span className="text-xs" style={{ color: attachmentName ? '#111827' : '#9CA3AF' }}>{attachmentName || 'No file chosen'}</span>
+                </div>
                 {isEditing && editing.attachmentFilename && (
                   <p className="mt-1 text-xs" style={{ color: '#9CA3AF' }}>Current: {editing.attachmentFilename}</p>
                 )}

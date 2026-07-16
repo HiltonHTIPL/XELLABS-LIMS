@@ -25,6 +25,7 @@ export type DjangoSampleType = {
   name: string
   prefix: string
   senaite_uid?: string
+  is_active?: boolean
 }
 
 export async function getDjangoSampleTypes(): Promise<DjangoSampleType[]> {

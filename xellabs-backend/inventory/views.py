@@ -346,10 +346,16 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
         from lims.models import Result
         results = Result.objects.filter(
             worksheet_assignment__analysis_request__sample=sample_obj
-        ).select_related("worksheet_assignment__test", "submitted_by", "verified_by")
+        ).select_related("worksheet_assignment", "submitted_by", "verified_by")
 
         for r in results:
-            test_name = r.worksheet_assignment.test.name
+            # WorksheetAssignment.test (a FK to the old Django Test catalog model)
+            # was removed in the 2026-07-15 refactor that keyed everything on live
+            # SENAITE analysis services instead — this file wasn't updated at the
+            # time, so every Chain of Custody lookup for a sample with ANY result
+            # history 500'd with a FieldError on "test" (confirmed live, root cause
+            # for SO-0001 report). senaite_service_name is the plain-field replacement.
+            test_name = r.worksheet_assignment.senaite_service_name
             if r.submitted_at:
                 history.append({
                     "id": f"result-{r.pk}-submitted",

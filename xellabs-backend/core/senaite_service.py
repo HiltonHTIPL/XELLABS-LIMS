@@ -904,7 +904,19 @@ def push_staff_user(user, temp_password: str) -> dict:
             "roles": [],
         }, headers=plone_headers, timeout=15)
         if resp.status_code not in (200, 201):
-            return {"ok": False, "error": _sanitize_error(f"User create failed: HTTP {resp.status_code} {resp.text[:200]}")}
+            # "login name already in use" is permanent, not transient — most often
+            # this Django username collides with SENAITE's OWN built-in service
+            # account (SENAITE_USER, "admin" by default — see ROLE_TO_SENAITE_GROUP
+            # note below), which is a Zope root/emergency user, not a normal Member,
+            # so it never appears in list_senaite_users() yet still reserves the
+            # name. Retrying this on a timer can never succeed — flag it so the
+            # caller (sync_staff_user_to_senaite) doesn't burn retries on it.
+            permanent = resp.status_code == 400 and "already in use" in resp.text.lower()
+            return {
+                "ok": False,
+                "error": _sanitize_error(f"User create failed: HTTP {resp.status_code} {resp.text[:200]}"),
+                "permanent": permanent,
+            }
 
         resp = s.patch(_plone_rest_api(f"@groups/{group}"), json={
             "users": {user.username: True}

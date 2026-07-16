@@ -33,7 +33,14 @@ export default function AdminGridShell({ sections }: { sections: AdminSection[] 
       ) : (
         <div className="grid grid-cols-4 gap-4">
           {visible.map(section => (
-            <LinkTile key={section.href} href={section.href} icon={section.icon} label={section.label} />
+            <LinkTile
+              key={section.href}
+              href={section.href}
+              icon={section.icon}
+              label={section.label}
+              description={section.description}
+              dependsOn={section.dependsOn}
+            />
           ))}
         </div>
       )}
