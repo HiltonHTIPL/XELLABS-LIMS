@@ -55,3 +55,21 @@ Rule: no row marked present without `file:line`.
 2. Add stored `usability` (`valid` / `expired` / `out_of_service`) recomputed by signals.
 3. Expand `status` choices: rename `maintenance` → `under_maintenance`, add `out_of_service`.
 4. Reorganize edit drawer into Description / Additional Information / Procedures tabs.
+
+## Reference fields — inline create (Chain-of-Table)
+
+SENAITE source: `UIDReferenceField` / `PicklistWidget` on Instrument schema
+(`senaite-reference/.../content/instrument.py`).
+Rule: no row marked done without `file:line`.
+
+| Field | SENAITE type | Source | XELLABS entity + endpoint | Create action |
+|---|---|---|---|---|
+| InstrumentType | `InstrumentType` | `instrument.py:74-92` ReferenceWidget | `InstrumentType` `xellabs-backend/instruments/models.py:6`; `InstrumentTypeViewSet` `views.py:320`; route `urls.py:19` `instrument-types` | `createInstrumentType` `instrument-workflows.ts:87` |
+| Manufacturer | `Manufacturer` | `instrument.py:94-112` ReferenceWidget | `InstrumentManufacturer` `models.py:34`; `InstrumentManufacturerViewSet` `views.py:365`; route `urls.py:21` `manufacturers` | `createManufacturer` `instrument-workflows.ts:89` |
+| Supplier | `Supplier` | `instrument.py:114-132` ReferenceWidget | `InstrumentSupplier` `models.py:48`; `InstrumentSupplierViewSet` `views.py:374`; route `urls.py:22` `suppliers` | `createSupplier` `instrument-workflows.ts:90` |
+| InstrumentLocation | `InstrumentLocation` | `instrument.py:313-332` ReferenceWidget (schemata Additional info.) | `InstrumentLocation` `models.py:20`; `InstrumentLocationViewSet` `views.py:329`; route `urls.py:20` `instrument-locations` | `createInstrumentLocation` `instrument-workflows.ts:88` |
+| Methods | `Method` (multi) | `instrument.py:163-180` PicklistWidget | `lims.Method` `lims/models.py:57`; `MethodViewSet` `lims/views.py:86`; route `lims/urls.py:13` `methods` | `createMethodQuick` `methods.ts:55` (returns `{id,name,code}`) |
+
+Deprecated hidden `Method` single field (`instrument.py:151-161`) is not a UI dropdown.
+
+UI: all five use shared `NamedRefSlide` via `SelectOrAddField` / `MethodsSelectOrAdd` (choose-existing slide + add-new, create-and-select, no navigation).

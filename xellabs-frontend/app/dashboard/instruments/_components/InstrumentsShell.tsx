@@ -6,14 +6,23 @@ import {
   createInstrument, updateInstrument, deleteInstrument,
   type Instrument, type InstrumentFormState,
 } from '@/app/actions/instruments'
-import { type NamedItem, createInstrumentType } from '@/app/actions/instrument-workflows'
+import {
+  type NamedItem,
+  createInstrumentType,
+  createInstrumentLocation,
+  createManufacturer,
+  createSupplier,
+} from '@/app/actions/instrument-workflows'
+import { createMethodQuick } from '@/app/actions/methods'
+import SelectOrAddField, { type SelectOrAddItem } from './SelectOrAddField'
+import MethodsSelectOrAdd from './MethodsSelectOrAdd'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
 }
 
-function Field({ label, name, placeholder, required, error, value, onChange, type = 'text' }: {
-  label: string; name: string; placeholder?: string; required?: boolean
+function Field({ label, name, tip, placeholder, required, error, value, onChange, type = 'text' }: {
+  label: string; name: string; tip?: string; placeholder?: string; required?: boolean
   error?: string; value: string; onChange: (v: string) => void; type?: string
 }) {
   return (
@@ -21,11 +30,63 @@ function Field({ label, name, placeholder, required, error, value, onChange, typ
       <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
         {label}{required && <span style={{ color: '#EF4444' }}> *</span>}
       </label>
+      {tip && <p style={{ fontSize: 10, color: '#9CA3AF', marginBottom: 4 }}>{tip}</p>}
       <input name={name} type={type} placeholder={placeholder} value={value}
         onChange={e => onChange(e.target.value)}
         className="w-full px-3 py-2 text-xs rounded-lg outline-none"
         style={{ border: `1px solid ${error ? '#EF4444' : '#D1D5DB'}`, color: '#111827' }} />
       {error && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{error}</p>}
+    </div>
+  )
+}
+
+function TextAreaField({ label, name, tip, placeholder, error, value, onChange, rows = 3 }: {
+  label: string; name: string; tip?: string; placeholder?: string
+  error?: string; value: string; onChange: (v: string) => void; rows?: number
+}) {
+  return (
+    <div>
+      <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>{label}</label>
+      {tip && <p style={{ fontSize: 10, color: '#9CA3AF', marginBottom: 4 }}>{tip}</p>}
+      <textarea name={name} rows={rows} placeholder={placeholder} value={value}
+        onChange={e => onChange(e.target.value)}
+        className="w-full px-3 py-2 text-xs rounded-lg outline-none resize-none"
+        style={{ border: `1px solid ${error ? '#EF4444' : '#D1D5DB'}`, color: '#111827' }} />
+      {error && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{error}</p>}
+    </div>
+  )
+}
+
+/** Custom file picker — blue gradient button matching Create. */
+function FilePickField({ label, tip, name, accept }: {
+  label: string; tip: string; name: string; accept?: string
+}) {
+  const [fileName, setFileName] = useState('')
+  return (
+    <div>
+      <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>{label}</label>
+      <p style={{ fontSize: 10, color: '#9CA3AF', marginBottom: 6 }}>{tip}</p>
+      <label
+        className="inline-flex items-center gap-1.5 cursor-pointer"
+        style={{
+          fontSize: 12, fontWeight: 600, padding: '7px 14px', borderRadius: 8, color: '#fff',
+          background: 'linear-gradient(135deg, #0154FC 0%, #2563EB 55%, #1D4ED8 100%)',
+          boxShadow: '0 1px 2px rgba(1, 84, 252, 0.25)',
+        }}
+      >
+        <MI name="upload_file" size={14} color="#fff" />
+        Choose file
+        <input
+          name={name}
+          type="file"
+          accept={accept}
+          style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap', border: 0 }}
+          onChange={e => setFileName(e.target.files?.[0]?.name ?? '')}
+        />
+      </label>
+      <p style={{ fontSize: 11, color: fileName ? '#374151' : '#9CA3AF', marginTop: 6 }}>
+        {fileName || 'No file chosen'}
+      </p>
     </div>
   )
 }
@@ -84,6 +145,10 @@ const blank = (): FV => ({
 
 type MethodOption = { id: number; name: string; code?: string }
 
+function toItems(list: NamedItem[]): SelectOrAddItem[] {
+  return list.map(i => ({ id: i.id, name: i.name, description: i.description }))
+}
+
 export default function InstrumentsShell(
   { initialInstruments, types, locations, manufacturers, suppliers, methods = [] }:
   {
@@ -104,26 +169,14 @@ export default function InstrumentsShell(
   const [confirmDelete, setConfirmDelete] = useState<Instrument | null>(null)
   const [drawerTab, setDrawerTab] = useState<DrawerTab>('description')
   const [statusFilter, setStatusFilter] = useState<string>('all')
-  const [typeList, setTypeList] = useState<NamedItem[]>(types)
-  const [addingType, setAddingType] = useState(false)
-  const [newType, setNewType] = useState('')
-  const [newTypeDesc, setNewTypeDesc] = useState('')
-  const [addingTypeSaving, setAddingTypeSaving] = useState(false)
 
-  function openAddType() { setNewType(''); setNewTypeDesc(''); setAddingType(true) }
-  async function handleAddType() {
-    if (!newType.trim()) return
-    setAddingTypeSaving(true)
-    const res = await createInstrumentType(newType, newTypeDesc)
-    if (res.ok && res.item) {
-      setTypeList(prev => [...prev, res.item!].sort((a, b) => a.name.localeCompare(b.name)))
-      setVal('instrument_type', String(res.item.id))
-      setAddingType(false); setNewType(''); setNewTypeDesc('')
-    } else {
-      showToast(false, res.message)
-    }
-    setAddingTypeSaving(false)
-  }
+  const [typeList, setTypeList] = useState<SelectOrAddItem[]>(() => toItems(types))
+  const [manufacturerList, setManufacturerList] = useState<SelectOrAddItem[]>(() => toItems(manufacturers))
+  const [supplierList, setSupplierList] = useState<SelectOrAddItem[]>(() => toItems(suppliers))
+  const [locationList, setLocationList] = useState<SelectOrAddItem[]>(() => toItems(locations))
+  const [methodList, setMethodList] = useState<SelectOrAddItem[]>(() =>
+    methods.map(m => ({ id: m.id, name: m.name, code: m.code }))
+  )
 
   const isEdit = editing !== null
 
@@ -162,6 +215,9 @@ export default function InstrumentsShell(
         const fe: Record<string, string> = {}
         for (const [k, msgs] of Object.entries(result.errors)) { if (msgs?.length) fe[k] = msgs[0] }
         setFieldErrors(fe)
+        if (fe.name || fe.instrument_id || fe.instrument_type || fe.manufacturer_org || fe.supplier_org) {
+          setDrawerTab('description')
+        }
       } else if (result.message) {
         showToast(false, result.message)
       }
@@ -332,163 +388,182 @@ export default function InstrumentsShell(
               {drawerTab === 'description' && (
                 <>
                   <div className="grid grid-cols-2 gap-3">
-                    <Field label="Name" name="name" placeholder="e.g. HPLC System 1" required
+                    <Field label="Name" name="name" tip="Display name for this instrument" placeholder="e.g. HPLC System 1" required
                       error={fieldErrors.name} value={vals.name} onChange={v => setVal('name', v)} />
-                    <Field label="Instrument ID" name="instrument_id" placeholder="e.g. HPLC-001" required
+                    <Field label="Instrument ID" name="instrument_id" tip="Lab-unique identifier used in worksheets and imports" placeholder="e.g. HPLC-001" required
                       error={fieldErrors.instrument_id} value={vals.instrument_id} onChange={v => setVal('instrument_id', v)} />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Instrument type</label>
-                      <select name="instrument_type" value={vals.instrument_type}
-                        onChange={e => { if (e.target.value === '__add__') openAddType(); else setVal('instrument_type', e.target.value) }}
-                        className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827' }}>
-                        <option value="">Select type…</option>
-                        {typeList.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                        <option value="__add__">+ Add new type…</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Manufacturer</label>
-                      <select name="manufacturer_org" value={vals.manufacturer_org} onChange={e => setVal('manufacturer_org', e.target.value)}
-                        className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827' }}>
-                        <option value="">Select manufacturer…</option>
-                        {manufacturers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                      </select>
-                    </div>
+                    <SelectOrAddField
+                      label="Instrument type"
+                      tip="Select the type of this instrument"
+                      name="instrument_type"
+                      entityLabel="Instrument Type"
+                      value={vals.instrument_type}
+                      items={typeList}
+                      onChange={id => setVal('instrument_type', id)}
+                      onItemsChange={setTypeList}
+                      createAction={(n, d) => createInstrumentType(n, d)}
+                      error={fieldErrors.instrument_type}
+                    />
+                    <SelectOrAddField
+                      label="Manufacturer"
+                      tip="Select the manufacturer of this instrument"
+                      name="manufacturer_org"
+                      entityLabel="Manufacturer"
+                      value={vals.manufacturer_org}
+                      items={manufacturerList}
+                      onChange={id => setVal('manufacturer_org', id)}
+                      onItemsChange={setManufacturerList}
+                      createAction={(n, d) => createManufacturer(n, d)}
+                      error={fieldErrors.manufacturer_org}
+                    />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Supplier</label>
-                      <select name="supplier_org" value={vals.supplier_org} onChange={e => setVal('supplier_org', e.target.value)}
-                        className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827' }}>
-                        <option value="">Select supplier…</option>
-                        {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                      </select>
-                    </div>
-                    <Field label="Model" name="model" placeholder="e.g. 1260 Infinity II"
+                    <SelectOrAddField
+                      label="Supplier"
+                      tip="Select the supplier of this instrument"
+                      name="supplier_org"
+                      entityLabel="Supplier"
+                      value={vals.supplier_org}
+                      items={supplierList}
+                      onChange={id => setVal('supplier_org', id)}
+                      onItemsChange={setSupplierList}
+                      createAction={(n, d) => createSupplier(n, d)}
+                      error={fieldErrors.supplier_org}
+                    />
+                    <Field label="Model" name="model" tip="The instrument's model number" placeholder="e.g. 1260 Infinity II"
                       error={fieldErrors.model} value={vals.model} onChange={v => setVal('model', v)} />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <Field label="Serial No" name="serial_number" placeholder="e.g. SN-48213"
+                    <Field label="Serial No" name="serial_number" tip="Serial number that uniquely identifies the instrument" placeholder="e.g. SN-48213"
                       error={fieldErrors.serial_number} value={vals.serial_number} onChange={v => setVal('serial_number', v)} />
-                    <Field label="Asset Number" name="asset_number" placeholder="e.g. AST-00142"
+                    <Field label="Asset Number" name="asset_number" tip="The instrument's ID in the lab's asset register" placeholder="e.g. AST-00142"
                       error={fieldErrors.asset_number} value={vals.asset_number} onChange={v => setVal('asset_number', v)} />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Status</label>
+                      <p style={{ fontSize: 10, color: '#9CA3AF', marginBottom: 4 }}>Operational status of this instrument</p>
                       <select name="status" value={vals.status} onChange={e => setVal('status', e.target.value)}
                         className="w-full px-3 py-2 text-xs rounded-lg outline-none"
                         style={{ border: '1px solid #D1D5DB', color: '#111827' }}>
                         {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                       </select>
                     </div>
-                    <Field label="Purchase Date" name="purchase_date" type="date"
+                    <Field label="Purchase Date" name="purchase_date" tip="Date the instrument was purchased" type="date"
                       error={fieldErrors.purchase_date} value={vals.purchase_date} onChange={v => setVal('purchase_date', v)} />
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Description</label>
-                    <textarea name="notes" rows={3} placeholder="Instrument description…" value={vals.notes}
-                      onChange={e => setVal('notes', e.target.value)}
-                      className="w-full px-3 py-2 text-xs rounded-lg outline-none resize-none"
-                      style={{ border: '1px solid #D1D5DB', color: '#111827' }} />
-                  </div>
+                  <TextAreaField
+                    label="Description"
+                    name="notes"
+                    tip="Short description of the instrument"
+                    placeholder="Instrument description…"
+                    value={vals.notes}
+                    onChange={v => setVal('notes', v)}
+                  />
                 </>
               )}
 
               {drawerTab === 'additional' && (
                 <>
                   <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Location</label>
-                      <select name="instrument_location" value={vals.instrument_location} onChange={e => setVal('instrument_location', e.target.value)}
-                        className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827' }}>
-                        <option value="">Select location…</option>
-                        {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                      </select>
-                    </div>
-                    <Field label="Installation Date" name="installation_date" type="date"
+                    <SelectOrAddField
+                      label="Location"
+                      tip="Location where the instrument is installed"
+                      name="instrument_location"
+                      entityLabel="Instrument Location"
+                      value={vals.instrument_location}
+                      items={locationList}
+                      onChange={id => setVal('instrument_location', id)}
+                      onItemsChange={setLocationList}
+                      createAction={(n, d) => createInstrumentLocation(n, d)}
+                      error={fieldErrors.instrument_location}
+                    />
+                    <Field label="Installation Date" name="installation_date" tip="The date the instrument was installed" type="date"
                       error={fieldErrors.installation_date} value={vals.installation_date} onChange={v => setVal('installation_date', v)} />
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Supported methods</label>
-                    <div className="rounded-lg p-2 max-h-36 overflow-y-auto" style={{ border: '1px solid #D1D5DB' }}>
-                      {methods.length === 0 && (
-                        <p style={{ fontSize: 11, color: '#9CA3AF' }}>No methods available.</p>
-                      )}
-                      {methods.map(m => (
-                        <label key={m.id} className="flex items-center gap-2 py-1 text-xs" style={{ color: '#374151' }}>
-                          <input type="checkbox" checked={vals.method_ids.includes(m.id)}
-                            onChange={() => toggleMethod(m.id)} />
-                          {m.name}{m.code ? ` (${m.code})` : ''}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
+                  <MethodsSelectOrAdd
+                    tip="Methods that are supported by this analytical instrument"
+                    items={methodList}
+                    selectedIds={vals.method_ids}
+                    onToggle={toggleMethod}
+                    onItemsChange={setMethodList}
+                    createAction={createMethodQuick}
+                    error={fieldErrors.method_ids}
+                  />
                   <div className="grid grid-cols-2 gap-3">
-                    <Field label="Data Interface" name="data_interface" placeholder="Export interface code"
+                    <Field label="Data Interface" name="data_interface" tip="Select an export interface for this instrument" placeholder="Export interface code"
                       error={fieldErrors.data_interface} value={vals.data_interface} onChange={v => setVal('data_interface', v)} />
-                    <Field label="Import Data Interface(s)" name="import_data_interface" placeholder="code1, code2"
+                    <Field label="Import Data Interface(s)" name="import_data_interface" tip="Select an import interface for this instrument" placeholder="code1, code2"
                       error={fieldErrors.import_data_interface} value={vals.import_data_interface} onChange={v => setVal('import_data_interface', v)} />
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Result files folders</label>
-                    <textarea name="result_files_folder" rows={2}
-                      placeholder={"InterfaceCode|/path/to/folder"}
-                      value={vals.result_files_folder}
-                      onChange={e => setVal('result_files_folder', e.target.value)}
-                      className="w-full px-3 py-2 text-xs rounded-lg outline-none resize-none"
-                      style={{ border: '1px solid #D1D5DB', color: '#111827' }} />
-                    <p style={{ fontSize: 10, color: '#9CA3AF', marginTop: 4 }}>One line per path: InterfaceCode|/folder</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Data Interface Options</label>
-                    <textarea name="data_interface_options" rows={2}
-                      placeholder={"Key=Value"}
-                      value={vals.data_interface_options}
-                      onChange={e => setVal('data_interface_options', e.target.value)}
-                      className="w-full px-3 py-2 text-xs rounded-lg outline-none resize-none"
-                      style={{ border: '1px solid #D1D5DB', color: '#111827' }} />
-                    <p style={{ fontSize: 10, color: '#9CA3AF', marginTop: 4 }}>One Key=Value pair per line for import/export modules</p>
-                  </div>
-                  <label className="flex items-center gap-2 text-xs" style={{ color: '#374151' }}>
+                  <TextAreaField
+                    label="Result files folders"
+                    name="result_files_folder"
+                    tip="Per interface: InterfaceCode|/folder — where the system looks for result files"
+                    placeholder={"InterfaceCode|/path/to/folder"}
+                    value={vals.result_files_folder}
+                    onChange={v => setVal('result_files_folder', v)}
+                    rows={2}
+                  />
+                  <TextAreaField
+                    label="Data Interface Options"
+                    name="data_interface_options"
+                    tip="Pass arbitrary Key=Value parameters to export/import modules"
+                    placeholder={"Key=Value"}
+                    value={vals.data_interface_options}
+                    onChange={v => setVal('data_interface_options', v)}
+                    rows={2}
+                  />
+                  <label className="flex items-start gap-2 text-xs" style={{ color: '#374151' }}>
                     <input type="checkbox" name="dispose_until_next_calibration" value="true"
                       checked={vals.dispose_until_next_calibration}
-                      onChange={e => setVal('dispose_until_next_calibration', e.target.checked)} />
-                    De-activate until next calibration test
+                      onChange={e => setVal('dispose_until_next_calibration', e.target.checked)}
+                      className="mt-0.5" />
+                    <span>
+                      <span className="font-medium">De-activate until next calibration test</span>
+                      <span style={{ display: 'block', fontSize: 10, color: '#9CA3AF', marginTop: 2 }}>
+                        If checked, the instrument is unavailable until the next valid calibration. Cleared automatically after calibration.
+                      </span>
+                    </span>
                   </label>
                   <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Photo</label>
-                      <input name="photo" type="file" accept="image/*" className="w-full text-xs" style={{ fontSize: 12 }} />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Installation Certificate</label>
-                      <input name="installation_certificate" type="file" className="w-full text-xs" style={{ fontSize: 12 }} />
-                    </div>
+                    <FilePickField
+                      label="Photo"
+                      tip="Photo of the instrument"
+                      name="photo"
+                      accept="image/*"
+                    />
+                    <FilePickField
+                      label="Installation Certificate"
+                      tip="Installation certificate upload"
+                      name="installation_certificate"
+                    />
                   </div>
                 </>
               )}
 
               {drawerTab === 'procedures' && (
                 <>
-                  <div>
-                    <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>In-lab calibration procedure</label>
-                    <textarea name="inlab_calibration_procedure" rows={5} value={vals.inlab_calibration_procedure}
-                      onChange={e => setVal('inlab_calibration_procedure', e.target.value)}
-                      placeholder="Instructions for in-lab regular calibration routines"
-                      className="w-full px-3 py-2 text-xs rounded-lg outline-none resize-none"
-                      style={{ border: '1px solid #D1D5DB', color: '#111827' }} />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Preventive maintenance procedure</label>
-                    <textarea name="preventive_maintenance_procedure" rows={5} value={vals.preventive_maintenance_procedure}
-                      onChange={e => setVal('preventive_maintenance_procedure', e.target.value)}
-                      placeholder="Instructions for regular preventive and maintenance routines"
-                      className="w-full px-3 py-2 text-xs rounded-lg outline-none resize-none"
-                      style={{ border: '1px solid #D1D5DB', color: '#111827' }} />
-                  </div>
+                  <TextAreaField
+                    label="In-lab calibration procedure"
+                    name="inlab_calibration_procedure"
+                    tip="Instructions for in-lab regular calibration routines intended for analysts"
+                    placeholder="Instructions for in-lab regular calibration routines"
+                    value={vals.inlab_calibration_procedure}
+                    onChange={v => setVal('inlab_calibration_procedure', v)}
+                    rows={5}
+                  />
+                  <TextAreaField
+                    label="Preventive maintenance procedure"
+                    name="preventive_maintenance_procedure"
+                    tip="Instructions for regular preventive and maintenance routines intended for analysts"
+                    placeholder="Instructions for regular preventive and maintenance routines"
+                    value={vals.preventive_maintenance_procedure}
+                    onChange={v => setVal('preventive_maintenance_procedure', v)}
+                    rows={5}
+                  />
                   {isEdit && (
                     <p style={{ fontSize: 10, color: '#9CA3AF' }}>
                       Cert/calibration/validation history and status transitions are on the instrument detail page.
@@ -510,49 +585,6 @@ export default function InstrumentsShell(
               </button>
             </div>
           </form>
-        </div>
-      </div>
-
-      {/* ── Instrument Type slide-in ── */}
-      <div style={{ position: 'fixed', inset: 0, zIndex: 400, pointerEvents: addingType ? 'auto' : 'none' }}>
-        <div onClick={() => setAddingType(false)} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.30)', opacity: addingType ? 1 : 0, transition: 'opacity 0.25s ease' }} />
-        <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 380, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.12)', transform: addingType ? 'translateX(0)' : 'translateX(100%)', transition: 'transform 0.28s cubic-bezier(0.4,0,0.2,1)', display: 'flex', flexDirection: 'column' }}>
-          <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ borderBottom: '1px solid #F3F4F6' }}>
-            <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>Instrument Type</h2>
-            <button onClick={() => setAddingType(false)} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
-          </div>
-          <div className="flex-1 overflow-y-auto px-5 py-4">
-            <p style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', letterSpacing: '0.03em', marginBottom: 6 }}>CHOOSE EXISTING</p>
-            <div className="mb-5" style={{ border: '1px solid #F3F4F6', borderRadius: 8, maxHeight: 200, overflowY: 'auto' }}>
-              {typeList.length === 0 && <div style={{ fontSize: 12, color: '#9CA3AF', padding: 12 }}>No types yet. Add one below.</div>}
-              {typeList.map(t => {
-                const sel = vals.instrument_type === String(t.id)
-                return (
-                  <button key={t.id} type="button" onClick={() => { setVal('instrument_type', String(t.id)); setAddingType(false) }}
-                    className="w-full text-left flex items-center justify-between hover:bg-gray-50"
-                    style={{ fontSize: 12, padding: '9px 12px', borderBottom: '1px solid #F9FAFB', color: sel ? '#0154FC' : '#111827', fontWeight: sel ? 600 : 400 }}>
-                    {t.name}{sel && <MI name="check" size={14} color="#0154FC" />}
-                  </button>
-                )
-              })}
-            </div>
-            <p style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', letterSpacing: '0.03em', marginBottom: 6 }}>ADD NEW</p>
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: '#374151', marginBottom: 4 }}>Name *</label>
-            <input value={newType} onChange={e => setNewType(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddType() } }}
-              placeholder="e.g. GC-MS" className="w-full px-3 py-2 rounded-lg mb-3" style={{ fontSize: 12, border: '1px solid #D1D5DB' }} />
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: '#374151', marginBottom: 4 }}>Description</label>
-            <textarea value={newTypeDesc} onChange={e => setNewTypeDesc(e.target.value)} rows={2}
-              placeholder="Optional" className="w-full px-3 py-2 rounded-lg" style={{ fontSize: 12, border: '1px solid #D1D5DB', resize: 'none' }} />
-          </div>
-          <div className="px-5 py-4 flex justify-end gap-2 shrink-0" style={{ borderTop: '1px solid #F3F4F6' }}>
-            <button type="button" onClick={() => setAddingType(false)}
-              style={{ fontSize: 12, padding: '7px 16px', borderRadius: 8, border: '1px solid #E8EAF2', color: '#374151', background: '#fff' }}>Cancel</button>
-            <button type="button" disabled={addingTypeSaving || !newType.trim()} onClick={handleAddType}
-              style={{ fontSize: 12, fontWeight: 600, padding: '7px 18px', borderRadius: 8, backgroundColor: '#0154FC', color: '#fff', border: 'none', opacity: addingTypeSaving || !newType.trim() ? 0.6 : 1 }}>
-              {addingTypeSaving ? 'Creating…' : 'Create & Select'}
-            </button>
-          </div>
         </div>
       </div>
 

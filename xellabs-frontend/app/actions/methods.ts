@@ -46,8 +46,50 @@ export async function createMethod(_state: MethodFormState, formData: FormData):
       return { message: (data as Record<string,string[]>).code?.[0] ?? (data as Record<string,string[]>).name?.[0] ?? (data as {detail?: string}).detail ?? 'Failed to create method.' }
     }
     revalidatePath('/dashboard/methods')
+    revalidatePath('/dashboard/instruments')
     return { success: true, message: `Method "${name}" created.` }
   } catch (e) { return { message: String(e) } }
+}
+
+/** Inline create from instrument form — returns the created row for immediate select. */
+export async function createMethodQuick(
+  name: string,
+  description = '',
+  extras?: Record<string, string>,
+): Promise<{ ok: boolean; message: string; item?: { id: number; name: string; code: string; description: string } }> {
+  const trimmed = name.trim()
+  const code = (extras?.code ?? '').trim()
+  if (!trimmed) return { ok: false, message: 'Name is required.' }
+  if (!code) return { ok: false, message: 'Code is required.' }
+  try {
+    const res = await djangoFetch('/api/lims/methods/', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: trimmed,
+        code,
+        description: description.trim(),
+        is_active: true,
+      }),
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok) {
+      const firstErr = Object.values(data)[0]
+      const msg = Array.isArray(firstErr) ? String(firstErr[0]) : (data.detail as string) ?? 'Failed to create method.'
+      return { ok: false, message: msg }
+    }
+    revalidatePath('/dashboard/methods')
+    revalidatePath('/dashboard/instruments')
+    return {
+      ok: true,
+      message: 'Added.',
+      item: {
+        id: Number(data.id),
+        name: String(data.name),
+        code: String(data.code ?? code),
+        description: String(data.description ?? ''),
+      },
+    }
+  } catch (e) { return { ok: false, message: String(e) } }
 }
 
 export async function updateMethod(id: number, _state: MethodFormState, formData: FormData): Promise<MethodFormState> {
