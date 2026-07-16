@@ -41,8 +41,10 @@ const NAV: NavEntry[] = [
   {
     group: 'Instruments',
     icon: 'science',
-    roles: ['admin', 'lab_manager', 'analyst'],
+    roles: ['admin', 'lab_manager', 'analyst', 'reviewer'],
     children: [
+      { label: 'Import Results', href: '/dashboard/instruments/import', icon: 'upload_file', roles: ['admin', 'lab_manager', 'analyst'] },
+      { label: 'Multi-Instrument Report', href: '/dashboard/instruments/report', icon: 'summarize', roles: ['admin', 'lab_manager', 'analyst', 'reviewer'] },
       { label: 'Test Schedule', href: '/dashboard/schedule', icon: 'event_note', roles: ['admin', 'lab_manager', 'analyst'] },
       { label: 'Inventory Dashboard', href: '/dashboard/inventory-dashboard', icon: 'monitoring', roles: ['admin', 'lab_manager', 'analyst'] },
       { label: 'Reagents & Standards', href: '/dashboard/inventory-items', icon: 'biotech', roles: ['admin', 'lab_manager', 'analyst'] },
@@ -51,7 +53,7 @@ const NAV: NavEntry[] = [
     ],
   },
   { label: 'Reports',          href: '/dashboard/reports',           icon: 'bar_chart',               roles: null },
-  { label: 'XELPulse',     href: '/dashboard/analytics',         icon: 'insights',                roles: ['admin', 'lab_manager', 'analyst'] },
+  { label: 'XEL Analytics', href: '/dashboard/analytics',         icon: 'insights',                roles: ['admin', 'lab_manager', 'analyst'] },
   // Compliance
   {
     group: 'Compliance',
@@ -85,6 +87,7 @@ const NAV: NavEntry[] = [
       { label: 'Approvals',    href: '/dashboard/approvals',    icon: 'fact_check',  roles: ['admin', 'lab_manager', 'reviewer'] },
       { label: 'Audit Trail',  href: '/dashboard/audit-trail',  icon: 'history',     roles: ['admin', 'lab_manager'] },
       { label: 'Master Data Import', href: '/dashboard/master-data-import', icon: 'upload_file', roles: ['admin', 'lab_manager'] },
+      { label: 'Instrument Register', href: '/dashboard/instruments', icon: 'build_circle', roles: ['admin'], exact: true },
       { label: 'Instrument List', href: '/dashboard/instrument-list', icon: 'precision_manufacturing', roles: ['admin', 'lab_manager'] },
       { label: 'Storage List', href: '/dashboard/storage-list', icon: 'inventory_2', roles: ['admin', 'lab_manager'] },
       { label: 'Report Templates', href: '/dashboard/settings/report-templates', icon: 'description', roles: ['admin'] },
@@ -105,14 +108,23 @@ export default function Sidebar({ onToggle, role, reportDraftCount, isSuperuser 
 
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
     const open = new Set<string>()
+    const onInstrumentRegister =
+      pathname === '/dashboard/instruments'
+      || (pathname.startsWith('/dashboard/instruments/')
+        && !pathname.startsWith('/dashboard/instruments/import')
+        && !pathname.startsWith('/dashboard/instruments/report'))
     if ([
       '/dashboard/admin', '/dashboard/sample-types', '/dashboard/sample-templates', '/dashboard/analysis-profiles',
       '/dashboard/tests', '/dashboard/specifications', '/dashboard/analysis-requests', '/dashboard/results',
       '/dashboard/tasks', '/dashboard/chain-of-custody', '/dashboard/approvals', '/dashboard/audit-trail',
       '/dashboard/master-data-import', '/dashboard/instrument-list', '/dashboard/storage-list', '/dashboard/settings', '/dashboard/tenant-management',
-    ].some(p => pathname.startsWith(p))) open.add('Administration')
+    ].some(p => pathname.startsWith(p)) || onInstrumentRegister) open.add('Administration')
     if (['/dashboard/samples-overview', '/dashboard/samples/new', '/dashboard/lab-samples', '/dashboard/lab-worksheets'].some(p => pathname.startsWith(p))) open.add('Samples')
-    if (['/dashboard/inventory-items', '/dashboard/inventory-lots', '/dashboard/instrument-maintenance', '/dashboard/schedule', '/dashboard/inventory-dashboard'].some(p => pathname.startsWith(p))) open.add('Instruments')
+    if ([
+      '/dashboard/inventory-items', '/dashboard/inventory-lots', '/dashboard/instrument-maintenance',
+      '/dashboard/schedule', '/dashboard/inventory-dashboard',
+      '/dashboard/instruments/import', '/dashboard/instruments/report',
+    ].some(p => pathname.startsWith(p))) open.add('Instruments')
     return open
   })
 

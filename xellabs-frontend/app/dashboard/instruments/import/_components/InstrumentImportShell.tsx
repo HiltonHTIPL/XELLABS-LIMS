@@ -134,41 +134,83 @@ export default function InstrumentImportShell({ instruments, history }: {
     <div style={{ padding: 20, backgroundColor: T.pageBg, minHeight: '100%' }}>
       <PageHeader
         title="Import Instrument Results"
-        subtitle="Upload an instrument export, review how each row maps to a sample, then commit. The original file is kept as the backup of record."
-        right={<Link href="/dashboard/instruments/report" style={{ textDecoration: 'none' }}><Btn variant="outline" icon="summarize">Sample Report</Btn></Link>}
+        subtitle="Upload an instrument export, map rows to sample records, then commit. The original file is stored as the backup of record."
+        right={<Link href="/dashboard/instruments/report" style={{ textDecoration: 'none' }}><Btn variant="outline" icon="summarize">Multi-Instrument Report</Btn></Link>}
       />
 
       {error && <Banner tone="error">{error}</Banner>}
 
       {step === 'select' && (
-        <Card title="Upload result file" icon="upload_file">
-          <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
-            <Field label="Instrument" required>
-              <select value={instrument} onChange={e => setInstrument(e.target.value)} style={selectStyle}>
-                <option value="" disabled>Select instrument…</option>
-                {instruments.map(i => (
-                  <option key={i.id} value={i.id}>{i.name} ({i.instrument_id})</option>
-                ))}
-              </select>
-            </Field>
-            <Field label="File Format" required>
-              <select value={fileFormat} onChange={e => setFileFormat(e.target.value as Fmt)} style={selectStyle}>
-                <option value="csv">CSV</option>
-                <option value="xml">XML</option>
-              </select>
-            </Field>
-          </div>
-          <div className="mt-3">
-            <Dropzone file={file} dragOver={dragOver} onPick={() => inputRef.current?.click()} onDrag={setDragOver} onDrop={onDrop} />
-            <input ref={inputRef} type="file" accept=".csv,.xml,text/csv,application/xml,text/xml" className="hidden"
-              onChange={e => acceptFile(e.target.files?.[0] ?? null)} />
-          </div>
-          <div className="flex items-center justify-end gap-2 mt-4">
-            <Btn variant="primary" icon={busy ? 'hourglass_top' : 'preview'} disabled={busy} onClick={runPreview}>
-              {busy ? 'Reading file…' : 'Preview import'}
-            </Btn>
-          </div>
-        </Card>
+        <>
+          <Card title="File format" icon="description" className="mb-4">
+            <p style={{ fontSize: 13, color: T.text, marginBottom: 10 }}>
+              CSV columns (required): <code style={{ fontWeight: 700 }}>sample_id</code>,{' '}
+              <code style={{ fontWeight: 700 }}>test_code</code>,{' '}
+              <code style={{ fontWeight: 700 }}>value</code>. Optional: <code>unit</code>, <code>flags</code>.
+              Each row needs an open worksheet assignment for that sample and test.
+            </p>
+            <p style={{ fontSize: 12.5, color: T.muted, marginBottom: 12 }}>
+              Demo tip: import twice with different instruments (use the A and B templates), then open the multi-instrument report for the same sample ID.
+            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <a href="/demo/tc6-instrument-a.csv" download style={{ textDecoration: 'none' }}>
+                <Btn variant="outline" icon="download">Template A (instrument 1)</Btn>
+              </a>
+              <a href="/demo/tc6-instrument-b.csv" download style={{ textDecoration: 'none' }}>
+                <Btn variant="outline" icon="download">Template B (instrument 2)</Btn>
+              </a>
+            </div>
+          </Card>
+
+          <Card title="Upload result file" icon="upload_file">
+            <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+              <Field label="Instrument" required>
+                <select value={instrument} onChange={e => setInstrument(e.target.value)} style={selectStyle}>
+                  <option value="" disabled>Select instrument…</option>
+                  <optgroup label="Usable">
+                    {instruments.filter(i => i.is_usable || i.usability === 'valid').map(i => (
+                      <option key={i.id} value={i.id}>{i.name} ({i.instrument_id})</option>
+                    ))}
+                  </optgroup>
+                  {instruments.some(i => !(i.is_usable || i.usability === 'valid')) && (
+                    <optgroup label="Not currently usable">
+                      {instruments.filter(i => !(i.is_usable || i.usability === 'valid')).map(i => (
+                        <option key={i.id} value={i.id}>
+                          {i.name} ({i.instrument_id}) — {i.usability ?? i.status ?? 'unavailable'}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+                {(() => {
+                  const chosen = instruments.find(i => String(i.id) === instrument)
+                  if (!chosen || chosen.is_usable || chosen.usability === 'valid') return null
+                  return (
+                    <p style={{ fontSize: 11, color: '#D97706', marginTop: 6 }}>
+                      This instrument is not currently usable ({chosen.usability ?? chosen.status}). You can continue, but results may be flagged.
+                    </p>
+                  )
+                })()}
+              </Field>
+              <Field label="File Format" required>
+                <select value={fileFormat} onChange={e => setFileFormat(e.target.value as Fmt)} style={selectStyle}>
+                  <option value="csv">CSV</option>
+                  <option value="xml">XML</option>
+                </select>
+              </Field>
+            </div>
+            <div className="mt-3">
+              <Dropzone file={file} dragOver={dragOver} onPick={() => inputRef.current?.click()} onDrag={setDragOver} onDrop={onDrop} />
+              <input ref={inputRef} type="file" accept=".csv,.xml,text/csv,application/xml,text/xml" className="hidden"
+                onChange={e => acceptFile(e.target.files?.[0] ?? null)} />
+            </div>
+            <div className="flex items-center justify-end gap-2 mt-4">
+              <Btn variant="primary" icon={busy ? 'hourglass_top' : 'preview'} disabled={busy} onClick={runPreview}>
+                {busy ? 'Reading file…' : 'Preview import'}
+              </Btn>
+            </div>
+          </Card>
+        </>
       )}
 
       {step === 'preview' && preview?.summary && preview.rows && (
@@ -222,7 +264,13 @@ export default function InstrumentImportShell({ instruments, history }: {
               </div>
             </div>
           )}
-          <div className="flex items-center justify-end">
+          <div className="flex items-center justify-end gap-2 flex-wrap">
+            {(commitRes.sample_ids?.length ?? 0) === 1 && (
+              <Link href={`/dashboard/instruments/report?sample_id=${encodeURIComponent(commitRes.sample_ids![0])}`}
+                style={{ textDecoration: 'none' }}>
+                <Btn variant="primary" icon="summarize">Open multi-instrument report</Btn>
+              </Link>
+            )}
             <Btn variant="outline" icon="restart_alt" onClick={reset}>Import another file</Btn>
           </div>
         </Card>

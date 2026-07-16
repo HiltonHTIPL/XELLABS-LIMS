@@ -52,6 +52,16 @@ class ReadOnlyOrLabManager(BasePermission):
         return _rank(request.user) >= ROLE_HIERARCHY["lab_manager"]
 
 
+class ReadOnlyOrAnalystOrAbove(BasePermission):
+    """Safe methods for all authenticated users; writes require analyst+."""
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+        if request.method in SAFE_METHODS:
+            return True
+        return _rank(request.user) >= ROLE_HIERARCHY["analyst"]
+
+
 class AuditReadOnly(BasePermission):
     """Audit trail is read-only for all users (admin can see all)."""
     def has_permission(self, request, view):

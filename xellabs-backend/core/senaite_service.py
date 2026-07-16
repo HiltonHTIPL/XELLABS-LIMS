@@ -461,6 +461,114 @@ def import_storage_location_row(row: dict) -> dict:
         return {"ok": False, "title": title, "error": _sanitize_error(str(exc))}
 
 
+# ── Sample workflow (dispatch / dispose) ─────────────────────────────────────
+
+def _get_analysis_request_by_uid(session: requests.Session, senaite_uid: str) -> dict | None:
+    """Fetch a single AnalysisRequest item by UID."""
+    try:
+        resp = session.get(
+            _api(f"AnalysisRequest/{senaite_uid}"),
+            params={"complete": "true"},
+            timeout=15,
+        )
+        if not resp.ok:
+            return None
+        items = resp.json().get("items") or []
+        return items[0] if items else None
+    except requests.RequestException as exc:
+        logger.warning("SENAITE AR fetch failed uid=%s: %s", senaite_uid, exc)
+        return None
+
+
+def resolve_analysis_request_uid_by_client_sample_id(client_sample_id: str) -> str | None:
+    """
+    Link a Django sample to its SENAITE AnalysisRequest via ClientSampleID.
+    Returns the SENAITE UID or None.
+    """
+    if not (client_sample_id or "").strip():
+        return None
+    s = _session()
+    needle = client_sample_id.strip().lower()
+    try:
+        resp = s.get(
+            _api("AnalysisRequest"),
+            params={"complete": "true", "limit": 1000},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        for item in resp.json().get("items") or []:
+            csid = (
+                item.get("ClientSampleID")
+                or item.get("client_sample_id")
+                or ""
+            ).strip().lower()
+            if csid == needle:
+                return item.get("uid") or item.get("UID")
+        return None
+    except requests.RequestException as exc:
+        logger.warning(
+            "SENAITE AR resolve failed for ClientSampleID=%s: %s",
+            client_sample_id,
+            exc,
+        )
+        return None
+
+
+def dispatch_sample(senaite_uid: str, comment: str) -> dict:
+    """
+    Fire SENAITE's native `dispatch` transition (→ review_state `dispatched`).
+    Uses content_status_modify (proven on this stack; not the nonexistent v1 workflow_action route).
+    Returns {"ok": True} or {"ok": False, "error": "<sanitized>"}.
+    """
+    uid = (senaite_uid or "").strip()
+    if not uid:
+        return {"ok": False, "error": "Sample is not linked to the lab system record."}
+
+    s = _session()
+    try:
+        item = _get_analysis_request_by_uid(s, uid)
+        if not item:
+            return {"ok": False, "error": "Sample not found in the lab system."}
+
+        path = item.get("path")
+        if not path:
+            return {"ok": False, "error": "Could not resolve sample path in the lab system."}
+
+        state_before = item.get("review_state")
+        if state_before == "dispatched":
+            return {"ok": True, "already_dispatched": True}
+
+        mod_resp = requests.post(
+            f"{SENAITE_URL}{path}/content_status_modify",
+            auth=(SENAITE_USER, SENAITE_PASSWORD),
+            data={"workflow_action": "dispatch", "comment": comment or ""},
+            headers={"Accept": "text/html,application/json"},
+            timeout=20,
+        )
+        if not mod_resp.ok:
+            return {
+                "ok": False,
+                "error": _sanitize_error(
+                    f"Lab system transition failed (HTTP {mod_resp.status_code})."
+                ),
+            }
+
+        after = _get_analysis_request_by_uid(s, uid)
+        state_after = (after or {}).get("review_state")
+        if state_after == "dispatched":
+            return {"ok": True}
+
+        return {
+            "ok": False,
+            "error": _sanitize_error(
+                f"Disposal transition not completed (state: {state_after or state_before})."
+            ),
+        }
+    except requests.RequestException as exc:
+        logger.error("dispatch_sample failed uid=%s: %s", uid, exc)
+        return {"ok": False, "error": _sanitize_error(str(exc))}
+
+
 def delete_object(uid: str) -> dict:
     """
     Deactivate a SENAITE object by UID (SENAITE's JSON API 'delete' endpoint performs a

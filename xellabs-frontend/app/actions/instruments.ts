@@ -2,6 +2,15 @@
 import { revalidatePath } from 'next/cache'
 import { djangoFetch } from '@/app/lib/django'
 
+export type InstrumentStatus =
+  | 'active'
+  | 'inactive'
+  | 'under_maintenance'
+  | 'out_of_service'
+  | 'retired'
+
+export type InstrumentUsability = 'valid' | 'expired' | 'out_of_service'
+
 export type Instrument = {
   id: number
   name: string
@@ -20,7 +29,10 @@ export type Instrument = {
   supplier_org_name: string
   asset_number: string
   location: string
-  status: 'active' | 'inactive' | 'maintenance' | 'retired'
+  status: InstrumentStatus
+  usability: InstrumentUsability
+  is_usable: boolean
+  method_ids: number[]
   purchase_date: string | null
   installation_date: string | null
   photo: string | null
@@ -28,6 +40,7 @@ export type Instrument = {
   data_interface: string
   import_data_interface: string
   result_files_folder: string
+  data_interface_options: string
   dispose_until_next_calibration: boolean
   inlab_calibration_procedure: string
   preventive_maintenance_procedure: string
@@ -48,9 +61,15 @@ export type InstrumentFormState = {
 
 const REVALIDATE_PATH = '/dashboard/instruments'
 
-export async function getInstruments(): Promise<Instrument[]> {
+export async function getInstruments(params?: {
+  status?: string
+  usability?: string
+}): Promise<Instrument[]> {
   try {
-    const res = await djangoFetch('/api/instruments/instruments/?ordering=name')
+    const qs = new URLSearchParams({ ordering: 'name' })
+    if (params?.status) qs.set('status', params.status)
+    if (params?.usability) qs.set('usability', params.usability)
+    const res = await djangoFetch(`/api/instruments/instruments/?${qs.toString()}`)
     if (!res.ok) return []
     const data = await res.json()
     return Array.isArray(data) ? data : (data.results ?? [])
@@ -59,6 +78,12 @@ export async function getInstruments(): Promise<Instrument[]> {
 
 function instrumentBody(formData: FormData) {
   const disposeRaw = (formData.get('dispose_until_next_calibration') as string | null) ?? ''
+  const methodRaw = (formData.get('method_ids') as string | null) ?? ''
+  const method_ids = methodRaw
+    .split(',')
+    .map(s => Number(s.trim()))
+    .filter(n => Number.isFinite(n) && n > 0)
+
   return {
     name: (formData.get('name') as string)?.trim(),
     instrument_id: (formData.get('instrument_id') as string)?.trim(),
@@ -76,10 +101,12 @@ function instrumentBody(formData: FormData) {
     data_interface: ((formData.get('data_interface') as string) || '').trim(),
     import_data_interface: ((formData.get('import_data_interface') as string) || '').trim(),
     result_files_folder: ((formData.get('result_files_folder') as string) || '').trim(),
+    data_interface_options: ((formData.get('data_interface_options') as string) || '').trim(),
     dispose_until_next_calibration: disposeRaw === 'on' || disposeRaw === 'true' || disposeRaw === '1',
     inlab_calibration_procedure: ((formData.get('inlab_calibration_procedure') as string) || '').trim(),
     preventive_maintenance_procedure: ((formData.get('preventive_maintenance_procedure') as string) || '').trim(),
     notes: ((formData.get('notes') as string) || '').trim(),
+    method_ids,
   }
 }
 
@@ -166,4 +193,31 @@ export async function deleteInstrument(id: number): Promise<{ success: boolean; 
     revalidatePath('/dashboard/instrument-maintenance')
     return { success: true, message: 'Instrument deleted.' }
   } catch (e) { return { success: false, message: String(e) } }
+}
+
+export type InstrumentTransition =
+  | 'activate'
+  | 'deactivate'
+  | 'set-under-maintenance'
+  | 'set-out-of-service'
+  | 'return-to-service'
+  | 'retire'
+
+export async function transitionInstrument(
+  id: number,
+  action: InstrumentTransition,
+): Promise<{ ok: boolean; message: string; instrument?: Instrument }> {
+  try {
+    const res = await djangoFetch(`/api/instruments/instruments/${id}/${action}/`, { method: 'POST' })
+    const data = await res.json().catch(() => ({})) as Instrument & { detail?: string }
+    if (!res.ok) {
+      return { ok: false, message: data.detail ?? `Transition failed (${res.status})` }
+    }
+    revalidatePath(REVALIDATE_PATH)
+    revalidatePath(`/dashboard/instruments/${id}`)
+    revalidatePath('/dashboard/instrument-maintenance')
+    return { ok: true, message: 'Status updated.', instrument: data }
+  } catch (e) {
+    return { ok: false, message: String(e) }
+  }
 }

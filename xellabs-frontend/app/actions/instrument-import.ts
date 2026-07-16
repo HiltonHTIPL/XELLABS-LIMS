@@ -5,7 +5,7 @@ import { djangoFetch } from '@/app/lib/django'
 /* Types                                                                */
 /* ------------------------------------------------------------------ */
 
-export type PreviewRowStatus = 'valid' | 'error'
+export type PreviewRowStatus = 'valid' | 'error' | 'skip'
 
 export type PreviewRow = {
   row: number
@@ -20,7 +20,7 @@ export type PreviewRow = {
   detail: string
 }
 
-export type PreviewSummary = { total: number; valid: number; invalid: number }
+export type PreviewSummary = { total: number; valid: number; invalid: number; skipped?: number }
 
 export type PreviewResult = {
   ok: boolean

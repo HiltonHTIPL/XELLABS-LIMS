@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useRef, useState, useTransition } from 'react'
+import Link from 'next/link'
 import { getSampleReport, type SampleReport } from '@/app/actions/instrument-import'
 import {
   PageHeader, Card, Btn, StatusChip, Chip, EmptyState, MI, T,
@@ -29,6 +30,7 @@ function HeaderRow({ label, value }: { label: string; value: string }) {
 }
 
 function ReportBody({ report }: { report: SampleReport }) {
+  const multi = report.instruments.length >= 2
   return (
     <div id="instrument-report">
       <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
@@ -41,6 +43,17 @@ function ReportBody({ report }: { report: SampleReport }) {
           <p style={{ fontSize: 11, color: T.faint, marginTop: 4 }}>Generated {fmtDate(report.generated_at, true)}</p>
         </div>
       </div>
+
+      {multi && (
+        <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs mb-4"
+          style={{ backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE', color: T.primary }}>
+          <MI name="hub" size={16} color={T.primary} />
+          <span>
+            Results from <strong>{report.instruments.length} instruments</strong> are combined on this sample record.
+            Instrument provenance comes from the backed-up import files.
+          </span>
+        </div>
+      )}
 
       <div className="grid gap-3 mb-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', border: `1px solid ${T.cardBorder}`, borderRadius: 12, padding: 14 }}>
         <HeaderRow label="Client" value={report.sample.client_name} />
@@ -137,8 +150,15 @@ export default function SampleReportShell({ initialSampleId }: { initialSampleId
       <div className="no-print">
         <PageHeader
           title="Multi-Instrument Sample Report"
-          subtitle="One printable report pulling every result for a sample across all instruments, with the source instrument and import date per result."
-          right={report ? <Btn variant="outline" icon="print" onClick={() => window.print()}>Print report</Btn> : undefined}
+          subtitle="One printable report for a sample: every result across instruments, with source instrument and import date per row."
+          right={(
+            <div className="flex items-center gap-2">
+              <Link href="/dashboard/instruments/import" style={{ textDecoration: 'none' }}>
+                <Btn variant="outline" icon="upload_file">Import results</Btn>
+              </Link>
+              {report ? <Btn variant="outline" icon="print" onClick={() => window.print()}>Print report</Btn> : null}
+            </div>
+          )}
         />
 
         <Card className="mb-5">

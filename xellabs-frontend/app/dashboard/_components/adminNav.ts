@@ -28,5 +28,5 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { label: 'Instrument List', href: '/dashboard/instrument-list', icon: 'precision_manufacturing', roles: ['admin', 'lab_manager'] },
   { label: 'Storage List', href: '/dashboard/storage-list', icon: 'inventory_2', roles: ['admin', 'lab_manager'] },
   { label: 'Report Templates', href: '/dashboard/settings/report-templates', icon: 'description', roles: ['admin'] },
-  { label: 'Data Analytics', href: '/dashboard/analytics', icon: 'insights', roles: ['admin', 'lab_manager', 'analyst'] },
+  { label: 'XEL Analytics', href: '/dashboard/analytics', icon: 'insights', roles: ['admin', 'lab_manager', 'analyst'] },
 ]
