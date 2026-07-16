@@ -8,8 +8,6 @@ import {
 } from '@/app/lib/senaite'
 import { serverToken } from '@/app/lib/senaite-auth'
 
-export type { SenaiteCalculation, SenaiteCalculationInterimField, SenaiteCalculationPythonImport, SenaiteCalculationTestParameter }
-
 export async function getCalculations(): Promise<SenaiteCalculation[]> {
   return fetchSenaiteCalculations(serverToken())
 }

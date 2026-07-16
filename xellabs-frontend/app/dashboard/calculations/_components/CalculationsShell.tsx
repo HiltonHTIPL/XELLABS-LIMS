@@ -3,10 +3,13 @@ import { useState, useActionState, useTransition, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   createCalculation, updateCalculation, toggleCalculationActive, testCalculation,
-  type SenaiteCalculation, type SenaiteCalculationInterimField, type SenaiteCalculationPythonImport,
-  type SenaiteCalculationTestParameter, type CalculationFormState,
+  type CalculationFormState,
 } from '@/app/actions/calculations-senaite'
-import type { SenaiteAnalysisService, SenaiteInterimControlType } from '@/app/lib/senaite'
+import type {
+  SenaiteAnalysisService, SenaiteInterimControlType,
+  SenaiteCalculation, SenaiteCalculationInterimField, SenaiteCalculationPythonImport,
+  SenaiteCalculationTestParameter,
+} from '@/app/lib/senaite'
 
 // Exact vocabulary from SENAITE's own InterimFieldsField.result_type
 // subfield_vocabularies (bika/lims/browser/fields/interimfieldsfield.py).
