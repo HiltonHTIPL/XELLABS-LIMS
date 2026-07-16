@@ -6,6 +6,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.authtoken.models import Token
+
 from core.tenant_test import TenantAPITestCase
 
 from instruments.models import Instrument

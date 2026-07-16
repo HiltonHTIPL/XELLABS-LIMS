@@ -10,4 +10,5 @@ services:
       - ./superset_config.py:/app/superset_home/superset_config.py
     environment:
       - SUPERSET_SECRET_KEY=${SUPERSET_SECRET_KEY:-YOUR_SUPERSET_SECRET_KEY}
+      - SUPERSET_CORS_ORIGINS=${SUPERSET_CORS_ORIGINS:-http://localhost:3000}
       - SUPERSET_CONFIG_PATH=/app/superset_home/superset_config.py

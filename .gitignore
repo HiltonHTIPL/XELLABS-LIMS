@@ -114,3 +114,4 @@ e2e-playwright/
 xellabs-backend/unit_tests/
 sample-imports/
 TEST-REPORT.md
+docker-compose.override.yml

@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
       cache: 'no-store'
     });
     if (!jwtRes.ok) {
-      require('fs').writeFileSync('/Users/vinodkumar/Desktop/Second Brain/Vinod\'s Playground/Work/HephzibahTech/XELLABS-LIMS/xellabs-frontend/superset_error.log', 'JWT Failed: ' + jwtRes.status);
+      console.error('Superset JWT login failed:', jwtRes.status);
       return NextResponse.json({ error: 'Failed to get JWT token' }, { status: jwtRes.status });
     }
     const { access_token } = await jwtRes.json();
@@ -111,8 +111,7 @@ export async function POST(req: NextRequest) {
 
     if (!guestTokenResponse.ok) {
       const errorText = await guestTokenResponse.text();
-      console.error('Superset guest token creation failed:', errorText);
-      require('fs').writeFileSync('/Users/vinodkumar/Desktop/Second Brain/Vinod\'s Playground/Work/HephzibahTech/XELLABS-LIMS/xellabs-frontend/superset_error.log', 'Guest Token Failed: ' + guestTokenResponse.status + ' ' + errorText);
+      console.error('Superset guest token creation failed:', guestTokenResponse.status, errorText);
       return NextResponse.json({ error: 'Failed to create guest token' }, { status: guestTokenResponse.status });
     }
 
@@ -120,7 +119,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ token });
   } catch (error) {
     console.error('Error generating Superset guest token:', error);
-    require('fs').writeFileSync('/Users/vinodkumar/Desktop/Second Brain/Vinod\'s Playground/Work/HephzibahTech/XELLABS-LIMS/xellabs-frontend/superset_error.log', 'Catch Error: ' + String(error));
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

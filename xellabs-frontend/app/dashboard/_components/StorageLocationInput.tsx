@@ -51,7 +51,12 @@ export default function StorageLocationInput({ value, onChange, disabled }: {
 
   // Debounced server-side box search (max 20 rows per request)
   useEffect(() => {
-    if (!query.trim() || value) { setResults([]); return }
+    if (!query.trim() || value) {
+      // Clear immediately rather than leaving stale results while nothing is being searched.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setResults([])
+      return
+    }
     const t = setTimeout(async () => {
       setBusy(true)
       const list = await searchStorageBoxes(query)

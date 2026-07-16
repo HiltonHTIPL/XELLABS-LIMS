@@ -137,6 +137,7 @@ export default function ARShell({ initialARs, samples, services }: Props) {
 
   // Arriving via a deep link from Sample Detail (?sample=ID) opens the create
   // modal pre-filled — otherwise a user has to re-find the sample manually.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { if (preselectedSampleId) setShowModal(true) }, [preselectedSampleId])
 
   // Deep link to a specific AR (?ar=<id>) — opens that AR's modal directly,

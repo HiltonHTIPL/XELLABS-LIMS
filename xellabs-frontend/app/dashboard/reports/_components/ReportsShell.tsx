@@ -143,6 +143,9 @@ function NewReportModal({
     if (state.errors) {
       const fe: Record<string, string> = {}
       for (const [k, msgs] of Object.entries(state.errors)) { if (msgs?.length) fe[k] = msgs[0] }
+      // fieldErrors is independently cleared per-field on change below, so it can't be
+      // a plain derived value — it needs its own lifecycle synced from state.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFieldErrors(fe)
     }
   }, [state])
@@ -331,11 +334,16 @@ function ReportRow({
   const [timedOut, setTimedOut] = useState(false)
 
   useEffect(() => {
+    // report gets its own independent updates from polling below, so this can't be a
+    // plain derived value — it needs resyncing whenever a new `initial` prop arrives.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setReport(initial)
   }, [initial])
 
   useEffect(() => {
     if (!polling) return
+    // Resets the timeout flag each time polling (re)starts.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTimedOut(false)
     const controller = new AbortController()
     let cancelled = false

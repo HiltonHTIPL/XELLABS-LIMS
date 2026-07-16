@@ -2,7 +2,7 @@
 import { useState, useCallback, useMemo } from 'react'
 import QRCode from 'qrcode'
 import {
-  deleteStorageLocation, getStorageLocations, lookupChainOfCustody, assignSampleToSlot,
+  getStorageLocations, lookupChainOfCustody, assignSampleToSlot,
   releaseSampleFromSlot, resolveStorageLabel,
   type StorageLocation, type ChainOfCustodyResult,
 } from '@/app/actions/storage'

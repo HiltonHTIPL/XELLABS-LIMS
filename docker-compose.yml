@@ -75,6 +75,7 @@ services:
       sh -c "python manage.py migrate_schemas --shared --noinput &&
              python manage.py migrate_schemas --noinput &&
              python manage.py ensure_superuser &&
+             python manage.py collectstatic --noinput &&
              gunicorn config.wsgi:application --bind 0.0.0.0:8001 --workers 2 --timeout 120 --access-logfile -"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys,urllib.error;\ntry:\n  urllib.request.urlopen('http://localhost:8001/admin/login/', timeout=3)\n  sys.exit(0)\nexcept urllib.error.HTTPError as e:\n  sys.exit(0 if e.code < 500 else 1)\nexcept Exception:\n  sys.exit(1)"]

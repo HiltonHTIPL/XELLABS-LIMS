@@ -51,6 +51,7 @@ export async function djangoFetch(
     authHeaders['Authorization'] = `Token ${token}`
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { skipAuth: _omit, ...fetchInit } = init
 
   // Don't set Content-Type for FormData bodies — fetch must set its own

@@ -1,3 +1,5 @@
+import os
+
 GUEST_ROLE_NAME = "Gamma"
 FEATURE_FLAGS = {"EMBEDDED_SUPERSET": True}
 ENABLE_CORS = True
@@ -5,7 +7,8 @@ CORS_OPTIONS = {
     'supports_credentials': True,
     'allow_headers': ['*'],
     'resources': ['*'],
-    'origins': ['http://localhost:3000']
+    # Must include the deployed frontend origin, not just localhost
+    'origins': os.getenv('SUPERSET_CORS_ORIGINS', 'http://localhost:3000').split(','),
 }
 from superset.config import TALISMAN_CONFIG
 

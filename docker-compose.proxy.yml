@@ -1,0 +1,71 @@
+# Reverse proxy + TLS overlay — deploy alongside the base compose file:
+#   docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d --build
+#
+# Routes a single public domain (DOMAIN_NAME) to the frontend and django
+# services over HTTPS, terminating TLS with a Let's Encrypt certificate that
+# Certbot renews automatically. Requires DOMAIN_NAME and CERTBOT_EMAIL in the
+# top-level .env next to this file. First-time cert issuance needs
+# nginx/init-letsencrypt.sh run once — see that script for why.
+#
+# SENAITE is intentionally not routed here — see the comment in
+# nginx/templates/app.conf.template for why (Zope/Plone sub-path proxying).
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN_NAME=${DOMAIN_NAME}
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - certbot_conf:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    # Certbot only renews the cert files on disk — nginx has to be told to
+    # pick them up. A daily reload is cheap and comfortably covers renewal
+    # (Let's Encrypt certs are renewed ~30 days before their 90-day expiry).
+    #
+    # Must invoke /docker-entrypoint.sh with "nginx" as $1 (not a bare `sh`)
+    # — the image's own entrypoint only runs its envsubst-on-templates step
+    # (and every other /docker-entrypoint.d/ script) when it sees "nginx" or
+    # "nginx-debug" as the first argument; anything else skips templating
+    # entirely and nginx falls back to serving its stock default page.
+    #
+    # The reload loop is backgrounded and nginx is `exec`'d as PID 1 (not
+    # the other way around) so that if nginx dies, the container actually
+    # exits and `restart: unless-stopped` can act on it — backgrounding
+    # nginx instead would leave the loop running forever as PID 1 with a
+    # dead nginx underneath, and `docker ps` would keep reporting "Up".
+    command: >
+      sh -c "( while :; do sleep 24h & wait $$!; nginx -s reload; done ) & exec /docker-entrypoint.sh nginx -g 'daemon off;'"
+    depends_on:
+      - frontend
+      - django
+      - senaite
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  certbot:
+    image: certbot/certbot
+    restart: unless-stopped
+    volumes:
+      - certbot_conf:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    entrypoint: >
+      sh -c "trap exit TERM; while :; do
+        certbot renew --webroot -w /var/www/certbot;
+        sleep 12h & wait $$!;
+      done"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  certbot_conf:
+  certbot_www:

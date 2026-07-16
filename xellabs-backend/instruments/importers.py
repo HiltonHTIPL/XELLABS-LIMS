@@ -165,3 +165,109 @@ def map_results(rows: list[dict]) -> tuple[list[dict], list[dict]]:
         })
 
     return mapped, errors
+
+
+def build_preview(rows: list[dict], parse_errors: list[dict]) -> tuple[list[dict], dict]:
+    """
+    Validate parsed rows against the database without writing anything.
+
+    A row is "valid" (it will create or refresh a Result on commit) when its
+    sample and test both exist and an open worksheet assignment links them.
+    Everything else is surfaced as an "error" row so the analyst sees exactly
+    what will be skipped before confirming the import.
+
+    Returns (preview_rows, summary) where summary = {total, valid, invalid}.
+    """
+    from lims.models import Sample, WorksheetAssignment
+
+    sample_ids = {r["sample_id"] for r in rows}
+    sample_cache = {s.sample_id: s for s in Sample.objects.filter(sample_id__in=sample_ids)}
+    service_cache = _fetch_senaite_services_by_keyword()
+    assignment_pairs = set(
+        WorksheetAssignment.objects.filter(
+            analysis_request__sample__sample_id__in=sample_ids,
+        ).values_list("analysis_request__sample__sample_id", "senaite_service_uid")
+    )
+
+    preview: list[dict] = []
+
+    for err in parse_errors:
+        preview.append({
+            "row": err.get("row", 0),
+            "sample_id": "", "test_code": "", "value": "", "unit": "", "flags": "",
+            "test_name": "", "sample_status": "",
+            "status": "error", "detail": err.get("detail", "Could not parse row."),
+        })
+
+    for i, row in enumerate(rows, start=1):
+        base = {
+            "row": i,
+            "sample_id": row["sample_id"], "test_code": row["test_code"],
+            "value": row["value"], "unit": row["unit"], "flags": row["flags"],
+            "test_name": "", "sample_status": "",
+        }
+        sample = sample_cache.get(row["sample_id"])
+        if not sample:
+            preview.append({**base, "status": "error", "detail": f"Sample '{row['sample_id']}' not found."})
+            continue
+        service = service_cache.get(row["test_code"])
+        if not service:
+            preview.append({**base, "status": "error", "detail": f"Test code '{row['test_code']}' not found."})
+            continue
+        base["test_name"] = service["title"]
+        base["sample_status"] = sample.status
+        if (row["sample_id"], service["uid"]) not in assignment_pairs:
+            preview.append({**base, "status": "error",
+                            "detail": "No open worksheet assignment for this sample and test."})
+            continue
+        preview.append({**base, "status": "valid", "detail": ""})
+
+    valid = sum(1 for p in preview if p["status"] == "valid")
+    summary = {"total": len(preview), "valid": valid, "invalid": len(preview) - valid}
+    return preview, summary
+
+
+def build_provenance_map(sample_id: str) -> dict:
+    """
+    Reconstruct per-test instrument provenance for one sample from the backed-up
+    original import files. The most recent processed import wins for a given test,
+    matching the "latest value applied" behaviour of the commit step.
+
+    Keyed by senaite_service_uid (not the raw CSV/XML test_code keyword) so it
+    lines up with WorksheetAssignment.senaite_service_uid — the only test
+    identifier stored on that model since the Django Test model was removed.
+
+    Returns {senaite_service_uid: {instrument_name, instrument_code, import_date,
+    file_format, import_id}}.
+    """
+    from .models import InstrumentResultImport
+
+    service_cache = _fetch_senaite_services_by_keyword()
+    provenance: dict[str, dict] = {}
+    imports = (
+        InstrumentResultImport.objects
+        .filter(status="processed")
+        .select_related("instrument")
+        .order_by("created_at")
+    )
+    for imp in imports:
+        try:
+            content = imp.file.read()
+            imp.file.close()
+        except (FileNotFoundError, ValueError, OSError):
+            continue
+        rows, _ = parse_xml(content) if imp.file_format == "xml" else parse_csv(content)
+        for row in rows:
+            if row["sample_id"] != sample_id:
+                continue
+            service = service_cache.get(row["test_code"])
+            if not service:
+                continue
+            provenance[service["uid"]] = {
+                "instrument_name": imp.instrument.name,
+                "instrument_code": imp.instrument.instrument_id,
+                "import_date": imp.created_at.isoformat(),
+                "file_format": imp.file_format,
+                "import_id": imp.pk,
+            }
+    return provenance

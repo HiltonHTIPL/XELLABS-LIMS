@@ -339,6 +339,8 @@ export default function InstrumentMaintenanceShell({
   const [showImportModal, setShowImportModal] = useState(false)
   const [deleteImport, setDeleteImport] = useState<InstrumentResultImport | null>(null)
 
+  // Reset the filter when switching tabs rather than carrying it over to an unrelated list.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setInstrumentFilter('') }, [tab])
 
   function notify(ok: boolean, msg: string) {

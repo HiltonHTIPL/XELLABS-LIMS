@@ -5,7 +5,7 @@ import { decrypt, encrypt, SESSION_DURATION_MS, getSessionCookieOptions } from '
 const protectedRoutes = ['/dashboard']
 const publicRoutes = ['/login', '/']
 
-const IPV4_RE = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/
+const IPV4_RE = /^\d{1,3}(\.\d{1,3}){3}$/
 
 function extractSubdomain(host: string): string {
   const hostname = host.split(':')[0]
@@ -18,7 +18,7 @@ function extractSubdomain(host: string): string {
   const parts = hostname.split('.')
   if (parts.length === 1) return ''
   const sub = parts[0]
-  if (['www', 'app', 'api', 'admin'].includes(sub)) return ''
+  if (['www', 'app', 'api', 'admin', 'qa'].includes(sub)) return ''
   return sub
 }
 

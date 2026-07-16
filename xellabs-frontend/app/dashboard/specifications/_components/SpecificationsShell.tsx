@@ -1,5 +1,5 @@
 'use client'
-import { useState, useActionState, useTransition, useEffect, useMemo } from 'react'
+import { useState, useActionState, useTransition, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   createAnalysisSpecification,
@@ -58,7 +58,6 @@ function SpecificationModal({ editing, services, sampleTypes, dynamicSpecs, onCl
   onDone: () => void
 }) {
   const isEdit = editing !== null
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   // One row per known SENAITE analysis service — pre-checked/pre-filled for
   // services already in `editing.rows`, unchecked+blank otherwise. Only
@@ -87,13 +86,10 @@ function SpecificationModal({ editing, services, sampleTypes, dynamicSpecs, onCl
   }
   const [state, action, pending] = useActionState(isEdit ? editAction : createAction, {})
 
-  useEffect(() => {
-    if (state.errors) {
-      const fe: Record<string, string> = {}
-      for (const [k, msgs] of Object.entries(state.errors)) { if (msgs?.length) fe[k] = msgs[0] }
-      setFieldErrors(fe)
-    }
-  }, [state])
+  const fieldErrors: Record<string, string> = {}
+  if (state.errors) {
+    for (const [k, msgs] of Object.entries(state.errors)) { if (msgs?.length) fieldErrors[k] = msgs[0] }
+  }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     const selectedRows = rows.filter(r => r.selected).map(({ selected: _selected, ...r }) => r)

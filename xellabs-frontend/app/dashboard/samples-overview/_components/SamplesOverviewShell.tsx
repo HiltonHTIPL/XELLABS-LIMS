@@ -88,9 +88,9 @@ const STAT_CARDS = [
   { key: 'overdue',        label: 'Overdue',          icon: 'schedule',        iconColor: '#EF4444', iconBg: '#FEF2F2' },
 ] as const
 
-function tatDays(receivedDate: string | null): number | null {
-  if (!receivedDate) return null
-  return Math.floor((Date.now() - new Date(receivedDate).getTime()) / (1000 * 60 * 60 * 24))
+function tatDays(receivedDate: string | null, nowMs: number | null): number | null {
+  if (!receivedDate || nowMs === null) return null
+  return Math.floor((nowMs - new Date(receivedDate).getTime()) / (1000 * 60 * 60 * 24))
 }
 
 function isOverdueSample(s: LabSample): boolean {
@@ -122,6 +122,13 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
   // pattern already used by New Sample's ?batch= param.
   const initialClientId = useSearchParams().get('client') ?? ''
   const [samples, setSamples] = useState(initialSamples)
+  const [nowMs, setNowMs] = useState<number | null>(null)
+  useEffect(() => {
+    // Client-only timestamp: starts empty so server and client render the same
+    // HTML, then fills in after mount — avoids a hydration mismatch.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNowMs(Date.now())
+  }, [])
   const [search, setSearch] = useState('')
   const [filterSampleType, setFilterSampleType] = useState('')
   const [filterClient, setFilterClient] = useState(initialClientId)
@@ -305,6 +312,9 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
   const sel ={ border: '1px solid #D1D5DB', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: '#374151', background: '#fff', outline: 'none', cursor: 'pointer' as const }
   const [now, setNow] = useState('')
   useEffect(() => {
+    // Client-only timestamp: starts empty so server and client render the same
+    // HTML, then fills in after mount — avoids a hydration mismatch.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setNow(new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }))
   }, [])
 
@@ -495,7 +505,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
                   const badge = getSampleStatusDisplay(s)
                   const pBadge = PRIORITY_BADGE[s.priority] ?? { bg: '#F3F4F6', color: '#374151' }
                   const condColor = CONDITION_BADGE[s.condition]?.color ?? '#6B7280'
-                  const tat = tatDays(s.received_date)
+                  const tat = tatDays(s.received_date, nowMs)
                   const isOverdue = isOverdueSample(s)
                   const canReceive = s.status === 'registered'
                   return (

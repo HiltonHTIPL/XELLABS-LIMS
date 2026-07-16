@@ -140,7 +140,12 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
   const [showAddAnalysis, setShowAddAnalysis] = useState(false)
   const [analysisSearch, setAnalysisSearch] = useState('')
   const [attachments, setAttachments] = useState<File[]>([])
-  const nowLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+  // Date.now() is impure — capture it after mount rather than during render.
+  const [nowLocal, setNowLocal] = useState<string | null>(null)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNowLocal(new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16))
+  }, [])
 
   const f = forms[activeTab]
   const sampleCount = forms.length
@@ -612,7 +617,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
           <SectionHeader num={2} title="Sampling Details" />
           <div style={{ ...grid4, marginBottom: 16 }}>
             <div style={field}><label style={lbl}>Date Sampled *</label>
-              <input type="datetime-local" value={f.dateSampled} max={nowLocal}
+              <input type="datetime-local" value={f.dateSampled} max={nowLocal ?? undefined}
                 onChange={e => set('dateSampled', e.target.value)} style={inp} /></div>
             <div style={field}><label style={lbl}>Sample Type *</label>
               <select value={f.sampleTypeId} onChange={e => set('sampleTypeId', e.target.value)} style={{ ...inp, borderColor: !f.sampleTypeId && error ? '#EF4444' : '#D1D5DB' }}>

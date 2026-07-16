@@ -14,10 +14,18 @@ export const encodedKey = new TextEncoder().encode(SESSION_SECRET).slice(0, 32)
 // 8 hours — HIPAA §164.312(a)(2)(iii) automatic logoff; resets on each request (sliding window)
 export const SESSION_DURATION_MS = 8 * 60 * 60 * 1000
 
+// NODE_ENV=production doesn't imply HTTPS is actually available (e.g. a QA
+// server reached by raw IP with no TLS termination) — browsers silently drop
+// Secure cookies over plain HTTP, so default to NODE_ENV but allow an
+// explicit override for HTTP-only deployments.
+const COOKIE_SECURE = process.env.COOKIE_SECURE !== undefined
+  ? process.env.COOKIE_SECURE === 'true'
+  : process.env.NODE_ENV === 'production'
+
 export function getSessionCookieOptions(expiresAt: Date) {
   return {
     httpOnly: true,
-    secure: process.env.COOKIE_SECURE !== "false" && process.env.NODE_ENV === "production",
+    secure: COOKIE_SECURE,
     expires: expiresAt,
     sameSite: 'strict' as const,
     path: '/',

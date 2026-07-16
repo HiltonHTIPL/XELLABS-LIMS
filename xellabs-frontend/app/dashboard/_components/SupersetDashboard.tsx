@@ -15,53 +15,60 @@ export default function SupersetDashboard({ dashboardId }: SupersetDashboardProp
   useEffect(() => {
     let isMounted = true;
 
+    // Guest tokens expire after 5 minutes; the SDK re-invokes this to refresh,
+    // so it must fetch a fresh token every call — never cache one.
+    const fetchGuestToken = async (): Promise<string> => {
+      const response = await fetch("/api/superset/guest-token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ dashboardId }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch guest token");
+      }
+
+      const data = await response.json();
+
+      // Fallback to various common properties that might hold the token
+      const guestToken = data.token || data.guestToken;
+
+      if (!guestToken) {
+        throw new Error("No guest token returned from API");
+      }
+
+      return guestToken;
+    };
+
     const setupDashboard = async () => {
       if (!mountPointRef.current) return;
 
       try {
         setLoading(true);
-        // Fetch guest token from local API
-        const response = await fetch("/api/superset/guest-token", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
+
+        // Must be the SAME instance the guest-token route mints against
+        // (SUPERSET_URL), reachable from the browser.
+        const supersetDomain = process.env.NEXT_PUBLIC_SUPERSET_DOMAIN || "http://localhost:8089";
+
+        await embedDashboard({
+          id: dashboardId,
+          supersetDomain,
+          mountPoint: mountPointRef.current,
+          fetchGuestToken,
+          dashboardUiConfig: {
+            hideTitle: true,
+            hideTab: true,
+            hideChartControls: true,
           },
-          body: JSON.stringify({ dashboardId }),
         });
-        
-        if (!response.ok) {
-          throw new Error("Failed to fetch guest token");
-        }
-        
-        const data = await response.json();
-        
-        // Fallback to various common properties that might hold the token
-        const guestToken = data.token || data.guestToken;
-
-        if (!guestToken) {
-           throw new Error("No guest token returned from API");
-        }
-
-        // Embed the dashboard
-        if (mountPointRef.current) {
-          const supersetDomain = process.env.NEXT_PUBLIC_SUPERSET_DOMAIN || "http://localhost:8088";
-          
-          embedDashboard({
-            id: dashboardId,
-            supersetDomain,
-            mountPoint: mountPointRef.current,
-            fetchGuestToken: () => Promise.resolve(guestToken),
-            dashboardUiConfig: {
-              hideTitle: true,
-              hideTab: true,
-              hideChartControls: true,
-            },
-          });
+        if (isMounted) {
           setLoading(false);
         }
-      } catch (err: any) {
+      } catch (err) {
         if (isMounted) {
-          setError(err.message || "An error occurred while loading the dashboard");
+          setError(err instanceof Error ? err.message : "An error occurred while loading the dashboard");
           console.error("Error embedding Superset dashboard:", err);
         }
       } finally {

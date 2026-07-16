@@ -206,7 +206,13 @@ export default function ChainOfCustodyPage() {
   const cap    = loc?.capacity ?? null
 
   useEffect(() => {
-    if (!stickerPickerOpen || !sample) { setStickerPreviewDocHtml(''); return }
+    if (!stickerPickerOpen || !sample) {
+      // Clear the preview immediately when there's nothing to render, rather
+      // than leaving stale HTML on screen until the next async render below.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setStickerPreviewDocHtml('')
+      return
+    }
     const template = STICKER_TEMPLATES.find(t => t.id === stickerTemplateId)!
     let cancelled = false
     renderSticker(template, sample).then(html => {

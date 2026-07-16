@@ -1,5 +1,5 @@
 'use client'
-import { useMemo, useState, useActionState, useTransition, useEffect } from 'react'
+import { useMemo, useState, useActionState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   PageHeader, Card, StatCard, Btn, Field, ConfirmModal, EmptyState, Pagination,
@@ -47,7 +47,6 @@ function QCModal({
   onClose: () => void; onDone: () => void
 }) {
   const isEdit = editing !== null
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   const createAction = async (prev: QCSampleFormState, fd: FormData) => {
     const result = await createQCSample(prev, fd)
@@ -61,13 +60,10 @@ function QCModal({
   }
   const [state, action, pending] = useActionState(isEdit ? editAction : createAction, {})
 
-  useEffect(() => {
-    if (state.errors) {
-      const fe: Record<string, string> = {}
-      for (const [k, msgs] of Object.entries(state.errors)) { if (msgs?.length) fe[k] = msgs[0] }
-      setFieldErrors(fe)
-    }
-  }, [state])
+  const fieldErrors: Record<string, string> = {}
+  if (state.errors) {
+    for (const [k, msgs] of Object.entries(state.errors)) { if (msgs?.length) fieldErrors[k] = msgs[0] }
+  }
 
   return (
     <div onClick={e => { if (e.currentTarget === e.target) onClose() }}
@@ -153,11 +149,10 @@ function QCModal({
             </Field>
           </div>
 
-          <Field label="Status">
-            <select name="status" defaultValue={editing?.status ?? 'pending'} className="w-full outline-none bg-white" style={selectStyle}>
-              {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-            </select>
-          </Field>
+          <p style={{ fontSize: 11, color: T.muted }}>
+            Status is evaluated automatically: Actual within Target ± Tolerance → Passed; otherwise → Failed (holds for administrator review).
+          </p>
+          <input type="hidden" name="status" value={editing?.status ?? 'pending'} />
 
           <Field label="Notes">
             <textarea name="notes" rows={3} placeholder="Observations, corrective actions…" defaultValue={editing?.notes}
@@ -270,6 +265,7 @@ export default function QualityShell({
   const [, startTransition] = useTransition()
   const [typeFilter, setTypeFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [needsReviewOnly, setNeedsReviewOnly] = useState(false)
   const [page, setPage] = useState(1)
 
   const worksheetIdById = useMemo(() => {
@@ -281,9 +277,10 @@ export default function QualityShell({
   const filtered = useMemo(() => {
     return initialQCSamples.filter(q =>
       (!typeFilter || q.qc_type === typeFilter) &&
-      (!statusFilter || q.status === statusFilter)
+      (!statusFilter || q.status === statusFilter) &&
+      (!needsReviewOnly || ((q.status === 'failed' || q.status === 'warning') && !q.is_reviewed))
     )
-  }, [initialQCSamples, typeFilter, statusFilter])
+  }, [initialQCSamples, typeFilter, statusFilter, needsReviewOnly])
 
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -292,6 +289,7 @@ export default function QualityShell({
   const passed = initialQCSamples.filter(q => q.status === 'passed').length
   const failed = initialQCSamples.filter(q => q.status === 'failed').length
   const pending = initialQCSamples.filter(q => q.status === 'pending').length
+  const needsReview = initialQCSamples.filter(q => (q.status === 'failed' || q.status === 'warning') && !q.is_reviewed).length
 
   function openCreate() { setEditing(null); setShowModal(true) }
   function openEdit(q: QCSample) { setEditing(q); setShowModal(true) }
@@ -317,7 +315,7 @@ export default function QualityShell({
     <div style={{ padding: 20, backgroundColor: T.pageBg, minHeight: '100%' }}>
       <PageHeader
         title="Quality Control"
-        subtitle="Track QC samples — blanks, controls, spikes, duplicates and more"
+        subtitle="Controls, blanks, spikes — failed QC is flagged for administrator review before release"
         right={
           <Btn variant="primary" icon="add" onClick={openCreate}>New QC Sample</Btn>
         }
@@ -331,11 +329,28 @@ export default function QualityShell({
         </div>
       )}
 
-      <div className="grid grid-cols-4 gap-4 mb-5">
+      {needsReview > 0 && (
+        <div className="mb-4 flex items-center justify-between px-4 py-3 rounded-xl"
+          style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA' }}>
+          <div className="flex items-center gap-2">
+            <MI name="policy" size={18} color="#DC2626" />
+            <div>
+              <p style={{ fontSize: 13, fontWeight: 700, color: '#991B1B' }}>{needsReview} QC sample{needsReview !== 1 ? 's' : ''} awaiting administrator review</p>
+              <p style={{ fontSize: 11, color: '#B91C1C' }}>Failed or warning controls must be reviewed before related results can be treated as release-ready.</p>
+            </div>
+          </div>
+          <Btn variant="outline" icon="filter_list" onClick={() => { setNeedsReviewOnly(true); setStatusFilter(''); setPage(1) }}>
+            Show queue
+          </Btn>
+        </div>
+      )}
+
+      <div className="grid grid-cols-5 gap-4 mb-5">
         <StatCard icon="science" label="Total QC Samples" value={total} />
         <StatCard icon="check_circle" iconColor={T.success} iconBg="#DBEAFE" label="Passed" value={passed} />
         <StatCard icon="cancel" iconColor={T.danger} iconBg="#FEF2F2" label="Failed" value={failed} />
         <StatCard icon="hourglass_top" iconColor={T.warning} iconBg="#FFF7ED" label="Pending" value={pending} />
+        <StatCard icon="policy" iconColor="#DC2626" iconBg="#FEF2F2" label="Needs Review" value={needsReview} />
       </div>
 
       {showModal && <QCModal editing={editing} services={services} worksheets={worksheets} onClose={closeModal} onDone={() => handleDone(editing ? 'QC sample updated.' : 'QC sample created.')} />}
@@ -360,10 +375,20 @@ export default function QualityShell({
               <option value="">All Types</option>
               {QC_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
-            <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1) }} style={{ ...selectStyle, height: 32, fontSize: 12 }}>
+            <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setNeedsReviewOnly(false); setPage(1) }} style={{ ...selectStyle, height: 32, fontSize: 12 }}>
               <option value="">All Statuses</option>
               {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
+            <button type="button" onClick={() => { setNeedsReviewOnly(v => !v); setStatusFilter(''); setPage(1) }}
+              className="px-2 rounded"
+              style={{
+                height: 32, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                border: needsReviewOnly ? '1px solid #FECACA' : `1px solid ${T.cardBorder}`,
+                backgroundColor: needsReviewOnly ? '#FEF2F2' : '#fff',
+                color: needsReviewOnly ? '#991B1B' : T.muted,
+              }}>
+              Needs review
+            </button>
           </div>
         }
         pad={false}
@@ -389,8 +414,14 @@ export default function QualityShell({
                       <td style={tdStyle}>{q.senaite_service_name || '—'}</td>
                       <td style={tdStyle}>{q.worksheet ? (worksheetIdById.get(q.worksheet) ?? `#${q.worksheet}`) : '—'}</td>
                       <td style={tdStyle}>{q.lot_number || '—'}</td>
-                      <td style={tdStyle}>{q.target_value ?? '—'}</td>
-                      <td style={tdStyle}>{q.actual_value ?? '—'}</td>
+                      <td style={tdStyle}>
+                        {q.target_value != null
+                          ? <>{q.target_value}{q.tolerance_percent != null ? <span style={{ color: T.faint }}> ±{q.tolerance_percent}%</span> : null}</>
+                          : '—'}
+                      </td>
+                      <td style={{ ...tdStyle, fontWeight: q.status === 'failed' ? 700 : 400, color: q.status === 'failed' ? T.danger : T.text }}>
+                        {q.actual_value ?? '—'}
+                      </td>
                       <td style={tdStyle}>
                         <div className="flex items-center gap-2">
                           <Chip tone={statusChipTone(q.status)} dot>{q.status}</Chip>

@@ -37,7 +37,7 @@ export default function UserModal({
       onDone(state.message ?? 'Saved.')
       onClose()
     }
-  }, [state.success, state.login_password])
+  }, [state.success, state.login_password, state.message, onDone, onClose])
 
   const err = state.errors ?? {}
 

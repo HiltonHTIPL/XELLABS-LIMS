@@ -1,6 +1,7 @@
 'use client'
 import { useMemo, useState, useActionState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import {
   createInventoryItem, updateInventoryItem, toggleInventoryItemActive, deleteInventoryItem,
   type Reagent, type Standard, type Solvent, type InventoryItemKind, type InventoryFormState,
@@ -72,6 +73,9 @@ function ItemModal({ kind, editing, onClose, onDone }: {
     if (state.errors) {
       const fe: Record<string, string> = {}
       for (const [k, msgs] of Object.entries(state.errors)) { if (msgs?.length) fe[k] = msgs[0] }
+      // fieldErrors is independently cleared per-field via onClearError below, so it
+      // can't be a plain derived value — it needs its own lifecycle synced from state.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFieldErrors(fe)
     }
   }, [state])
@@ -199,9 +203,17 @@ export default function InventoryItemsShell({ initialReagents, initialStandards,
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Inventory Items</h1>
           <p className="mt-1" style={{ fontSize: 13, color: '#6B7280' }}>Manage reagents, standards, and solvents used in testing</p>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#2563EB', border: 'none', cursor: 'pointer' }}>
-          <MI name="add" size={15} color="#fff" /> New {KIND_LABEL[tab]}
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link href="/dashboard/inventory-dashboard" className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold" style={{ backgroundColor: '#fff', color: '#2563EB', border: '1px solid #D9DEEA', textDecoration: 'none' }}>
+            <MI name="inventory" size={15} color="#2563EB" /> Inventory Dashboard
+          </Link>
+          <Link href="/dashboard/schedule" className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold" style={{ backgroundColor: '#fff', color: '#2563EB', border: '1px solid #D9DEEA', textDecoration: 'none' }}>
+            <MI name="event_note" size={15} color="#2563EB" /> Test Schedule
+          </Link>
+          <button onClick={openCreate} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#2563EB', border: 'none', cursor: 'pointer' }}>
+            <MI name="add" size={15} color="#fff" /> New {KIND_LABEL[tab]}
+          </button>
+        </div>
       </div>
 
       {toast && (
