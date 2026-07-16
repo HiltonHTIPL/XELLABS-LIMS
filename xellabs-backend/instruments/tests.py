@@ -175,13 +175,25 @@ class ParserRegistryTest(TenantAPITestCase):
 
 
 class InstrumentImportApplyTest(TenantAPITestCase):
+    SENAITE_SERVICES = {
+        "AS-ICPMS": {"uid": "as-icpms-uid", "title": "Arsenic"},
+    }
+
     def setUp(self):
+        from unittest.mock import patch
         from django.core.files.uploadedfile import SimpleUploadedFile
         from lims.models import (
-            SampleType, Method, Test, Sample, AnalysisRequest, Worksheet, WorksheetAssignment, Result,
+            SampleType, Sample, AnalysisRequest, Worksheet, WorksheetAssignment, Result,
         )
         from instruments.models import InstrumentResultImport
         from core.models import Client
+
+        self._senaite_patch = patch(
+            "instruments.importers._fetch_senaite_services_by_keyword",
+            return_value=self.SENAITE_SERVICES,
+        )
+        self._senaite_patch.start()
+        self.addCleanup(self._senaite_patch.stop)
 
         self.SimpleUploadedFile = SimpleUploadedFile
         self.Result = Result
@@ -191,21 +203,23 @@ class InstrumentImportApplyTest(TenantAPITestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {key}")
         client_obj = Client.objects.create(name="Import Client")
         st = SampleType.objects.create(name="Water", prefix="W")
-        method = Method.objects.create(name="ICP", code="ICP")
-        self.test = Test.objects.create(name="Arsenic", code="AS-ICPMS", method=method)
         self.sample = Sample.objects.create(
             sample_id="DEMO-RES-MULTI-002",
             client=client_obj,
             sample_type=st,
             created_by=self.analyst,
             status="in_progress",
-            analysis_specification=0,
         )
         ar = AnalysisRequest.objects.create(
             ar_id="AR-IMP-001", sample=self.sample, created_by=self.analyst, status="in_progress",
         )
         ws = Worksheet.objects.create(ws_id="WS-IMP-001", analyst=self.analyst, status="open")
-        self.wa = WorksheetAssignment.objects.create(worksheet=ws, analysis_request=ar, test=self.test)
+        self.wa = WorksheetAssignment.objects.create(
+            worksheet=ws,
+            analysis_request=ar,
+            senaite_service_uid="as-icpms-uid",
+            senaite_service_name="Arsenic",
+        )
         self.instrument = Instrument.objects.create(
             name="Demo ICP-MS",
             instrument_id="INST-IMP-01",

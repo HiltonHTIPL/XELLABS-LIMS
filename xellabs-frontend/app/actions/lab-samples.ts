@@ -60,7 +60,6 @@ export type LabSample = {
   barcode: string
   is_locked: boolean
   received_by_name: string
-  attachment?: string | null
   created_at: string
   senaite_uid?: string
   senaite_ar_id?: string

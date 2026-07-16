@@ -190,7 +190,6 @@ class SampleDisposeWorkflowTest(TenantAPITestCase):
             created_by=self.manager,
             status="reviewed",
             description="Past retention sample",
-            analysis_specification=0,
         )
 
     def test_dispose_from_eligible_state(self):
