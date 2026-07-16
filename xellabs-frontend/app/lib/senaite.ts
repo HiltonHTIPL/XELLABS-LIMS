@@ -1302,10 +1302,6 @@ function sampleTemplateGridBody(payload: SampleTemplatePayload): Record<string, 
   }
 }
 
-function sampleTemplateRestBody(payload: SampleTemplatePayload): Record<string, unknown> {
-  return { ...sampleTemplateScalarBody(payload), ...sampleTemplateGridBody(payload) }
-}
-
 function first(value: unknown): string {
   if (Array.isArray(value)) return (value[0] as string) ?? ''
   return (value as string) ?? ''
@@ -1420,18 +1416,30 @@ export async function updateSenaiteSampleTemplate(
   url: string,
   payload: SampleTemplatePayload
 ): Promise<{ success: boolean; error?: string }> {
+  const headers = {
+    Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json',
+  }
   try {
-    const res = await fetch(url, {
-      method: 'PATCH',
-      headers: {
-        Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json',
-      },
-      body: JSON.stringify(sampleTemplateRestBody(payload)),
-      cache: 'no-store',
+    // Split the same way createSenaiteSampleTemplate does: a combined PATCH of
+    // scalars (samplepoint/sampletype) + grid fields (partitions/services) in
+    // one request trips 'Wrong contained type' ValidationError on samplepoint/
+    // sampletype on a real deploy (2026-07-16) — despite the object already
+    // being an ISampleTemplate, SENAITE's per-field deserializers don't compose
+    // cleanly in a single PATCH body here. Two sequential PATCHes avoid it.
+    const scalarRes = await fetch(url, {
+      method: 'PATCH', headers, body: JSON.stringify(sampleTemplateScalarBody(payload)), cache: 'no-store',
     })
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({})) as Record<string, unknown>
-      return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    if (!scalarRes.ok) {
+      const data = await scalarRes.json().catch(() => ({})) as Record<string, unknown>
+      return { success: false, error: (data.message as string) ?? `HTTP ${scalarRes.status}` }
+    }
+
+    const gridRes = await fetch(url, {
+      method: 'PATCH', headers, body: JSON.stringify(sampleTemplateGridBody(payload)), cache: 'no-store',
+    })
+    if (!gridRes.ok) {
+      const data = await gridRes.json().catch(() => ({})) as Record<string, unknown>
+      return { success: false, error: (data.message as string) ?? `HTTP ${gridRes.status}` }
     }
     return { success: true }
   } catch (e) { return { success: false, error: String(e) } }
