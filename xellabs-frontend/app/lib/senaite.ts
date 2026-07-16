@@ -198,7 +198,17 @@ export type SenaiteClientFull = {
   contact: SenaiteContact | null
 }
 
-const CLIENTS_PATH = `${SENAITE_SITE_PATH}/clients`
+// NOTE: deliberately NOT `${SENAITE_SITE_PATH}/clients`. This proxy (8096)
+// mounts the SENAITE site at the URL root via nginx VirtualHostMonster, so a
+// direct URL fetch (as opposed to a jsonapi parent_path body param, a
+// different resolution mechanism entirely) must stay root-relative. Confirmed
+// live 2026-07-16: mixing a "/senaite/..."-prefixed browser-view URL into the
+// same fetch() keep-alive connection pool as the prefix-less v1/restapi list
+// calls above breaks Zope's VHM traversal and 404s ("Resource not found:
+// <origin>/senaite") on the SECOND+ request on that connection -- reproduced
+// reliably by replaying the real GET Client / GET Contact / POST
+// create-client-safe sequence, and reliably fixed by dropping the prefix.
+const CLIENTS_PATH = '/clients'
 
 function mapAddress(a: unknown): SenaiteAddress | null {
   if (!a || typeof a !== 'object') return null
@@ -397,8 +407,15 @@ export async function updateSenaiteClientObj(
   client: SenaiteClientPayload, contact: SenaiteContactPayload, existingContactUid: string | null,
 ): Promise<{ success: boolean; contactUid?: string; error?: string }> {
   const headers = { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }
+  // clientPath comes back from SENAITE already prefixed with its own physical
+  // site path (e.g. "/senaite/clients/client-8") -- strip it for the same
+  // reason CLIENTS_PATH is root-relative above, or this hits the identical
+  // VHM/connection-reuse 404 on update.
+  const rootRelativeClientPath = SENAITE_SITE_PATH && clientPath.startsWith(SENAITE_SITE_PATH)
+    ? clientPath.slice(SENAITE_SITE_PATH.length)
+    : clientPath
   try {
-    const res = await fetch(`${SENAITE_ORIGIN}${clientPath}/@@update-client-safe`, {
+    const res = await fetch(`${SENAITE_ORIGIN}${rootRelativeClientPath}/@@update-client-safe`, {
       method: 'POST', headers, cache: 'no-store', body: JSON.stringify(client),
     })
     const data = await res.json().catch(() => ({})) as Record<string, unknown>
