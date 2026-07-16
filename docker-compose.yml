@@ -11,7 +11,7 @@ services:
     environment:
       POSTGRES_DB: xellabs_lims
       POSTGRES_USER: xellabs_user
-      POSTGRES_PASSWORD: "${DB_PASSWORD:-3333}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD must be set in .env}"
     ports:
       - "127.0.0.1:15432:5432"   # host port 5432 is taken by a native Windows PostgreSQL 18 service
     volumes:
@@ -28,11 +28,11 @@ services:
     image: redis:7
     restart: unless-stopped
     command: >
-      redis-server --requirepass "${REDIS_PASSWORD:-3333}" --maxmemory 256mb --maxmemory-policy allkeys-lru
+      redis-server --requirepass "${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}" --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:6380:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-3333}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -49,14 +49,19 @@ services:
     environment:
       DB_NAME: xellabs_lims
       DB_USER: xellabs_user
-      DB_PASSWORD: "${DB_PASSWORD:-3333}"
+      DB_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD must be set in .env}"
       DB_HOST: postgres
       DB_PORT: "5432"
-      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-3333}@redis:6379/0
-      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-3333}@redis:6379/0
-      SENAITE_URL: http://senaite:8080/senaite
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}@redis:6379/0
+      SENAITE_URL: "${SENAITE_URL:-http://senaite:8080/senaite}"
       SENAITE_USER: admin
-      SENAITE_PASSWORD: "${SENAITE_ADMIN_PASSWORD:-admin}"
+      SENAITE_PASSWORD: "${SENAITE_ADMIN_PASSWORD:?SENAITE_ADMIN_PASSWORD must be set in .env}"
+      # Platform superadmin — created/re-synced on every start by ensure_superuser.
+      # Set real values in the project-root .env; never commit them.
+      DJANGO_SUPERUSER_USERNAME: "${DJANGO_SUPERUSER_USERNAME:?DJANGO_SUPERUSER_USERNAME must be set in .env}"
+      DJANGO_SUPERUSER_PASSWORD: "${DJANGO_SUPERUSER_PASSWORD:-}"
+      DJANGO_SUPERUSER_EMAIL: "${DJANGO_SUPERUSER_EMAIL:?DJANGO_SUPERUSER_EMAIL must be set in .env}"
     ports:
       - "127.0.0.1:8001:8001"
     volumes:
@@ -69,6 +74,7 @@ services:
     command: >
       sh -c "python manage.py migrate_schemas --shared --noinput &&
              python manage.py migrate_schemas --noinput &&
+             python manage.py ensure_superuser &&
              python manage.py collectstatic --noinput &&
              gunicorn config.wsgi:application --bind 0.0.0.0:8001 --workers 2 --timeout 120 --access-logfile -"
     healthcheck:
@@ -90,14 +96,14 @@ services:
     environment:
       DB_NAME: xellabs_lims
       DB_USER: xellabs_user
-      DB_PASSWORD: "${DB_PASSWORD:-3333}"
+      DB_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD must be set in .env}"
       DB_HOST: postgres
       DB_PORT: "5432"
-      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-3333}@redis:6379/0
-      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-3333}@redis:6379/0
-      SENAITE_URL: http://senaite:8080/senaite
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}@redis:6379/0
+      SENAITE_URL: "${SENAITE_URL:-http://senaite:8080/senaite}"
       SENAITE_USER: admin
-      SENAITE_PASSWORD: "${SENAITE_ADMIN_PASSWORD:-admin}"
+      SENAITE_PASSWORD: "${SENAITE_ADMIN_PASSWORD:?SENAITE_ADMIN_PASSWORD must be set in .env}"
     volumes:
       - ./xellabs-backend:/app
     depends_on:
@@ -130,14 +136,14 @@ services:
     environment:
       DB_NAME: xellabs_lims
       DB_USER: xellabs_user
-      DB_PASSWORD: "${DB_PASSWORD:-3333}"
+      DB_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD must be set in .env}"
       DB_HOST: postgres
       DB_PORT: "5432"
-      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-3333}@redis:6379/0
-      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-3333}@redis:6379/0
-      SENAITE_URL: http://senaite:8080/senaite
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}@redis:6379/0
+      SENAITE_URL: "${SENAITE_URL:-http://senaite:8080/senaite}"
       SENAITE_USER: admin
-      SENAITE_PASSWORD: "${SENAITE_ADMIN_PASSWORD:-admin}"
+      SENAITE_PASSWORD: "${SENAITE_ADMIN_PASSWORD:?SENAITE_ADMIN_PASSWORD must be set in .env}"
     volumes:
       - ./xellabs-backend:/app
     depends_on:
@@ -167,14 +173,14 @@ services:
     environment:
       DB_NAME: xellabs_lims
       DB_USER: xellabs_user
-      DB_PASSWORD: "${DB_PASSWORD:-3333}"
+      DB_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD must be set in .env}"
       DB_HOST: postgres
       DB_PORT: "5432"
-      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-3333}@redis:6379/0
-      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-3333}@redis:6379/0
-      SENAITE_URL: http://senaite:8080/senaite
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}@redis:6379/0
+      SENAITE_URL: "${SENAITE_URL:-http://senaite:8080/senaite}"
       SENAITE_USER: admin
-      SENAITE_PASSWORD: "${SENAITE_ADMIN_PASSWORD:-admin}"
+      SENAITE_PASSWORD: "${SENAITE_ADMIN_PASSWORD:?SENAITE_ADMIN_PASSWORD must be set in .env}"
     volumes:
       - ./xellabs-backend:/app
     depends_on:
@@ -194,11 +200,16 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8080:8080"
+      - "8080:8080"
     environment:
       - SITE=senaite
-      - ADMIN_USER=admin
-      - ADMIN_PASSWORD=${SENAITE_ADMIN_PASSWORD:-admin}
+      - PASSWORD=${SENAITE_ADMIN_PASSWORD:?SENAITE_ADMIN_PASSWORD must be set in .env}
+      # senaite.storage add-on — installed via the base image's built-in
+      # docker-initialize.py mechanism (reads ADDONS/VERSIONS, runs buildout
+      # on first boot of a fresh container). Profile defaults to
+      # senaite.storage:default automatically since PROFILES isn't set.
+      - ADDONS=senaite.storage
+      - VERSIONS=senaite.storage=2.6.0
     volumes:
       - senaite_data:/data
     healthcheck:
@@ -215,18 +226,25 @@ services:
       context: ./xellabs-frontend
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3000:3000"   # reach the app at http://127.0.0.1:3000 (and http://<host-lan-ip>:3000 on the LAN)
     environment:
       - DJANGO_API_URL=http://django:8001
-      - SENAITE_URL=http://senaite:8080/senaite
+      - SENAITE_URL=${SENAITE_URL:-http://senaite:8080/senaite}
+      - SENAITE_ADMIN_USER=${SENAITE_ADMIN_USER:?SENAITE_ADMIN_USER must be set in .env}
+      - SENAITE_ADMIN_PASS=${SENAITE_ADMIN_PASS:?SENAITE_ADMIN_PASS must be set in .env}
       - SESSION_SECRET=${SESSION_SECRET}
       - DJANGO_SERVICE_TOKEN=${DJANGO_SERVICE_TOKEN}
-      - DEFAULT_TENANT_SCHEMA=hl-01
+      # DEFAULT_TENANT_SCHEMA intentionally NOT set — never hardcode a tenant here.
+      # The tenant comes from the login subdomain (e.g. mylab.localhost:3000) and is
+      # stored in the session. Set it via the root .env only if a dev default is needed.
+      - DEFAULT_TENANT_SCHEMA=${DEFAULT_TENANT_SCHEMA:-}
       - NODE_ENV=${NODE_ENV:-production}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}   # LAN access is plain HTTP; secure cookies would be dropped and break login. Set true only behind real TLS.
       - NEXT_PUBLIC_APP_ENV=${NEXT_PUBLIC_APP_ENV:-development}
     volumes:
       - ./xellabs-frontend:/app   # source mount — build runs against latest code on every container start
       - /app/node_modules         # preserve packages installed during image build
+      - frontend_next_cache:/app/.next/cache   # persist webpack/SWC build cache across recreates — speeds up rebuilds without serving stale output (source is still re-read fresh every time)
     depends_on:
       django:
         condition: service_healthy
@@ -237,7 +255,7 @@ services:
       retries: 15
       start_period: 120s
     logging: *default-logging
-    mem_limit: 2g
+    mem_limit: 6g
 
   # pgbouncer: intentionally removed (2026-07-08) — `bitnami/pgbouncer` no longer resolves
   # on Docker Hub under any tag (Bitnami restructured their image catalog); nothing in this
@@ -250,3 +268,4 @@ services:
 volumes:
   postgres_data:
   senaite_data:
+  frontend_next_cache:

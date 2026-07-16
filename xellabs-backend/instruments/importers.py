@@ -259,6 +259,8 @@ def build_preview(rows: list[dict], parse_errors: list[dict]) -> tuple[list[dict
     sample_ids = {r["sample_id"] for r in rows}
     sample_cache = _build_sample_cache(sample_ids)
     service_cache = _fetch_senaite_services_by_keyword()
+    # Resolved to canonical sample_id here (not the raw CSV/XML id, which may be
+    # a senaite_ar_id/barcode) so the membership check below lines up correctly.
     canonical_ids = {s.sample_id for s in sample_cache.values()}
     assignments = list(
         WorksheetAssignment.objects.filter(

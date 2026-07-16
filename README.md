@@ -4,6 +4,69 @@ A modern Laboratory Information Management System with a Next.js frontend, Djang
 
 ---
 
+## 🚀 Quick Setup on a New System (Path A — fresh start)
+
+Use this section when setting up on a brand-new machine from this repo. **Prerequisites:** Git + Docker Desktop (WSL2 backend on Windows).
+
+### 1. Clone and enter
+
+```bash
+git clone https://github.com/Lijishwilson-HTIPL/xelMigration.git
+cd xelMigration
+```
+
+### 2. Environment files (both examples already contain working values)
+
+```bash
+cp .env.example .env
+cp xellabs-backend/.env.example xellabs-backend/.env
+```
+
+The root `.env` already carries the platform superadmin credentials (`DJANGO_SUPERUSER_USERNAME` / `DJANGO_SUPERUSER_PASSWORD`) — the admin account is **created automatically on startup** by `manage.py ensure_superuser`. No `createsuperuser` step needed.
+
+### 3. Start everything
+
+```bash
+# Keep the xellabs-lims-* container names that all docs/commands reference:
+docker compose -p xellabs-lims up -d
+```
+
+First run builds all images — allow 10–15 minutes. Migrations run automatically.
+
+### 4. One-time database seed — public tenant + localhost domains
+
+Required once per fresh database; without it every request 404s.
+
+```bash
+docker exec xellabs-lims-django-1 python manage.py shell -c "
+from core.models import Tenant, Domain
+t, _ = Tenant.objects.get_or_create(schema_name='public', defaults={'name':'Public','slug':'public'})
+Domain.objects.get_or_create(domain='localhost', defaults={'tenant':t,'is_primary':True})
+Domain.objects.get_or_create(domain='127.0.0.1', defaults={'tenant':t,'is_primary':False})
+print('Done')"
+```
+
+### 5. Log in and create your first organisation
+
+1. Open **http://127.0.0.1:3000** (use `127.0.0.1`, not `localhost` — some machines have an IPv6 loopback quirk with Docker).
+2. Log in with the superadmin from `.env` (`admin` + `DJANGO_SUPERUSER_PASSWORD`).
+3. Go to **Administration → Tenant Management** → **New Organisation**. This provisions the tenant's schema, domains, and its admin account in one step — copy the one-time admin credentials shown.
+
+### 6. (Optional) Re-apply the SENAITE white-label rebrand
+
+A fresh SENAITE volume shows stock SENAITE branding. Scripts live in `senaite-rebrand/`; the procedure is in `CLAUDE.md` Section 16.
+
+### Verify
+
+```bash
+docker ps --filter "name=xellabs" --format "table {{.Names}}\t{{.Status}}"
+docker logs xellabs-lims-django-1 --tail 20    # look for "Superadmin 'admin' created"
+```
+
+> ⚠️ Never run `docker compose down -v` — it permanently deletes the PostgreSQL **and** SENAITE data volumes.
+
+---
+
 ## Architecture
 
 | Layer | Technology |
@@ -72,7 +135,7 @@ DEBUG=True
 SECRET_KEY=any-random-string-at-least-50-chars
 DB_NAME=xellabs_lims
 DB_USER=xellabs_user
-DB_PASSWORD=3333
+DB_PASSWORD=<your-db-password>
 DB_HOST=postgres
 DB_PORT=5432
 CELERY_BROKER_URL=redis://redis:6379/0
@@ -109,7 +172,7 @@ This starts 6 containers:
 docker exec -it xellabs-lims-django-1 python manage.py createsuperuser
 ```
 
-Set username: `admin`, password: `Admin@1234` (or your choice).
+Set your own username and a strong password.
 
 ### Step 5 — Register public tenant (first time only, or on fresh database)
 
@@ -129,10 +192,10 @@ print('Tenant setup complete')
 
 | Service | URL | Login |
 |---|---|---|
-| **XelLabs Frontend** | http://localhost:3000 | admin / Admin@1234 |
+| **XelLabs Frontend** | http://localhost:3000 | your Django superuser login |
 | Django Admin | http://localhost:8001/admin/ | superuser |
 | Django API | http://localhost:8001/api/ | Token auth |
-| SENAITE | http://localhost:8080/senaite | admin / admin |
+| SENAITE | http://localhost:8080/senaite | set via SENAITE_ADMIN_USER / SENAITE_ADMIN_PASS |
 
 ### Step 7 — Sync clients from SENAITE (first time)
 
@@ -228,7 +291,7 @@ The frontend integrates with SENAITE via its JSON API v1 (`/@@API/senaite/v1/`):
 | List sample types | `GET /@@API/senaite/v1/SampleType` |
 | List analysis services | `GET /@@API/senaite/v1/AnalysisService` |
 
-Auth: HTTP Basic (credentials from `SENAITE_ADMIN_USER` / `SENAITE_ADMIN_PASS`, default `admin/admin`).
+Auth: HTTP Basic (credentials from `SENAITE_ADMIN_USER` / `SENAITE_ADMIN_PASS`, set these env vars before use).
 
 ---
 

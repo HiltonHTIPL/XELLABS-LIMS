@@ -16,64 +16,125 @@
 
 ## Bug List
 
-### BUG-001 — SyntaxError "Unexpected token '<'" on Methods/Tests/Lab-Samples/Analysis-Requests modals
-- **Status:** ✅ FIXED (2026-07-02)
-- **Symptom:** "SyntaxError: Unexpected token '<', '<!DOCTYPE ...' is not valid JSON" shown in modal on second open
-- **Root cause:** Action files (`methods.ts`, `tests.ts`, `lab-samples.ts`, `analysis-requests.ts`) used raw `fetch` to `http://django:8001/api/lims/...` without `X-Tenant-Schema` header. Django public schema returns 404 HTML for these endpoints. `res.json()` called unconditionally on the HTML → SyntaxError stored in `useActionState` → shown on next modal open.
-- **Fix:** Switched all 4 action files to `djangoFetch` from `@/app/lib/django` which automatically adds `X-Tenant-Schema: hl-01` header.
-- **Files changed:** `app/actions/methods.ts`, `app/actions/tests.ts`, `app/actions/lab-samples.ts`, `app/actions/analysis-requests.ts`, `app/lib/django.ts`, `docker-compose.yml`
+### Original Bugs (2026-07-02)
+
+_BUG-001 through BUG-005 were fixed and verified on 2026-07-02. See git history for details._
 
 ---
 
-### BUG-002 — "No sample returned from SENAITE" on Samples page
-- **Status:** ✅ FIXED (2026-07-02)
-- **Symptom:** Creating a sample on the `/dashboard/samples` page shows "No sample returned from SENAITE"
-- **Root cause:** `createSenaiteSample` in `senaite.ts` sent payload as a JSON array `[{obj_type: 'AnalysisRequest', Client: uid, ...}]`. SENAITE jsonapi v1 requires: plain object (not array), `portal_type` (not `obj_type`), and `parent_path: '/senaite/clients/client-X'` (not `Client: uid`). Individual client endpoint returns null for `path` — must use list endpoint with `?UID=&complete=true` to get client path.
-- **Fix:** Rewrote `createSenaiteSample` to: (1) look up client path via `GET /@@API/senaite/v1/client?UID={uid}&complete=true`, (2) POST with `portal_type: 'AnalysisRequest'` + `parent_path: clientPath`.
-- **Files changed:** `app/lib/senaite.ts`
+## New Bugs Found & Fixed (2026-07-09)
+
+### CRITICAL Issues — Fixed
+
+**BUG-006 — Race condition in SampleType.sync_from_senaite**
+- **File:** `xellabs-backend/lims/views.py:48-65`
+- **Status:** ✅ FIXED (2026-07-09)
+- **Symptom:** Concurrent sync requests create duplicate SampleType records
+- **Root cause:** Check-then-create pattern (lines 56-62) is not atomic — two requests can both pass the existence check before either creates
+- **Fix:** Changed to atomic `get_or_create()` by senaite_uid, then by name
+
+**BUG-007 — Partial failure silenced in createSampleWithAnalyses**
+- **File:** `xellabs-frontend/app/actions/lab-samples.ts:143-146`
+- **Status:** ✅ FIXED (2026-07-09)
+- **Symptom:** Sample created but analysis request fails → returns `success: true` (misleading)
+- **Root cause:** Line 145 returned success despite AR creation failing; sample left incomplete
+- **Fix:** Returns `success: false` when AR creation fails
+
+**BUG-008 — Orphaned Tenant records on domain creation failure**
+- **File:** `xellabs-backend/core/models.py:30-47`
+- **Status:** ✅ FIXED (2026-07-09)
+- **Symptom:** Tenant created but domain creation fails → Tenant left without domains, breaks tenant resolution
+- **Root cause:** Super().save() committed Tenant before domain creation; no rollback on failure
+- **Fix:** Wrapped entire save() in `transaction.atomic()`
 
 ---
 
-### BUG-003 — "Failed to register sample." on Sample Register page
-- **Status:** ✅ FIXED (2026-07-02)
-- **Symptom:** Clicking "Register Sample" on `/dashboard/lab-samples` shows "Failed to register sample." (Django 400)
-- **Root cause:** The Sample Register page loaded sample types using `getSampleTypes()` from `samples.ts` which returns SENAITE sample types (with string UIDs like `"abc123..."`). The dropdown set `value={st.uid}` (a string UID). `createLabSample` then did `sample_type: Number(uid)` → NaN → Django 400.
-- **Fix:** Added `getDjangoSampleTypes()` to `lab-samples.ts` that fetches from `/api/lims/sample-types/` (integer IDs). Updated `page.tsx` to call this instead. Updated `LabSamplesShell.tsx` to use `DjangoSampleType` type with `value={st.id}`.
-- **Files changed:** `app/actions/lab-samples.ts`, `app/dashboard/lab-samples/page.tsx`, `app/dashboard/lab-samples/_components/LabSamplesShell.tsx`
+### HIGH Severity Issues — Fixed
+
+**BUG-009 — Authentication bypass on password failure**
+- **File:** `xellabs-frontend/app/actions/auth.ts:64-67`
+- **Status:** ✅ FIXED (2026-07-09)
+- **Symptom:** Wrong password → silently falls back to DJANGO_SERVICE_TOKEN (admin access)
+- **Root cause:** Lines 65-67 used service token as fallback if own token fails to fetch
+- **Fix:** Removed fallback; now returns auth error if Django token fails to fetch
+
+**BUG-010 — Hard-coded default SENAITE credentials**
+- **Files:** `xellabs-frontend/app/actions/lab-samples.ts`, `xellabs-frontend/app/actions/samples.ts`
+- **Status:** ✅ FIXED (2026-07-09)
+- **Symptom:** Missing SENAITE_ADMIN_USER/PASS env vars → defaults to 'admin'/'admin'
+- **Root cause:** `process.env.SENAITE_ADMIN_USER ?? 'admin'` in multiple files
+- **Fix:** Required env vars; throws error at startup if missing
+
+**BUG-011 — Missing authorization on sync_from_senaite**
+- **File:** `xellabs-backend/lims/views.py:28`
+- **Status:** ✅ FIXED (2026-07-09)
+- **Symptom:** Any authenticated user (including 'client' role) can trigger full SENAITE sync
+- **Root cause:** No permission check at line 28
+- **Fix:** Added role check; only admin/lab_manager can sync
+
+**BUG-012 — N+1 query in TAT calculation**
+- **File:** `xellabs-backend/lims/views.py:148-168`
+- **Status:** ✅ FIXED (2026-07-09)
+- **Symptom:** Calculating TAT for 1000 samples loads all Sample objects (1000+ queries)
+- **Root cause:** Loop over `week_qs` loads full Sample objects; only 2 fields needed
+- **Fix:** Changed to `.values('received_date', 'updated_at')` query
 
 ---
 
-### BUG-004 — SENAITE sample creation fails silently if client has no senaite_uid
-- **Status:** ✅ FIXED (2026-07-02)
-- **Symptom:** On the Samples page, if a Django client was not synced to SENAITE (missing `senaite_uid`), its fallback value `String(c.id)` (e.g. "5") was passed to SENAITE as the client UID → SENAITE rejects it → sample creation fails with no clear error.
-- **Root cause:** `SamplesShell.tsx` line 59: `uid: c.senaite_uid || String(c.id)` — the integer fallback is meaningless to SENAITE.
-- **Fix:** Filter out clients without `senaite_uid` before building the client dropdown. Only SENAITE-synced clients appear.
-- **Files changed:** `app/dashboard/samples/_components/SamplesShell.tsx`
+### MEDIUM Severity Issues — Fixed
+
+**BUG-013 — Fail-open validation in checkClientIdAvailable**
+- **File:** `xellabs-frontend/app/actions/clients.ts:98-110`
+- **Status:** ✅ FIXED (2026-07-09)
+- **Symptom:** API unreachable → returns `true` (available), allowing duplicate IDs through
+- **Root cause:** Lines 103, 108 return `true` on any API error
+- **Fix:** Returns `null` on error; UI can show validation error
+
+**BUG-014 — Silent SENAITE sync failures**
+- **File:** `xellabs-frontend/app/actions/lab-samples.ts:154-172`
+- **Status:** ✅ FIXED (2026-07-09)
+- **Symptom:** SENAITE sample creation fails → silently swallowed, invisible to users
+- **Root cause:** Catch block on line 171 swallowed all errors
+- **Fix:** Added console.error logging for failed/errored SENAITE syncs
+
+**BUG-015 — String exceptions in error responses**
+- **Files:** `xellabs-frontend/app/actions/lab-samples.ts`, `xellabs-frontend/app/actions/analysis-requests.ts`
+- **Status:** ✅ FIXED (2026-07-09)
+- **Symptom:** `catch (e) { return { message: String(e) } }` leaks internal errors to UI
+- **Root cause:** Full exception string returned to client (e.g., stack traces, file paths)
+- **Fix:** Changed to console.error full exception, return generic message to client
+
+**BUG-016 — Type mismatch in result validation**
+- **File:** `xellabs-backend/lims/services.py:62-68`
+- **Status:** ✅ FIXED (2026-07-09)
+- **Symptom:** Non-numeric result values silently pass spec validation (return False)
+- **Root cause:** Line 68 caught ValueError and returned False instead of raising
+- **Fix:** Now raises ValueError for non-numeric values with clear message
+
+**BUG-017 — Unguarded pagination bypass in StorageLocation**
+- **File:** `xellabs-backend/inventory/views.py:89`
+- **Status:** ✅ FIXED (2026-07-09)
+- **Symptom:** Tenant with 10K+ storage locations crashes browser (returns all at once)
+- **Root cause:** `pagination_class = None` with no limit
+- **Fix:** Removed pagination_class override; now uses default pagination (50 items/page)
 
 ---
 
-### BUG-005 — SampleType prefix field not required (accepts blank)
-- **Status:** ✅ FIXED (2026-07-02)
-- **Symptom:** `POST /api/lims/sample-types/` with no `prefix` field returns 201 instead of 400 — creates a sample type with no prefix, breaking sample ID generation
-- **Root cause:** `prefix = models.CharField(max_length=10, blank=True)` — `blank=True` makes it optional
-- **Fix:** Changed to `blank=False` in model + added `extra_kwargs = {'prefix': {'required': True, 'allow_blank': False}}` in serializer. Migration: `0006_sampletype_prefix_required`
-- **Files changed:** `xellabs-backend/lims/models.py`, `xellabs-backend/lims/serializers.py`, `xellabs-backend/lims/migrations/0006_sampletype_prefix_required.py`
+### LOW Severity Issues — Fixed
 
----
+**BUG-018 — Hard-coded localhost domain creation**
+- **File:** `xellabs-backend/core/models.py:41, 45`
+- **Status:** ✅ FIXED (2026-07-09)
+- **Symptom:** Tenant.save() creates `.localhost` domains in production
+- **Root cause:** Line 41 unconditionally created localhost domain
+- **Fix:** Only create localhost domain in development (when DEBUG=True)
 
-### KNOWN-001 — Unauthenticated requests to tenant-only endpoints return 404 not 401
-- **Status:** ⚠️ KNOWN — expected behavior, not a security hole
-- **Symptom:** `GET /api/inventory/reagents/` without auth returns 404 instead of 401
-- **Root cause:** Tenant-only endpoints (`/api/inventory/`, `/api/compliance/`, `/api/reports/`) only exist in `urls_tenant.py`, not `urls_public.py`. Without `X-Tenant-Schema` header, Django routes to the public URL conf which has no matching route → 404 hits before auth middleware runs.
-- **Impact:** Unauthenticated users cannot discover or access these endpoints at all — 404 is actually more secure than 401 (reveals nothing). No data exposure.
-
----
-
-### KNOWN-002 — SENAITE allows anonymous JSONAPI browsing (returns empty list without auth)
-- **Status:** ⚠️ KNOWN — SENAITE configuration, outside Django scope
-- **Symptom:** `GET /@@API/senaite/v1/client` without Authorization header returns 200 with empty results
-- **Root cause:** SENAITE's default JSONAPI configuration permits anonymous browsing (returns only publicly visible records, which is nothing for lab data)
-- **Impact:** No data exposed — anonymous user sees empty results. SENAITE can be hardened via Plone security settings if needed.
+**BUG-019 — Unused select_related in Sample queryset**
+- **File:** `xellabs-backend/lims/views.py:123`
+- **Status:** ✅ FIXED (2026-07-09)
+- **Symptom:** SampleViewSet loads unused related fields; wasted DB joins
+- **Root cause:** Line 123 selected 'client', 'sample_type', 'created_by', 'received_by' but stats/tat_trend never use them
+- **Fix:** Removed default select_related; individual endpoints can add as needed
 
 ---
 
@@ -83,3 +144,4 @@ These bugs resulted in the following rules being added to CLAUDE.md:
 
 1. **Section 19 (Data Source Consistency Rule):** Django lims pages must always load dropdown data from Django (integer IDs), never from SENAITE (UIDs). SENAITE pages must always load client/sample-type data from SENAITE (UIDs), never from Django.
 2. **Section 20 (Pre-deployment Checklist):** Full checklist of things to verify before every deployment.
+3. **New (2026-07-09):** Always use atomic database operations for multi-step saves (use `transaction.atomic()`); Always add authorization checks to all sensitive endpoints; Enable pagination by default to prevent memory bloat; Never expose internal error messages to client UI (always log fully, return generic message); Always validate input types before operations (e.g., numeric validation on spec checks).
