@@ -67,6 +67,7 @@ class SampleSerializer(RecordLockMixin, serializers.ModelSerializer):
     sample_type_name = serializers.CharField(source="sample_type.name", read_only=True)
     client_name = serializers.CharField(source="client.name", read_only=True)
     received_by_name = serializers.SerializerMethodField(read_only=True)
+    attachment_url = serializers.SerializerMethodField(read_only=True)
     reason_for_change = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     def get_received_by_name(self, obj):
@@ -74,6 +75,15 @@ class SampleSerializer(RecordLockMixin, serializers.ModelSerializer):
             full = f"{obj.received_by.first_name} {obj.received_by.last_name}".strip()
             return full or obj.received_by.username
         return ""
+
+    def get_attachment_url(self, obj):
+        if not obj.attachment:
+            return None
+        request = self.context.get("request")
+        if request:
+            return request.build_absolute_uri(obj.attachment.url)
+        return obj.attachment.url
+
     sample_id = serializers.CharField(
         required=False, allow_blank=True,
         validators=[UniqueValidator(queryset=Sample.objects.all())],
@@ -91,9 +101,11 @@ class SampleSerializer(RecordLockMixin, serializers.ModelSerializer):
         validated_data["created_by"] = self.context["request"].user
         if not validated_data.get("sample_id"):
             validated_data["sample_id"] = generate_sample_id(validated_data["sample_type"])
-        # Auto-compute due date: collection_date + 14 days if not explicitly provided
+        # Auto-compute due/retention date from sample type Retention Period
         if validated_data.get("collection_date") and not validated_data.get("expiry_date"):
-            validated_data["expiry_date"] = validated_data["collection_date"] + timedelta(days=14)
+            sample_type = validated_data.get("sample_type")
+            days = getattr(sample_type, "retention_days", None) or 14
+            validated_data["expiry_date"] = validated_data["collection_date"] + timedelta(days=days)
         return super().create(validated_data)
 
     def update(self, instance, validated_data):

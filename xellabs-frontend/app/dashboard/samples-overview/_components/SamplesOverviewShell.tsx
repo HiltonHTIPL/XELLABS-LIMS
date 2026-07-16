@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { type LabSample, type SampleStats, type DjangoSampleType, patchLabSample } from '@/app/actions/lab-samples'
 import { type DjangoClient } from '@/app/actions/clients'
+import DisposeSampleModal from './DisposeSampleModal'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -38,6 +39,7 @@ const STATUS_OPTIONS = [
   { value: 'received',        label: 'Received' },
   { value: 'in_progress',     label: 'In Process' },
   { value: 'results_pending', label: 'To Be Verified' },
+  { value: 'reviewed',        label: 'Reviewed' },
   { value: 'on_hold_for_qa',  label: 'On Hold for QA' },
   { value: 'published',       label: 'Completed' },
   { value: 'rejected',        label: 'Rejected' },
@@ -84,7 +86,7 @@ const STAT_CARDS = [
   { key: 'to_be_verified', label: 'To Be Verified',   icon: 'pending_actions', iconColor: '#F59E0B', iconBg: '#FFFBEB' },
   { key: 'on_hold_for_qa', label: 'On Hold for QA',   icon: 'pause_circle',    iconColor: '#F97316', iconBg: '#FFF7ED' },
   { key: 'completed',      label: 'Completed',        icon: 'check_circle',    iconColor: '#0154FC', iconBg: '#DBEAFE' },
-  { key: 'overdue',        label: 'Overdue',          icon: 'schedule',        iconColor: '#EF4444', iconBg: '#FEF2F2' },
+  { key: 'overdue',        label: 'Past Retention', icon: 'schedule',        iconColor: '#EF4444', iconBg: '#FEF2F2' },
 ] as const
 
 function tatDays(receivedDate: string | null, nowMs: number | null): number | null {
@@ -143,6 +145,8 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
         !s.client_name.toLowerCase().includes(search.toLowerCase())) return false
     if (filterSampleType && String(s.sample_type) !== filterSampleType) return false
     if (filterClient && String(s.client) !== filterClient) return false
+    // Active lists exclude disposed; use Status → Disposed to see them.
+    if (!filterStatus && !filterOverdue && s.status === 'disposed') return false
     if (filterStatus) {
       if (filterStatus === 'on_hold_for_qa') { if (!s.hold_for_qa) return false }
       else { if (s.status !== filterStatus) return false }
@@ -288,21 +292,8 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
     }
   }
 
-  // ── Delete (soft — marks as disposed, never hard-deletes for audit/compliance reasons) ──
-  const [deletingId, setDeletingId] = useState<number | null>(null)
-  async function handleDeleteSample(id: number) {
-    const sample = samples.find(s => s.id === id)
-    if (!sample) return
-    if (!window.confirm(`Mark sample "${sample.sample_id}" as disposed? This cannot be undone and the record will move to the Disposed status.`)) return
-    setDeletingId(id)
-    try {
-      const result = await patchLabSample(id, { status: 'disposed' })
-      if (result.ok) setSamples(prev => prev.map(s => (s.id === id ? { ...s, status: 'disposed' } : s)))
-      else window.alert(result.message ?? 'Failed to update sample.')
-    } finally {
-      setDeletingId(null)
-    }
-  }
+  // ── Dispose (status → disposed + regulatory basis + optional certificate) ──
+  const [disposeTarget, setDisposeTarget] = useState<LabSample | null>(null)
 
   const sel ={ border: '1px solid #D1D5DB', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: '#374151', background: '#fff', outline: 'none', cursor: 'pointer' as const }
   const [now, setNow] = useState('')
@@ -714,7 +705,14 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
               { icon: 'visibility',     label: 'View Details',   action: () => router.push(`/dashboard/samples-overview/${actionMenu.id}`) },
               { icon: 'move_to_inbox',  label: 'Receive Sample', action: () => { router.push(`/dashboard/sample-receipts?id=${actionMenu.id}`); setActionMenu(null) } },
               { icon: 'edit',           label: 'Edit Sample',    action: () => router.push(`/dashboard/samples-overview/${actionMenu.id}?edit=1`) },
-              { icon: 'delete_outline', label: 'Delete',         action: () => handleDeleteSample(actionMenu.id), danger: true },
+              ...( ['received', 'results_pending', 'reviewed', 'published'].includes(
+                    samples.find(x => x.id === actionMenu.id)?.status ?? ''
+                  )
+                ? [{ icon: 'delete_forever', label: 'Dispose Sample', action: () => {
+                    const s = samples.find(x => x.id === actionMenu.id)
+                    if (s) setDisposeTarget(s)
+                  }, danger: true as const }]
+                : []),
             ].map(item => (
               <button key={item.label} onClick={() => { item.action(); setActionMenu(null) }}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: (item as { danger?: boolean }).danger ? '#EF4444' : '#374151', textAlign: 'left' }}>
@@ -724,6 +722,26 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
             ))}
           </div>
         </>
+      )}
+
+      {disposeTarget && (
+        <DisposeSampleModal
+          sampleId={disposeTarget.id}
+          sampleLabel={disposeTarget.sample_id}
+          onClose={() => setDisposeTarget(null)}
+          onDisposed={update => {
+            setSamples(prev => prev.map(s => (
+              s.id === disposeTarget.id
+                ? {
+                    ...s,
+                    status: update.status,
+                    description: update.description ?? s.description,
+                    attachment_url: update.attachment_url ?? s.attachment_url,
+                  }
+                : s
+            )))
+          }}
+        />
       )}
 
     </div>

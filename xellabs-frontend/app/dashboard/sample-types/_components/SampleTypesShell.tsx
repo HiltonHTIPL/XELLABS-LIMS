@@ -34,10 +34,16 @@ function Field({
   )
 }
 
-type FV = { title: string; Prefix: string; MinimumVolume: string }
-const blank = (): FV => ({ title: '', Prefix: '', MinimumVolume: '' })
+type FV = { title: string; Prefix: string; MinimumVolume: string; retention_days: string }
+const blank = (): FV => ({ title: '', Prefix: '', MinimumVolume: '', retention_days: '14' })
 
-export default function SampleTypesShell({ initialSampleTypes }: { initialSampleTypes: SenaiteSampleType[] }) {
+export default function SampleTypesShell({
+  initialSampleTypes,
+  retentionByName = {},
+}: {
+  initialSampleTypes: SenaiteSampleType[]
+  retentionByName?: Record<string, number>
+}) {
   const router = useRouter()
   const [showDrawer, setShowDrawer] = useState(false)
   const [editing, setEditing] = useState<SenaiteSampleType | null>(null)
@@ -77,7 +83,12 @@ export default function SampleTypesShell({ initialSampleTypes }: { initialSample
   function openCreate() { setEditing(null); setVals(blank()); setFieldErrors({}); setShowDrawer(true) }
   function openEdit(st: SenaiteSampleType) {
     setEditing(st)
-    setVals({ title: st.title, Prefix: st.Prefix ?? '', MinimumVolume: st.MinimumVolume ?? '' })
+    setVals({
+      title: st.title,
+      Prefix: st.Prefix ?? '',
+      MinimumVolume: st.MinimumVolume ?? '',
+      retention_days: String(retentionByName[st.title] ?? 14),
+    })
     setFieldErrors({})
     setShowDrawer(true)
   }
@@ -90,7 +101,7 @@ export default function SampleTypesShell({ initialSampleTypes }: { initialSample
       <div className="flex items-center justify-between mb-3">
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Sample Types</h1>
-          <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Manage sample types used across the laboratory</p>
+          <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Sample types and retention periods used for due dates and Past Retention disposal</p>
         </div>
         <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
           <MI name="add" size={15} color="#fff" /> New Sample Type
@@ -142,6 +153,9 @@ export default function SampleTypesShell({ initialSampleTypes }: { initialSample
                 error={fieldErrors.Prefix} value={vals.Prefix} onChange={v => setVal('Prefix', v)} />
               <Field label="Minimum Volume" name="MinimumVolume" placeholder="e.g. 5 mL"
                 hint="(optional)" value={vals.MinimumVolume} onChange={v => setVal('MinimumVolume', v)} />
+              <Field label="Retention Period (days)" name="retention_days" placeholder="14"
+                hint="(drives due date / Past Retention)"
+                value={vals.retention_days} onChange={v => setVal('retention_days', v)} />
             </div>
 
             {/* Footer */}
@@ -174,11 +188,11 @@ export default function SampleTypesShell({ initialSampleTypes }: { initialSample
         <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
           <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
             <colgroup>
-              <col style={{ width: '35%' }} /><col style={{ width: '15%' }} /><col style={{ width: '20%' }} /><col style={{ width: '22%' }} /><col style={{ width: '8%' }} />
+              <col style={{ width: '28%' }} /><col style={{ width: '12%' }} /><col style={{ width: '16%' }} /><col style={{ width: '14%' }} /><col style={{ width: '22%' }} /><col style={{ width: '8%' }} />
             </colgroup>
             <thead>
               <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                {['Name', 'Prefix', 'Min. Volume', 'UID', ''].map(h => (
+                {['Name', 'Prefix', 'Min. Volume', 'Retention', 'UID', ''].map(h => (
                   <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
                 ))}
               </tr>
@@ -200,6 +214,9 @@ export default function SampleTypesShell({ initialSampleTypes }: { initialSample
                     </span>
                   </td>
                   <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{st.MinimumVolume || '—'}</td>
+                  <td className="px-3 py-2.5 text-xs" style={{ color: '#374151', fontWeight: 600 }}>
+                    {retentionByName[st.title] ?? 14} days
+                  </td>
                   <td className="px-3 py-2.5 font-mono text-xs truncate" style={{ color: '#9CA3AF' }}>{st.uid}</td>
                   <td className="px-3 py-2.5">
                     <button onClick={() => openEdit(st)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }} title="Edit">

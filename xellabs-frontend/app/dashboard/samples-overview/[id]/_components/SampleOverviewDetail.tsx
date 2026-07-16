@@ -7,6 +7,7 @@ import { type AnalysisRequest } from '@/app/actions/analysis-requests'
 import LiveBarcode from '@/app/dashboard/_components/LiveBarcode'
 import { STICKER_TEMPLATES, printSticker, type StickerTemplate } from '@/app/lib/stickerTemplates'
 import { type CocSample } from '@/app/actions/storage'
+import DisposeSampleModal from '../../_components/DisposeSampleModal'
 
 // renderSticker/printSticker were built for the chain-of-custody lookup shape
 // (CocSample) — adapt LabSample into it rather than writing a second sticker
@@ -221,6 +222,7 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
   }, [])
   const searchParams = useSearchParams()
   const [showEdit, setShowEdit] = useState(() => searchParams.get('edit') === '1')
+  const [showDispose, setShowDispose] = useState(false)
   const [printOpen, setPrintOpen] = useState(false)
   const [templateId, setTemplateId] = useState(STICKER_TEMPLATES[0].id)
   const [copies, setCopies] = useState(1)
@@ -237,7 +239,19 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
   }
 
   const badge = STATUS_BADGE[sample.status] ?? { bg: '#F3F4F6', color: '#374151', label: sample.status }
+  const syncBadge =
+    sample.status === 'disposed' && sample.senaite_sync_status === 'pending'
+      ? { bg: '#FEF3C7', color: '#92400E', label: 'Pending sync' }
+      : sample.status === 'disposed' && sample.senaite_sync_status === 'failed'
+        ? { bg: '#FEE2E2', color: '#991B1B', label: 'Sync failed' }
+        : null
   const pBadge = PRIORITY_BADGE[sample.priority] ?? { bg: '#F3F4F6', color: '#374151' }
+  const pastRetention = Boolean(
+    sample.expiry_date
+    && new Date(sample.expiry_date) < new Date()
+    && !['published', 'disposed', 'rejected'].includes(sample.status)
+  )
+  const docUrl = sample.attachment_url || sample.attachment || null
 
   // Flatten analysis requests -> one row per test
   const analysisRows = analysisRequests.flatMap(ar =>
@@ -255,15 +269,55 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
       </div>
 
       {showEdit && <EditDrawer sample={sample} onClose={() => setShowEdit(false)} onSaved={() => router.refresh()} />}
+      {showDispose && (
+        <DisposeSampleModal
+          sampleId={sample.id}
+          sampleLabel={sample.sample_id}
+          onClose={() => setShowDispose(false)}
+          onDisposed={() => router.refresh()}
+        />
+      )}
+
+      {pastRetention && (
+        <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs mb-4"
+          style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#991B1B' }}>
+          <MI name="schedule" size={16} color="#DC2626" />
+          <span>
+            Past retention — due date {fmtShort(sample.expiry_date)} has passed.
+            Dispose the sample and record the regulatory basis for compliance documentation.
+          </span>
+        </div>
+      )}
+
+      {syncBadge && (
+        <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs mb-4"
+          style={{ backgroundColor: syncBadge.bg, border: `1px solid ${syncBadge.color}33`, color: syncBadge.color }}>
+          <MI name={sample.senaite_sync_status === 'failed' ? 'error' : 'sync'} size={16} color={syncBadge.color} />
+          <span>
+            {syncBadge.label}
+            {sample.senaite_sync_status === 'failed' && sample.senaite_sync_error
+              ? ` — ${sample.senaite_sync_error}`
+              : sample.senaite_sync_status === 'pending'
+                ? ' — disposal record is being confirmed with the lab system.'
+                : ''}
+          </span>
+        </div>
+      )}
 
       {/* Title row */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
         <h1 style={{ fontSize: 24, fontWeight: 800, color: '#14265E', margin: 0 }}>Sample Detail</h1>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button onClick={() => setShowEdit(true)}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: 'none', background: '#0154FC', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             <MI name="edit" size={16} color="#fff" /><span>Edit Sample</span>
           </button>
+          {['received', 'results_pending', 'reviewed', 'published'].includes(sample.status) && (
+            <button onClick={() => setShowDispose(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #FECACA', background: '#FEF2F2', color: '#B91C1C', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              <MI name="delete_forever" size={16} color="#B91C1C" /><span>Dispose</span>
+            </button>
+          )}
           <button onClick={() => document.getElementById('storage-info')?.scrollIntoView({ behavior: 'smooth' })}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             <MI name="inventory_2" size={16} /><span>Storage History</span>
@@ -330,6 +384,9 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
               </div>
               <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
                 <span style={{ background: badge.bg, color: badge.color, borderRadius: 20, padding: '3px 9px', fontWeight: 600, fontSize: 11 }}>{badge.label}</span>
+                {syncBadge && (
+                  <span style={{ background: syncBadge.bg, color: syncBadge.color, borderRadius: 20, padding: '3px 9px', fontWeight: 600, fontSize: 11 }}>{syncBadge.label}</span>
+                )}
                 {sample.priority && <span style={{ background: pBadge.bg, color: pBadge.color, borderRadius: 20, padding: '3px 9px', fontWeight: 600, fontSize: 11, textTransform: 'capitalize' }}>{sample.priority}</span>}
                 {sample.hold_for_qa && <span style={{ background: '#FFF7ED', color: '#C2410C', borderRadius: 20, padding: '3px 9px', fontWeight: 600, fontSize: 11 }}>On Hold for QA</span>}
               </div>
@@ -370,8 +427,8 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
           ].map((m, i, arr) => (
             <div key={m.label} style={{ flex: 1, minWidth: 130, textAlign: 'center', borderRight: i < arr.length - 1 ? '1px solid #E8EAF2' : 'none' }}>
               <p style={{ fontSize: 11, color: '#9CA3AF', margin: '0 0 4px' }}>{m.label}</p>
-              <p style={{ fontSize: 13, fontWeight: 700, color: '#14265E', margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                {m.icon && <MI name={m.icon} size={13} color="#9CA3AF" />}{m.value || '—'}
+              <p style={{ fontSize: 13, fontWeight: 700, color: m.label === 'Due Date' && pastRetention ? '#DC2626' : '#14265E', margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                {m.icon && <MI name={m.icon} size={13} color={m.label === 'Due Date' && pastRetention ? '#DC2626' : '#9CA3AF'} />}{m.value || '—'}
               </p>
             </div>
           ))}
@@ -452,10 +509,20 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
 
         <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #E8EAF2', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: 18 }}>
           <p style={{ fontSize: 13, fontWeight: 700, color: '#14265E', margin: '0 0 10px' }}>Documents</p>
-          <div style={{ textAlign: 'center', padding: '18px 0', color: '#9CA3AF' }}>
-            <MI name="description" size={28} color="#D1D5DB" />
-            <p style={{ fontSize: 12, marginTop: 8 }}>No documents uploaded for this sample yet.</p>
-          </div>
+          {docUrl ? (
+            <a href={docUrl} target="_blank" rel="noreferrer"
+              className="flex items-center gap-2 hover:underline"
+              style={{ fontSize: 13, fontWeight: 600, color: '#2563EB', textDecoration: 'none' }}>
+              <MI name="attach_file" size={18} color="#2563EB" />
+              View attachment / disposal certificate
+            </a>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '18px 0', color: '#9CA3AF' }}>
+              <MI name="description" size={28} color="#D1D5DB" />
+              <p style={{ fontSize: 12, marginTop: 8 }}>No documents uploaded for this sample yet.</p>
+              <p style={{ fontSize: 11, marginTop: 4 }}>Attach a disposal certificate when disposing the sample.</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

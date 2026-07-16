@@ -32,6 +32,8 @@ export async function createSampleType(
   const title         = (formData.get('title') as string)?.trim()
   const prefix        = (formData.get('Prefix') as string)?.trim()
   const minimumVolume = (formData.get('MinimumVolume') as string)?.trim()
+  const retentionRaw  = (formData.get('retention_days') as string)?.trim()
+  const retentionDays = Math.max(1, Number.parseInt(retentionRaw || '14', 10) || 14)
 
   const errors: Record<string, string[]> = {}
   if (!title)  errors.title  = ['Name is required']
@@ -49,10 +51,10 @@ export async function createSampleType(
     const raw = result.error ?? 'Failed to create sample type.'
     try {
       const parsed = JSON.parse(raw) as Record<string, string>
-      const errors: Record<string, string[]> = {}
-      if (parsed.prefix) errors.Prefix = [parsed.prefix]
-      if (parsed.title)  errors.title  = [parsed.title]
-      if (Object.keys(errors).length) return { errors }
+      const fieldErrs: Record<string, string[]> = {}
+      if (parsed.prefix) fieldErrs.Prefix = [parsed.prefix]
+      if (parsed.title)  fieldErrs.title  = [parsed.title]
+      if (Object.keys(fieldErrs).length) return { errors: fieldErrs }
     } catch { /* not JSON — fall through to message */ }
     return { message: raw }
   }
@@ -60,7 +62,12 @@ export async function createSampleType(
   // Mirror into Django so it appears in Lab Sample registration dropdowns
   await djangoFetch('/api/lims/sample-types/', {
     method: 'POST',
-    body: JSON.stringify({ name: title, prefix, description: minimumVolume ?? '' }),
+    body: JSON.stringify({
+      name: title,
+      prefix,
+      description: minimumVolume ?? '',
+      retention_days: retentionDays,
+    }),
   }).catch(() => null) // non-fatal — SENAITE is the source of truth
 
   revalidatePath('/dashboard/sample-types')
@@ -76,6 +83,8 @@ export async function updateSampleType(
   const title         = (formData.get('title') as string)?.trim()
   const prefix        = (formData.get('Prefix') as string)?.trim()
   const minimumVolume = (formData.get('MinimumVolume') as string)?.trim()
+  const retentionRaw  = (formData.get('retention_days') as string)?.trim()
+  const retentionDays = Math.max(1, Number.parseInt(retentionRaw || '14', 10) || 14)
 
   const errors: Record<string, string[]> = {}
   if (!title)  errors.title  = ['Name is required']
@@ -92,13 +101,35 @@ export async function updateSampleType(
     const raw = result.error ?? 'Failed to update sample type.'
     try {
       const parsed = JSON.parse(raw) as Record<string, string>
-      const errors: Record<string, string[]> = {}
-      if (parsed.prefix) errors.Prefix = [parsed.prefix]
-      if (parsed.title)  errors.title  = [parsed.title]
-      if (Object.keys(errors).length) return { errors }
+      const fieldErrs: Record<string, string[]> = {}
+      if (parsed.prefix) fieldErrs.Prefix = [parsed.prefix]
+      if (parsed.title)  fieldErrs.title  = [parsed.title]
+      if (Object.keys(fieldErrs).length) return { errors: fieldErrs }
     } catch { /* not JSON */ }
     return { message: raw }
   }
+
+  // Keep Django retention period in sync for New UI due dates / Past Retention filter
+  try {
+    const listRes = await djangoFetch(`/api/lims/sample-types/?search=${encodeURIComponent(title)}`)
+    if (listRes.ok) {
+      const data = await listRes.json() as { results?: Array<{ id: number; name: string }> } | Array<{ id: number; name: string }>
+      const rows = Array.isArray(data) ? data : (data.results ?? [])
+      const match = rows.find(r => r.name === title) ?? rows[0]
+      if (match) {
+        await djangoFetch(`/api/lims/sample-types/${match.id}/`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            name: title,
+            prefix,
+            description: minimumVolume ?? '',
+            retention_days: retentionDays,
+          }),
+        })
+      }
+    }
+  } catch { /* non-fatal */ }
+
   revalidatePath('/dashboard/sample-types')
   revalidatePath('/dashboard/lab-samples')
   return { success: true, message: `Sample type "${title}" updated.` }
