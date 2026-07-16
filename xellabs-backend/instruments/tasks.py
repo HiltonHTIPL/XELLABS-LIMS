@@ -42,11 +42,20 @@ def apply_import(imp) -> dict:
         return {"created": 0, "updated": 0, "skipped": 0, "errors": 1, "sample_ids": [], "status": "failed"}
 
     interface = getattr(imp.instrument, "import_data_interface", "") or ""
-    rows, parse_errors = parse_instrument_file(
-        file_content,
-        file_format=imp.file_format or "csv",
-        interface_code=interface,
-    )
+    try:
+        rows, parse_errors = parse_instrument_file(
+            file_content,
+            file_format=imp.file_format or "csv",
+            interface_code=interface,
+        )
+    except Exception as e:
+        # parse_csv/parse_xml raise on a genuinely malformed file (e.g. a
+        # binary file uploaded under the wrong File Format, confirmed live —
+        # csv.DictReader chokes on raw XLSX bytes decoded as text) — without
+        # this, the exception was unhandled and left the import stuck at
+        # "pending" forever with no error shown to the user.
+        _fail(imp, f"File could not be parsed — check the File Format matches the actual file: {e}")
+        return {"created": 0, "updated": 0, "skipped": 0, "errors": 1, "sample_ids": [], "status": "failed"}
 
     if not rows and parse_errors:
         _fail(imp, "File could not be parsed. Errors: " + json.dumps(parse_errors))
@@ -65,7 +74,7 @@ def apply_import(imp) -> dict:
             with transaction.atomic():
                 wa = WorksheetAssignment.objects.select_for_update().filter(
                     analysis_request__sample__pk=row["sample_pk"],
-                    test__pk=row["test_pk"],
+                    senaite_service_uid=row["senaite_service_uid"],
                 ).first()
 
                 if not wa:
@@ -151,15 +160,26 @@ def apply_import(imp) -> dict:
 
 
 @shared_task(bind=True, max_retries=0)
-def process_instrument_import(self, import_id: int):
-    """Celery entrypoint: resolve the import row and delegate to apply_import."""
+def process_instrument_import(self, import_id: int, schema_name: str):
+    """Celery entrypoint: resolve the import row and delegate to apply_import.
+
+    InstrumentResultImport is a tenant-app model — the Celery worker has no
+    request context of its own, so without schema_context() this silently runs
+    against the 'public' schema (where the table doesn't exist) and crashes
+    with psycopg.errors.UndefinedTable on every single call, confirmed live.
+    Same gap already documented/fixed for sync_storage_location_to_senaite —
+    schema_name must be captured by the caller (which does have request
+    context) and passed through explicitly."""
+    from django_tenants.utils import schema_context
     from .models import InstrumentResultImport
-    try:
-        imp = InstrumentResultImport.objects.select_related("instrument", "imported_by").get(pk=import_id)
-    except InstrumentResultImport.DoesNotExist:
-        logger.error("InstrumentResultImport %d not found.", import_id)
-        return
-    return apply_import(imp)
+
+    with schema_context(schema_name):
+        try:
+            imp = InstrumentResultImport.objects.select_related("instrument", "imported_by").get(pk=import_id)
+        except InstrumentResultImport.DoesNotExist:
+            logger.error("InstrumentResultImport %d not found in schema %s.", import_id, schema_name)
+            return
+        return apply_import(imp)
 
 
 def _fail(imp, message):

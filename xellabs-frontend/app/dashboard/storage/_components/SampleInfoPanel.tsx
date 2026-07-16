@@ -1,5 +1,6 @@
 'use client'
 import type { ChainOfCustodyResult, CocEvent } from '@/app/actions/storage'
+import { sampleDisplayId } from '@/app/lib/sampleDisplay'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -131,7 +132,7 @@ export default function SampleInfoPanel({
             </div>
           ) : (
             <>
-              <InfoRow icon="science" label="Sample ID" value={sample.sample_id} valueColor="#0154FC" />
+              <InfoRow icon="science" label="Sample ID" value={sampleDisplayId(sample)} valueColor="#0154FC" />
               <InfoRow icon="business" label="Client" value={sample.client} valueColor="#0154FC" />
               <InfoRow icon="category" label="Sample Type" value={sample.sample_type} />
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #F9FAFB' }}>

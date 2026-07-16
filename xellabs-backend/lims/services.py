@@ -65,14 +65,35 @@ def check_result_against_spec(result):
     try:
         value = float(result.value)
     except (ValueError, TypeError):
-        return False  # non-numeric — cannot range-check
+        # Non-numeric values should be rejected, not silently accepted
+        raise ValueError(
+            f"Result value '{result.value}' is not numeric. "
+            "Only numeric values can be checked against specifications."
+        )
 
     wa = result.worksheet_assignment
-    spec = Specification.objects.filter(
-        test=wa.test,
-        sample_type=wa.analysis_request.sample.sample_type,
-        is_active=True,
-    ).first()
+    sample = wa.analysis_request.sample
+
+    # Honor the specific Analysis Specification chosen at sample registration
+    # first — two specs can share a sample_type but carry different limits
+    # (e.g. "Drinking Water" vs "Irrigation Water"), so guessing by sample_type
+    # alone can silently check a result against the wrong thresholds. Only fall
+    # back to a sample_type-wide guess when no specification was selected.
+    spec = None
+    if sample.analysis_specification_id:
+        spec = Specification.objects.filter(
+            senaite_service_uid=wa.senaite_service_uid,
+            specification_id=sample.analysis_specification_id,
+            specification__is_active=True,
+            is_active=True,
+        ).first()
+    if not spec:
+        spec = Specification.objects.filter(
+            senaite_service_uid=wa.senaite_service_uid,
+            specification__sample_type=sample.sample_type,
+            specification__is_active=True,
+            is_active=True,
+        ).first()
 
     if not spec:
         return False
@@ -193,8 +214,9 @@ def dispose_sample(sample, user, basis, notes="", certificate=None):
 
 @transaction.atomic
 def submit_result(result, user):
-    """Analyst submits a result value — checks spec and marks submitted."""
-    if result.status != "pending":
+    """Analyst submits a result value — checks spec and marks submitted.
+    Rejected results may be corrected and re-submitted."""
+    if result.status not in ("pending", "rejected"):
         raise ValueError(f"Result is already '{result.status}', cannot submit.")
     if not result.value:
         raise ValueError("Result value cannot be empty.")
@@ -206,12 +228,14 @@ def submit_result(result, user):
     result.save(update_fields=[
         "status", "submitted_by", "submitted_at", "is_out_of_range"
     ])
+    _refresh_samples_for_result(result)
     return result
 
 
 @transaction.atomic
 def verify_result(result, user):
-    """Reviewer verifies a submitted result — auto-locks it."""
+    """Reviewer verifies a submitted result — auto-locks it and completes the
+    parent AnalysisRequest if this was its last unverified result."""
     if result.status != "submitted":
         raise ValueError(f"Result must be 'submitted' to verify (current: '{result.status}').")
 
@@ -222,18 +246,23 @@ def verify_result(result, user):
     result.save(update_fields=[
         "status", "verified_by", "verified_at", "is_locked"
     ])
+    complete_analysis_request(result.worksheet_assignment.analysis_request)
+    _refresh_samples_for_result(result)
     return result
 
 
 @transaction.atomic
 def reject_result(result, user, remarks=""):
-    """Reviewer rejects a submitted result — sends it back to pending."""
+    """Reviewer rejects a submitted result — marks it 'rejected'. The analyst
+    can then correct the value and re-submit (submit_result accepts rejected)."""
     if result.status not in ("submitted",):
         raise ValueError(f"Only submitted results can be rejected (current: '{result.status}').")
 
     result.status = "rejected"
-    result.remarks = remarks or result.remarks
+    if remarks:
+        result.remarks = f"Rejected by {user.username}: {remarks}"
     result.save(update_fields=["status", "remarks"])
+    _refresh_samples_for_result(result)
     return result
 
 
@@ -259,11 +288,85 @@ def verify_worksheet(worksheet, user):
 
 @transaction.atomic
 def reject_worksheet(worksheet, user):
+    """Reviewer rejects a worksheet pending review — mirrors SENAITE's rejection
+    flow: unfinished (non-verified) analyses are carried forward onto a fresh
+    worksheet for the analyst to redo, while already-verified analyses stay on
+    the original worksheet, which is marked 'rejected' for the audit trail."""
+    from .models import Worksheet, Result
+
     if worksheet.status not in ("to_be_verified",):
         raise ValueError("Only worksheets pending review can be rejected.")
+
+    unfinished = worksheet.assignments.exclude(result__status="verified")
+    new_worksheet = None
+    if unfinished.exists():
+        new_worksheet = Worksheet.objects.create(
+            ws_id=generate_ws_id(),
+            analyst=worksheet.analyst,
+            instrument=worksheet.instrument,
+            method=worksheet.method,
+            status="open",
+        )
+        unfinished_ids = list(unfinished.values_list("id", flat=True))
+        WorksheetAssignmentModel = worksheet.assignments.model
+        WorksheetAssignmentModel.objects.filter(id__in=unfinished_ids).update(worksheet=new_worksheet)
+        Result.objects.filter(worksheet_assignment_id__in=unfinished_ids).exclude(status="verified").update(
+            status="pending", is_out_of_range=False,
+            submitted_by=None, submitted_at=None,
+        )
+
     worksheet.status = "rejected"
     worksheet.save(update_fields=["status", "updated_at"])
-    return worksheet
+    return worksheet, new_worksheet
+
+
+# ── Sample workflow status derivation ────────────────────────────────────────
+
+@transaction.atomic
+def refresh_sample_workflow_status(sample):
+    """Derive the sample's status from its lab-worksheet progress.
+
+    Lab worksheets are Django-owned (assignment/results/verification never touch
+    the SENAITE mirror), so the sample status for these stages must be derived
+    here: any assignment -> in_progress; all results submitted -> results_pending;
+    all results verified -> reviewed. Only moves the status forward from
+    'received' onward — registration/receipt and terminal states are untouched.
+    """
+    from .models import Result, WorksheetAssignment
+
+    if sample.status not in ("received", "in_progress", "results_pending", "reviewed"):
+        return sample
+
+    assignments = WorksheetAssignment.objects.filter(analysis_request__sample=sample)
+    total = assignments.count()
+    if total == 0:
+        return sample
+
+    results = Result.objects.filter(worksheet_assignment__in=assignments)
+    verified = results.filter(status="verified").count()
+    submitted_or_verified = results.filter(status__in=("submitted", "verified")).count()
+
+    if verified == total:
+        new_status = "reviewed"
+    elif submitted_or_verified == total:
+        new_status = "results_pending"
+    else:
+        new_status = "in_progress"
+
+    if new_status != sample.status:
+        sample.status = new_status
+        # instance.save() (not queryset.update) so audit signals fire
+        sample.save(update_fields=["status", "updated_at"])
+    return sample
+
+
+def _refresh_samples_for_result(result):
+    samples = set()
+    ar = result.worksheet_assignment.analysis_request
+    if ar and ar.sample_id:
+        samples.add(ar.sample)
+    for s in samples:
+        refresh_sample_workflow_status(s)
 
 
 # ── Analysis Request workflow ─────────────────────────────────────────────────

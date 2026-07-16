@@ -6,7 +6,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.authtoken.models import Token
-from core.test_utils import TenantAPITestCase
+from core.tenant_test import TenantAPITestCase
 
 from inventory.models import StorageLocation, Reagent, Lot, InventoryTransaction, ExpiryAlert
 

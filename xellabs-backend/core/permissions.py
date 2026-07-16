@@ -78,3 +78,30 @@ class CanReceiveOrStoreSamples(BasePermission):
             request.user.is_authenticated
             and getattr(request.user, "role", None) in CAN_RECEIVE_OR_STORE_ROLES
         )
+
+
+class _ReadAllWriteRoles(BasePermission):
+    """Base: safe methods for any authenticated user; writes restricted to
+    `write_roles`; DELETE further restricted to lab_manager+ (destructive)."""
+    write_roles: set = set()
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user.is_authenticated:
+            return False
+        if request.method in SAFE_METHODS:
+            return True
+        if request.method == "DELETE":
+            return _rank(user) >= ROLE_HIERARCHY["lab_manager"]
+        return getattr(user, "role", None) in self.write_roles
+
+
+class ReadOnlyOrAnalystOrAbove(_ReadAllWriteRoles):
+    """Reads for all authenticated users; create/update analyst+; delete lab_manager+."""
+    write_roles = {"admin", "lab_manager", "reviewer", "analyst"}
+
+
+class ReadOnlyOrSampleHandler(_ReadAllWriteRoles):
+    """Reads for all authenticated users; create/update by roles that handle
+    samples (incl. receptionist for registration); delete lab_manager+."""
+    write_roles = set(CAN_RECEIVE_OR_STORE_ROLES)

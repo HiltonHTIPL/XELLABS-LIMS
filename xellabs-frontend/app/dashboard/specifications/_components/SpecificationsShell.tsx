@@ -2,14 +2,16 @@
 import { useState, useActionState, useTransition, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  createSpecification,
-  updateSpecification,
-  deleteSpecification,
-  type Specification,
+  createAnalysisSpecification,
+  updateAnalysisSpecification,
+  deleteAnalysisSpecification,
+  type AnalysisSpecification,
+  type SpecificationRow,
   type SpecificationFormState,
 } from '@/app/actions/specifications'
-import type { LimsTest } from '@/app/actions/tests'
+import type { SenaiteAnalysisService } from '@/app/lib/senaite'
 import type { DjangoSampleType } from '@/app/actions/lab-samples'
+import type { DynamicAnalysisSpecification } from '@/app/actions/dynamic-analysis-specifications'
 import { ConfirmModal } from '@/app/dashboard/_components/ui'
 
 const OPERATORS = ['>=', '>', '<=', '<', '=']
@@ -32,35 +34,53 @@ function Field({ label, children, required, error }: {
   )
 }
 
-const selectCls = 'w-full px-3 py-2 text-xs rounded-lg outline-none bg-white'
-function selectStyle(error?: string) {
+const inputCls = 'w-full px-2 py-1.5 text-xs rounded-md outline-none bg-white'
+function inputStyle(error?: string) {
   return { border: `1px solid ${error ? '#EF4444' : '#D1D5DB'}`, color: '#111827' }
 }
 
-function formatRange(spec: Specification, testName: string, sampleTypeName: string) {
-  const parts: string[] = []
-  if (spec.min_value !== null && spec.min_value !== '') parts.push(`${spec.min_operator} ${spec.min_value}`)
-  if (spec.max_value !== null && spec.max_value !== '') parts.push(`${spec.max_operator} ${spec.max_value}`)
-  const range = parts.length ? parts.join(' and ') : '—'
-  return { range, testName, sampleTypeName }
+type RowState = SpecificationRow & { selected: boolean }
+
+function blankRow(uid: string, name: string): RowState {
+  return {
+    senaite_service_uid: uid, senaite_service_name: name, min_value: null, max_value: null, min_operator: '>=', max_operator: '<=',
+    min_warn: null, max_warn: null, out_of_range_low: '', out_of_range_high: '', out_of_range_comment: '',
+    is_active: true, selected: false,
+  }
 }
 
-function SpecificationModal({ editing, tests, sampleTypes, onClose, onDone }: {
-  editing: Specification | null
-  tests: LimsTest[]
+function SpecificationModal({ editing, services, sampleTypes, dynamicSpecs, onClose, onDone }: {
+  editing: AnalysisSpecification | null
+  services: SenaiteAnalysisService[]
   sampleTypes: DjangoSampleType[]
+  dynamicSpecs: DynamicAnalysisSpecification[]
   onClose: () => void
   onDone: () => void
 }) {
   const isEdit = editing !== null
 
+  // One row per known SENAITE analysis service — pre-checked/pre-filled for
+  // services already in `editing.rows`, unchecked+blank otherwise. Only
+  // checked rows get submitted.
+  const [rows, setRows] = useState<RowState[]>(() => {
+    const existingByUid = new Map((editing?.rows ?? []).map(r => [r.senaite_service_uid, r]))
+    return services.map(s => {
+      const existing = existingByUid.get(s.uid)
+      return existing ? { ...blankRow(s.uid, s.title), ...existing, selected: true } : blankRow(s.uid, s.title)
+    })
+  })
+
+  function updateRow(uid: string, patch: Partial<RowState>) {
+    setRows(prev => prev.map(r => (r.senaite_service_uid === uid ? { ...r, ...patch } : r)))
+  }
+
   const createAction = async (prev: SpecificationFormState, fd: FormData) => {
-    const result = await createSpecification(prev, fd)
+    const result = await createAnalysisSpecification(prev, fd)
     if (result.success) { onDone(); onClose() }
     return result
   }
   const editAction = async (prev: SpecificationFormState, fd: FormData) => {
-    const result = await updateSpecification(editing!.id, prev, fd)
+    const result = await updateAnalysisSpecification(editing!.id, prev, fd)
     if (result.success) { onDone(); onClose() }
     return result
   }
@@ -71,10 +91,16 @@ function SpecificationModal({ editing, tests, sampleTypes, onClose, onDone }: {
     for (const [k, msgs] of Object.entries(state.errors)) { if (msgs?.length) fieldErrors[k] = msgs[0] }
   }
 
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    const selectedRows = rows.filter(r => r.selected).map(({ selected: _selected, ...r }) => r)
+    const hidden = e.currentTarget.querySelector('input[name="rows_json"]') as HTMLInputElement
+    hidden.value = JSON.stringify(selectedRows)
+  }
+
   return (
     <div onClick={e => { if (e.currentTarget === e.target) onClose() }}
       style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', zIndex: 1000 }}>
-      <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 480, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.15)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 760, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.15)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #F3F4F6' }}>
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: isEdit ? '#EFF6FF' : '#DBEAFE' }}>
@@ -82,56 +108,93 @@ function SpecificationModal({ editing, tests, sampleTypes, onClose, onDone }: {
             </div>
             <div>
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>{isEdit ? 'Edit Specification' : 'New Specification'}</h2>
-              <p style={{ fontSize: 10, color: '#9CA3AF' }}>{isEdit ? 'Update pass/fail range' : 'Define a pass/fail range for a test'}</p>
+              <p style={{ fontSize: 10, color: '#9CA3AF' }}>Define pass/fail ranges per test for a sample type</p>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
         </div>
-        <form action={action} className="px-5 py-4 flex flex-col gap-3">
+        <form action={action} onSubmit={handleSubmit} className="px-5 py-4 flex flex-col gap-3">
+          <input type="hidden" name="rows_json" />
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Test" required error={fieldErrors.test}>
-              <select name="test" required defaultValue={editing?.test ?? ''} className={selectCls} style={selectStyle(fieldErrors.test)}>
-                <option value="" disabled>Select test…</option>
-                {tests.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
+            <Field label="Title" required error={fieldErrors.title}>
+              <input name="title" type="text" placeholder="e.g. Minerals Default Spec" defaultValue={editing?.title}
+                className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={inputStyle(fieldErrors.title)} />
             </Field>
             <Field label="Sample Type" required error={fieldErrors.sample_type}>
-              <select name="sample_type" required defaultValue={editing?.sample_type ?? ''} className={selectCls} style={selectStyle(fieldErrors.sample_type)}>
+              <select name="sample_type" required defaultValue={editing?.sample_type ?? ''} className="w-full px-3 py-2 text-xs rounded-lg outline-none bg-white" style={inputStyle(fieldErrors.sample_type)}>
                 <option value="" disabled>Select sample type…</option>
                 {sampleTypes.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Min Operator">
-              <select name="min_operator" defaultValue={editing?.min_operator ?? '>='} className={selectCls} style={selectStyle()}>
-                {OPERATORS.map(op => <option key={op} value={op}>{op}</option>)}
-              </select>
-            </Field>
-            <Field label="Min Value" error={fieldErrors.min_value}>
-              <input name="min_value" type="number" step="any" placeholder="e.g. 10" defaultValue={editing?.min_value ?? ''}
-                className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={selectStyle(fieldErrors.min_value)} />
-            </Field>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Max Operator">
-              <select name="max_operator" defaultValue={editing?.max_operator ?? '<='} className={selectCls} style={selectStyle()}>
-                {OPERATORS.map(op => <option key={op} value={op}>{op}</option>)}
-              </select>
-            </Field>
-            <Field label="Max Value">
-              <input name="max_value" type="number" step="any" placeholder="e.g. 50" defaultValue={editing?.max_value ?? ''}
-                className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={selectStyle()} />
-            </Field>
-          </div>
+          <Field label="Dynamic Analysis Specification" error={fieldErrors.dynamic_spec}>
+            <select name="dynamic_spec" defaultValue={editing?.dynamic_spec ?? ''} className="w-full px-3 py-2 text-xs rounded-lg outline-none bg-white" style={inputStyle()}>
+              <option value="">— None —</option>
+              {dynamicSpecs.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Description">
+            <textarea name="description" rows={2} placeholder="Used in item listings and search results." defaultValue={editing?.description}
+              className="w-full px-3 py-2 text-xs rounded-lg outline-none resize-none" style={inputStyle()} />
+          </Field>
           <label className="flex items-center gap-2 mt-1">
             <input type="checkbox" name="is_active" defaultChecked={editing ? editing.is_active : true} />
             <span className="text-xs" style={{ color: '#374151' }}>Active</span>
           </label>
+
+          <div className="mt-2">
+            <p className="text-xs font-semibold mb-1" style={{ color: '#374151' }}>
+              Specifications{fieldErrors.rows && <span className="ml-2" style={{ color: '#EF4444', fontWeight: 400 }}>{fieldErrors.rows}</span>}
+            </p>
+            <p className="mb-2" style={{ fontSize: 10, color: '#9CA3AF' }}>
+              Check a test to include it, then set its range. &apos;Min warn&apos;/&apos;Max warn&apos; raise a less severe alert (shoulder range); &apos;&lt; Min&apos;/&apos;&gt; Max&apos; are the display values shown in results when out of range.
+            </p>
+            <div className="overflow-x-auto rounded-lg" style={{ border: '1px solid #E5E7EB' }}>
+              <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 900 }}>
+                <thead>
+                  <tr style={{ backgroundColor: '#FAFAFA', borderBottom: '1px solid #E5E7EB' }}>
+                    {['', 'Test', 'Min warn', 'Min', 'Min op', 'Max', 'Max warn', 'Max op', '< Min', '> Max', 'Comment'].map(h => (
+                      <th key={h} className="px-2 py-1.5 text-left" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {services.map(s => {
+                    const row = rows.find(r => r.senaite_service_uid === s.uid)!
+                    const dis = !row.selected
+                    return (
+                      <tr key={s.uid} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                        <td className="px-2 py-1.5"><input type="checkbox" checked={row.selected} onChange={e => updateRow(s.uid, { selected: e.target.checked })} /></td>
+                        <td className="px-2 py-1.5 text-xs" style={{ color: '#111827', whiteSpace: 'nowrap' }}>{s.title}</td>
+                        <td className="px-1 py-1"><input disabled={dis} value={row.min_warn ?? ''} onChange={e => updateRow(s.uid, { min_warn: e.target.value || null })} className={inputCls} style={{ width: 64, ...inputStyle() }} /></td>
+                        <td className="px-1 py-1"><input disabled={dis} value={row.min_value ?? ''} onChange={e => updateRow(s.uid, { min_value: e.target.value || null })} className={inputCls} style={{ width: 64, ...inputStyle() }} /></td>
+                        <td className="px-1 py-1">
+                          <select disabled={dis} value={row.min_operator} onChange={e => updateRow(s.uid, { min_operator: e.target.value })} className={inputCls} style={{ width: 56, ...inputStyle() }}>
+                            {OPERATORS.map(op => <option key={op} value={op}>{op}</option>)}
+                          </select>
+                        </td>
+                        <td className="px-1 py-1"><input disabled={dis} value={row.max_value ?? ''} onChange={e => updateRow(s.uid, { max_value: e.target.value || null })} className={inputCls} style={{ width: 64, ...inputStyle() }} /></td>
+                        <td className="px-1 py-1"><input disabled={dis} value={row.max_warn ?? ''} onChange={e => updateRow(s.uid, { max_warn: e.target.value || null })} className={inputCls} style={{ width: 64, ...inputStyle() }} /></td>
+                        <td className="px-1 py-1">
+                          <select disabled={dis} value={row.max_operator} onChange={e => updateRow(s.uid, { max_operator: e.target.value })} className={inputCls} style={{ width: 56, ...inputStyle() }}>
+                            {OPERATORS.map(op => <option key={op} value={op}>{op}</option>)}
+                          </select>
+                        </td>
+                        <td className="px-1 py-1"><input disabled={dis} value={row.out_of_range_low} onChange={e => updateRow(s.uid, { out_of_range_low: e.target.value })} className={inputCls} style={{ width: 64, ...inputStyle() }} /></td>
+                        <td className="px-1 py-1"><input disabled={dis} value={row.out_of_range_high} onChange={e => updateRow(s.uid, { out_of_range_high: e.target.value })} className={inputCls} style={{ width: 64, ...inputStyle() }} /></td>
+                        <td className="px-1 py-1"><input disabled={dis} value={row.out_of_range_comment} onChange={e => updateRow(s.uid, { out_of_range_comment: e.target.value })} className={inputCls} style={{ width: 100, ...inputStyle() }} /></td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           {state.message && !state.success && (
             <p className="text-xs" style={{ color: '#EF4444' }}>{state.message}</p>
           )}
-          <div className="flex items-center justify-end gap-2 pt-1" style={{ borderTop: '1px solid #F3F4F6' }}>
+          <div className="flex items-center justify-end gap-2 pt-1 mt-1" style={{ borderTop: '1px solid #F3F4F6' }}>
             <button type="button" onClick={onClose} disabled={pending}
               style={{ fontSize: 12, fontWeight: 500, padding: '7px 16px', borderRadius: 8, border: '1px solid #E5E7EB', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
               Cancel
@@ -148,33 +211,31 @@ function SpecificationModal({ editing, tests, sampleTypes, onClose, onDone }: {
   )
 }
 
-export default function SpecificationsShell({ initialSpecifications, tests, sampleTypes }: {
-  initialSpecifications: Specification[]
-  tests: LimsTest[]
+export default function SpecificationsShell({ initialSpecifications, services, sampleTypes, dynamicSpecs }: {
+  initialSpecifications: AnalysisSpecification[]
+  services: SenaiteAnalysisService[]
   sampleTypes: DjangoSampleType[]
+  dynamicSpecs: DynamicAnalysisSpecification[]
 }) {
   const router = useRouter()
   const [showModal, setShowModal] = useState(false)
-  const [editing, setEditing] = useState<Specification | null>(null)
-  const [deleting, setDeleting] = useState<Specification | null>(null)
+  const [editing, setEditing] = useState<AnalysisSpecification | null>(null)
+  const [deleting, setDeleting] = useState<AnalysisSpecification | null>(null)
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
   const [busy, startTransition] = useTransition()
-  const [filterTest, setFilterTest] = useState('')
   const [filterSampleType, setFilterSampleType] = useState('')
 
-  const testMap = useMemo(() => new Map(tests.map(t => [t.id, t.name])), [tests])
   const sampleTypeMap = useMemo(() => new Map(sampleTypes.map(s => [s.id, s.name])), [sampleTypes])
 
   const filtered = useMemo(() => {
     return initialSpecifications.filter(s => {
-      if (filterTest && String(s.test) !== filterTest) return false
       if (filterSampleType && String(s.sample_type) !== filterSampleType) return false
       return true
     })
-  }, [initialSpecifications, filterTest, filterSampleType])
+  }, [initialSpecifications, filterSampleType])
 
   function openCreate() { setEditing(null); setShowModal(true) }
-  function openEdit(s: Specification) { setEditing(s); setShowModal(true) }
+  function openEdit(s: AnalysisSpecification) { setEditing(s); setShowModal(true) }
   function closeModal() { setShowModal(false); setEditing(null) }
   function handleDone() {
     setToast({ ok: true, msg: editing ? 'Specification updated.' : 'Specification created.' })
@@ -185,7 +246,7 @@ export default function SpecificationsShell({ initialSpecifications, tests, samp
     if (!deleting) return
     const target = deleting
     startTransition(async () => {
-      const r = await deleteSpecification(target.id)
+      const r = await deleteAnalysisSpecification(target.id)
       setToast({ ok: r.success, msg: r.message })
       setTimeout(() => setToast(null), 3000)
       setDeleting(null)
@@ -214,11 +275,6 @@ export default function SpecificationsShell({ initialSpecifications, tests, samp
       )}
 
       <div className="flex items-center gap-2 mb-3">
-        <select value={filterTest} onChange={e => setFilterTest(e.target.value)}
-          className="px-3 py-1.5 text-xs rounded-lg outline-none bg-white" style={{ border: '1px solid #D1D5DB', color: '#374151' }}>
-          <option value="">All Tests</option>
-          {tests.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-        </select>
         <select value={filterSampleType} onChange={e => setFilterSampleType(e.target.value)}
           className="px-3 py-1.5 text-xs rounded-lg outline-none bg-white" style={{ border: '1px solid #D1D5DB', color: '#374151' }}>
           <option value="">All Sample Types</option>
@@ -226,11 +282,11 @@ export default function SpecificationsShell({ initialSpecifications, tests, samp
         </select>
       </div>
 
-      {showModal && <SpecificationModal editing={editing} tests={tests} sampleTypes={sampleTypes} onClose={closeModal} onDone={handleDone} />}
+      {showModal && <SpecificationModal editing={editing} services={services} sampleTypes={sampleTypes} dynamicSpecs={dynamicSpecs} onClose={closeModal} onDone={handleDone} />}
       {deleting && (
         <ConfirmModal
           title="Delete Specification"
-          message={`Delete the specification for "${testMap.get(deleting.test) ?? deleting.test}" / "${sampleTypeMap.get(deleting.sample_type) ?? deleting.sample_type}"? This cannot be undone.`}
+          message={`Delete "${deleting.title}"? This cannot be undone.`}
           confirmLabel="Delete"
           danger
           onConfirm={confirmDelete}
@@ -250,44 +306,43 @@ export default function SpecificationsShell({ initialSpecifications, tests, samp
         <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2', borderRadius: 14, boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
           <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
             <colgroup>
-              <col style={{ width: '26%' }} /><col style={{ width: '26%' }} /><col style={{ width: '28%' }} /><col style={{ width: '12%' }} /><col style={{ width: '8%' }} />
+              <col style={{ width: '30%' }} /><col style={{ width: '26%' }} /><col style={{ width: '18%' }} /><col style={{ width: '14%' }} /><col style={{ width: '12%' }} />
             </colgroup>
             <thead>
               <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                {['Test', 'Sample Type', 'Range', 'Status', ''].map(h => (
+                {['Title', 'Sample Type', 'Tests', 'Status', ''].map(h => (
                   <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {filtered.map((s, i) => {
-                const { range } = formatRange(s, '', '')
-                return (
-                  <tr key={s.id} style={{ borderBottom: i < filtered.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
-                    <td className="px-3 py-2.5 text-xs font-medium" style={{ color: '#111827' }}>{testMap.get(s.test) ?? `#${s.test}`}</td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#111827' }}>{sampleTypeMap.get(s.sample_type) ?? `#${s.sample_type}`}</td>
-                    <td className="px-3 py-2.5">
-                      <span className="font-mono text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#EFF6FF', color: '#2563EB', fontWeight: 600 }}>{range}</span>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, color: s.is_active ? '#0154FC' : '#6B7280' }}>
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: s.is_active ? '#0154FC' : '#9CA3AF', display: 'inline-block' }} />
-                        {s.is_active ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => openEdit(s)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-                          <MI name="edit" size={14} color="#9CA3AF" />
-                        </button>
-                        <button onClick={() => setDeleting(s)} disabled={busy} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-                          <MI name="delete" size={14} color="#EF4444" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
+              {filtered.map((s, i) => (
+                <tr key={s.id} style={{ borderBottom: i < filtered.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
+                  <td className="px-3 py-2.5 text-xs font-medium" style={{ color: '#111827' }}>{s.title}</td>
+                  <td className="px-3 py-2.5 text-xs" style={{ color: '#111827' }}>{sampleTypeMap.get(s.sample_type) ?? `#${s.sample_type}`}</td>
+                  <td className="px-3 py-2.5">
+                    <span className="font-mono text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#EFF6FF', color: '#2563EB', fontWeight: 600 }}>
+                      {s.rows.length} test{s.rows.length !== 1 ? 's' : ''}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, color: s.is_active ? '#0154FC' : '#6B7280' }}>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: s.is_active ? '#0154FC' : '#9CA3AF', display: 'inline-block' }} />
+                      {s.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => openEdit(s)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
+                        <MI name="edit" size={14} color="#9CA3AF" />
+                      </button>
+                      <button onClick={() => setDeleting(s)} disabled={busy} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
+                        <MI name="delete" size={14} color="#EF4444" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
           <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>

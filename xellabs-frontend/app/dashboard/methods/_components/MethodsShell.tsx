@@ -1,7 +1,9 @@
 'use client'
-import { useState, useActionState, useTransition, useEffect } from 'react'
+import { useState, useActionState, useTransition, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createMethod, updateMethod, toggleMethodActive, type Method, type MethodFormState } from '@/app/actions/methods'
+import type { Calculation } from '@/app/actions/calculations'
+import type { InstrumentOption } from '@/app/actions/instrument-maintenance'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -28,16 +30,46 @@ function Field({ label, name, placeholder, required, error, value, onChange, as 
   )
 }
 
-type FV = { name: string; code: string; description: string }
-const blank = (): FV => ({ name: '', code: '', description: '' })
+function CheckboxList({ label, options, selected, onChange }: {
+  label: string; options: { id: number; name: string }[]; selected: number[]; onChange: (ids: number[]) => void
+}) {
+  function toggle(id: number) {
+    onChange(selected.includes(id) ? selected.filter(x => x !== id) : [...selected, id])
+  }
+  return (
+    <div>
+      <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>{label}</label>
+      <div className="rounded-lg overflow-y-auto" style={{ border: '1px solid #D1D5DB', maxHeight: 120 }}>
+        {options.length === 0
+          ? <p className="px-3 py-2 text-xs" style={{ color: '#9CA3AF' }}>None available</p>
+          : options.map(o => (
+              <label key={o.id} className="flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer hover:bg-gray-50" style={{ color: '#374151' }}>
+                <input type="checkbox" checked={selected.includes(o.id)} onChange={() => toggle(o.id)} />
+                {o.name}
+              </label>
+            ))}
+      </div>
+    </div>
+  )
+}
 
-export default function MethodsShell({ initialMethods }: { initialMethods: Method[] }) {
+type FV = {
+  name: string; code: string; description: string; instructions: string
+  accredited: boolean; instrumentIds: number[]; calculationIds: number[]
+}
+const blank = (): FV => ({ name: '', code: '', description: '', instructions: '', accredited: false, instrumentIds: [], calculationIds: [] })
+
+export default function MethodsShell({ initialMethods, calculations, instruments }: {
+  initialMethods: Method[]; calculations: Calculation[]; instruments: InstrumentOption[]
+}) {
   const router = useRouter()
   const [showDrawer, setShowDrawer] = useState(false)
   const [editing, setEditing] = useState<Method | null>(null)
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
-  const [busy, startTransition] = useTransition()
+  const [, startTransition] = useTransition()
   const [vals, setVals] = useState<FV>(blank)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [fileName, setFileName] = useState('')
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   const isEdit = editing !== null
@@ -56,6 +88,7 @@ export default function MethodsShell({ initialMethods }: { initialMethods: Metho
         setEditing(null)
         setVals(blank())
         setFieldErrors({})
+        setFileName('')
         setToast({ ok: true, msg: editing ? 'Method updated.' : 'Method created.' })
         setTimeout(() => setToast(null), 4000)
         router.refresh()
@@ -69,16 +102,30 @@ export default function MethodsShell({ initialMethods }: { initialMethods: Metho
     {}
   )
 
-  function openCreate() { setEditing(null); setVals(blank()); setFieldErrors({}); setShowDrawer(true) }
-  function openEdit(m: Method) { setEditing(m); setVals({ name: m.name, code: m.code, description: m.description ?? '' }); setFieldErrors({}); setShowDrawer(true) }
+  function openCreate() { setEditing(null); setVals(blank()); setFieldErrors({}); setFileName(''); setShowDrawer(true) }
+  function openEdit(m: Method) {
+    setEditing(m)
+    setVals({
+      name: m.name, code: m.code, description: m.description ?? '', instructions: m.instructions ?? '',
+      accredited: m.accredited ?? false, instrumentIds: m.instruments ?? [], calculationIds: m.calculations ?? [],
+    })
+    setFieldErrors({})
+    setShowDrawer(true)
+  }
   function closeDrawer() { setShowDrawer(false) }
 
+  // Per-row pending state — a single shared `busy` flag disabled every toggle
+  // in the table while one request was in flight.
+  const [togglingId, setTogglingId] = useState<number | null>(null)
+
   function toggle(m: Method) {
+    setTogglingId(m.id)
     startTransition(async () => {
       const r = await toggleMethodActive(m.id, !m.is_active)
       setToast({ ok: r.success, msg: r.message })
       setTimeout(() => setToast(null), 3000)
       if (r.success) router.refresh()
+      setTogglingId(null)
     })
   }
 
@@ -133,6 +180,43 @@ export default function MethodsShell({ initialMethods }: { initialMethods: Metho
               </div>
               <Field label="Description" name="description" as="textarea" placeholder="Describe this method…"
                 value={vals.description} onChange={v => setVal('description', v)} />
+              <Field label="Instructions" name="instructions" as="textarea" placeholder="Technical instructions for analysts…"
+                value={vals.instructions} onChange={v => setVal('instructions', v)} />
+
+              <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: '#374151' }}>
+                <input type="checkbox" name="accredited" checked={vals.accredited}
+                  onChange={e => setVals(prev => ({ ...prev, accredited: e.target.checked }))} />
+                Accredited
+              </label>
+
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Method Document</label>
+                <input ref={fileInputRef} type="file" name="document" className="hidden"
+                  onChange={e => setFileName(e.target.files?.[0]?.name ?? '')} />
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => fileInputRef.current?.click()}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium"
+                    style={{ border: '1px solid #D1D5DB', color: '#374151', backgroundColor: '#F9FAFB', cursor: 'pointer' }}>
+                    Choose File
+                  </button>
+                  <span className="text-xs truncate" style={{ color: fileName ? '#374151' : '#9CA3AF' }}>
+                    {fileName || 'No file chosen'}
+                  </span>
+                </div>
+                {isEdit && editing!.document && (
+                  <a href={editing!.document} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs" style={{ color: '#2563EB' }}>
+                    View current document
+                  </a>
+                )}
+              </div>
+
+              {vals.instrumentIds.map(id => <input key={id} type="hidden" name="instrument_ids" value={id} />)}
+              <CheckboxList label="Instruments" options={instruments} selected={vals.instrumentIds}
+                onChange={ids => setVals(prev => ({ ...prev, instrumentIds: ids }))} />
+
+              {vals.calculationIds.map(id => <input key={id} type="hidden" name="calculation_ids" value={id} />)}
+              <CheckboxList label="Calculations" options={calculations} selected={vals.calculationIds}
+                onChange={ids => setVals(prev => ({ ...prev, calculationIds: ids }))} />
             </div>
 
             {/* Footer */}
@@ -180,7 +264,7 @@ export default function MethodsShell({ initialMethods }: { initialMethods: Metho
                   <td className="px-3 py-2.5"><span className="font-mono text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#EFF6FF', color: '#2563EB', fontWeight: 600 }}>{m.code}</span></td>
                   <td className="px-3 py-2.5 text-xs truncate" style={{ color: '#6B7280' }}>{m.description || '—'}</td>
                   <td className="px-3 py-2.5">
-                    <button onClick={() => toggle(m)} disabled={busy}
+                    <button onClick={() => toggle(m)} disabled={togglingId === m.id}
                       className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, color: m.is_active ? '#0154FC' : '#6B7280', background: 'none', border: 'none', cursor: 'pointer' }}>
                       <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: m.is_active ? '#0154FC' : '#9CA3AF', display: 'inline-block' }} />
                       {m.is_active ? 'Active' : 'Inactive'}

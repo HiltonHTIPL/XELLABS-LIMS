@@ -10,10 +10,24 @@ logger = logging.getLogger(__name__)
 
 def _register_client_signal():
     from core.models import Client
-    from core.tasks import sync_client_to_senaite
+    from core.tasks import sync_client_to_senaite, deactivate_client_in_senaite, activate_client_in_senaite
 
     @receiver(post_save, sender=Client, dispatch_uid="senaite_sync_client")
     def on_client_saved(sender, instance, created, **kwargs):
+        # Activate/deactivate are workflow transitions, not field updates — pushed
+        # via their own tasks instead of sync_client_to_senaite (which only PATCHes
+        # fields and never changes review_state). Only meaningful once a client
+        # already exists in SENAITE (has a senaite_uid); a brand-new client is
+        # created active by default, so there's nothing to transition yet.
+        if instance.senaite_uid:
+            if not instance.is_active:
+                deactivate_client_in_senaite.apply_async(args=[instance.pk], countdown=2)
+                logger.debug("Queued SENAITE deactivation for client pk=%s", instance.pk)
+                return
+            else:
+                activate_client_in_senaite.apply_async(args=[instance.pk], countdown=2)
+                logger.debug("Queued SENAITE reactivation for client pk=%s", instance.pk)
+
         # Skip if already queued within this save (avoid double-fire)
         sync_client_to_senaite.apply_async(args=[instance.pk], countdown=2)
         logger.debug("Queued SENAITE sync for client pk=%s", instance.pk)

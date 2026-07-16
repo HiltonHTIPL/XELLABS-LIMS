@@ -9,7 +9,7 @@ import {
   createQCSample, updateQCSample, deleteQCSample, reviewQCSample,
   type QCSample, type QCSampleFormState, type QCWorksheet,
 } from '@/app/actions/quality'
-import { type LimsTest } from '@/app/actions/tests'
+import { type SenaiteAnalysisService } from '@/app/lib/senaite'
 
 const QC_TYPES: { value: QCSample['qc_type']; label: string }[] = [
   { value: 'blank', label: 'Blank' },
@@ -41,9 +41,9 @@ function statusChipTone(status: string): 'green' | 'red' | 'orange' | 'gray' {
 const PAGE_SIZE = 10
 
 function QCModal({
-  editing, tests, worksheets, onClose, onDone,
+  editing, services, worksheets, onClose, onDone,
 }: {
-  editing: QCSample | null; tests: LimsTest[]; worksheets: QCWorksheet[]
+  editing: QCSample | null; services: SenaiteAnalysisService[]; worksheets: QCWorksheet[]
   onClose: () => void; onDone: () => void
 }) {
   const isEdit = editing !== null
@@ -102,12 +102,17 @@ function QCModal({
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Test" required>
-              <select name="test" defaultValue={editing?.test ?? ''} className="w-full outline-none bg-white"
-                style={{ ...selectStyle, borderColor: fieldErrors.test ? T.danger : T.inputBorder }}>
+              <select name="senaite_service_uid" defaultValue={editing?.senaite_service_uid ?? ''} className="w-full outline-none bg-white"
+                onChange={e => {
+                  const nameInput = e.currentTarget.form?.elements.namedItem('senaite_service_name') as HTMLInputElement | null
+                  if (nameInput) nameInput.value = e.currentTarget.selectedOptions[0]?.text ?? ''
+                }}
+                style={{ ...selectStyle, borderColor: fieldErrors.senaite_service_uid ? T.danger : T.inputBorder }}>
                 <option value="" disabled>Select test…</option>
-                {tests.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                {services.map(s => <option key={s.uid} value={s.uid}>{s.title}</option>)}
               </select>
-              {fieldErrors.test && <p className="mt-0.5" style={{ fontSize: 11, color: T.danger }}>{fieldErrors.test}</p>}
+              <input type="hidden" name="senaite_service_name" defaultValue={editing?.senaite_service_name ?? ''} />
+              {fieldErrors.senaite_service_uid && <p className="mt-0.5" style={{ fontSize: 11, color: T.danger }}>{fieldErrors.senaite_service_uid}</p>}
             </Field>
             <Field label="Worksheet" hint="Optional">
               <select name="worksheet" defaultValue={editing?.worksheet ?? ''} className="w-full outline-none bg-white" style={selectStyle}>
@@ -249,8 +254,8 @@ function ReviewModal({
 }
 
 export default function QualityShell({
-  initialQCSamples, tests, worksheets,
-}: { initialQCSamples: QCSample[]; tests: LimsTest[]; worksheets: QCWorksheet[] }) {
+  initialQCSamples, services, worksheets,
+}: { initialQCSamples: QCSample[]; services: SenaiteAnalysisService[]; worksheets: QCWorksheet[] }) {
   const router = useRouter()
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<QCSample | null>(null)
@@ -263,11 +268,6 @@ export default function QualityShell({
   const [needsReviewOnly, setNeedsReviewOnly] = useState(false)
   const [page, setPage] = useState(1)
 
-  const testNameById = useMemo(() => {
-    const m = new Map<number, string>()
-    tests.forEach(t => m.set(t.id, t.name))
-    return m
-  }, [tests])
   const worksheetIdById = useMemo(() => {
     const m = new Map<number, string>()
     worksheets.forEach(w => m.set(w.id, w.ws_id))
@@ -353,7 +353,7 @@ export default function QualityShell({
         <StatCard icon="policy" iconColor="#DC2626" iconBg="#FEF2F2" label="Needs Review" value={needsReview} />
       </div>
 
-      {showModal && <QCModal editing={editing} tests={tests} worksheets={worksheets} onClose={closeModal} onDone={() => handleDone(editing ? 'QC sample updated.' : 'QC sample created.')} />}
+      {showModal && <QCModal editing={editing} services={services} worksheets={worksheets} onClose={closeModal} onDone={() => handleDone(editing ? 'QC sample updated.' : 'QC sample created.')} />}
       {reviewing && <ReviewModal sample={reviewing} onClose={() => setReviewing(null)} onDone={msg => { setReviewing(null); handleDone(msg) }} />}
       {deleting && (
         <ConfirmModal
@@ -411,7 +411,7 @@ export default function QualityShell({
                     <tr key={q.id}>
                       <td style={{ ...tdStyle, fontWeight: 600, color: T.heading }}>{q.qc_id}</td>
                       <td style={tdStyle}>{qcTypeLabel(q.qc_type)}</td>
-                      <td style={tdStyle}>{testNameById.get(q.test) ?? `#${q.test}`}</td>
+                      <td style={tdStyle}>{q.senaite_service_name || '—'}</td>
                       <td style={tdStyle}>{q.worksheet ? (worksheetIdById.get(q.worksheet) ?? `#${q.worksheet}`) : '—'}</td>
                       <td style={tdStyle}>{q.lot_number || '—'}</td>
                       <td style={tdStyle}>

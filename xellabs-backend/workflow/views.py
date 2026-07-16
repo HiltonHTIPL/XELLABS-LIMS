@@ -43,6 +43,9 @@ class TaskViewSet(viewsets.ModelViewSet):
         status_filter = request.query_params.get("status")
         if status_filter:
             qs = qs.filter(status=status_filter)
+        page = self.paginate_queryset(qs)
+        if page is not None:
+            return self.get_paginated_response(TaskSerializer(page, many=True).data)
         return Response(TaskSerializer(qs, many=True).data)
 
     @action(detail=True, methods=["post"])
@@ -102,6 +105,21 @@ class ApprovalViewSet(viewsets.ModelViewSet):
         serializer = ApprovalActionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         action_choice = serializer.validated_data["action"]
+
+        # Compliance rule (CLAUDE.md §6): an e-signature by the deciding user on
+        # the target object is required before an approval can be granted.
+        if action_choice == "approve":
+            has_signature = ElectronicSignature.objects.filter(
+                content_type=approval.content_type,
+                object_id=approval.object_id,
+                signed_by=request.user,
+            ).exists()
+            if not has_signature:
+                return Response(
+                    {"detail": "An electronic signature is required before approving. "
+                               "Sign the record first via the signatures/sign endpoint."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         approval.status = "approved" if action_choice == "approve" else "rejected"
         approval.reviewed_by = request.user

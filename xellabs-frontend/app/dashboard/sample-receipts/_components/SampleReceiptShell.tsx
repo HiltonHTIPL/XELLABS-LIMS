@@ -5,6 +5,8 @@ import { receiveLabSample, type LabSample } from '@/app/actions/lab-samples'
 import { assignSampleByLabel } from '@/app/actions/storage'
 import StorageLocationInput, { type SelectedStorage } from '@/app/dashboard/_components/StorageLocationInput'
 import LiveBarcode from '@/app/dashboard/_components/LiveBarcode'
+import { sampleDisplayId } from '@/app/lib/sampleDisplay'
+import { type SenaiteRefOption } from '@/app/lib/senaite'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -90,7 +92,7 @@ const conditionDot: Record<string, string> = { good: '#0154FC', acceptable: '#F5
 const sealDot: Record<string, string> = { intact: '#0154FC', broken: '#EF4444', missing: '#F59E0B' }
 const priorityDot: Record<string, string> = { high: '#EF4444', medium: '#F59E0B', low: '#0154FC' }
 
-export default function SampleReceiptShell({ sample, hasId }: { sample: LabSample | null; hasId: boolean }) {
+export default function SampleReceiptShell({ sample, hasId, samplingDeviations }: { sample: LabSample | null; hasId: boolean; samplingDeviations: SenaiteRefOption[] }) {
   const router = useRouter()
   const [submitting, setSubmitting] = useState(false)
   const [error, setError]           = useState('')
@@ -113,8 +115,20 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
       : null
   )
 
+  // Reopen mode: a sample that is no longer 'registered' has already been
+  // received — show its recorded receipt details read-only instead of the form.
+  const alreadyReceived = !!sample && sample.status !== 'registered'
+
+  // Step indicator derived from actual progress instead of the old hard-coded 1:
+  // 1 = no sample selected, 2 = filling details/custody, 3 = submitting,
+  // 4 = received (success or reopened already-received sample).
+  const activeStep = success || alreadyReceived ? 4 : submitting ? 3 : sample ? 2 : 1
+  const tatDays = sample?.received_date
+    ? Math.max(0, Math.round((Date.now() - new Date(sample.received_date).getTime()) / 86400000))
+    : null
+
   async function handleReceive() {
-    if (!sample) return
+    if (!sample || alreadyReceived) return
     setSubmitting(true)
     setError('')
     const result = await receiveLabSample(sample.id, {
@@ -152,10 +166,10 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
       setSubmitting(false)
       setSuccess(result.message ?? 'Sample received.')
     }
-    setTimeout(() => router.push('/dashboard/lab-samples'), 1500)
+    setTimeout(() => router.push('/dashboard/samples-overview'), 1500)
   }
 
-  const canSubmit = !!sample && !submitting && !success
+  const canSubmit = !!sample && !submitting && !success && !alreadyReceived
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 272px', gap: 0, minHeight: '100%', backgroundColor: '#F7F8FC' }}>
@@ -166,12 +180,16 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em', margin: 0 }}>Sample Receipt</h1>
             <p style={{ fontSize: 12, color: '#9CA3AF', marginTop: 3 }}>
-              {sample ? `Receiving sample ${sample.sample_id}` : 'Select a registered sample from Samples Overview to begin.'}
+              {sample
+                ? alreadyReceived
+                  ? `Receipt record for sample ${sampleDisplayId(sample)}`
+                  : `Receiving sample ${sampleDisplayId(sample)}`
+                : 'Select a registered sample from Samples Overview to begin.'}
             </p>
           </div>
         </div>
 
-        <StepBar active={1} />
+        <StepBar active={activeStep} />
 
         {error && (
           <div className="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#B91C1C' }}>
@@ -191,7 +209,13 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
         )}
         {hasId && !sample && (
           <div className="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#B91C1C' }}>
-            <MI name="error_outline" size={14} color="#EF4444" /> Sample not found or already received.
+            <MI name="error_outline" size={14} color="#EF4444" /> Sample not found.
+          </div>
+        )}
+        {alreadyReceived && (
+          <div className="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#EFF6FF', border: '1px solid #93C5FD', color: '#1E40AF' }}>
+            <MI name="info" size={14} color="#2563EB" />
+            This sample has already been received{sample?.received_date ? ` on ${new Date(sample.received_date).toLocaleDateString('en-GB', { timeZone: 'UTC' })}` : ''} — the recorded details are shown read-only below.
           </div>
         )}
 
@@ -205,9 +229,17 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
 
           {/* Row 1 — read-only sample details */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 14 }}>
-            <LabelInput label="Sample ID" readOnly value={sample?.sample_id ?? '—'} />
+            <LabelInput label="Sample ID" readOnly value={sample ? sampleDisplayId(sample) : '—'} />
             <LabelInput label="Client" readOnly value={sample?.client_name ?? '—'} />
             <LabelInput label="Sample Type" readOnly value={sample?.sample_type_name ?? '—'} />
+          </div>
+
+          {/* Row 1b — receipt/turnaround details */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 14, marginBottom: 14 }}>
+            <LabelInput label="Received On" readOnly value={sample?.received_date ? new Date(sample.received_date).toLocaleDateString('en-GB', { timeZone: 'UTC' }) : '—'} />
+            <LabelInput label="Due Date" readOnly value={sample?.expiry_date ? new Date(sample.expiry_date).toLocaleDateString('en-GB', { timeZone: 'UTC' }) : '—'} />
+            <LabelInput label="Received By" readOnly value={sample?.received_by_name || '—'} />
+            <LabelInput label="TAT (Days)" readOnly value={tatDays !== null ? String(tatDays) : '—'} />
           </div>
 
           {/* Row 2 */}
@@ -230,9 +262,7 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
             </div>
             <LabelSelect label="Sampling Deviation" value={deviation} onChange={setDeviation}>
               <option value="none">None</option>
-              <option value="temperature_excursion">Temperature Excursion</option>
-              <option value="delayed_transport">Delayed Transport</option>
-              <option value="haemolysis">Haemolysis</option>
+              {samplingDeviations.map(d => <option key={d.uid} value={d.title}>{d.title}</option>)}
             </LabelSelect>
           </div>
 
@@ -324,7 +354,7 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
           <p style={{ fontSize: 10, color: '#9CA3AF', marginBottom: 16 }}>* Required fields</p>
 
           <div className="flex items-center justify-end gap-2">
-            <button type="button" onClick={() => router.push('/dashboard/lab-samples')}
+            <button type="button" onClick={() => router.push('/dashboard/samples-overview')}
               className="px-5 py-2 text-xs font-medium rounded-lg"
               style={{ border: '1px solid #D1D5DB', color: '#374151', cursor: 'pointer', backgroundColor: '#fff' }}>
               Cancel
@@ -349,10 +379,10 @@ export default function SampleReceiptShell({ sample, hasId }: { sample: LabSampl
           <div className="px-4 py-4">
             <p style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', marginBottom: 6 }}>Barcode Preview</p>
             <div className="rounded-lg overflow-hidden mb-1" style={{ backgroundColor: '#fff', border: '1px solid #F3F4F6', padding: '8px 4px 4px' }}>
-              <Barcode label={sample?.sample_id ?? '—'} />
+              <Barcode label={sample ? sampleDisplayId(sample) : '—'} />
             </div>
             <p style={{ fontSize: 9, color: '#9CA3AF', textAlign: 'center', marginBottom: 16 }}>
-              {sample ? `${sample.sample_id} · ${sample.sample_type_name}` : 'No sample selected'}
+              {sample ? `${sampleDisplayId(sample)} · ${sample.sample_type_name}` : 'No sample selected'}
             </p>
             {sample && (
               <>

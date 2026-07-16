@@ -83,7 +83,7 @@ def pull_samples_and_results():
     and Result values.
     Returns a dict summary: {synced, skipped, errors}
     """
-    from lims.models import Sample, AnalysisRequest, Result, WorksheetAssignment, Test
+    from lims.models import Sample, AnalysisRequest, Result, WorksheetAssignment
 
     senaite_url, _, _ = _senaite_creds()
     if not senaite_url:
@@ -124,7 +124,18 @@ def pull_samples_and_results():
                 if senaite_ar_id and not sample.senaite_ar_id:
                     sample.senaite_ar_id = senaite_ar_id
                     changed_fields.append("senaite_ar_id")
-                if new_status and sample.status != new_status and not sample.is_locked:
+                # Forward-only: Django owns the worksheet-progress stages
+                # (in_progress/results_pending/reviewed) because lab worksheets
+                # never touch SENAITE, whose AR just sits at sample_received.
+                # Without this rank guard, every sync tick reverted those
+                # derived statuses back to "received".
+                RANK = {"registered": 0, "received": 1, "in_progress": 2,
+                        "results_pending": 3, "reviewed": 4, "published": 5}
+                moves_forward = (
+                    new_status not in RANK or sample.status not in RANK
+                    or RANK[new_status] > RANK[sample.status]
+                )
+                if new_status and sample.status != new_status and not sample.is_locked and moves_forward:
                     logger.info("Sample %s: %s → %s", sample.sample_id, sample.status, new_status)
                     sample.status = new_status
                     changed_fields.append("status")
@@ -159,7 +170,7 @@ def _sync_results(session, sample, ar_uid: str):
     update/create Result records in Django.
     """
     from lims.models import (
-        AnalysisRequest, WorksheetAssignment, Result, Test, Worksheet
+        AnalysisRequest, WorksheetAssignment, Result, Worksheet
     )
     from django.contrib.auth import get_user_model
     User = get_user_model()
@@ -211,18 +222,14 @@ def _sync_results(session, sample, ar_uid: str):
         }
         result_status = result_status_map.get(ana_state, "pending")
 
-        # Find matching test in Django by name
-        test = Test.objects.filter(name__iexact=test_title).first()
-        if not test:
-            logger.debug("No Django Test matching '%s' — skipping result", test_title)
-            continue
-
-        # Find WorksheetAssignment for this test + AR, locking it against a
+        # Find WorksheetAssignment for this analysis + AR, locking it against a
         # concurrent instrument-import task writing to the same Result.
+        # Matched by SENAITE service name directly (no Django Test mirror
+        # table anymore — SENAITE is the sole source of truth for analyses).
         with transaction.atomic():
             wa = WorksheetAssignment.objects.select_for_update().filter(
                 analysis_request=django_ar,
-                test=test,
+                senaite_service_name__iexact=test_title,
             ).first()
 
             if not wa:
@@ -237,7 +244,7 @@ def _sync_results(session, sample, ar_uid: str):
                 worksheet_assignment=wa,
                 defaults={
                     "value": result_value,
-                    "unit": result_unit or test.unit,
+                    "unit": result_unit,
                     "status": result_status,
                     "is_out_of_range": is_out_of_range,
                 },
@@ -245,7 +252,7 @@ def _sync_results(session, sample, ar_uid: str):
 
             if not created and not result.is_locked:
                 result.value = result_value
-                result.unit = result_unit or test.unit
+                result.unit = result_unit
                 result.status = result_status
                 result.is_out_of_range = is_out_of_range
                 result.save(update_fields=["value", "unit", "status", "is_out_of_range"])

@@ -4,7 +4,7 @@ Functional tests for workflow: tasks, approvals, electronic signatures.
 from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.authtoken.models import Token
-from core.test_utils import TenantAPITestCase
+from core.tenant_test import TenantAPITestCase
 
 from workflow.models import Task, TaskAssignment
 
@@ -44,7 +44,8 @@ class TaskAssignmentTest(TenantAPITestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.analyst_key}")
         r = self.client.get("/api/compliance/workflow/tasks/my-tasks/")
         self.assertEqual(r.status_code, status.HTTP_200_OK)
-        ids = [t["id"] for t in r.data]
+        items = r.data["results"] if isinstance(r.data, dict) else r.data
+        ids = [t["id"] for t in items]
         self.assertIn(self.task.pk, ids)
 
     def test_update_task_status(self):

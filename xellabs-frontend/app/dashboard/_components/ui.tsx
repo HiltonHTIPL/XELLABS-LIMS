@@ -1,7 +1,7 @@
 'use client'
 // XelLabs shared UI kit — presentational primitives for the Product Page_v3 design.
 // Every dashboard page composes these; do not fork per-page styling.
-import React from 'react'
+import React, { useState } from 'react'
 import { T, CHIP_TONES, ChipTone, statusTone } from './tokens'
 
 export { T, CHIP_TONES, statusTone }
@@ -131,6 +131,68 @@ export function StatCard({
         </div>
       </div>
     </div>
+  )
+}
+
+/** Clickable icon+label tile — used by grid launcher pages (e.g. /dashboard/admin). */
+/** Small hover-triggered popover anchored to its trigger icon. Shared by every
+ *  (?) / interlink icon so tooltip markup/positioning lives in exactly one place. */
+export function InfoTooltip({ icon, color, text }: { icon: string; color: string; text: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <span
+      className="relative inline-flex items-center justify-center shrink-0"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+      onClick={e => e.preventDefault()}
+    >
+      <MI name={icon} size={16} color={color} />
+      {open && (
+        <span
+          role="tooltip"
+          className="absolute z-10"
+          style={{
+            bottom: '130%', right: -8, width: 220,
+            backgroundColor: '#111827', color: '#F9FAFB',
+            fontSize: 11, fontWeight: 500, lineHeight: 1.4,
+            borderRadius: 8, padding: '8px 10px',
+            boxShadow: '0 4px 12px rgba(16,24,40,0.18)',
+            whiteSpace: 'normal',
+          }}
+        >
+          {text}
+        </span>
+      )}
+    </span>
+  )
+}
+
+export function LinkTile({ href, icon, label, description, dependsOn }: {
+  href: string; icon: string; label: string; description?: string; dependsOn?: string[]
+}) {
+  return (
+    <a
+      href={href}
+      className="bg-white flex items-center gap-3 hover:shadow-md"
+      style={{
+        border: `1px solid ${T.cardBorder}`, borderRadius: T.cardRadius, boxShadow: T.cardShadow,
+        padding: '18px 16px', textDecoration: 'none', transition: 'box-shadow .15s, border-color .15s',
+      }}
+    >
+      <div
+        className="flex items-center justify-center shrink-0"
+        style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#EFF6FF' }}
+      >
+        <MI name={icon} size={20} color={T.primary} />
+      </div>
+      <span className="flex-1" style={{ fontSize: 13, fontWeight: 700, color: T.primary }}>{label}</span>
+      {dependsOn && dependsOn.length > 0 && (
+        <InfoTooltip icon="account_tree" color={T.muted} text={`Interlinked with: ${dependsOn.join(', ')}`} />
+      )}
+      {description && (
+        <InfoTooltip icon="help_outline" color={T.muted} text={description} />
+      )}
+    </a>
   )
 }
 
@@ -277,6 +339,32 @@ export function TagChip({ label, onRemove }: { label: string; onRemove?: () => v
   )
 }
 
+/** Multi-value text input (e.g. CC emails) — press Enter or comma to add a tag. */
+export function TagInput({ tags, onAdd, onRemove, placeholder, type = 'text' }: {
+  tags: string[]; onAdd: (v: string) => void; onRemove: (v: string) => void; placeholder?: string; type?: string
+}) {
+  const [val, setVal] = useState('')
+  return (
+    <div
+      className="w-full flex flex-wrap items-center gap-1.5"
+      style={{ ...inputStyle, height: 'auto', minHeight: 36, padding: '5px 8px' }}
+    >
+      {tags.map(t => <TagChip key={t} label={t} onRemove={() => onRemove(t)} />)}
+      <input
+        type={type}
+        value={val}
+        onChange={e => setVal(e.target.value)}
+        onKeyDown={e => {
+          if ((e.key === 'Enter' || e.key === ',') && val.trim()) { e.preventDefault(); onAdd(val.trim()); setVal('') }
+        }}
+        placeholder={tags.length === 0 ? placeholder : ''}
+        className={inputCls}
+        style={{ border: 'none', height: 22, flex: 1, minWidth: 100, padding: 0 }}
+      />
+    </div>
+  )
+}
+
 /* ------------------------------------ Tables ------------------------------------- */
 
 export const thStyle: React.CSSProperties = {
@@ -290,8 +378,8 @@ export const tdStyle: React.CSSProperties = {
 }
 export const linkStyle: React.CSSProperties = { color: T.primary, fontWeight: 600, textDecoration: 'none' }
 
-export function Pagination({ page, pages, onPage, showTotal, totalItems }: { page: number; pages: number; onPage: (p: number) => void; showTotal?: boolean; totalItems?: number }) {
-  if (pages <= 1) return null
+export function Pagination({ page, pages, onPage, showTotal, totalItems, alwaysShow }: { page: number; pages: number; onPage: (p: number) => void; showTotal?: boolean; totalItems?: number; alwaysShow?: boolean }) {
+  if (pages <= 1 && !alwaysShow) return null
   const nums: number[] = []
   const start = Math.max(1, Math.min(page - 2, pages - 4))
   for (let p = start; p <= Math.min(pages, start + 4); p++) nums.push(p)

@@ -1,20 +1,23 @@
-import { getSpecifications } from '@/app/actions/specifications'
-import { getTests } from '@/app/actions/tests'
+import { getAnalysisSpecifications } from '@/app/actions/specifications'
+import { getAnalysisServices } from '@/app/actions/samples'
 import { getDjangoSampleTypes } from '@/app/actions/lab-samples'
+import { getDynamicAnalysisSpecifications } from '@/app/actions/dynamic-analysis-specifications'
 import SpecificationsShell from './_components/SpecificationsShell'
 
 export default async function SpecificationsPage() {
-  const [specifications, tests, sampleTypes] = await Promise.all([
-    getSpecifications(),
-    getTests(),
+  const [specifications, services, sampleTypes, dynamicSpecs] = await Promise.all([
+    getAnalysisSpecifications(),
+    getAnalysisServices(),
     getDjangoSampleTypes(),
+    getDynamicAnalysisSpecifications(),
   ])
 
   return (
     <SpecificationsShell
       initialSpecifications={specifications}
-      tests={tests}
+      services={services}
       sampleTypes={sampleTypes}
+      dynamicSpecs={dynamicSpecs}
     />
   )
 }

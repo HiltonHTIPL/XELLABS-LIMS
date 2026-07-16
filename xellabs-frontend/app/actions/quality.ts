@@ -6,7 +6,8 @@ export type QCSample = {
   id: number
   qc_id: string
   qc_type: 'blank' | 'control' | 'spike' | 'duplicate' | 'reference' | 'calibrator'
-  test: number
+  senaite_service_uid: string
+  senaite_service_name: string
   worksheet: number | null
   lot_number: string
   expiry_date: string | null
@@ -59,7 +60,8 @@ export async function getQCWorksheets(): Promise<QCWorksheet[]> {
 
 function buildPayload(formData: FormData) {
   const qc_type = (formData.get('qc_type') as string)?.trim()
-  const test = (formData.get('test') as string)?.trim()
+  const senaite_service_uid = (formData.get('senaite_service_uid') as string)?.trim()
+  const senaite_service_name = (formData.get('senaite_service_name') as string)?.trim()
   const worksheet = (formData.get('worksheet') as string)?.trim()
   const lot_number = (formData.get('lot_number') as string)?.trim()
   const expiry_date = (formData.get('expiry_date') as string)?.trim()
@@ -72,7 +74,8 @@ function buildPayload(formData: FormData) {
 
   return {
     qc_id, qc_type,
-    test: test ? Number(test) : null,
+    senaite_service_uid: senaite_service_uid || '',
+    senaite_service_name: senaite_service_name || '',
     worksheet: worksheet ? Number(worksheet) : null,
     lot_number: lot_number || '',
     expiry_date: expiry_date || null,
@@ -88,14 +91,14 @@ function validate(formData: FormData): Record<string, string[]> {
   const errors: Record<string, string[]> = {}
   const qc_id = (formData.get('qc_id') as string)?.trim()
   const qc_type = (formData.get('qc_type') as string)?.trim()
-  const test = (formData.get('test') as string)?.trim()
+  const senaite_service_uid = (formData.get('senaite_service_uid') as string)?.trim()
   const target_value = (formData.get('target_value') as string)?.trim()
   const tolerance_percent = (formData.get('tolerance_percent') as string)?.trim()
   const actual_value = (formData.get('actual_value') as string)?.trim()
 
   if (!qc_id) errors.qc_id = ['QC ID is required']
   if (!qc_type) errors.qc_type = ['QC type is required']
-  if (!test) errors.test = ['Test is required']
+  if (!senaite_service_uid) errors.senaite_service_uid = ['Test is required']
   if (target_value && Number.isNaN(Number(target_value))) errors.target_value = ['Must be a number']
   if (tolerance_percent && Number.isNaN(Number(tolerance_percent))) errors.tolerance_percent = ['Must be a number']
   if (actual_value && Number.isNaN(Number(actual_value))) errors.actual_value = ['Must be a number']
@@ -103,7 +106,7 @@ function validate(formData: FormData): Record<string, string[]> {
 }
 
 function extractErrorMessage(data: Record<string, unknown>, fallback: string): string {
-  for (const key of ['qc_id', 'test', 'qc_type', 'detail']) {
+  for (const key of ['qc_id', 'senaite_service_uid', 'qc_type', 'detail']) {
     const v = data[key]
     if (Array.isArray(v) && v.length) return String(v[0])
     if (typeof v === 'string') return v

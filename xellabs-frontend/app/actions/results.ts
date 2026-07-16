@@ -67,8 +67,7 @@ export type ResultFilters = {
   date_to?: string
 }
 
-type WorksheetAssignment = { id: number; worksheet: number; analysis_request: number; test: number }
-type Test = { id: number; name: string }
+type WorksheetAssignment = { id: number; worksheet: number; analysis_request: number; senaite_service_name: string }
 type AnalysisRequest = { id: number; ar_id: string; sample: number }
 type Sample = { id: number; sample_id: string; barcode: string }
 type Worksheet = { id: number; ws_id: string }
@@ -98,10 +97,9 @@ export async function getResults(filters: ResultFilters = {}): Promise<EnrichedR
     if (filters.status) params.set('status', filters.status)
     if (filters.is_out_of_range) params.set('is_out_of_range', filters.is_out_of_range)
 
-    const [results, assignments, tests, ars, samples, worksheets, users] = await Promise.all([
+    const [results, assignments, ars, samples, worksheets, users] = await Promise.all([
       fetchAllPages<Result>(`/api/lims/results/?${params.toString()}`),
       fetchAllPages<WorksheetAssignment>('/api/lims/worksheet-assignments/?page_size=500'),
-      fetchAllPages<Test>('/api/lims/tests/?page_size=500'),
       fetchAllPages<AnalysisRequest>('/api/lims/analysis-requests/?page_size=500'),
       fetchAllPages<Sample>('/api/lims/samples/?page_size=500'),
       fetchAllPages<Worksheet>('/api/lims/worksheets/?page_size=500'),
@@ -109,7 +107,6 @@ export async function getResults(filters: ResultFilters = {}): Promise<EnrichedR
     ])
 
     const assignmentMap = new Map(assignments.map(a => [a.id, a]))
-    const testMap = new Map(tests.map(t => [t.id, t]))
     const arMap = new Map(ars.map(a => [a.id, a]))
     const sampleMap = new Map(samples.map(s => [s.id, s]))
     const worksheetMap = new Map(worksheets.map(w => [w.id, w]))
@@ -125,13 +122,12 @@ export async function getResults(filters: ResultFilters = {}): Promise<EnrichedR
 
     let enriched: EnrichedResult[] = results.map(r => {
       const assignment = assignmentMap.get(r.worksheet_assignment)
-      const test = assignment ? testMap.get(assignment.test) : undefined
       const ar = assignment ? arMap.get(assignment.analysis_request) : undefined
       const sample = ar ? sampleMap.get(ar.sample) : undefined
       const worksheet = assignment ? worksheetMap.get(assignment.worksheet) : undefined
       return {
         ...r,
-        test_name: test?.name ?? '',
+        test_name: assignment?.senaite_service_name ?? '',
         sample_id: sample?.sample_id ?? '',
         sample_barcode: sample?.barcode ?? '',
         ar_id: ar?.ar_id ?? '',

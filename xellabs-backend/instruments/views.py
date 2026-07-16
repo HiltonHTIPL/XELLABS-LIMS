@@ -86,8 +86,16 @@ class InstrumentViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"], url_path="calibration-due")
     def calibration_due(self, request):
         """Instruments with calibration due within the next 30 days."""
-        days = int(request.query_params.get("days", 30))
+        try:
+            days = int(request.query_params.get("days", 30))
+        except (ValueError, TypeError):
+            return Response({"error": "days must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+        if days < 1 or days > 365:
+            return Response({"error": "days must be between 1 and 365"}, status=status.HTTP_400_BAD_REQUEST)
         cutoff = timezone.now().date() + timezone.timedelta(days=days)
+        # Deliberately unpaginated — this is a small, bounded alerts list (due
+        # within N days), not a general browse listing, and callers (dashboard
+        # widgets) expect a plain array, not the {count, next, results} envelope.
         qs = self.get_queryset().filter(
             status="active", next_calibration__isnull=False, next_calibration__lte=cutoff
         ).order_by("next_calibration")
@@ -96,8 +104,14 @@ class InstrumentViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"], url_path="maintenance-due")
     def maintenance_due(self, request):
         """Instruments with maintenance due within the next 30 days."""
-        days = int(request.query_params.get("days", 30))
+        try:
+            days = int(request.query_params.get("days", 30))
+        except (ValueError, TypeError):
+            return Response({"error": "days must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+        if days < 1 or days > 365:
+            return Response({"error": "days must be between 1 and 365"}, status=status.HTTP_400_BAD_REQUEST)
         cutoff = timezone.now().date() + timezone.timedelta(days=days)
+        # Deliberately unpaginated — see calibration_due for why.
         qs = self.get_queryset().filter(
             status="active", next_maintenance__isnull=False, next_maintenance__lte=cutoff
         ).order_by("next_maintenance")
@@ -168,9 +182,15 @@ class InstrumentResultImportViewSet(viewsets.ModelViewSet):
                 pass
 
         content = upload.read()
-        rows, parse_errors = parse_instrument_file(
-            content, file_format=file_format, interface_code=interface,
-        )
+        try:
+            rows, parse_errors = parse_instrument_file(
+                content, file_format=file_format, interface_code=interface,
+            )
+        except Exception as e:
+            return Response(
+                {"detail": f"File could not be parsed — check the File Format matches the actual file: {e}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         if not rows and any(e.get("row") == 0 for e in parse_errors):
             return Response(
                 {
@@ -224,8 +244,10 @@ class InstrumentResultImportViewSet(viewsets.ModelViewSet):
         imp = self.get_object()
         if imp.status == "processed":
             return Response({"detail": "Already processed."}, status=status.HTTP_400_BAD_REQUEST)
+        from django.db import connection
         from .tasks import process_instrument_import
-        task = process_instrument_import.delay(imp.pk)
+        # Capture the tenant schema now (request context has it) — the worker doesn't.
+        task = process_instrument_import.delay(imp.pk, connection.schema_name)
         return Response({"task_id": task.id, "import_id": imp.pk, "status": "queued"})
 
     @action(detail=True, methods=["get"])
@@ -267,22 +289,22 @@ class SampleInstrumentReportView(APIView):
         results = (
             Result.objects
             .select_related(
-                "worksheet_assignment__test__method",
+                "worksheet_assignment__method",
                 "worksheet_assignment__analysis_request__sample",
             )
             .filter(worksheet_assignment__analysis_request__sample__sample_id=sample_id)
-            .order_by("worksheet_assignment__test__code")
+            .order_by("worksheet_assignment__senaite_service_name")
         )
 
         result_rows = []
         instruments_seen: dict[str, dict] = {}
         for r in results:
-            test = r.worksheet_assignment.test
-            prov = provenance.get(test.code)
+            wa = r.worksheet_assignment
+            prov = provenance.get(wa.senaite_service_uid)
             result_rows.append({
-                "test_code": test.code,
-                "test_name": test.name,
-                "method": test.method.name if test.method else "",
+                "test_code": wa.senaite_service_uid,
+                "test_name": wa.senaite_service_name,
+                "method": wa.method.name if wa.method else "",
                 "value": r.value,
                 "unit": r.unit,
                 "result_status": r.status,
@@ -297,7 +319,7 @@ class SampleInstrumentReportView(APIView):
                 instruments_seen[prov["instrument_code"]] = {
                     "name": prov["instrument_name"],
                     "code": prov["instrument_code"],
-                    "method": test.method.name if test.method else "",
+                    "method": wa.method.name if wa.method else "",
                     "import_date": prov["import_date"],
                 }
 

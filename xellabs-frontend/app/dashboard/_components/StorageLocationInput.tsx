@@ -25,8 +25,7 @@ export type SelectedStorage = {
 }
 
 function boxPath(b: StorageLocation): string {
-  // Denormalized tier titles — no extra queries needed to show a readable path
-  return [b.site_title, b.location_title, b.shelf_title, b.name].filter(Boolean).join(' › ')
+  return b.name
 }
 
 function resolvedDisplay(r: ResolvedLabel): { display: string; autoSlot?: string } {

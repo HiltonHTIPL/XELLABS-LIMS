@@ -1,10 +1,10 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { createSampleWithAnalyses, type DjangoSampleType } from '@/app/actions/lab-samples'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { createSampleWithAnalyses, type DjangoSampleType, type LabSample } from '@/app/actions/lab-samples'
 import { type DjangoClient } from '@/app/actions/clients'
-import { type LimsTest } from '@/app/actions/tests'
-import { type SampleTemplate } from '@/app/actions/sample-templates'
+import { type AnalysisSpecification } from '@/app/actions/specifications'
+import { type SenaiteBatch, type SenaiteSampleTemplate, type SenaiteRefOption, type SenaiteAnalysisService } from '@/app/lib/senaite'
 import StorageLocationInput from '@/app/dashboard/_components/StorageLocationInput'
 
 const CONTAINER_OPTIONS = [
@@ -71,18 +71,20 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 // ── Per-sample form state type ────────────────────────────────────────────────
 type SampleForm = {
   primarySample: string; clientId: string; contactName: string; ccContact: string
-  ccEmails: string[]; batchId: string; batchSubGroup: string; sampleTemplateId: string
+  ccEmails: string[]; batchUid: string; batchSubGroup: string; sampleTemplateId: string
   analysisProfiles: string[]; suggestedContainer: string; dateSampled: string; sampleTypeId: string
   containerType: string; preservation: string; analysisSpec: string; samplePoint: string
   storageLocation: string; storageLabelCode: string; samplingDeviation: string; condition: string; priority: string
   envConditions: string; composite: boolean; internalUse: boolean; clientOrderNum: string
-  clientReference: string; clientSampleId: string; remarks: string; selectedTests: LimsTest[]
+  clientReference: string; clientSampleId: string; remarks: string; selectedTests: SenaiteAnalysisService[]
 }
+
+type AttachmentEntry = { file: File; status: 'pending' | 'uploading' | 'failed' | 'done' }
 
 function blankForm(): SampleForm {
   return {
     primarySample: 'yes', clientId: '', contactName: '', ccContact: '', ccEmails: [],
-    batchId: '', batchSubGroup: '', sampleTemplateId: '', analysisProfiles: [], suggestedContainer: '',
+    batchUid: '', batchSubGroup: '', sampleTemplateId: '', analysisProfiles: [], suggestedContainer: '',
     dateSampled: '', sampleTypeId: '', containerType: '', preservation: '',
     analysisSpec: '', samplePoint: '', storageLocation: '', storageLabelCode: '', samplingDeviation: 'none',
     condition: 'good', priority: 'medium', envConditions: 'room_temp',
@@ -91,23 +93,75 @@ function blankForm(): SampleForm {
   }
 }
 
-type Props = { sampleTypes: DjangoSampleType[]; clients: DjangoClient[]; tests: LimsTest[]; sampleTemplates: SampleTemplate[] }
+type Props = {
+  sampleTypes: DjangoSampleType[]; clients: DjangoClient[]; services: SenaiteAnalysisService[]
+  sampleTemplates: SenaiteSampleTemplate[]; sampleContainers: SenaiteRefOption[]; batches: SenaiteBatch[]
+  analysisSpecifications: AnalysisSpecification[]; preservations: SenaiteRefOption[]; samplingDeviations: SenaiteRefOption[]
+  samplePoints: SenaiteRefOption[]; existingSamples: LabSample[]
+}
 
-export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemplates }: Props) {
+// A sample counts as "complete" once it has the two fields handleSubmit itself
+// requires — kept as one pure function so the tab-strip badges and the submit
+// guard can never silently drift apart from each other.
+function isFormComplete(form: SampleForm): boolean {
+  return Boolean(form.clientId && form.sampleTypeId)
+}
+
+// Statuses that no longer represent an "open" sample — a cancelled/rejected
+// sample shouldn't trigger a duplicate warning against a brand new one.
+const CLOSED_STATUSES = ['cancelled', 'rejected', 'invalid']
+const DUPLICATE_WINDOW_HOURS = 24
+
+function findLikelyDuplicate(form: SampleForm, clients: DjangoClient[], sampleTypes: DjangoSampleType[], existingSamples: LabSample[]): LabSample | null {
+  if (!form.clientId || !form.sampleTypeId) return null
+  const client = clients.find(c => String(c.id) === form.clientId)
+  if (!client) return null
+  const targetTime = form.dateSampled ? new Date(form.dateSampled).getTime() : null
+  return existingSamples.find(s => {
+    if (CLOSED_STATUSES.includes(s.status)) return false
+    if (s.client !== client.id) return false
+    if (String(s.sample_type ?? '') !== form.sampleTypeId) return false
+    if (targetTime === null || !s.collection_date) return true
+    const diffHours = Math.abs(new Date(s.collection_date).getTime() - targetTime) / 3_600_000
+    return diffHours <= DUPLICATE_WINDOW_HOURS
+  }) ?? null
+}
+
+export default function NewSampleShell({ sampleTypes, clients, services, sampleTemplates, sampleContainers, batches, analysisSpecifications, preservations, samplingDeviations, samplePoints, existingSamples }: Props) {
   const router = useRouter()
+  // Pre-select a Batch when arriving from that batch's "New Sample" button
+  // (/dashboard/samples-overview/new?batch=<uid>) — only applied to the first
+  // sample tab, not every subsequent "Add Another Sample" tab.
+  const initialBatchUid = useSearchParams().get('batch') ?? ''
 
   // Sample Types valid for a given template — filtered down to the one matching
   // the template's SENAITE sample type via senaite_uid. Falls back to the full
   // list when no template is selected (manual mode).
   function sampleTypeOptionsFor(templateId: string): DjangoSampleType[] {
-    if (!templateId) return sampleTypes
-    const template = sampleTemplates.find(t => String(t.id) === templateId)
-    if (!template?.sample_type_uid) return sampleTypes
-    const matched = sampleTypes.filter(st => st.senaite_uid === template.sample_type_uid)
-    return matched.length ? matched : sampleTypes
+    const active = sampleTypes.filter(st => st.is_active !== false)
+    if (!templateId) return active
+    const template = sampleTemplates.find(t => t.uid === templateId)
+    if (!template?.sampleTypeUid) return active
+    const matched = active.filter(st => st.senaite_uid === template.sampleTypeUid)
+    return matched.length ? matched : active
   }
 
-  const [forms, setForms] = useState<SampleForm[]>([blankForm()])
+  // Batches offered for a given client — once a client is picked, only show
+  // that client's own batches. A batch with no client assigned used to show
+  // for every client as a fallback ("a batch isn't necessarily client-specific"),
+  // but that read as "wrong client's batches showing up" in practice — a
+  // client's batch list should only ever contain that client's own batches.
+  // Before any client is picked, every open batch is shown so the field still
+  // works standalone.
+  function batchOptionsFor(clientId: string): SenaiteBatch[] {
+    const open = batches.filter(b => b.review_state === 'open')
+    if (!clientId) return open
+    const client = clients.find(c => String(c.id) === clientId)
+    if (!client?.senaite_uid) return []
+    return open.filter(b => b.ClientUID === client.senaite_uid)
+  }
+
+  const [forms, setForms] = useState<SampleForm[]>(() => [{ ...blankForm(), batchUid: initialBatchUid }])
   const [activeTab, setActiveTab] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const [submitProgress, setSubmitProgress] = useState({ done: 0, total: 0 })
@@ -115,7 +169,22 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
   const [success, setSuccess] = useState('')
   const [showAddAnalysis, setShowAddAnalysis] = useState(false)
   const [analysisSearch, setAnalysisSearch] = useState('')
-  const [attachments, setAttachments] = useState<File[]>([])
+  const [attachments, setAttachments] = useState<AttachmentEntry[]>([])
+  const [toast, setToast] = useState('')
+  function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(''), 3000) }
+
+  // Ctrl+Left/Right to move between sample tabs — scoped to this component's
+  // own keydown listener (not a page-wide shortcut) so it never fights other
+  // pages' own key handling.
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      if (!e.ctrlKey) return
+      if (e.key === 'ArrowRight') { e.preventDefault(); setActiveTab(t => Math.min(t + 1, forms.length - 1)) }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); setActiveTab(t => Math.max(t - 1, 0)) }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [forms.length])
   // Date.now() is impure — capture it after mount rather than during render.
   const [nowLocal, setNowLocal] = useState<string | null>(null)
   useEffect(() => {
@@ -157,8 +226,8 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
   const SUBMIT_BATCH_SIZE = 8
   const SUBMIT_BATCH_DELAY_MS = 400
 
-  async function submitInBatches<T>(items: T[], run: (item: T) => Promise<{ success: boolean; message?: string; sample_id?: string }>) {
-    const results: Array<{ success: boolean; message?: string; sample_id?: string }> = []
+  async function submitInBatches<T>(items: T[], run: (item: T) => Promise<{ success: boolean; message?: string; sample_id?: string; id?: number }>) {
+    const results: Array<{ success: boolean; message?: string; sample_id?: string; id?: number }> = []
     for (let i = 0; i < items.length; i += SUBMIT_BATCH_SIZE) {
       const batch = items.slice(i, i + SUBMIT_BATCH_SIZE)
       const batchResults = await Promise.all(batch.map(run))
@@ -176,22 +245,40 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
       setError(`Sample ${invalid + 1}: Client and Sample Type are required.`)
       return
     }
+    const futureDated = forms.findIndex(f => f.dateSampled && new Date(f.dateSampled) > new Date())
+    if (futureDated !== -1) {
+      setActiveTab(futureDated)
+      setError(`Sample ${futureDated + 1}: Date Sampled cannot be in the future.`)
+      return
+    }
     setError(''); setSubmitting(true); setSubmitProgress({ done: 0, total: forms.length })
     const results = await submitInBatches(forms, f => {
       const client = clients.find(c => String(c.id) === f.clientId)
       const sampleType = sampleTypes.find(st => String(st.id) === f.sampleTypeId)
+      const batch = batches.find(b => b.uid === f.batchUid)
       return createSampleWithAnalyses(
         {
           client: Number(f.clientId), sample_type: Number(f.sampleTypeId),
           priority: f.priority, condition: f.condition,
-          collection_date: f.dateSampled || undefined,
+          // f.dateSampled is a <input type="datetime-local"> value — a naive
+          // wall-clock string with NO timezone offset (e.g. "2026-07-13T14:54").
+          // Django has USE_TZ=True + TIME_ZONE="UTC", so sending that string
+          // as-is gets misread as 14:54 UTC instead of the user's actual local
+          // time — for any timezone ahead of UTC (e.g. IST, UTC+5:30) this
+          // makes "just now" look like a future timestamp and the backend's
+          // "cannot be in the future" guard rejects every submission. `new
+          // Date(...)` parses the naive string using the browser's local
+          // timezone, so `.toISOString()` converts it to true UTC correctly.
+          collection_date: f.dateSampled ? new Date(f.dateSampled).toISOString() : undefined,
           description: f.remarks || undefined,
           preferred_storage_location: f.storageLocation || undefined,
           preferred_storage_label_code: f.storageLabelCode || undefined,
           contact_name: f.contactName || undefined, cc_contact: f.ccContact || undefined,
-          cc_emails: f.ccEmails.join(',') || undefined, batch_id: f.batchId || undefined,
+          cc_emails: f.ccEmails.join(',') || undefined, batch_id: batch?.id || undefined,
+          batch_senaite_uid: f.batchUid || undefined,
           batch_sub_group: f.batchSubGroup || undefined, container_type: f.containerType || undefined,
           preservation: f.preservation || undefined, analysis_specification: f.analysisSpec || undefined,
+          sampling_deviation: f.samplingDeviation !== 'none' ? f.samplingDeviation : undefined,
           sample_point: f.samplePoint || undefined, environmental_conditions: f.envConditions || undefined,
           composite: f.composite, internal_use: f.internalUse,
           client_order_number: f.clientOrderNum || undefined,
@@ -200,8 +287,7 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
           client_senaite_uid: client?.senaite_uid || undefined,
           sample_type_senaite_uid: sampleType?.senaite_uid || undefined,
         },
-        asDraft ? [] : f.selectedTests.map(t => t.id),
-        asDraft ? [] : f.selectedTests.map(t => t.senaite_uid).filter((u): u is string => Boolean(u)),
+        asDraft ? [] : f.selectedTests.map(t => ({ uid: t.uid, name: t.title })),
       )
     })
     setSubmitting(false)
@@ -209,18 +295,62 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
     if (failed.length > 0) {
       setError(failed.map(r => r.message).join(' | '))
     } else {
-      // Upload attachments to the first created sample if files were added
-      const firstId = results[0]?.sample_id
-      if (firstId && attachments.length > 0) {
-        const { uploadSampleAttachment } = await import('@/app/actions/lab-samples')
-        for (const file of attachments) {
-          const fd = new FormData(); fd.append('attachment', file)
-          await uploadSampleAttachment(firstId, fd).catch(() => null)
-        }
+      // Upload attachments to EVERY created sample in the batch — previously only
+      // the first sample got them, silently. Must use the numeric DB id — the
+      // display sample_id ("BL-2026-001") 404s against the DRF detail route.
+      const createdIds = results.map(r => r.id).filter((id): id is number => Boolean(id))
+      setCreatedSampleIds(createdIds)
+      let anyFailed = false
+      if (createdIds.length > 0 && attachments.length > 0) {
+        anyFailed = await uploadAttachmentsTo(createdIds)
       }
       const ids = results.map(r => r.sample_id).filter(Boolean).join(', ')
-      setSuccess(`${forms.length} sample${forms.length > 1 ? 's' : ''} logged: ${ids}`)
-      setTimeout(() => router.push('/dashboard/samples-overview'), 1800)
+      const uploadWarning = anyFailed
+        ? ' — note: one or more attachments failed to upload; use Retry below.'
+        : ''
+      setSuccess(`${forms.length} sample${forms.length > 1 ? 's' : ''} logged: ${ids}${uploadWarning}`)
+      // Only auto-navigate away when every attachment actually made it — if
+      // something failed, the Retry UI needs the page to stay mounted.
+      if (!anyFailed) setTimeout(() => router.push('/dashboard/samples-overview'), 1800)
+    }
+  }
+
+  const [createdSampleIds, setCreatedSampleIds] = useState<number[]>([])
+
+  // Uploads every 'pending'/'failed' attachment to all given sample ids,
+  // updating each entry's own status so the UI can show exactly which file
+  // failed instead of a single aggregate count. Returns whether anything failed.
+  async function uploadAttachmentsTo(sampleIds: number[]): Promise<boolean> {
+    const { uploadSampleAttachment } = await import('@/app/actions/lab-samples')
+    let anyFailed = false
+    for (let i = 0; i < attachments.length; i++) {
+      if (attachments[i].status === 'done') continue
+      setAttachments(prev => prev.map((a, j) => j === i ? { ...a, status: 'uploading' } : a))
+      let ok = true
+      for (const sid of sampleIds) {
+        const fd = new FormData(); fd.append('attachment', attachments[i].file)
+        const up = await uploadSampleAttachment(String(sid), fd)
+        if (!up.ok) ok = false
+      }
+      if (!ok) anyFailed = true
+      setAttachments(prev => prev.map((a, j) => j === i ? { ...a, status: ok ? 'done' : 'failed' } : a))
+    }
+    return anyFailed
+  }
+
+  async function retryAttachment(index: number) {
+    if (createdSampleIds.length === 0) return
+    setAttachments(prev => prev.map((a, j) => j === index ? { ...a, status: 'uploading' } : a))
+    const { uploadSampleAttachment } = await import('@/app/actions/lab-samples')
+    let ok = true
+    for (const sid of createdSampleIds) {
+      const fd = new FormData(); fd.append('attachment', attachments[index].file)
+      const up = await uploadSampleAttachment(String(sid), fd)
+      if (!up.ok) ok = false
+    }
+    setAttachments(prev => prev.map((a, j) => j === index ? { ...a, status: ok ? 'done' : 'failed' } : a))
+    if (ok && attachments.every((a, j) => j === index || a.status === 'done')) {
+      router.push('/dashboard/samples-overview')
     }
   }
 
@@ -229,9 +359,10 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
     const client = clients.find(c => String(c.id) === clientId)
     if (!client) { set('clientId', ''); return }
     const contactName = [client.contact_first_name, client.contact_last_name].filter(Boolean).join(' ') || client.contact_person || ''
-    const emails: string[] = []
-    if (client.contact_email) emails.push(client.contact_email)
-    if (client.email && client.email !== client.contact_email) emails.push(client.email)
+    const ccFromClient = (client.cc_emails ?? '').split(',').map(s => s.trim()).filter(Boolean)
+    const emails: string[] = [...ccFromClient]
+    if (client.contact_email && !emails.includes(client.contact_email)) emails.push(client.contact_email)
+    if (client.email && !emails.includes(client.email)) emails.push(client.email)
     setForms(prev => prev.map((form, i) => i === activeTab ? {
       ...form, clientId,
       contactName: contactName || form.contactName,
@@ -239,9 +370,23 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
     } : form))
   }
 
+  // Arrived via a Batch's "Add Samples" button with the Batch pre-selected
+  // (see the useState initializer above) — if that Batch has its own Client,
+  // auto-fill the Client (and its contact/CC cascade) too, exactly as if the
+  // user had picked it manually. Runs once on mount only.
+  useEffect(() => {
+    if (!initialBatchUid) return
+    const batch = batches.find(b => b.uid === initialBatchUid)
+    if (!batch?.ClientUID) return
+    const client = clients.find(c => c.senaite_uid === batch.ClientUID)
+    if (client) handleClientChange(String(client.id))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Propagate ALL Section 1 fields from active tab to every other tab
   function applyClientToAll() {
     if (!f.clientId) return
+    const otherCount = forms.length - 1
     setForms(prev => prev.map((form, i) => i === activeTab ? form : {
       ...form,
       primarySample: f.primarySample,
@@ -249,50 +394,90 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
       contactName: f.contactName,
       ccContact: f.ccContact,
       ccEmails: f.ccEmails,
-      batchId: f.batchId,
+      batchUid: f.batchUid,
       batchSubGroup: f.batchSubGroup,
       sampleTemplateId: f.sampleTemplateId,
       analysisProfiles: f.analysisProfiles,
     }))
+    if (otherCount > 0) showToast(`Applied to ${otherCount} other sample${otherCount > 1 ? 's' : ''}.`)
   }
 
   // Selecting a Sample Template auto-fills Sample Type, Container, and Lab Analyses
   // (matched via each Django record's senaite_uid — see Section 19 of CLAUDE.md:
   // never mix Django and SENAITE IDs directly).
   function handleTemplateChange(templateId: string) {
-    const template = sampleTemplates.find(t => String(t.id) === templateId)
-    const matchedSampleType = template ? sampleTypes.find(st => st.senaite_uid === template.sample_type_uid) : undefined
-    const matchedTests = template
-      ? tests.filter(t => template.analysis_services.some(a => a.uid === t.senaite_uid))
+    const template = sampleTemplates.find(t => t.uid === templateId)
+    const templateServices = template?.services ?? []
+    const firstContainerUid = template?.partitions?.[0]?.containerUid
+    const templateContainer = firstContainerUid
+      ? sampleContainers.find(c => c.uid === firstContainerUid)?.title ?? ''
+      : ''
+    const matchedSampleType = template ? sampleTypes.find(st => st.senaite_uid === template.sampleTypeUid) : undefined
+    const matchedServices = template
+      ? services.filter(s => templateServices.some(a => a.uid === s.uid))
       : []
-    const allowedContainers = template ? containerOptionsFor(template.container) : CONTAINER_OPTIONS
+    const allowedContainers = template ? containerOptionsFor(templateContainer) : CONTAINER_OPTIONS
     setForms(prev => prev.map((form, i) => i === activeTab ? {
       ...form,
       sampleTemplateId: templateId,
       sampleTypeId: matchedSampleType ? String(matchedSampleType.id) : form.sampleTypeId,
       containerType: template ? (allowedContainers[0]?.value ?? '') : form.containerType,
-      suggestedContainer: template?.container ?? '',
-      analysisProfiles: template ? template.analysis_services.map(a => a.title) : form.analysisProfiles,
-      selectedTests: matchedTests.length ? matchedTests : form.selectedTests,
+      suggestedContainer: templateContainer,
+      analysisProfiles: template ? matchedServices.map(s => s.title) : form.analysisProfiles,
+      selectedTests: matchedServices.length ? matchedServices : form.selectedTests,
     } : form))
   }
 
-  function addTest(t: LimsTest) {
-    if (!f.selectedTests.find(x => x.id === t.id)) set('selectedTests', [...f.selectedTests, t])
+  // Analysis Specifications valid for the currently selected Sample Type —
+  // each spec has exactly one sample_type (see lims/models.py AnalysisSpecification).
+  // Shows every spec until a sample type is chosen, same fallback as sampleTypeOptionsFor.
+  function analysisSpecOptionsFor(sampleTypeId: string): AnalysisSpecification[] {
+    if (!sampleTypeId) return analysisSpecifications
+    const matched = analysisSpecifications.filter(s => String(s.sample_type) === sampleTypeId)
+    return matched.length ? matched : analysisSpecifications
+  }
+
+  // Selecting an Analysis Specification auto-fills Lab Analyses from its rows —
+  // rows store the SENAITE service uid directly, matched against the live
+  // services list (same pattern as Sample Template above).
+  function handleAnalysisSpecChange(specId: string) {
+    const spec = analysisSpecifications.find(s => String(s.id) === specId)
+    const matchedServices = spec
+      ? services.filter(sv => spec.rows.some(r => r.senaite_service_uid === sv.uid))
+      : []
+    setForms(prev => prev.map((form, i) => i === activeTab ? {
+      ...form,
+      analysisSpec: specId,
+      selectedTests: matchedServices.length ? matchedServices : form.selectedTests,
+    } : form))
+  }
+
+  function addTest(s: SenaiteAnalysisService) {
+    if (!f.selectedTests.find(x => x.uid === s.uid)) set('selectedTests', [...f.selectedTests, s])
     setShowAddAnalysis(false); setAnalysisSearch('')
   }
-  function removeTest(id: number) { set('selectedTests', f.selectedTests.filter(t => t.id !== id)) }
+  function removeTest(uid: string) { set('selectedTests', f.selectedTests.filter(t => t.uid !== uid)) }
 
-  const filteredTests = tests.filter(t =>
-    !f.selectedTests.find(s => s.id === t.id) &&
-    (t.name.toLowerCase().includes(analysisSearch.toLowerCase()) || t.code.toLowerCase().includes(analysisSearch.toLowerCase()))
+  const filteredTests = services.filter(s =>
+    s.review_state !== 'inactive' &&
+    !f.selectedTests.find(x => x.uid === s.uid) &&
+    (s.title.toLowerCase().includes(analysisSearch.toLowerCase()) || s.Keyword.toLowerCase().includes(analysisSearch.toLowerCase()))
   )
 
-  // Pricing — active tab only
-  const VAT_RATE = 0.15
-  const subtotal = f.selectedTests.reduce((sum, t) => sum + parseFloat(t.price ?? '0'), 0)
-  const vat = subtotal * VAT_RATE
+  // Pricing — active tab only. Each test carries its own VAT rate from
+  // SENAITE's own AnalysisService.VAT; only fall back to the 15% default when
+  // a given test genuinely has none set, rather than assuming one flat rate
+  // for every line.
+  const DEFAULT_VAT_RATE = 0.15
+  const subtotal = f.selectedTests.reduce((sum, t) => sum + parseFloat(t.Price || '0'), 0)
+  const vat = f.selectedTests.reduce((sum, t) => {
+    const rate = t.VAT ? parseFloat(t.VAT) / 100 : DEFAULT_VAT_RATE
+    return sum + parseFloat(t.Price || '0') * rate
+  }, 0)
   const total = subtotal + vat
+  // Blended effective rate for the "VAT (X%)" label — falls back to the
+  // default display percentage when nothing is selected yet.
+  const vatDisplayPct = subtotal > 0 ? Math.round((vat / subtotal) * 100) : Math.round(DEFAULT_VAT_RATE * 100)
 
   const CONDITION_DOT: Record<string, string> = { good: '#0154FC', acceptable: '#3B82F6', compromised: '#EF4444', not_acceptable: '#EF4444' }
   const PRIORITY_DOT: Record<string, string> = { high: '#EF4444', medium: '#F59E0B', low: '#0154FC' }
@@ -340,6 +525,7 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
             {forms.map((_, idx) => {
               const isActive = idx === activeTab
               const hasData = forms[idx].clientId || forms[idx].sampleTypeId
+              const incomplete = !isFormComplete(forms[idx])
               return (
                 <div key={idx} style={{ position: 'relative' }}>
                   <button
@@ -373,6 +559,9 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
                         {clients.find(c => String(c.id) === forms[idx].clientId)?.name ?? ''}
                       </span>
                     )}
+                    {incomplete && (
+                      <span title="Missing required fields" style={{ width: 8, height: 8, borderRadius: '50%', background: '#EF4444', flexShrink: 0 }} />
+                    )}
                   </button>
                   {/* Remove tab button */}
                   <button
@@ -391,6 +580,17 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
                 </div>
               )
             })}
+          </div>
+        )}
+        {sampleCount > 1 && forms.some(form => !isFormComplete(form)) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: -12, marginBottom: 16, fontSize: 12, color: '#B45309' }}>
+            <MI name="error_outline" size={14} color="#B45309" />
+            {forms.filter(form => !isFormComplete(form)).length} of {sampleCount} samples incomplete (missing Client or Sample Type)
+          </div>
+        )}
+        {toast && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16, padding: '8px 14px', borderRadius: 8, background: '#F0FDF4', border: '1px solid #BBF7D0', fontSize: 12, color: '#166534' }}>
+            <MI name="check_circle" size={14} color="#166534" /> {toast}
           </div>
         )}
 
@@ -420,7 +620,7 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
                 <div style={field}><label style={lbl}>Client *</label>
                   <select value={f.clientId} onChange={e => handleClientChange(e.target.value)} style={{ ...inp, borderColor: !f.clientId && error ? '#EF4444' : '#D1D5DB' }}>
                     <option value="">— select —</option>
-                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    {clients.filter(c => c.is_active).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select></div>
                 <div style={field}><label style={lbl}>Contact *</label>
                   <input value={f.contactName} onChange={e => set('contactName', e.target.value)} placeholder="e.g. Jane Doe" style={inp} /></div>
@@ -432,7 +632,15 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
                   <TagInput tags={f.ccEmails} onAdd={v => set('ccEmails', [...f.ccEmails, v])} onRemove={v => set('ccEmails', f.ccEmails.filter(x => x !== v))} placeholder="Type email and press Enter" /></div>
                 <div style={grid2}>
                   <div style={field}><label style={lbl}>Batch</label>
-                    <input value={f.batchId} onChange={e => set('batchId', e.target.value)} placeholder="e.g. B-250519-001" style={inp} /></div>
+                    <select value={f.batchUid} onChange={e => set('batchUid', e.target.value)} style={inp}>
+                      <option value="">None</option>
+                      {batchOptionsFor(f.clientId).map(b => (
+                        <option key={b.uid} value={b.uid}>{b.id} — {b.title}</option>
+                      ))}
+                    </select>
+                    {f.clientId && batchOptionsFor(f.clientId).length < batches.filter(b => b.review_state === 'open').length && (
+                      <span style={{ fontSize: 11, color: '#9CA3AF', marginTop: 3 }}>Filtered to this client&apos;s batches only</span>
+                    )}</div>
                   <div style={field}><label style={lbl}>Batch Sub-group</label>
                     <input value={f.batchSubGroup} onChange={e => set('batchSubGroup', e.target.value)} placeholder="e.g. Stability Study" style={inp} /></div>
                 </div>
@@ -441,7 +649,7 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
                 <div style={field}><label style={lbl}>Sample Template</label>
                   <select value={f.sampleTemplateId} onChange={e => handleTemplateChange(e.target.value)} style={inp}>
                     <option value="">None — configure manually</option>
-                    {sampleTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    {sampleTemplates.map(t => <option key={t.uid} value={t.uid}>{t.title}</option>)}
                   </select>
                 </div>
                 <div style={field}><label style={lbl}>Analysis Profiles</label>
@@ -505,6 +713,19 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
         {/* Section 2 */}
         <div style={section}>
           <SectionHeader num={2} title="Sampling Details" />
+          {(() => {
+            const dup = findLikelyDuplicate(f, clients, sampleTypes, existingSamples)
+            if (!dup) return null
+            return (
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px 14px', borderRadius: 8, background: '#FFFBEB', border: '1px solid #FDE68A', marginBottom: 16, fontSize: 12, color: '#92400E' }}>
+                <MI name="warning_amber" size={16} color="#B45309" />
+                <span>
+                  Possible duplicate: <strong>{dup.sample_id}</strong> for this client and sample type
+                  {dup.collection_date ? ` was sampled around ${new Date(dup.collection_date).toLocaleString()}` : ''} and is still {dup.status}. Double-check before logging this one.
+                </span>
+              </div>
+            )
+          })()}
           <div style={{ ...grid4, marginBottom: 16 }}>
             <div style={field}><label style={lbl}>Date Sampled *</label>
               <input type="datetime-local" value={f.dateSampled} max={nowLocal ?? undefined}
@@ -514,6 +735,11 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
                 {!f.sampleTemplateId && <option value="">— select —</option>}
                 {sampleTypeOptionsFor(f.sampleTemplateId).map(st => <option key={st.id} value={st.id}>{st.name}</option>)}
               </select>
+              {f.sampleTypeId && (() => {
+                const st = sampleTypes.find(s => String(s.id) === f.sampleTypeId)
+                if (!st?.prefix) return null
+                return <span style={{ fontSize: 11, color: '#9CA3AF', marginTop: 3 }}>ID format: {st.prefix}-{new Date().getFullYear()}-### (assigned on save)</span>
+              })()}
               {f.sampleTemplateId && (
                 <span style={{ fontSize: 11, color: '#9CA3AF', marginTop: 3 }}>Filtered to the type set by this template</span>
               )}</div>
@@ -529,23 +755,21 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
             <div style={field}><label style={lbl}>Preservation</label>
               <select value={f.preservation} onChange={e => set('preservation', e.target.value)} style={inp}>
                 <option value="">None</option>
-                <option value="refrigerated">Refrigerated</option>
-                <option value="frozen">Frozen</option>
-                <option value="chemical">Chemical Preservative</option>
-                <option value="dark">Dark / Light-protected</option>
+                {preservations.filter(p => p.review_state !== 'inactive').map(p => <option key={p.uid} value={p.title}>{p.title}</option>)}
               </select></div>
           </div>
           <div style={{ ...grid4, marginBottom: 16 }}>
             <div style={field}><label style={lbl}>Analysis Specification</label>
-              <select value={f.analysisSpec} onChange={e => set('analysisSpec', e.target.value)} style={inp}>
+              <select value={f.analysisSpec} onChange={e => handleAnalysisSpecChange(e.target.value)} style={inp}>
                 <option value="">— select —</option>
-                <option value="in_house">In-House Standard</option>
-                <option value="iso_17025">ISO 17025</option>
-                <option value="pharmacopeia">Pharmacopeia</option>
-                <option value="regulatory">Regulatory Standard</option>
-              </select></div>
+                {analysisSpecOptionsFor(f.sampleTypeId).map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+              </select>
+              <span style={{ fontSize: 11, color: '#9CA3AF', marginTop: 3 }}>Selecting one auto-fills Lab Analyses from its rows</span></div>
             <div style={field}><label style={lbl}>Sample Point</label>
-              <input value={f.samplePoint} onChange={e => set('samplePoint', e.target.value)} placeholder="e.g. Site A - Building 25" style={inp} /></div>
+              <select value={f.samplePoint} onChange={e => set('samplePoint', e.target.value)} style={inp}>
+                <option value="">— select —</option>
+                {samplePoints.filter(p => p.review_state !== 'inactive').map(p => <option key={p.uid} value={p.title}>{p.title}</option>)}
+              </select></div>
             <div style={field}><label style={lbl}>Storage Location</label>
               <StorageLocationInput
                 value={f.storageLocation ? { labelCode: f.storageLabelCode, display: f.storageLocation } : null}
@@ -558,9 +782,7 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
             <div style={field}><label style={lbl}>Sampling Deviation</label>
               <select value={f.samplingDeviation} onChange={e => set('samplingDeviation', e.target.value)} style={inp}>
                 <option value="none">None</option>
-                <option value="temperature_excursion">Temperature Excursion</option>
-                <option value="delayed_transport">Delayed Transport</option>
-                <option value="haemolysis">Haemolysis</option>
+                {samplingDeviations.filter(d => d.review_state !== 'inactive').map(d => <option key={d.uid} value={d.title}>{d.title}</option>)}
               </select></div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto auto', gap: 16, alignItems: 'end' }}>
@@ -620,7 +842,7 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
               <label style={lbl}>Attachments</label>
               <label style={{ border: `2px dashed ${attachments.length ? '#2563EB' : '#D1D5DB'}`, borderRadius: 8, padding: '20px 16px', textAlign: 'center', cursor: 'pointer', background: attachments.length ? '#EFF6FF' : '#FAFAFA', display: 'block', transition: 'all 0.15s' }}>
                 <input type="file" accept=".pdf,.jpg,.jpeg,.png" multiple style={{ display: 'none' }}
-                  onChange={e => { if (e.target.files) setAttachments(prev => [...prev, ...Array.from(e.target.files!)]) }} />
+                  onChange={e => { if (e.target.files) setAttachments(prev => [...prev, ...Array.from(e.target.files!).map(file => ({ file, status: 'pending' as const }))]) }} />
                 <MI name="cloud_upload" size={28} color={attachments.length ? '#2563EB' : '#D1D5DB'} />
                 <p style={{ margin: '6px 0 3px', fontSize: 13, color: '#374151' }}>
                   {attachments.length ? `${attachments.length} file${attachments.length > 1 ? 's' : ''} selected` : <>Drag and drop files here<br /><span style={{ color: '#2563EB', fontWeight: 600 }}>or browse</span></>}
@@ -629,12 +851,19 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
               </label>
               {attachments.length > 0 && (
                 <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {attachments.map((file, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 10px', background: '#F0F7FF', borderRadius: 6, fontSize: 12 }}>
+                  {attachments.map((entry, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 10px', background: entry.status === 'failed' ? '#FEF2F2' : '#F0F7FF', borderRadius: 6, fontSize: 12 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                        <MI name="description" size={14} color="#2563EB" />
-                        <span style={{ color: '#1D4ED8', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
-                        <span style={{ color: '#9CA3AF', flexShrink: 0 }}>({(file.size / 1024).toFixed(0)} KB)</span>
+                        <MI name={entry.status === 'failed' ? 'error_outline' : entry.status === 'done' ? 'check_circle' : entry.status === 'uploading' ? 'hourglass_top' : 'description'}
+                          size={14} color={entry.status === 'failed' ? '#DC2626' : entry.status === 'done' ? '#059669' : '#2563EB'} />
+                        <span style={{ color: entry.status === 'failed' ? '#991B1B' : '#1D4ED8', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.file.name}</span>
+                        <span style={{ color: '#9CA3AF', flexShrink: 0 }}>({(entry.file.size / 1024).toFixed(0)} KB)</span>
+                        {entry.status === 'failed' && (
+                          <button type="button" onClick={() => retryAttachment(i)}
+                            style={{ fontSize: 11, fontWeight: 600, color: '#DC2626', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>
+                            Retry
+                          </button>
+                        )}
                       </div>
                       <button type="button" onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', padding: 2 }}>
@@ -712,13 +941,13 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
               </thead>
               <tbody>
                 {f.selectedTests.map((t, i) => (
-                  <tr key={t.id} style={{ borderBottom: '1px solid #F9FAFB' }}>
+                  <tr key={t.uid} style={{ borderBottom: '1px solid #F9FAFB' }}>
                     <td style={{ padding: '8px 12px', color: '#9CA3AF', fontWeight: 600 }}>{i + 1}</td>
-                    <td style={{ padding: '8px 8px', color: '#111827', fontWeight: 500 }}>{t.name}</td>
-                    <td style={{ padding: '8px 8px', color: '#6B7280' }}>{t.method_code || t.code}</td>
-                    <td style={{ padding: '8px 8px', textAlign: 'right', color: '#374151', fontWeight: 500 }}>{t.price ? `$${parseFloat(t.price).toFixed(2)}` : '—'}</td>
+                    <td style={{ padding: '8px 8px', color: '#111827', fontWeight: 500 }}>{t.title}</td>
+                    <td style={{ padding: '8px 8px', color: '#6B7280' }}>{t.Keyword}</td>
+                    <td style={{ padding: '8px 8px', textAlign: 'right', color: '#374151', fontWeight: 500 }}>{t.Price ? `$${parseFloat(t.Price).toFixed(2)}` : '—'}</td>
                     <td style={{ padding: '8px 6px' }}>
-                      <button type="button" onClick={() => removeTest(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                      <button type="button" onClick={() => removeTest(t.uid)} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                         <MI name="delete_outline" size={16} color="#9CA3AF" />
                       </button>
                     </td>
@@ -743,13 +972,13 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
                   {filteredTests.length === 0
                     ? <div style={{ padding: '10px', fontSize: 12, color: '#9CA3AF', textAlign: 'center' }}>No tests found</div>
                     : filteredTests.slice(0, 20).map(t => (
-                      <button key={t.id} type="button" onClick={() => addTest(t)}
+                      <button key={t.uid} type="button" onClick={() => addTest(t)}
                         style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '8px 10px', border: 'none', borderBottom: '1px solid #F9FAFB', background: '#fff', cursor: 'pointer', textAlign: 'left' }}>
                         <div>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>{t.name}</div>
-                          <div style={{ fontSize: 11, color: '#9CA3AF' }}>{t.code}</div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>{t.title}</div>
+                          <div style={{ fontSize: 11, color: '#9CA3AF' }}>{t.Keyword}</div>
                         </div>
-                        {t.price && <span style={{ fontSize: 12, color: '#374151', fontWeight: 500 }}>${parseFloat(t.price).toFixed(2)}</span>}
+                        {t.Price && <span style={{ fontSize: 12, color: '#374151', fontWeight: 500 }}>${parseFloat(t.Price).toFixed(2)}</span>}
                       </button>
                     ))
                   }
@@ -777,7 +1006,7 @@ export default function NewSampleShell({ sampleTypes, clients, tests, sampleTemp
               <span>Subtotal</span><span style={{ fontWeight: 600 }}>${subtotal.toFixed(2)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#374151' }}>
-              <span>VAT (15%)</span><span style={{ fontWeight: 600 }}>${vat.toFixed(2)}</span>
+              <span>VAT ({vatDisplayPct}%)</span><span style={{ fontWeight: 600 }}>${vat.toFixed(2)}</span>
             </div>
             <div style={{ borderTop: '1px solid #E5E7EB', paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Total</span>

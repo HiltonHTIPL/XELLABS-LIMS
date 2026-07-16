@@ -2,10 +2,12 @@ from django.db import models
 from django.conf import settings
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
+from django.core.validators import MinValueValidator, MaxValueValidator
 
 
 class StorageLocation(models.Model):
     LOCATION_TYPES = [
+        ("building",     "Building"),
         ("room",         "Room"),
         ("fridge",       "Fridge"),
         ("freezer",      "Freezer"),
@@ -15,29 +17,43 @@ class StorageLocation(models.Model):
         ("box_location", "Box Location"),
     ]
 
+    # Which location_type(s) a given type is allowed to sit under — mirrors
+    # senaite.storage's real containment rules (confirmed via live testing: a
+    # StorageSamplesContainer/box cannot be created directly under a
+    # StoragePosition/room — "Creation of 'StorageSamplesContainer' in
+    # '.../SP-xxxxx' is not allowed") plus the simpler rule that a room only
+    # makes sense directly under a building, not nested inside a fridge/shelf/
+    # etc. An empty set means "top-level only, no parent allowed."
+    ALLOWED_PARENT_TYPES = {
+        "building": set(),
+        "room": {"building"},
+        "fridge": {"building", "room"},
+        "freezer": {"building", "room"},
+        "cabinet": {"building", "room"},
+        "shelf": {"building", "room", "fridge", "freezer", "cabinet", "shelf"},
+        "box": {"fridge", "freezer", "cabinet", "shelf"},
+        "box_location": {"box"},  # system-generated only, never chosen directly via the API
+    }
+
     name          = models.CharField(max_length=200)
-    location_type = models.CharField(max_length=50, default="room", choices=LOCATION_TYPES)
+    location_type = models.CharField(max_length=50, default="building", choices=LOCATION_TYPES)
     parent        = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="children")
-    temperature   = models.CharField(max_length=50, blank=True)
+    temperature   = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True, validators=[MinValueValidator(-80), MaxValueValidator(150)], help_text="Temperature in Celsius (-80 to 150°C)")
     notes         = models.TextField(blank=True)
     # SENAITE metadata fields
     description        = models.TextField(blank=True)
     address            = models.CharField(max_length=500, blank=True)
-    site_title         = models.CharField(max_length=200, blank=True)
-    site_code          = models.CharField(max_length=100, blank=True)
-    site_description   = models.TextField(blank=True)
-    location_title     = models.CharField(max_length=200, blank=True)
-    location_code      = models.CharField(max_length=100, blank=True)
-    location_description = models.TextField(blank=True)
-    senaite_location_type = models.CharField(max_length=100, blank=True)  # e.g. SafetyLevel1
-    shelf_title        = models.CharField(max_length=200, blank=True)
-    shelf_code         = models.CharField(max_length=100, blank=True)
-    shelf_description  = models.TextField(blank=True)
-    # SENAITE sync
+    # Building (StorageFacility)-only fields — synced to SENAITE's Phone/EmailAddress.
+    phone              = models.CharField(max_length=50, blank=True)
+    email              = models.EmailField(blank=True)
+    # SENAITE sync — senaite_path is the object's path under /senaite/senaite_storage
+    # (e.g. "/senaite/senaite_storage/SF-00001/SC-00001"), cached at sync time so a
+    # child node can build its own parent_path without a UID->path lookup round trip.
     senaite_uid   = models.CharField(max_length=100, blank=True)
+    senaite_path  = models.CharField(max_length=500, blank=True)
     # Box-specific
-    rows          = models.IntegerField(null=True, blank=True)
-    columns       = models.IntegerField(null=True, blank=True)
+    rows          = models.IntegerField(null=True, blank=True, validators=[MinValueValidator(1)])
+    columns       = models.IntegerField(null=True, blank=True, validators=[MinValueValidator(1)])
     # Box location (slot) specific
     slot_id            = models.CharField(max_length=20, blank=True)
     is_occupied        = models.BooleanField(default=False)
@@ -62,74 +78,23 @@ class StorageLocation(models.Model):
             models.Index(fields=["assigned_sample_id"], name="storage_sample_id_idx"),
         ]
 
-    def inherit_senaite_fields_from_ancestors(self):
-        """Walk up the parent chain and fill any still-blank site/location/shelf
-        tier this location doesn't own itself — same tier-ownership mapping as
-        StorageModal.tsx's computeSenaiteDefaults() (room->site, fridge/freezer/
-        cabinet->location, shelf->shelf), but applied server-side so it also
-        covers box/box_location records the frontend form never creates directly
-        (auto-generated slots, regenerate-slots) instead of only new-location
-        form defaults."""
-        need_site = not self.site_title
-        need_loc = not self.location_title
-        need_shelf = not self.shelf_title
-        if not (need_site or need_loc or need_shelf):
-            return
-
-        node = self.parent
-        while node and (need_site or need_loc or need_shelf):
-            if need_site and node.location_type == 'room':
-                self.site_title = node.site_title or node.name
-                self.site_code = self.site_code or node.site_code
-                self.site_description = self.site_description or node.site_description
-                need_site = False
-            elif need_loc and node.location_type in ('fridge', 'freezer', 'cabinet'):
-                self.location_title = node.location_title or node.name
-                self.location_code = self.location_code or node.location_code
-                self.location_description = self.location_description or node.location_description
-                self.senaite_location_type = self.senaite_location_type or node.senaite_location_type
-                need_loc = False
-            elif need_shelf and node.location_type == 'shelf':
-                self.shelf_title = node.shelf_title or node.name
-                self.shelf_code = self.shelf_code or node.shelf_code
-                self.shelf_description = self.shelf_description or node.shelf_description
-                need_shelf = False
-            node = node.parent
-
-    @staticmethod
-    def slot_inherited_fields(parent):
-        """Site/Location/Shelf tier fields a box_location slot should copy from
-        its immediate parent box. The parent box will already carry its own
-        owned/inherited tier values by the time this runs (save() populates
-        them before the post_save signal that generates slots fires), so a
-        slot only needs a direct copy — not its own ancestor walk."""
-        return dict(
-            site_title=parent.site_title, site_code=parent.site_code, site_description=parent.site_description,
-            location_title=parent.location_title, location_code=parent.location_code,
-            location_description=parent.location_description, senaite_location_type=parent.senaite_location_type,
-            shelf_title=parent.shelf_title, shelf_code=parent.shelf_code, shelf_description=parent.shelf_description,
-        )
-
-    def save(self, *args, **kwargs):
-        # Default the SENAITE title field this location "owns" to its own
-        # name when left blank — mirrors StorageModal.tsx's ancestor-inherit
-        # logic, but for the location's own record (a room has no ancestor
-        # to inherit a site_title from, so without this it stays blank
-        # forever and SENAITE's Site/Location/Shelf Title columns show empty).
-        if self.location_type == 'room' and not self.site_title:
-            self.site_title = self.name
-        elif self.location_type in ('fridge', 'freezer', 'cabinet') and not self.location_title:
-            self.location_title = self.name
-        elif self.location_type == 'shelf' and not self.shelf_title:
-            self.shelf_title = self.name
-
-        # Types that don't own any tier (box, box_location) — and any location
-        # missing a tier it doesn't own — inherit from the nearest qualifying
-        # ancestor so SENAITE never shows blank Site/Location/Shelf Title.
+    def clean(self):
+        """Enforced automatically by Django admin/ModelForm via full_clean(). The
+        API path enforces the same ALLOWED_PARENT_TYPES rule in
+        StorageLocationSerializer.validate() so a violation there comes back as a
+        proper JSON 400, not an uncaught ValidationError -> 500."""
+        from django.core.exceptions import ValidationError
         if self.parent_id:
-            self.inherit_senaite_fields_from_ancestors()
-
-        super().save(*args, **kwargs)
+            allowed = self.ALLOWED_PARENT_TYPES.get(self.location_type, set())
+            if self.parent.location_type not in allowed:
+                raise ValidationError({
+                    "parent": f"A '{self.get_location_type_display()}' cannot be placed under a "
+                              f"'{self.parent.get_location_type_display()}'.",
+                })
+        elif self.ALLOWED_PARENT_TYPES.get(self.location_type):
+            raise ValidationError({
+                "parent": f"A '{self.get_location_type_display()}' requires a parent location.",
+            })
 
     @staticmethod
     def slot_label_code(box, slot_id):
@@ -147,7 +112,7 @@ class InventoryItem(models.Model):
     manufacturer = models.CharField(max_length=200, blank=True)
     catalog_number = models.CharField(max_length=100, blank=True)
     unit = models.CharField(max_length=50, default="pcs")
-    min_stock_level = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    min_stock_level = models.DecimalField(max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)])
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -192,7 +157,7 @@ class Lot(models.Model):
     item = GenericForeignKey("content_type", "object_id")
 
     lot_number = models.CharField(max_length=100)
-    quantity = models.DecimalField(max_digits=10, decimal_places=2)
+    quantity = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     expiry_date = models.DateField(null=True, blank=True)
     storage_location = models.ForeignKey(StorageLocation, null=True, blank=True, on_delete=models.SET_NULL)
     received_date = models.DateField(auto_now_add=True)
@@ -217,7 +182,7 @@ class InventoryTransaction(models.Model):
     ]
     lot = models.ForeignKey(Lot, on_delete=models.CASCADE, related_name="transactions")
     transaction_type = models.CharField(max_length=10, choices=TYPES)
-    quantity = models.DecimalField(max_digits=10, decimal_places=2)
+    quantity = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     reference = models.CharField(max_length=200, blank=True)
     notes = models.TextField(blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)

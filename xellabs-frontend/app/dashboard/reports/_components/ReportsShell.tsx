@@ -325,7 +325,10 @@ function ReportRow({
   showToast: (ok: boolean, msg: string) => void
 }) {
   const [report, setReport] = useState(initial)
-  const [polling, setPolling] = useState(initial.status === 'draft' && initial.report_type === 'coa')
+  // Polling starts ONLY when the user explicitly triggers generate/regenerate
+  // (those handlers call setPolling(true)). Auto-polling every draft COA on
+  // mount made idle drafts flash "Generating…" then "Failed" on page load.
+  const [polling, setPolling] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [timedOut, setTimedOut] = useState(false)
@@ -335,7 +338,6 @@ function ReportRow({
     // plain derived value — it needs resyncing whenever a new `initial` prop arrives.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setReport(initial)
-    if (initial.status === 'draft' && initial.report_type === 'coa') setPolling(true)
   }, [initial])
 
   useEffect(() => {

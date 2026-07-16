@@ -1,7 +1,12 @@
 'use client'
-import { useState, useRef, useEffect } from 'react'
-import { lookupChainOfCustody, type ChainOfCustodyResult, type CocSample, type CocEvent } from '@/app/actions/storage'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import {
+  lookupChainOfCustody, resolveStorageLabel, assignSampleByLabel,
+  type ChainOfCustodyResult, type CocSample, type CocEvent, type ResolvedLabel,
+} from '@/app/actions/storage'
 import { STICKER_TEMPLATES, renderSticker, stickerPageCss, printSticker, type StickerTemplate } from '@/app/lib/stickerTemplates'
+import QrScanModal from '@/app/dashboard/_components/QrScanModal'
+import { sampleDisplayId } from '@/app/lib/sampleDisplay'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -52,13 +57,18 @@ function eventMeta(ev: CocEvent): { label: string; icon: string; color: string }
     case 'stored':            return { label: `Stored in ${(ev.details?.storage_path as string) ?? 'Storage'}`, icon: 'inventory_2', color: '#0154FC' }
     case 'released':          return { label: 'Released from Storage', icon: 'link_off',      color: '#EF4444' }
     case 'status_change': {
-      const nc = (ev.details?.changes as Array<{ field: string; new: string | null }>)?.find(c => c.field === 'status')?.new ?? ''
-      if (nc === 'in_progress') return { label: 'Released for Testing', icon: 'person',    color: '#8B5CF6' }
-      if (nc === 'reviewed')    return { label: 'Results Reviewed',     icon: 'verified',  color: '#0891B2' }
-      if (nc === 'published')   return { label: 'Results Published',    icon: 'publish',   color: '#22C55E' }
-      if (nc === 'rejected')    return { label: 'Sample Rejected',      icon: 'cancel',    color: '#EF4444' }
+      const nc = (ev.details?.new_status as string) ?? ''
+      if (nc === 'in_progress')      return { label: 'Released for Testing', icon: 'person',    color: '#8B5CF6' }
+      if (nc === 'results_pending')  return { label: 'Results Pending',      icon: 'hourglass_top', color: '#F59E0B' }
+      if (nc === 'reviewed')         return { label: 'Results Reviewed',     icon: 'verified',  color: '#0891B2' }
+      if (nc === 'published')        return { label: 'Results Published',    icon: 'publish',   color: '#22C55E' }
+      if (nc === 'rejected')         return { label: 'Sample Rejected',      icon: 'cancel',    color: '#EF4444' }
       return { label: ev.label, icon: 'swap_horiz', color: '#8B5CF6' }
     }
+    case 'result_submitted': return { label: ev.label, icon: 'science',      color: '#8B5CF6' }
+    case 'result_verified':  return { label: ev.label, icon: 'verified',     color: '#0891B2' }
+    case 'result_rejected':  return { label: ev.label, icon: 'cancel',       color: '#EF4444' }
+    case 'ar_completed':     return { label: ev.label, icon: 'task_alt',     color: '#22C55E' }
     default: return { label: ev.label, icon: 'edit', color: '#F59E0B' }
   }
 }
@@ -77,6 +87,17 @@ function eventRows(ev: CocEvent, sample: CocSample | null): Array<{ key: string;
     if (ev.details?.slot_id)      rows.push({ key: 'Container', value: `Slot ${ev.details.slot_id as string}` })
     if (sample?.barcode)          rows.push({ key: 'Barcode',   value: sample.barcode })
   }
+  if (ev.event_type === 'result_submitted' || ev.event_type === 'result_verified') {
+    if (ev.details?.test)  rows.push({ key: 'Test',  value: ev.details.test as string })
+    if (ev.details?.value) rows.push({ key: 'Value', value: `${ev.details.value as string}${ev.details.unit ? ' ' + ev.details.unit : ''}` })
+  }
+  if (ev.event_type === 'result_rejected') {
+    if (ev.details?.test)    rows.push({ key: 'Test',    value: ev.details.test as string })
+    if (ev.details?.remarks) rows.push({ key: 'Remarks', value: ev.details.remarks as string })
+  }
+  if (ev.event_type === 'ar_completed' && ev.details?.ar_id) {
+    rows.push({ key: 'Analysis Request', value: ev.details.ar_id as string })
+  }
   return rows
 }
 
@@ -93,6 +114,25 @@ export default function ChainOfCustodyPage() {
   const [stickerPreviewDocHtml, setStickerPreviewDocHtml] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
+  // Storage assignment flow
+  const [pendingLabel, setPendingLabel] = useState<ResolvedLabel | null>(null)
+  const [assignOpen, setAssignOpen]     = useState(false)
+  const [assignMode, setAssignMode]     = useState<'assign' | 'transfer'>('assign')
+  const [labelInput, setLabelInput]     = useState('')
+  const [resolving, setResolving]       = useState(false)
+  const [resolveErr, setResolveErr]     = useState('')
+  const [scanOpen, setScanOpen]         = useState(false)
+  const [confirming, setConfirming]     = useState(false)
+  const [toast, setToast]               = useState<{ ok: boolean; msg: string } | null>(null)
+  const [historyOpen, setHistoryOpen]   = useState(false)
+  const [morePos, setMorePos]           = useState<{ top: number; right: number } | null>(null)
+  const moreBtnRef = useRef<HTMLButtonElement>(null)
+
+  function showToast(ok: boolean, msg: string) {
+    setToast({ ok, msg })
+    setTimeout(() => setToast(null), 4500)
+  }
+
   async function handleLookup(id?: string) {
     const sid = (id ?? sampleInput).trim()
     if (!sid) return
@@ -101,6 +141,62 @@ export default function ChainOfCustodyPage() {
     setLoading(false)
     if (!res.success || !res.data?.sample) { setError(res.message ?? `Sample "${sid}" not found.`); return }
     setResult(res.data)
+  }
+
+  function openAssign(mode: 'assign' | 'transfer') {
+    setAssignMode(mode); setLabelInput(''); setResolveErr(''); setAssignOpen(true)
+  }
+
+  function validateTarget(d: ResolvedLabel): string | null {
+    if (d.location_type === 'slot' && d.is_occupied) return 'That slot is already occupied — pick a free slot.'
+    if (d.location_type !== 'slot' && !d.next_free_slot) return 'No free slots available in that container.'
+    return null
+  }
+
+  async function handleResolve() {
+    const code = labelInput.trim()
+    if (!code) return
+    setResolving(true); setResolveErr('')
+    const res = await resolveStorageLabel(code)
+    setResolving(false)
+    if (!res.success || !res.data) { setResolveErr(res.message ?? 'Location not found.'); return }
+    const bad = validateTarget(res.data)
+    if (bad) { setResolveErr(bad); return }
+    setPendingLabel(res.data)
+    setAssignOpen(false)
+    setLabelInput('')
+  }
+
+  const handleScanDecode = useCallback(async (code: string): Promise<boolean> => {
+    const res = await resolveStorageLabel(code)
+    if (!res.success || !res.data) return false
+    if (res.data.location_type === 'slot' && res.data.is_occupied) return false
+    if (res.data.location_type !== 'slot' && !res.data.next_free_slot) return false
+    setPendingLabel(res.data)
+    setScanOpen(false)
+    return true
+  }, [])
+
+  async function handleConfirm() {
+    const s = result?.sample
+    if (!s || !pendingLabel || confirming) return
+    setConfirming(true)
+    const targetCode = pendingLabel.location_type === 'slot'
+      ? pendingLabel.label_code
+      : (pendingLabel.next_free_slot?.label_code ?? pendingLabel.label_code)
+    const res = await assignSampleByLabel(targetCode, s.sample_id)
+    setConfirming(false)
+    showToast(res.success, res.message)
+    if (res.success) {
+      setPendingLabel(null)
+      await handleLookup(s.sample_id)
+    }
+  }
+
+  function toggleMore() {
+    if (morePos) { setMorePos(null); return }
+    const rect = moreBtnRef.current!.getBoundingClientRect()
+    setMorePos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
   }
 
   const sample = result?.sample ?? null
@@ -136,7 +232,7 @@ export default function ChainOfCustodyPage() {
           <div className="flex items-center gap-1.5 text-xs" style={{ color: '#6B7280' }}>
             <span style={{ cursor: 'pointer', color: '#0154FC' }}>Samples</span>
             {sample && <><MI name="chevron_right" size={14} color="#9CA3AF" />
-              <span style={{ cursor: 'pointer', color: '#0154FC' }}>{sample.sample_id}</span></>}
+              <span style={{ cursor: 'pointer', color: '#0154FC' }}>{sampleDisplayId(sample)}</span></>}
             <MI name="chevron_right" size={14} color="#9CA3AF" />
             <span style={{ color: '#374151' }}>Store Sample</span>
           </div>
@@ -205,10 +301,30 @@ export default function ChainOfCustodyPage() {
                 </button>
               </div>
             )}
-            <button className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg"
+            <button ref={moreBtnRef} onClick={toggleMore}
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg"
               style={{ border: '1px solid #E5E7EB', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
               More Actions <MI name="keyboard_arrow_down" size={14} color="#6B7280" />
             </button>
+            {morePos && (
+              <>
+                <div onClick={() => setMorePos(null)} style={{ position: 'fixed', inset: 0, zIndex: 9998 }} />
+                <div style={{ position: 'fixed', top: morePos.top, right: morePos.right, zIndex: 9999, width: 200, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', padding: 4 }}>
+                  {[
+                    { label: 'Print Label', icon: 'print', disabled: !sample, run: () => setStickerPickerOpen(true) },
+                    { label: 'View Full History', icon: 'history', disabled: !sample, run: () => setHistoryOpen(true) },
+                    { label: 'Clear Sample', icon: 'close', disabled: !sample, run: () => { setResult(null); setSampleInput(''); setError(''); setPendingLabel(null) } },
+                  ].map(item => (
+                    <button key={item.label} disabled={item.disabled}
+                      onClick={() => { setMorePos(null); item.run() }}
+                      className="flex items-center gap-2 w-full text-left text-xs px-3 py-2 rounded-lg hover:bg-gray-50"
+                      style={{ background: 'none', border: 'none', color: item.disabled ? '#9CA3AF' : '#374151', cursor: item.disabled ? 'not-allowed' : 'pointer' }}>
+                      <MI name={item.icon} size={14} color={item.disabled ? '#9CA3AF' : '#6B7280'} /> {item.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -255,10 +371,10 @@ export default function ChainOfCustodyPage() {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
               {[
-                { label: 'Sample ID',        val: sample.sample_id,                isStatus: false, isBarcode: false },
+                { label: 'Sample ID',        val: sampleDisplayId(sample),         isStatus: false, isBarcode: false },
                 { label: 'Project / Client', val: sample.client,                   isStatus: false, isBarcode: false },
                 { label: 'Sample Type',      val: sample.sample_type,              isStatus: false, isBarcode: false },
-                { label: 'Barcode',          val: sample.barcode || sample.sample_id, isStatus: false, isBarcode: true },
+                { label: 'Barcode',          val: sample.barcode || sampleDisplayId(sample), isStatus: false, isBarcode: true },
                 { label: 'Status',           val: '',                              isStatus: true,  isBarcode: false },
               ].map(f => (
                 <div key={f.label}>
@@ -278,6 +394,7 @@ export default function ChainOfCustodyPage() {
               {sample.received_by  && <><span style={{ fontSize: 10, color: '#9CA3AF', marginLeft: 16 }}>Received by</span><span style={{ fontSize: 10, fontWeight: 500, color: '#374151' }}>{sample.received_by}</span></>}
               {sample.condition    && <><span style={{ fontSize: 10, color: '#9CA3AF', marginLeft: 16 }}>Condition</span><span style={{ fontSize: 10, fontWeight: 500, color: '#374151' }}>{sample.condition}</span></>}
               {sample.priority     && <><span style={{ fontSize: 10, color: '#9CA3AF', marginLeft: 16 }}>Priority</span><span style={{ fontSize: 10, fontWeight: 500, color: '#374151' }}>{sample.priority}</span></>}
+              {sample.batch_id     && <><span style={{ fontSize: 10, color: '#9CA3AF', marginLeft: 16 }}>Batch</span><span style={{ fontSize: 10, fontWeight: 500, color: '#374151' }}>{sample.batch_id}{sample.batch_sub_group ? ` (${sample.batch_sub_group})` : ''}</span></>}
               {sample.hold_for_qa  && <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 999, backgroundColor: '#FEF3C7', color: '#92400E', marginLeft: 16 }}>QA Hold</span>}
             </div>
             {sample.receipt_notes && (
@@ -308,7 +425,7 @@ export default function ChainOfCustodyPage() {
                 <div>
                   <p style={{ fontSize: 11, fontWeight: 700, color: '#166534', margin: '0 0 4px' }}>Barcode Scanned Successfully</p>
                   <p style={{ fontSize: 14, fontWeight: 700, color: '#111827', margin: '0 0 3px', fontFamily: 'monospace', letterSpacing: '0.05em' }}>
-                    {sample.barcode || sample.sample_id}
+                    {sample.barcode || sampleDisplayId(sample)}
                   </p>
                   {loc
                     ? <p style={{ fontSize: 11, color: '#6B7280', margin: 0 }}>{loc.storage_path.split(' / ').slice(-2).join(' / ')} • Slot {loc.slot_id}</p>
@@ -424,24 +541,48 @@ export default function ChainOfCustodyPage() {
           </div>
         )}
 
+        {/* Pending storage target */}
+        {sample && pendingLabel && (
+          <div className="flex items-center gap-2.5 rounded-xl px-4 py-3 mb-4" style={{ backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE' }}>
+            <MI name="add_location" size={16} color="#1D4ED8" />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: '#1D4ED8', margin: 0 }}>Storage target selected</p>
+              <p style={{ fontSize: 11, color: '#374151', margin: 0 }}>
+                {pendingLabel.path.join(' / ')}
+                {pendingLabel.location_type !== 'slot' && pendingLabel.next_free_slot ? ` → Slot ${pendingLabel.next_free_slot.slot_id}` : ''}
+                {' '}({pendingLabel.label_code})
+              </p>
+            </div>
+            <button onClick={() => setPendingLabel(null)} style={{ background: 'none', border: 'none', cursor: 'pointer' }} title="Clear target">
+              <MI name="close" size={14} color="#6B7280" />
+            </button>
+          </div>
+        )}
+
         {/* Action buttons */}
         {sample && (
           <div className="flex items-center gap-2">
-            <button className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium"
+            <button onClick={() => setScanOpen(true)}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium"
               style={{ border: '1px solid #D1D5DB', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
               <MI name="qr_code_scanner" size={15} color="#374151" /> Scan Barcode
             </button>
-            <button className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium"
+            <button onClick={() => openAssign('assign')}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium"
               style={{ border: '1px solid #D1D5DB', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
               <MI name="add_location" size={15} color="#374151" /> Assign Storage
             </button>
-            <button className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium"
-              style={{ border: '1px solid #D1D5DB', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
-              <MI name="swap_horiz" size={15} color="#374151" /> Transfer Custody
+            <button onClick={() => openAssign('transfer')} disabled={!loc}
+              title={loc ? undefined : 'Sample is not currently in storage'}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium"
+              style={{ border: '1px solid #D1D5DB', color: loc ? '#374151' : '#9CA3AF', backgroundColor: '#fff', cursor: loc ? 'pointer' : 'not-allowed', opacity: loc ? 1 : 0.6 }}>
+              <MI name="swap_horiz" size={15} color={loc ? '#374151' : '#9CA3AF'} /> Transfer Custody
             </button>
-            <button className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold text-white ml-auto"
-              style={{ backgroundColor: '#0154FC', cursor: 'pointer', border: 'none' }}>
-              <MI name="check_circle" size={15} color="#fff" /> Confirm Storage
+            <button onClick={handleConfirm} disabled={!pendingLabel || confirming}
+              title={pendingLabel ? undefined : 'Scan or assign a storage location first'}
+              className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold text-white ml-auto"
+              style={{ backgroundColor: '#0154FC', cursor: !pendingLabel || confirming ? 'not-allowed' : 'pointer', border: 'none', opacity: !pendingLabel || confirming ? 0.5 : 1 }}>
+              <MI name="check_circle" size={15} color="#fff" /> {confirming ? 'Storing…' : 'Confirm Storage'}
             </button>
           </div>
         )}
@@ -531,12 +672,126 @@ export default function ChainOfCustodyPage() {
         </div>
 
         <div className="px-4 py-3" style={{ borderTop: '1px solid #F3F4F6', flexShrink: 0 }}>
-          <button className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-xs font-medium"
-            style={{ border: '1px solid #E5E7EB', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
+          <button onClick={() => setHistoryOpen(true)} disabled={events.length === 0}
+            className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-xs font-medium"
+            style={{ border: '1px solid #E5E7EB', color: events.length ? '#374151' : '#9CA3AF', backgroundColor: '#fff', cursor: events.length ? 'pointer' : 'not-allowed', opacity: events.length ? 1 : 0.6 }}>
             <MI name="history" size={14} color="#6B7280" /> View Full History
           </button>
         </div>
       </div>
+
+      {/* ── Assign / Transfer storage modal ── */}
+      {assignOpen && sample && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100 }}>
+          <div onClick={() => setAssignOpen(false)} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(17,24,39,0.55)' }} />
+          <div className="bg-white" style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 420, maxWidth: '92vw', padding: 20, boxShadow: '-6px 0 32px rgba(0,0,0,0.15)', overflowY: 'auto' }}>
+            <div className="flex items-center justify-between mb-1">
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>
+                {assignMode === 'transfer' ? 'Transfer Custody' : 'Assign Storage'}
+              </span>
+              <button onClick={() => setAssignOpen(false)} style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
+                <MI name="close" size={16} color="#6B7280" />
+              </button>
+            </div>
+            <p style={{ fontSize: 11, color: '#6B7280', margin: '0 0 14px' }}>
+              {assignMode === 'transfer'
+                ? `Enter the label code of the new location for ${sampleDisplayId(sample)}. Confirming will move the sample out of its current slot.`
+                : `Enter a storage label code (box, rack or slot) for ${sampleDisplayId(sample)}.`}
+            </p>
+            <div className="flex gap-2">
+              <input autoFocus value={labelInput}
+                onChange={e => { setLabelInput(e.target.value); setResolveErr('') }}
+                onKeyDown={e => e.key === 'Enter' && handleResolve()}
+                placeholder="e.g. BOX-A-01 or SLOT-A-01-05"
+                className="flex-1 outline-none text-sm px-3 py-2.5 rounded-xl"
+                style={{ border: `1px solid ${resolveErr ? '#EF4444' : '#D1D5DB'}`, color: '#111827' }} />
+              <button onClick={handleResolve} disabled={!labelInput.trim() || resolving}
+                className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
+                style={{ backgroundColor: '#0154FC', border: 'none', cursor: !labelInput.trim() || resolving ? 'not-allowed' : 'pointer', opacity: !labelInput.trim() || resolving ? 0.6 : 1 }}>
+                {resolving ? 'Checking…' : 'Select'}
+              </button>
+            </div>
+            {resolveErr && <p className="text-xs mt-2" style={{ color: '#EF4444' }}>{resolveErr}</p>}
+            <button onClick={() => { setAssignOpen(false); setScanOpen(true) }}
+              className="flex items-center gap-1.5 text-xs mt-3"
+              style={{ color: '#0154FC', background: 'none', border: 'none', cursor: 'pointer' }}>
+              <MI name="qr_code_scanner" size={14} color="#0154FC" /> Scan a location label instead
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Camera scan for storage location ── */}
+      {scanOpen && (
+        <QrScanModal
+          title="Scan Storage Label"
+          hint="Point the camera at the storage box / slot label."
+          onClose={() => setScanOpen(false)}
+          onDecode={handleScanDecode}
+        />
+      )}
+
+      {/* ── Full history modal ── */}
+      {historyOpen && (
+        <div onClick={e => { if (e.currentTarget === e.target) setHistoryOpen(false) }}
+          style={{ position: 'fixed', inset: 0, zIndex: 100, backgroundColor: 'rgba(17,24,39,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="bg-white rounded-2xl flex flex-col" style={{ width: 560, maxWidth: '94vw', maxHeight: '84vh', overflow: 'hidden' }}>
+            <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #F3F4F6', flexShrink: 0 }}>
+              <div className="flex items-center gap-2">
+                <MI name="history" size={16} color="#0154FC" />
+                <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>
+                  Full Custody History{sample ? ` — ${sampleDisplayId(sample)}` : ''}
+                </span>
+              </div>
+              <button onClick={() => setHistoryOpen(false)} style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
+                <MI name="close" size={18} color="#6B7280" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto" style={{ padding: '16px 20px' }}>
+              {events.map(ev => {
+                const meta = eventMeta(ev)
+                const rows = eventRows(ev, sample)
+                const changes = (ev.details?.changes as Array<{ field: string; old: string | null; new: string | null }>) ?? []
+                return (
+                  <div key={ev.id} className="flex gap-3 mb-4">
+                    <div style={{ width: 28, height: 28, borderRadius: '50%', backgroundColor: meta.color + '1A', border: `2px solid ${meta.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <MI name={meta.icon} size={13} color={meta.color} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="flex items-start justify-between gap-2">
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#111827' }}>{meta.label}</span>
+                        <span style={{ fontSize: 10, color: '#9CA3AF', whiteSpace: 'nowrap' }}>{fmtDateShort(ev.timestamp)} • {fmtTime(ev.timestamp)}</span>
+                      </div>
+                      {rows.map(row => (
+                        <div key={row.key} style={{ display: 'flex', gap: 8 }}>
+                          <span style={{ fontSize: 10, color: '#9CA3AF', minWidth: 64 }}>{row.key}</span>
+                          <span style={{ fontSize: 10, fontWeight: 500, color: '#111827', wordBreak: 'break-word' }}>{row.value}</span>
+                        </div>
+                      ))}
+                      {changes.map((c, ci) => (
+                        <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#6B7280' }}>
+                          <span style={{ color: '#9CA3AF', minWidth: 64 }}>{c.field.replace(/_/g, ' ')}</span>
+                          <span style={{ color: '#EF4444' }}>{c.old || '—'}</span>
+                          <MI name="arrow_forward" size={10} color="#9CA3AF" />
+                          <span style={{ color: '#22C55E' }}>{c.new || '—'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Toast ── */}
+      {toast && (
+        <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 200, display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderRadius: 12, backgroundColor: toast.ok ? '#F0FDF4' : '#FEF2F2', border: `1px solid ${toast.ok ? '#BBF7D0' : '#FECACA'}`, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
+          <MI name={toast.ok ? 'check_circle' : 'error'} size={16} color={toast.ok ? '#16A34A' : '#DC2626'} />
+          <span style={{ fontSize: 12, fontWeight: 500, color: toast.ok ? '#166534' : '#991B1B' }}>{toast.msg}</span>
+        </div>
+      )}
     </div>
   )
 }

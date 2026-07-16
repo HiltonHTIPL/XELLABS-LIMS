@@ -7,7 +7,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 
-from core.test_utils import TenantAPITestCase
+from core.tenant_test import TenantAPITestCase
 
 from instruments.models import Instrument, Calibration
 from instruments import services as instrument_services

@@ -1,8 +1,9 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { useRouter } from 'next/navigation'
-import { type LabSample, type SampleStats, type DjangoSampleType, patchLabSample } from '@/app/actions/lab-samples'
-import { type DjangoClient } from '@/app/actions/clients'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { type LabSample, type DjangoSampleType, patchLabSample } from '@/app/actions/lab-samples'
+import { type SenaiteClientFull } from '@/app/lib/senaite'
+import { sampleDisplayId as displayId } from '@/app/lib/sampleDisplay'
 import DisposeSampleModal from './DisposeSampleModal'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
@@ -39,7 +40,6 @@ const STATUS_OPTIONS = [
   { value: 'received',        label: 'Received' },
   { value: 'in_progress',     label: 'In Process' },
   { value: 'results_pending', label: 'To Be Verified' },
-  { value: 'reviewed',        label: 'Reviewed' },
   { value: 'on_hold_for_qa',  label: 'On Hold for QA' },
   { value: 'published',       label: 'Completed' },
   { value: 'rejected',        label: 'Rejected' },
@@ -86,7 +86,7 @@ const STAT_CARDS = [
   { key: 'to_be_verified', label: 'To Be Verified',   icon: 'pending_actions', iconColor: '#F59E0B', iconBg: '#FFFBEB' },
   { key: 'on_hold_for_qa', label: 'On Hold for QA',   icon: 'pause_circle',    iconColor: '#F97316', iconBg: '#FFF7ED' },
   { key: 'completed',      label: 'Completed',        icon: 'check_circle',    iconColor: '#0154FC', iconBg: '#DBEAFE' },
-  { key: 'overdue',        label: 'Past Retention', icon: 'schedule',        iconColor: '#EF4444', iconBg: '#FEF2F2' },
+  { key: 'overdue',        label: 'Overdue',          icon: 'schedule',        iconColor: '#EF4444', iconBg: '#FEF2F2' },
 ] as const
 
 function tatDays(receivedDate: string | null, nowMs: number | null): number | null {
@@ -114,10 +114,15 @@ function fmt(dateStr: string | null): string {
 }
 
 // ── Main Shell ────────────────────────────────────────────────────────────────
-type Props = { initialSamples: LabSample[]; sampleTypes: DjangoSampleType[]; stats: SampleStats; clients: DjangoClient[] }
+type Props = { initialSamples: LabSample[]; sampleTypes: DjangoSampleType[]; clients: SenaiteClientFull[] }
 
-export default function SamplesOverviewShell({ initialSamples, sampleTypes, stats, clients }: Props) {
+export default function SamplesOverviewShell({ initialSamples, sampleTypes, clients }: Props) {
   const router = useRouter()
+  // Pre-select a Client when arriving from that client's "Client ID" link
+  // (/dashboard/samples-overview?client=<senaite-uid>). The SENAITE uid is the
+  // single client identity used everywhere — samples carry it as
+  // client_senaite_uid, so the filter matches on it directly (no Django id).
+  const initialClientId = useSearchParams().get('client') ?? ''
   const [samples, setSamples] = useState(initialSamples)
   const [nowMs, setNowMs] = useState<number | null>(null)
   useEffect(() => {
@@ -128,7 +133,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
   }, [])
   const [search, setSearch] = useState('')
   const [filterSampleType, setFilterSampleType] = useState('')
-  const [filterClient, setFilterClient] = useState('')
+  const [filterClient, setFilterClient] = useState(initialClientId)
   const [filterStatus, setFilterStatus] = useState('')
   const [filterPriority, setFilterPriority] = useState('')
   const [filterFrom, setFilterFrom] = useState('')
@@ -140,23 +145,47 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
   const [actionMenu, setActionMenu] = useState<{ id: number; top: number; right: number } | null>(null)
   const PAGE_SIZE = 25
 
-  const filtered = samples.filter(s => {
-    if (search && !s.sample_id.toLowerCase().includes(search.toLowerCase()) &&
+  // Base filters exclude the status/overdue toggle so the stat cards (which ARE
+  // the status buckets) don't collapse when one status is selected. The client
+  // filter matches on the SENAITE client uid carried on each sample.
+  function matchesBaseFilters(s: LabSample): boolean {
+    if (search && !displayId(s).toLowerCase().includes(search.toLowerCase()) &&
         !s.client_name.toLowerCase().includes(search.toLowerCase())) return false
     if (filterSampleType && String(s.sample_type) !== filterSampleType) return false
-    if (filterClient && String(s.client) !== filterClient) return false
+    if (filterClient && s.client_senaite_uid !== filterClient) return false
+    if (filterPriority && s.priority !== filterPriority) return false
+    if (filterFrom && s.received_date && new Date(s.received_date) < new Date(filterFrom)) return false
+    if (filterTo && s.received_date && new Date(s.received_date) > new Date(filterTo)) return false
     // Active lists exclude disposed; use Status → Disposed to see them.
     if (!filterStatus && !filterOverdue && s.status === 'disposed') return false
+    return true
+  }
+
+  const filtered = samples.filter(s => {
+    if (!matchesBaseFilters(s)) return false
     if (filterStatus) {
       if (filterStatus === 'on_hold_for_qa') { if (!s.hold_for_qa) return false }
       else { if (s.status !== filterStatus) return false }
     }
-    if (filterPriority && s.priority !== filterPriority) return false
-    if (filterFrom && s.received_date && new Date(s.received_date) < new Date(filterFrom)) return false
-    if (filterTo && s.received_date && new Date(s.received_date) > new Date(filterTo)) return false
     if (filterOverdue && !isOverdueSample(s)) return false
     return true
   })
+
+  // Stat-card counts derive from the same in-memory sample set the table uses,
+  // scoped by the base filters (incl. the selected client) but NOT by the
+  // status/overdue toggle — so each card shows how many of that client's
+  // samples sit in each status.
+  const statScope = samples.filter(matchesBaseFilters)
+  const statCounts: Record<string, number> = {
+    all: statScope.length,
+    logged: statScope.filter(s => s.status === 'registered').length,
+    received: statScope.filter(s => s.status === 'received').length,
+    in_process: statScope.filter(s => s.status === 'in_progress').length,
+    to_be_verified: statScope.filter(s => s.status === 'results_pending').length,
+    on_hold_for_qa: statScope.filter(s => s.hold_for_qa).length,
+    completed: statScope.filter(s => s.status === 'published').length,
+    overdue: statScope.filter(isOverdueSample).length,
+  }
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -204,7 +233,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
   function handleExport() {
     const headers = ['Sample ID', 'Client', 'Sample Type', 'Condition', 'Status', 'Priority', 'Received Date', 'Due Date', 'Storage']
     const rows = filtered.map(s => [
-      s.sample_id, s.client_name, s.sample_type_name, s.condition || '',
+      displayId(s), s.client_name, s.sample_type_name, s.condition || '',
       getSampleStatusDisplay(s).label, s.priority || '', fmt(s.received_date), fmt(s.expiry_date), s.storage_location || '',
     ])
     const esc = (v: string) => (v.includes(',') || v.includes('"') ? `"${v.replace(/"/g, '""')}"` : v)
@@ -292,7 +321,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
     }
   }
 
-  // ── Dispose (status → disposed + regulatory basis + optional certificate) ──
+  // ── Dispose (regulatory basis + optional certificate) ──
   const [disposeTarget, setDisposeTarget] = useState<LabSample | null>(null)
 
   const sel ={ border: '1px solid #D1D5DB', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: '#374151', background: '#fff', outline: 'none', cursor: 'pointer' as const }
@@ -356,7 +385,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
         {/* ── STATIC: stat cards ── */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 10, marginBottom: 20, flexShrink: 0 }}>
           {STAT_CARDS.map(card => {
-            const count = card.key === 'all' ? samples.length : stats[card.key as keyof SampleStats]
+            const count = statCounts[card.key] ?? 0
             const isActive = card.key === 'all'
               ? (filterStatus === '' && !filterOverdue)
               : card.key === 'overdue' ? filterOverdue : (filterStatus !== '' && filterStatus === STAT_CARD_STATUS[card.key])
@@ -395,7 +424,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
             </select>
             <select value={filterClient} onChange={e => { setFilterClient(e.target.value); setPage(1) }} style={sel}>
               <option value="">All Clients</option>
-              {clients.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+              {clients.map(c => <option key={c.uid} value={c.uid}>{c.title}</option>)}
             </select>
             <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(1) }} style={sel}>
               {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -502,7 +531,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
                       <td style={{ padding: '10px 12px', whiteSpace: 'nowrap', minWidth: 120 }}>
                         <span style={{ color: '#2563EB', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', whiteSpace: 'nowrap', display: 'inline-block' }}
                           onClick={() => router.push(`/dashboard/samples-overview/${s.id}`)}>
-                          {s.sample_id}
+                          {displayId(s)}
                         </span>
                       </td>
                       {vis('client')        && <td style={{ padding: '10px 12px', color: '#374151' }}>{s.client_name}</td>}
@@ -705,14 +734,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
               { icon: 'visibility',     label: 'View Details',   action: () => router.push(`/dashboard/samples-overview/${actionMenu.id}`) },
               { icon: 'move_to_inbox',  label: 'Receive Sample', action: () => { router.push(`/dashboard/sample-receipts?id=${actionMenu.id}`); setActionMenu(null) } },
               { icon: 'edit',           label: 'Edit Sample',    action: () => router.push(`/dashboard/samples-overview/${actionMenu.id}?edit=1`) },
-              ...( ['received', 'results_pending', 'reviewed', 'published'].includes(
-                    samples.find(x => x.id === actionMenu.id)?.status ?? ''
-                  )
-                ? [{ icon: 'delete_forever', label: 'Dispose Sample', action: () => {
-                    const s = samples.find(x => x.id === actionMenu.id)
-                    if (s) setDisposeTarget(s)
-                  }, danger: true as const }]
-                : []),
+              { icon: 'delete_outline', label: 'Dispose', action: () => setDisposeTarget(samples.find(s => s.id === actionMenu.id) ?? null), danger: true },
             ].map(item => (
               <button key={item.label} onClick={() => { item.action(); setActionMenu(null) }}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: (item as { danger?: boolean }).danger ? '#EF4444' : '#374151', textAlign: 'left' }}>
@@ -727,19 +749,14 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
       {disposeTarget && (
         <DisposeSampleModal
           sampleId={disposeTarget.id}
-          sampleLabel={disposeTarget.sample_id}
+          sampleLabel={displayId(disposeTarget)}
           onClose={() => setDisposeTarget(null)}
           onDisposed={update => {
-            setSamples(prev => prev.map(s => (
+            setSamples(prev => prev.map(s =>
               s.id === disposeTarget.id
-                ? {
-                    ...s,
-                    status: update.status,
-                    description: update.description ?? s.description,
-                    attachment_url: update.attachment_url ?? s.attachment_url,
-                  }
+                ? { ...s, ...update }
                 : s
-            )))
+            ))
           }}
         />
       )}

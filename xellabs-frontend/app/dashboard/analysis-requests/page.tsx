@@ -1,13 +1,13 @@
 import { getAnalysisRequests } from '@/app/actions/analysis-requests'
 import { getLabSamples } from '@/app/actions/lab-samples'
-import { getTests } from '@/app/actions/tests'
+import { getAnalysisServices } from '@/app/actions/samples'
 import ARShell from './_components/ARShell'
 
 export default async function AnalysisRequestsPage() {
-  const [ars, samples, tests] = await Promise.all([
+  const [ars, samples, services] = await Promise.all([
     getAnalysisRequests(),
     getLabSamples(),
-    getTests(),
+    getAnalysisServices(),
   ])
-  return <ARShell initialARs={ars} samples={samples} tests={tests} />
+  return <ARShell initialARs={ars} samples={samples} services={services} />
 }

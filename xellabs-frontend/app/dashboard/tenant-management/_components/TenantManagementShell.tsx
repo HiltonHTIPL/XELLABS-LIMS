@@ -16,7 +16,7 @@ const inputStyle: React.CSSProperties = {
   border: '1px solid #E5E7EB', outline: 'none', color: '#111827',
 }
 
-export default function TenantManagementShell({ tenants, orgSchema }: { tenants: TenantDetail[]; orgSchema?: string }) {
+export default function TenantManagementShell({ tenants }: { tenants: TenantDetail[] }) {
   const router = useRouter()
   const [showForm, setShowForm] = useState(false)
   const [state, formAction, pending] = useActionState<TenantFormState, FormData>(createTenant, {})
@@ -119,7 +119,7 @@ export default function TenantManagementShell({ tenants, orgSchema }: { tenants:
           </thead>
           <tbody>
             {tenants.filter(t => t.schema_name !== 'public').map(t => (
-              <TenantRow key={t.id} tenant={t} isOrgAccount={t.schema_name === orgSchema} onChanged={() => router.refresh()} />
+              <TenantRow key={t.id} tenant={t} onChanged={() => router.refresh()} />
             ))}
             {tenants.filter(t => t.schema_name !== 'public').length === 0 && (
               <tr><td colSpan={7} className="px-3 py-6 text-center text-xs" style={{ color: '#9CA3AF' }}>No organisations yet.</td></tr>
@@ -131,7 +131,7 @@ export default function TenantManagementShell({ tenants, orgSchema }: { tenants:
   )
 }
 
-function TenantRow({ tenant, isOrgAccount, onChanged }: { tenant: TenantDetail; isOrgAccount?: boolean; onChanged: () => void }) {
+function TenantRow({ tenant, onChanged }: { tenant: TenantDetail; onChanged: () => void }) {
   const [busy, startTransition] = useTransition()
   const fileRef = useRef<HTMLInputElement>(null)
   const primaryDomain = tenant.domains.find(d => !d.domain.endsWith('.localhost'))?.domain
@@ -158,14 +158,7 @@ function TenantRow({ tenant, isOrgAccount, onChanged }: { tenant: TenantDetail; 
         </div>
       </td>
       <td className="px-3 py-2">
-        <div className="flex items-center gap-1.5">
-          <p className="text-xs font-medium" style={{ color: '#111827' }}>{tenant.name}</p>
-          {isOrgAccount && (
-            <span className="font-semibold px-1.5 py-0.5 rounded" style={{ fontSize: 9, backgroundColor: '#EEF2FF', color: '#4338CA', border: '1px solid #C7D2FE', whiteSpace: 'nowrap' }}>
-              Org Account
-            </span>
-          )}
-        </div>
+        <p className="text-xs font-medium" style={{ color: '#111827' }}>{tenant.name}</p>
         <p className="font-mono" style={{ fontSize: 10, color: '#9CA3AF' }}>{tenant.slug}</p>
       </td>
       <td className="px-3 py-2">
@@ -201,17 +194,14 @@ function TenantRow({ tenant, isOrgAccount, onChanged }: { tenant: TenantDetail; 
               <MI name="hide_image" size={13} color="#DC2626" />
             </button>
           )}
-          {/* The platform's own org account can never be deactivated from the UI */}
-          {!isOrgAccount && (
-            <button
-              title={tenant.is_active ? 'Deactivate' : 'Activate'} disabled={busy}
-              onClick={() => startTransition(async () => { await toggleTenantActive(tenant.id, !tenant.is_active); onChanged() })}
-              className="p-1.5 rounded-lg"
-              style={{ border: '1px solid #E5E7EB', cursor: busy ? 'not-allowed' : 'pointer' }}
-            >
-              <MI name={tenant.is_active ? 'toggle_on' : 'toggle_off'} size={16} color={tenant.is_active ? '#0154FC' : '#9CA3AF'} />
-            </button>
-          )}
+          <button
+            title={tenant.is_active ? 'Deactivate' : 'Activate'} disabled={busy}
+            onClick={() => startTransition(async () => { await toggleTenantActive(tenant.id, !tenant.is_active); onChanged() })}
+            className="p-1.5 rounded-lg"
+            style={{ border: '1px solid #E5E7EB', cursor: busy ? 'not-allowed' : 'pointer' }}
+          >
+            <MI name={tenant.is_active ? 'toggle_on' : 'toggle_off'} size={16} color={tenant.is_active ? '#0154FC' : '#9CA3AF'} />
+          </button>
         </div>
       </td>
     </tr>

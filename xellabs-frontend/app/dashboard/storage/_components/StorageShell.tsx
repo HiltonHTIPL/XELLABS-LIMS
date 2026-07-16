@@ -13,6 +13,7 @@ import SampleInfoPanel from './SampleInfoPanel'
 import SlotAssignModal from './SlotAssignModal'
 import HistoryModal from './HistoryModal'
 import BulkStoreModal from './BulkStoreModal'
+import { sampleDisplayId } from '@/app/lib/sampleDisplay'
 import QrScanModal from '@/app/dashboard/_components/QrScanModal'
 
 type Mode = 'store' | 'move' | 'retrieve'
@@ -30,7 +31,7 @@ function MI({ name, size = 16, color }: { name: string; size?: number; color?: s
 }
 
 const TYPE_ICONS: Record<string, string> = {
-  room: 'meeting_room', fridge: 'thermostat', freezer: 'ac_unit',
+  building: 'apartment', room: 'meeting_room', fridge: 'thermostat', freezer: 'ac_unit',
   cabinet: 'inventory_2', shelf: 'view_agenda', box: 'grid_view',
 }
 
@@ -156,13 +157,14 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
   async function handleMoveSample() {
     const targetSlot = locations.find(l => l.id === selectedSlotId)
     if (!targetSlot || targetSlot.is_occupied) return
-    const sampleId = scannedResult?.sample?.sample_id
-    if (!sampleId) { showToast(false, 'Scan a stored sample first.'); return }
+    const sample = scannedResult?.sample
+    const sampleId = sample?.sample_id
+    if (!sample || !sampleId) { showToast(false, 'Scan a stored sample first.'); return }
     const currentSlot = findSlotForSample(sampleId)
     if (!currentSlot) { showToast(false, 'That sample is not currently stored — use Store instead.'); return }
     if (currentSlot.id === targetSlot.id) { showToast(false, 'Sample is already in that slot.'); return }
     const res = await assignSampleToSlot(targetSlot.id, sampleId)
-    showToast(res.success, res.success ? `Moved ${sampleId} to slot ${targetSlot.slot_id}.` : res.message)
+    showToast(res.success, res.success ? `Moved ${sampleDisplayId(sample)} to slot ${targetSlot.slot_id}.` : res.message)
     if (res.success) {
       await refreshLocations()
       setSelectedSlotId(null)
@@ -172,12 +174,13 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
   }
 
   async function handleRetrieveSample() {
-    const sampleId = scannedResult?.sample?.sample_id
-    if (!sampleId) { showToast(false, 'Scan a stored sample first.'); return }
+    const sample = scannedResult?.sample
+    const sampleId = sample?.sample_id
+    if (!sample || !sampleId) { showToast(false, 'Scan a stored sample first.'); return }
     const currentSlot = findSlotForSample(sampleId)
     if (!currentSlot) { showToast(false, 'That sample is not currently stored.'); return }
     const res = await releaseSampleFromSlot(currentSlot.id)
-    showToast(res.success, res.success ? `Retrieved ${sampleId} from slot ${currentSlot.slot_id}.` : res.message)
+    showToast(res.success, res.success ? `Retrieved ${sampleDisplayId(sample)} from slot ${currentSlot.slot_id}.` : res.message)
     if (res.success) {
       await refreshLocations()
       const fresh = await lookupChainOfCustody(sampleId)
@@ -505,7 +508,7 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
       )}
       {showHistory && scannedResult && (
         <HistoryModal
-          sampleId={scannedResult.sample_id}
+          sampleId={scannedResult.sample ? sampleDisplayId(scannedResult.sample) : scannedResult.sample_id}
           events={scannedResult.history}
           onClose={() => setShowHistory(false)}
         />

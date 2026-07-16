@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache'
 import { getSession } from '@/app/lib/session'
 import { djangoFetch } from '@/app/lib/django'
 import { fetchSenaiteClients } from '@/app/lib/senaite'
+import { sessionToken } from '@/app/lib/senaite-auth'
 
 export type SenaiteAddress = {
   address: string
@@ -16,8 +17,8 @@ export type DjangoClient = {
   id: number
   name: string
   client_id: string
-  tenant_detail?: { id: number; name: string; slug: string; schema_name: string; logo?: string | null } | null
-  logo_url?: string | null
+  organization_type: string
+  tenant_detail?: { id: number; name: string; slug: string; schema_name: string } | null
   email: string
   phone: string
   fax: string
@@ -30,6 +31,7 @@ export type DjangoClient = {
   contact_phone: string
   contact_job_title: string
   contact_department: string
+  cc_emails: string
   address: string
   physical_address: SenaiteAddress | Record<string, never>
   postal_address: SenaiteAddress | Record<string, never>
@@ -95,17 +97,17 @@ export async function resetClientPassword(
   }
 }
 
-export async function checkClientIdAvailable(clientId: string, excludeId?: number): Promise<boolean> {
+export async function checkClientIdAvailable(clientId: string, excludeId?: number): Promise<boolean | null> {
   const trimmed = clientId.trim().toUpperCase()
   if (!trimmed) return true
   try {
     const res = await djangoFetch(`/api/clients/?search=${encodeURIComponent(trimmed)}`)
-    if (!res.ok) return true // fail open — the real uniqueness check still runs server-side on submit
+    if (!res.ok) return null // Return null on API error instead of fail-open
     const data = await res.json()
     const list: DjangoClient[] = data.results ?? data
     return !list.some(c => c.client_id?.toUpperCase() === trimmed && c.id !== excludeId)
   } catch {
-    return true
+    return null // Return null on network error — UI should show validation error
   }
 }
 
@@ -120,11 +122,31 @@ export async function getClient(id: number): Promise<DjangoClient | null> {
 }
 
 export async function getClients(): Promise<DjangoClient[]> {
+  // The /dashboard/clients admin page is fully SENAITE-native (senaite-clients.ts
+  // never calls Django), so a client created or edited there never gets a Django
+  // mirror row — invisible to every other feature reading this function (New
+  // Sample's dropdown, Reports, Samples pages) until synced. syncClientsFromSenaite()
+  // already existed for exactly this (committed since 89c3be6) but was never
+  // actually called from anywhere — same "sync before dropdown" pattern as
+  // syncSampleTypesFromSenaite(), just never wired in. Best-effort: a sync
+  // failure (e.g. not logged in as a XelLabs user) just means this returns
+  // whatever Django already has, not a hard error for the caller.
+  await syncClientsFromSenaite().catch(() => null)
+  // Follow DRF pagination — a single unparameterised fetch returned only the
+  // first 50 clients, truncating every client dropdown.
   try {
-    const res = await djangoFetch('/api/clients/')
-    if (!res.ok) return []
-    const data = await res.json()
-    return data.results ?? data
+    const all: DjangoClient[] = []
+    let page = 1
+    while (page) {
+      const res = await djangoFetch(`/api/clients/?page=${page}&page_size=200`)
+      if (!res.ok) break
+      const data = await res.json()
+      const items: DjangoClient[] = data.results ?? data
+      all.push(...items)
+      if (!Array.isArray(data.results) || !data.next) break
+      page += 1
+    }
+    return all
   } catch {
     return []
   }
@@ -169,9 +191,7 @@ export async function syncClientsFromSenaite(): Promise<SyncResult> {
   }
 
   // 2. Fetch all clients from SENAITE (raw fetch — not a Django endpoint)
-  const SENAITE_USER = process.env.SENAITE_ADMIN_USER ?? 'admin'
-  const SENAITE_PASS = process.env.SENAITE_ADMIN_PASS ?? 'admin'
-  const senaiteToken = session.senaiteToken ?? Buffer.from(`${SENAITE_USER}:${SENAITE_PASS}`).toString('base64')
+  const senaiteToken = sessionToken(session)
   const senaiteClients = await fetchSenaiteClients(senaiteToken)
   if (senaiteClients.length === 0) {
     return { success: false, message: 'No clients found in XelLabs. Verify XelLabs is running and you are logged in as a XelLabs user.', created: 0, updated: 0, total: 0 }
@@ -217,7 +237,12 @@ export async function syncClientsFromSenaite(): Promise<SyncResult> {
     }
   }
 
-  revalidatePath('/dashboard/clients')
+  // No revalidatePath here — this is called during a Server Component's own
+  // render (samples-overview/new's page.tsx, mirroring syncSampleTypesFromSenaite's
+  // render-safe pattern in lab-samples.ts), and revalidatePath is only valid
+  // from a Server Action or Route Handler, not mid-render (confirmed: caused
+  // a hard render error there). Not currently wired to any manual "Sync"
+  // button elsewhere, so nothing depends on the stale-cache invalidation.
   return {
     success: failed === 0,
     message: failed === 0
@@ -245,12 +270,13 @@ export async function updateClient(
   if (Object.keys(errors).length > 0) return { errors }
 
   const payload = {
-    name, client_id,
+    name, client_id, organization_type: g('organization_type'),
     email: g('email'), phone: g('phone'), fax: g('fax'), mobile: g('mobile'),
     contact_person: g('contact_person'), salutation: g('salutation'),
     contact_first_name: g('contact_first_name'), contact_last_name: g('contact_last_name'),
     contact_email: g('contact_email'), contact_phone: g('contact_phone'),
     contact_job_title: g('contact_job_title'), contact_department: g('contact_department'),
+    cc_emails: g('cc_emails'),
     physical_address: addr(formData, 'physical'),
     postal_address:   addr(formData, 'postal'),
     billing_address:  addr(formData, 'billing'),
@@ -297,12 +323,13 @@ export async function createClient(
   if (Object.keys(errors).length > 0) return { errors }
 
   const payload = {
-    name, client_id,
+    name, client_id, organization_type: g('organization_type'),
     email:  g('email'), phone: g('phone'), fax: g('fax'), mobile: g('mobile'),
     contact_person: g('contact_person'), salutation: g('salutation'),
     contact_first_name: g('contact_first_name'), contact_last_name: g('contact_last_name'),
     contact_email: g('contact_email'), contact_phone: g('contact_phone'),
     contact_job_title: g('contact_job_title'), contact_department: g('contact_department'),
+    cc_emails: g('cc_emails'),
     physical_address: addr(formData, 'physical'),
     postal_address:   addr(formData, 'postal'),
     billing_address:  addr(formData, 'billing'),

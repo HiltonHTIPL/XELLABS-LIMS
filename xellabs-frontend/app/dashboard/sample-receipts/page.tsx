@@ -1,4 +1,5 @@
 import { getLabSample } from '@/app/actions/lab-samples'
+import { getSamplingDeviations } from '@/app/actions/reference-data'
 import SampleReceiptShell from './_components/SampleReceiptShell'
 
 export default async function SampleReceiptPage({
@@ -7,7 +8,10 @@ export default async function SampleReceiptPage({
   searchParams: Promise<{ id?: string }>
 }) {
   const { id } = await searchParams
-  const sample = id ? await getLabSample(Number(id)) : null
+  const [sample, samplingDeviations] = await Promise.all([
+    id ? getLabSample(Number(id)) : Promise.resolve(null),
+    getSamplingDeviations(),
+  ])
 
-  return <SampleReceiptShell sample={sample} hasId={!!id} />
+  return <SampleReceiptShell sample={sample} hasId={!!id} samplingDeviations={samplingDeviations} />
 }

@@ -3,15 +3,20 @@ import { useState, useTransition, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { receiveSample, verifySample, publishSample, type WorkflowResult } from '@/app/actions/samples'
-import { SenaiteSample, SenaiteSampleType, SenaiteAnalysisService, mapSenaiteState, mapSenaitePriority } from '@/app/lib/senaite'
+import { SenaiteSample, SenaiteSampleType, SenaiteAnalysisService, SenaiteSampleTemplate, SenaiteRefOption, mapSenaiteState, mapSenaitePriority } from '@/app/lib/senaite'
 import { DjangoClient } from '@/app/actions/clients'
+import { AnalysisProfile } from '@/app/actions/analysis-profiles'
 import { T, MI, PageHeader, StatCard, Chip, StatusChip, Btn, IconBtn, Card, thStyle, tdStyle, linkStyle, Pagination, EmptyState } from '../../_components/ui'
+import NewSamplePage from '../new/_components/NewSamplePage'
 
 type Props = {
   initialSamples: SenaiteSample[]
   clients: DjangoClient[]
   sampleTypes: SenaiteSampleType[]
   analysisServices: SenaiteAnalysisService[]
+  sampleTemplates: SenaiteSampleTemplate[]
+  sampleContainers: SenaiteRefOption[]
+  analysisProfiles: AnalysisProfile[]
 }
 type ClientOption = { uid: string; name: string; client_id: string }
 
@@ -26,9 +31,10 @@ const PAGE_SIZE = 25
 const SAVED_VIEWS_LS_KEY = 'xl_senaite_samples_saved_views'
 type SavedView = { name: string; filters: { search: string; status: string; priority: string; sampleType: string; client: string } }
 
-export default function SamplesShell({ initialSamples, clients, sampleTypes, analysisServices }: Props) {
+export default function SamplesShell({ initialSamples, clients, sampleTypes, analysisServices, sampleTemplates, sampleContainers, analysisProfiles }: Props) {
   const router = useRouter()
   const [samples] = useState(initialSamples)
+  const [showNewSample, setShowNewSample] = useState(false)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterPriority, setFilterPriority] = useState('')
@@ -244,7 +250,7 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
           <div className="flex items-center gap-2">
             <span style={{ fontSize: 12, color: T.faint }}>Last updated: {now}</span>
             <IconBtn icon="refresh" size={16} onClick={() => router.refresh()} />
-            <Btn variant="primary" icon="add" onClick={() => router.push('/dashboard/samples/new')}>New Sample</Btn>
+            <Btn variant="primary" icon="add" onClick={() => setShowNewSample(true)}>New Sample</Btn>
           </div>
         }
       />
@@ -296,7 +302,7 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
           {/* Actions row */}
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2">
-              <Btn variant="primary" icon="add" onClick={() => router.push('/dashboard/samples/new')}>New Sample</Btn>
+              <Btn variant="primary" icon="add" onClick={() => setShowNewSample(true)}>New Sample</Btn>
               <Btn variant="outline" icon="call_received" onClick={handleReceiveSelected}>Receive Sample{selected.size > 0 ? ` (${selected.size})` : ''}</Btn>
               <Btn variant="outline" icon="file_download" onClick={handleExport}>Export</Btn>
               <button ref={bulkBtnRef} onClick={openBulkMenu} type="button"
@@ -390,7 +396,7 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
                   the rule can't trace that through the action property. */}
               {/* eslint-disable-next-line react-hooks/refs */}
               {[
-                { label: 'New Sample',     icon: 'add_circle',    bg: '#EFF6FF', color: T.primary,   action: () => router.push('/dashboard/samples/new') },
+                { label: 'New Sample',     icon: 'add_circle',    bg: '#EFF6FF', color: T.primary,   action: () => setShowNewSample(true) },
                 { label: 'Receive Sample', icon: 'call_received', bg: '#DBEAFE', color: T.success,   action: () => router.push('/dashboard/sample-receipts') },
                 { label: 'Export Samples', icon: 'file_download', bg: '#F5F3FF', color: '#7C3AED',   action: handleExport },
                 { label: 'Bulk Actions',   icon: 'checklist',     bg: '#FFF7ED', color: T.warning,   action: openBulkMenu },
@@ -454,6 +460,25 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
               <Btn variant="outline" fullWidth icon="add" onClick={saveNewView}>Save New View</Btn>
             </div>
           </Card>
+        </div>
+      </div>
+
+      {/* ── New Sample drawer ── */}
+      <div style={{ position: 'fixed', top: 56, bottom: 40, left: 0, right: 0, zIndex: 200, pointerEvents: showNewSample ? 'auto' : 'none' }}>
+        <div onClick={() => setShowNewSample(false)} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.30)', opacity: showNewSample ? 1 : 0, transition: 'opacity 0.25s ease' }} />
+        <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: '75%', minWidth: 720, maxWidth: 1040, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.12)', transform: showNewSample ? 'translateX(0)' : 'translateX(100%)', transition: 'transform 0.28s cubic-bezier(0.4,0,0.2,1)', overflowY: 'auto' }}>
+          {showNewSample && (
+            <NewSamplePage
+              clients={clientOptions}
+              sampleTypes={sampleTypes}
+              analysisServices={analysisServices}
+              sampleTemplates={sampleTemplates}
+              sampleContainers={sampleContainers}
+              analysisProfiles={analysisProfiles}
+              onClose={() => setShowNewSample(false)}
+              onCreated={() => { setShowNewSample(false); router.refresh() }}
+            />
+          )}
         </div>
       </div>
     </div>

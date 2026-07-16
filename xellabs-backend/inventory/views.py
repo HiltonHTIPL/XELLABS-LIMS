@@ -4,13 +4,71 @@ from django.utils import timezone
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
-from core.permissions import CAN_RECEIVE_OR_STORE_ROLES
+from core.permissions import CAN_RECEIVE_OR_STORE_ROLES, ReadOnlyOrAnalystOrAbove, ReadOnlyOrSampleHandler
 from .models import StorageLocation, Reagent, Standard, Solvent, Lot, InventoryTransaction, ExpiryAlert
 from .serializers import (
     StorageLocationSerializer, ReagentSerializer, StandardSerializer,
     SolventSerializer, LotSerializer, InventoryTransactionSerializer, ExpiryAlertSerializer,
 )
+
+
+def _queue_sample_storage_transition(sample_id: str, transition: str, slot=None):
+    """Fire the SENAITE 'store'/'recover' transition for a sample's AnalysisRequest,
+    so a XelLabs slot assign/unassign is reflected as a real SENAITE workflow state
+    change (see core/senaite_service.py set_sample_storage_transition). Fire-and-forget
+    like every other SENAITE sync in this codebase — a sample not yet synced to
+    SENAITE (no senaite_uid) simply has nothing to transition, which is fine.
+
+    When `slot` is passed (the box_location being assigned/released) and both
+    the slot's parent box and the sample's AR have already synced to SENAITE
+    (both have a senaite_uid), also queue writing the AR's uid into the exact
+    row/column entry of the box's own PositionsLayout — see
+    core/senaite_service.py set_storage_position — so SENAITE's own storage
+    box view shows which slot holds which sample, not just the AR's workflow
+    state. Skipped silently if the box or slot hasn't synced yet (fire-and-forget,
+    same as the transition above)."""
+    from lims.models import AnalysisRequest
+    from inventory.tasks import sync_sample_storage_transition, sync_sample_storage_position
+
+    ar = (
+        AnalysisRequest.objects.filter(sample__sample_id=sample_id)
+        .exclude(senaite_uid="")
+        .order_by("-pk")
+        .first()
+    )
+    if not ar:
+        return
+    sync_sample_storage_transition.apply_async(args=[ar.senaite_uid, transition])
+
+    if slot is not None and slot.slot_id and slot.parent_id and slot.parent.senaite_uid:
+        sync_sample_storage_position.apply_async(
+            args=[slot.parent.senaite_uid, slot.slot_id, ar.senaite_uid, transition == "store"]
+        )
+
+
+def _resolve_canonical_sample_id(sample_id: str) -> str:
+    """Normalize whatever identifier a caller passes (Django sample_id, the
+    real SENAITE-assigned id, or a barcode — the UI displays the SENAITE id
+    as "the" Sample ID, see app/lib/sampleDisplay.ts, so scanned/typed input
+    is routinely the SENAITE one) to the canonical Django Sample.sample_id,
+    using the same 3-way lookup chain_of_custody already uses. Confirmed live
+    that storing anything other than the canonical id in
+    StorageLocation.assigned_sample_id silently breaks: the Sample.storage_location
+    sync below never matches, and every later "is this sample stored"
+    lookup (chain_of_custody's current_location, etc.) filters by the
+    canonical id too, so a mismatched key reads as "Not Stored" forever
+    despite a slot genuinely being occupied. Falls back to the raw value
+    unchanged if no Sample row matches anything (defensive; should not
+    normally happen since a real sample must exist to be assigned)."""
+    from lims.models import Sample
+    match = (
+        Sample.objects.filter(sample_id=sample_id).first()
+        or Sample.objects.filter(senaite_ar_id=sample_id).first()
+        or Sample.objects.filter(barcode=sample_id).first()
+    )
+    return match.sample_id if match else sample_id
 
 
 def _assign_sample_to_slot(slot, sample_id, user):
@@ -20,6 +78,7 @@ def _assign_sample_to_slot(slot, sample_id, user):
     audit trail and conflict handling are identical regardless of entry path.
     Returns (slot, None) on success or (None, (message, http_status)) on failure.
     """
+    sample_id = _resolve_canonical_sample_id(sample_id)
     if slot.is_occupied:
         return None, (f"Slot {slot.slot_id} is already occupied.", status.HTTP_400_BAD_REQUEST)
 
@@ -47,8 +106,14 @@ def _assign_sample_to_slot(slot, sample_id, user):
     # text field — sync it here, the single place a sample enters a slot, so
     # those pages never go stale regardless of which entry path (direct assign
     # or scanned assign-by-label) was used.
+    # instance.save() (not Queryset.update) so the audittrail post_save signals
+    # record this storage change on the Sample itself (CLAUDE.md §5).
     from lims.models import Sample
-    Sample.objects.filter(sample_id=sample_id).update(storage_location=storage_path)
+    for _sample in Sample.objects.filter(sample_id=sample_id):
+        _sample.storage_location = storage_path
+        _sample.save(update_fields=["storage_location", "updated_at"])
+
+    _queue_sample_storage_transition(sample_id, "store", slot)
 
     from django.contrib.contenttypes.models import ContentType
     from audittrail.models import AuditEvent
@@ -80,13 +145,20 @@ def _location_path_parts(location):
     return parts
 
 
+class _StorageLocationPagination(PageNumberPagination):
+    page_size = 50
+
+
 class StorageLocationViewSet(viewsets.ModelViewSet):
     queryset = StorageLocation.objects.all()
     serializer_class = StorageLocationSerializer
+    permission_classes = [ReadOnlyOrSampleHandler]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ["location_type", "parent", "is_occupied", "assigned_sample_id"]
     search_fields = ["name", "slot_id", "label_code"]
-    pagination_class = None  # return all locations in one response — client builds the tree
+    # Explicitly enable pagination to prevent returning 10K+ locations at once
+    # Client can request subsequent pages; tree-building should paginate server-side
+    pagination_class = _StorageLocationPagination
 
     @action(detail=False, methods=["get"], url_path="chain-of-custody")
     def chain_of_custody(self, request):
@@ -110,6 +182,15 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
                 .first()
             )
         if not sample_obj:
+            # Try the real SENAITE-assigned id — the UI displays this as "the"
+            # Sample ID (see app/lib/sampleDisplay.ts), so a user typing or
+            # scanning exactly what's on screen must resolve here too.
+            sample_obj = (
+                Sample.objects.select_related("sample_type", "client", "received_by")
+                .filter(senaite_ar_id=sample_id)
+                .first()
+            )
+        if not sample_obj:
             return Response({"error": f"Sample '{sample_id}' not found."}, status=status.HTTP_404_NOT_FOUND)
 
         # Use the canonical sample_id (barcode scan may have passed barcode value)
@@ -117,6 +198,7 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
 
         sample_data = {
             "sample_id": canonical_id,
+            "senaite_ar_id": sample_obj.senaite_ar_id or "",
             "status": sample_obj.status,
             "status_display": sample_obj.get_status_display(),
             "sample_type": sample_obj.sample_type.name if sample_obj.sample_type else "",
@@ -143,6 +225,8 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
             "container_type": sample_obj.container_type or "",
             "preservation": sample_obj.preservation or "",
             "sample_point": sample_obj.sample_point or "",
+            "batch_id": sample_obj.batch_id or "",
+            "batch_sub_group": sample_obj.batch_sub_group or "",
         }
 
         # Current slot holding this sample
@@ -230,25 +314,101 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
                     "details": extra,
                 })
 
-        # 4. Status change events from AuditEvent
-        status_events = AuditEvent.objects.filter(
-            action="update",
-            content_type__app_label="lims",
-            content_type__model="sample",
-            object_repr__icontains=canonical_id,
-        ).select_related("user").order_by("timestamp")
+        # 4. Status change events — read from DataChangeLog rather than
+        # AuditEvent.extra_data: the generic audit signal (audittrail/signals.py)
+        # never actually populates extra_data with a "status" key, so the old
+        # `"status" in extra` check here never matched anything — this branch
+        # was dead code. DataChangeLog already captures every field-level change
+        # (including status) generically for any TRACKED_MODELS instance, scoped
+        # precisely by object_id rather than a fuzzy object_repr string match.
+        from audittrail.models import DataChangeLog
+        status_changes = DataChangeLog.objects.filter(
+            audit_event__content_type__app_label="lims",
+            audit_event__content_type__model="sample",
+            audit_event__object_id=sample_obj.pk,
+            field_name="status",
+        ).select_related("audit_event", "audit_event__user").order_by("audit_event__timestamp")
 
-        for e in status_events:
-            extra = e.extra_data or {}
-            if "status" in extra:
+        for c in status_changes:
+            e = c.audit_event
+            history.append({
+                "id": e.pk,
+                "timestamp": e.timestamp.isoformat(),
+                "user": e.user.get_full_name() or e.user.username if e.user else "System",
+                "event_type": "status_change",
+                "label": f"Status: {c.old_value} → {c.new_value}",
+                "details": {"old_status": c.old_value, "new_status": c.new_value},
+            })
+
+        # 5. Result lifecycle events (submitted / verified / rejected), one per
+        # test — these are real chain-of-custody events (who touched this
+        # sample's results and when) that were previously invisible here.
+        from lims.models import Result
+        results = Result.objects.filter(
+            worksheet_assignment__analysis_request__sample=sample_obj
+        ).select_related("worksheet_assignment", "submitted_by", "verified_by")
+
+        for r in results:
+            # WorksheetAssignment.test (a FK to the old Django Test catalog model)
+            # was removed in the 2026-07-15 refactor that keyed everything on live
+            # SENAITE analysis services instead — this file wasn't updated at the
+            # time, so every Chain of Custody lookup for a sample with ANY result
+            # history 500'd with a FieldError on "test" (confirmed live, root cause
+            # for SO-0001 report). senaite_service_name is the plain-field replacement.
+            test_name = r.worksheet_assignment.senaite_service_name
+            if r.submitted_at:
                 history.append({
-                    "id": e.pk,
-                    "timestamp": e.timestamp.isoformat(),
-                    "user": e.user.get_full_name() or e.user.username if e.user else "System",
-                    "event_type": "status_change",
-                    "label": f"Status → {extra['status']}",
-                    "details": extra,
+                    "id": f"result-{r.pk}-submitted",
+                    "timestamp": r.submitted_at.isoformat(),
+                    "user": (r.submitted_by.get_full_name() or r.submitted_by.username) if r.submitted_by else "System",
+                    "event_type": "result_submitted",
+                    "label": f"Result Submitted — {test_name}",
+                    "details": {"test": test_name, "value": r.value, "unit": r.unit},
                 })
+            if r.verified_at:
+                history.append({
+                    "id": f"result-{r.pk}-verified",
+                    "timestamp": r.verified_at.isoformat(),
+                    "user": (r.verified_by.get_full_name() or r.verified_by.username) if r.verified_by else "System",
+                    "event_type": "result_verified",
+                    "label": f"Result Verified — {test_name}",
+                    "details": {"test": test_name, "value": r.value, "unit": r.unit},
+                })
+            elif r.status == "rejected":
+                # No dedicated rejected_at/rejected_by field — reject_result()
+                # only stamps status+remarks (lims/services.py), so this uses
+                # the DataChangeLog entry for this Result's own status change
+                # to recover who/when, falling back to unknown if untracked.
+                rejected_change = DataChangeLog.objects.filter(
+                    audit_event__content_type__app_label="lims",
+                    audit_event__content_type__model="result",
+                    audit_event__object_id=r.pk,
+                    field_name="status",
+                    new_value="rejected",
+                ).select_related("audit_event", "audit_event__user").order_by("-audit_event__timestamp").first()
+                if rejected_change:
+                    e = rejected_change.audit_event
+                    history.append({
+                        "id": f"result-{r.pk}-rejected",
+                        "timestamp": e.timestamp.isoformat(),
+                        "user": e.user.get_full_name() or e.user.username if e.user else "System",
+                        "event_type": "result_rejected",
+                        "label": f"Result Rejected — {test_name}",
+                        "details": {"test": test_name, "remarks": r.remarks},
+                    })
+
+        # 6. Analysis Request completion events
+        from lims.models import AnalysisRequest
+        completed_ars = AnalysisRequest.objects.filter(sample=sample_obj, status="completed")
+        for ar in completed_ars:
+            history.append({
+                "id": f"ar-{ar.pk}-completed",
+                "timestamp": ar.updated_at.isoformat(),
+                "user": "System",
+                "event_type": "ar_completed",
+                "label": f"Analysis Request {ar.ar_id} Completed",
+                "details": {"ar_id": ar.ar_id},
+            })
 
         # Sort all events by timestamp
         history.sort(key=lambda x: x["timestamp"])
@@ -350,10 +510,12 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
 
         if loc.location_type == "box":
             # Retry over free slots in natural order — if a concurrent scan takes
-            # the first one, fall through to the next instead of failing.
+            # the first one, fall through to the next instead of failing. The
+            # occupy is an atomic conditional UPDATE, so no sleep/backoff is
+            # needed (and sleeping here would block a Gunicorn worker).
             free_slots = list(
                 StorageLocation.objects.filter(parent=loc, location_type="box_location", is_occupied=False)
-                .order_by("pk")[:5]
+                .order_by("pk")[:10]
             )
             if not free_slots:
                 return Response({"error": f"Box {loc.name} is full."}, status=status.HTTP_400_BAD_REQUEST)
@@ -396,8 +558,13 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
         # Sample.storage_location so list/detail pages don't keep showing a
         # slot the sample no longer occupies.
         if released_sample_id:
+            # instance.save() so the audittrail signals log the release on the Sample.
             from lims.models import Sample
-            Sample.objects.filter(sample_id=released_sample_id).update(storage_location='')
+            for _sample in Sample.objects.filter(sample_id=released_sample_id):
+                _sample.storage_location = ''
+                _sample.save(update_fields=["storage_location", "updated_at"])
+
+            _queue_sample_storage_transition(released_sample_id, "recover", slot)
 
         from django.contrib.contenttypes.models import ContentType
         from audittrail.models import AuditEvent
@@ -428,7 +595,6 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
             StorageLocation.objects.filter(parent=box, location_type='box_location')
             .values_list('slot_id', flat=True)
         )
-        inherited = StorageLocation.slot_inherited_fields(box)
         to_create = []
         for r in range(rows):
             row_letter = chr(65 + r)
@@ -442,7 +608,6 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
                         slot_id=slot_id,
                         is_occupied=False,
                         label_code=StorageLocation.slot_label_code(box, slot_id),
-                        **inherited,
                     ))
         if to_create:
             StorageLocation.objects.bulk_create(to_create)
@@ -454,6 +619,15 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
             sync_box_slots_to_senaite.apply_async(args=[box.pk, connection.schema_name], countdown=2)
 
         return Response({"created": len(to_create), "total": rows * cols})
+
+    @action(detail=True, methods=["post"], url_path="retry-sync")
+    def retry_sync(self, request, pk=None):
+        """Re-dispatch the existing sync task for a location that failed to sync to SENAITE."""
+        location = self.get_object()
+        from django.db import connection
+        from .tasks import sync_storage_location_to_senaite
+        sync_storage_location_to_senaite.apply_async(args=[location.pk, connection.schema_name])
+        return Response({"message": "Sync retry queued."})
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -478,6 +652,7 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
 class ReagentViewSet(viewsets.ModelViewSet):
     queryset = Reagent.objects.all()
     serializer_class = ReagentSerializer
+    permission_classes = [ReadOnlyOrAnalystOrAbove]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ["is_active"]
     search_fields = ["name", "catalog_number", "cas_number"]
@@ -486,6 +661,7 @@ class ReagentViewSet(viewsets.ModelViewSet):
 class StandardViewSet(viewsets.ModelViewSet):
     queryset = Standard.objects.all()
     serializer_class = StandardSerializer
+    permission_classes = [ReadOnlyOrAnalystOrAbove]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ["is_active"]
     search_fields = ["name", "catalog_number"]
@@ -494,6 +670,7 @@ class StandardViewSet(viewsets.ModelViewSet):
 class SolventViewSet(viewsets.ModelViewSet):
     queryset = Solvent.objects.all()
     serializer_class = SolventSerializer
+    permission_classes = [ReadOnlyOrAnalystOrAbove]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ["is_active"]
     search_fields = ["name", "catalog_number"]
@@ -502,6 +679,7 @@ class SolventViewSet(viewsets.ModelViewSet):
 class LotViewSet(viewsets.ModelViewSet):
     queryset = Lot.objects.select_related("storage_location", "created_by").all()
     serializer_class = LotSerializer
+    permission_classes = [ReadOnlyOrAnalystOrAbove]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ["storage_location", "content_type"]
     ordering_fields = ["received_date", "expiry_date"]
@@ -558,6 +736,7 @@ class LotViewSet(viewsets.ModelViewSet):
 class InventoryTransactionViewSet(viewsets.ModelViewSet):
     queryset = InventoryTransaction.objects.select_related("lot", "created_by").all()
     serializer_class = InventoryTransactionSerializer
+    permission_classes = [ReadOnlyOrAnalystOrAbove]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ["transaction_type", "lot"]
     ordering_fields = ["created_at"]
@@ -579,6 +758,7 @@ class InventoryTransactionViewSet(viewsets.ModelViewSet):
 class ExpiryAlertViewSet(viewsets.ModelViewSet):
     queryset = ExpiryAlert.objects.select_related("lot", "acknowledged_by").all()
     serializer_class = ExpiryAlertSerializer
+    permission_classes = [ReadOnlyOrAnalystOrAbove]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ["is_acknowledged"]
 
@@ -608,4 +788,7 @@ class ExpiryAlertViewSet(viewsets.ModelViewSet):
         """Return unacknowledged alerts for lots expiring within 30 days."""
         cutoff = timezone.now().date() + timezone.timedelta(days=30)
         qs = self.get_queryset().filter(is_acknowledged=False, alert_date__lte=cutoff)
+        page = self.paginate_queryset(qs)
+        if page is not None:
+            return self.get_paginated_response(ExpiryAlertSerializer(page, many=True).data)
         return Response(ExpiryAlertSerializer(qs, many=True).data)

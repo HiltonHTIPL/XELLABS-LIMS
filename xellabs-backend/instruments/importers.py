@@ -23,6 +23,29 @@ class ParseError(Exception):
         super().__init__(f"Row {row_number}: {detail}")
 
 
+def _build_sample_cache(sample_ids: set) -> dict:
+    """Resolve samples by sample_id, senaite_ar_id, or barcode — the UI displays
+    the SENAITE-style id as "the" Sample ID (see app/lib/sampleDisplay.ts), so an
+    instrument's own export (or a user typing what's on screen) will routinely
+    reference that one, not Django's own internal sample_id. Confirmed live: a
+    real instrument export used the SENAITE id ("SO-0002") and every row failed
+    with "Sample not found" under a sample_id-only lookup. Same 3-way resolution
+    chain_of_custody's lookup and inventory/views.py's
+    _resolve_canonical_sample_id() already use."""
+    from django.db.models import Q
+    from lims.models import Sample
+
+    cache: dict = {}
+    matches = Sample.objects.filter(
+        Q(sample_id__in=sample_ids) | Q(senaite_ar_id__in=sample_ids) | Q(barcode__in=sample_ids)
+    )
+    for s in matches:
+        for key in (s.sample_id, s.senaite_ar_id, s.barcode):
+            if key:
+                cache[key] = s
+    return cache
+
+
 def parse_csv(file_content: bytes) -> tuple[list[dict], list[dict]]:
     """
     Parse a CSV instrument export.
@@ -162,32 +185,58 @@ def parse_instrument_file(
     return parser(file_content)
 
 
+def _fetch_senaite_services_by_keyword() -> dict:
+    """Live SENAITE AnalysisServices keyed by Keyword (the instrument-file
+    test code) — replaces the old Django Test.code lookup now that SENAITE
+    is the sole source of truth for analyses."""
+    import base64
+    import requests as http_requests
+    from django.conf import settings
+
+    token = base64.b64encode(f"{settings.SENAITE_USER}:{settings.SENAITE_PASSWORD}".encode()).decode()
+    try:
+        resp = http_requests.get(
+            f"{settings.SENAITE_URL}/@@API/senaite/v1/AnalysisService",
+            headers={"Authorization": f"Basic {token}"},
+            params={"complete": "yes", "b_size": 1000},
+            timeout=8,
+        )
+        resp.raise_for_status()
+        items = resp.json().get("items", [])
+    except Exception:
+        logger.exception("Could not reach SENAITE to resolve analysis services for instrument import.")
+        return {}
+    return {
+        (svc.get("Keyword") or "").strip(): {"uid": svc.get("uid", ""), "title": (svc.get("title") or "").strip()}
+        for svc in items if svc.get("Keyword")
+    }
+
+
 def map_results(rows: list[dict]) -> tuple[list[dict], list[dict]]:
     """
-    Map parsed rows to existing Sample + Test database objects.
-    Returns (mapped, errors) where mapped rows have sample_pk, test_pk added.
+    Map parsed rows to existing Sample database objects and live SENAITE
+    analysis services (matched by Keyword/test_code). Samples resolved by
+    sample_id, senaite_ar_id, or barcode — see _build_sample_cache().
+    Returns (mapped, errors) where mapped rows have sample_pk,
+    senaite_service_uid, senaite_service_name added.
     """
-    from lims.models import Sample, Test
-
     mapped, errors = [], []
-    # Build lookup caches
-    sample_cache = {s.sample_id: s for s in Sample.objects.filter(
-        sample_id__in={r["sample_id"] for r in rows}
-    )}
-    test_cache = {t.code: t for t in Test.objects.filter(
-        code__in={r["test_code"] for r in rows}
-    )}
+    sample_cache = _build_sample_cache({r["sample_id"] for r in rows})
+    service_cache = _fetch_senaite_services_by_keyword()
 
     for i, row in enumerate(rows, start=1):
         sample = sample_cache.get(row["sample_id"])
         if not sample:
             errors.append({"row": i, "detail": f"Sample '{row['sample_id']}' not found."})
             continue
-        test = test_cache.get(row["test_code"])
-        if not test:
+        service = service_cache.get(row["test_code"])
+        if not service:
             errors.append({"row": i, "detail": f"Test code '{row['test_code']}' not found."})
             continue
-        mapped.append({**row, "sample_pk": sample.pk, "test_pk": test.pk})
+        mapped.append({
+            **row, "sample_pk": sample.pk,
+            "senaite_service_uid": service["uid"], "senaite_service_name": service["title"],
+        })
 
     return mapped, errors
 
@@ -205,20 +254,19 @@ def build_preview(rows: list[dict], parse_errors: list[dict]) -> tuple[list[dict
 
     Returns (preview_rows, summary) where summary = {total, valid, invalid, skipped}.
     """
-    from lims.models import Sample, Test, WorksheetAssignment, Result
+    from lims.models import WorksheetAssignment, Result
 
     sample_ids = {r["sample_id"] for r in rows}
-    test_codes = {r["test_code"] for r in rows}
-    sample_cache = {s.sample_id: s for s in Sample.objects.filter(sample_id__in=sample_ids)}
-    test_cache = {t.code: t for t in Test.objects.filter(code__in=test_codes)}
+    sample_cache = _build_sample_cache(sample_ids)
+    service_cache = _fetch_senaite_services_by_keyword()
+    canonical_ids = {s.sample_id for s in sample_cache.values()}
     assignments = list(
         WorksheetAssignment.objects.filter(
-            analysis_request__sample__sample_id__in=sample_ids,
-            test__code__in=test_codes,
-        ).select_related("analysis_request__sample", "test")
+            analysis_request__sample__sample_id__in=canonical_ids,
+        ).select_related("analysis_request__sample")
     )
     assignment_pairs = {
-        (a.analysis_request.sample.sample_id, a.test.code): a for a in assignments
+        (a.analysis_request.sample.sample_id, a.senaite_service_uid): a for a in assignments
     }
     existing_by_wa = {
         r.worksheet_assignment_id: r
@@ -246,13 +294,13 @@ def build_preview(rows: list[dict], parse_errors: list[dict]) -> tuple[list[dict
         if not sample:
             preview.append({**base, "status": "error", "detail": f"Sample '{row['sample_id']}' not found."})
             continue
-        test = test_cache.get(row["test_code"])
-        if not test:
+        service = service_cache.get(row["test_code"])
+        if not service:
             preview.append({**base, "status": "error", "detail": f"Test code '{row['test_code']}' not found."})
             continue
-        base["test_name"] = test.name
+        base["test_name"] = service["title"]
         base["sample_status"] = sample.status
-        wa = assignment_pairs.get((row["sample_id"], row["test_code"]))
+        wa = assignment_pairs.get((sample.sample_id, service["uid"]))
         if not wa:
             preview.append({**base, "status": "error",
                             "detail": "No open worksheet assignment for this sample and test."})
@@ -285,11 +333,16 @@ def build_provenance_map(sample_id: str) -> dict:
     original import files. The most recent processed import wins for a given test,
     matching the "latest value applied" behaviour of the commit step.
 
-    Returns {test_code: {instrument_name, instrument_code, import_date,
+    Keyed by senaite_service_uid (not the raw CSV/XML test_code keyword) so it
+    lines up with WorksheetAssignment.senaite_service_uid — the only test
+    identifier stored on that model since the Django Test model was removed.
+
+    Returns {senaite_service_uid: {instrument_name, instrument_code, import_date,
     file_format, import_id}}.
     """
     from .models import InstrumentResultImport
 
+    service_cache = _fetch_senaite_services_by_keyword()
     provenance: dict[str, dict] = {}
     imports = (
         InstrumentResultImport.objects
@@ -307,7 +360,10 @@ def build_provenance_map(sample_id: str) -> dict:
         for row in rows:
             if row["sample_id"] != sample_id:
                 continue
-            provenance[row["test_code"]] = {
+            service = service_cache.get(row["test_code"])
+            if not service:
+                continue
+            provenance[service["uid"]] = {
                 "instrument_name": imp.instrument.name,
                 "instrument_code": imp.instrument.instrument_id,
                 "import_date": imp.created_at.isoformat(),

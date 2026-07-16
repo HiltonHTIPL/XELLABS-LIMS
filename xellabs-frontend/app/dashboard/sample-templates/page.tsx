@@ -1,18 +1,16 @@
-import { getSampleTemplates } from '@/app/actions/sample-templates'
-import { getSampleTypes, getAnalysisServices } from '@/app/actions/samples'
+import { getSampleTemplatesPageData } from '@/app/actions/sample-templates'
 import SampleTemplatesShell from './_components/SampleTemplatesShell'
 
 export default async function SampleTemplatesPage() {
-  const [templates, sampleTypes, analysisServices] = await Promise.all([
-    getSampleTemplates(),
-    getSampleTypes(),
-    getAnalysisServices(),
-  ])
+  const data = await getSampleTemplatesPageData()
   return (
     <SampleTemplatesShell
-      initialTemplates={templates}
-      sampleTypes={sampleTypes}
-      analysisServices={analysisServices}
+      initialTemplates={data.sampleTemplates}
+      sampleTypes={data.sampleTypes}
+      analysisServices={data.analysisServices}
+      sampleContainers={data.sampleContainers}
+      preservations={data.preservations}
+      samplePoints={data.samplePoints}
     />
   )
 }

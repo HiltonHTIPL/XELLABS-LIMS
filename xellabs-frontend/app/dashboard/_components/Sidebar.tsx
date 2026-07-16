@@ -9,15 +9,18 @@ function MI({ name, size = 16 }: { name: string; size?: number }) {
   return <span className="material-icons" style={{ fontSize: size, lineHeight: 1 }}>{name}</span>
 }
 
-type NavItem = { label: string; href: string; icon: string; roles: string[] | null; exact?: boolean; superuserOnly?: boolean }
-type NavGroup = { group: string; icon: string; roles: string[] | null; children: NavItem[] }
-type NavEntry = NavItem | NavGroup
+export type NavItem = { label: string; href: string; icon: string; roles: string[] | null; exact?: boolean; superuserOnly?: boolean }
+// linkOnly groups (e.g. Administration) navigate straight to `href` on click
+// instead of expanding an in-sidebar submenu — `children` is still used to
+// compute the "any child active" highlight and by /dashboard/admin's own grid.
+export type NavGroup = { group: string; icon: string; roles: string[] | null; children: NavItem[]; linkOnly?: boolean; href?: string }
+export type NavEntry = NavItem | NavGroup
 
-function isGroup(entry: NavEntry): entry is NavGroup {
+export function isGroup(entry: NavEntry): entry is NavGroup {
   return 'children' in entry
 }
 
-const NAV: NavEntry[] = [
+export const NAV: NavEntry[] = [
   { label: 'Dashboard',        href: '/dashboard',                   icon: 'dashboard',               roles: null },
   { label: 'Clients',          href: '/dashboard/clients',           icon: 'business',                roles: ['admin', 'lab_manager', 'receptionist'] },
   // Sample workflow
@@ -28,23 +31,19 @@ const NAV: NavEntry[] = [
     children: [
       { label: 'Samples Overview', href: '/dashboard/samples-overview', icon: 'list_alt',      roles: ['admin', 'lab_manager', 'receptionist', 'analyst', 'reviewer'], exact: true },
       { label: 'New Samples',      href: '/dashboard/samples-overview/new', icon: 'add_circle', roles: ['admin', 'lab_manager', 'receptionist'] },
-      { label: 'Lab Samples',      href: '/dashboard/lab-samples', icon: 'science', roles: ['admin', 'lab_manager', 'receptionist', 'analyst', 'reviewer'] },
-      { label: 'Lab Worksheets',   href: '/dashboard/lab-worksheets', icon: 'assignment', roles: ['admin', 'lab_manager', 'analyst', 'reviewer'] },
     ],
   },
   { label: 'Methods',           href: '/dashboard/methods',           icon: 'biotech',     roles: ['admin', 'lab_manager', 'analyst'] },
-  { label: 'Batches',           href: '/dashboard/batches',           icon: 'layers',      roles: null },
-  { label: 'Worksheet',         href: '/dashboard/worksheets',        icon: 'table_chart', roles: ['admin', 'lab_manager', 'analyst'] },
+  { label: 'Batches',           href: '/dashboard/batches',           icon: 'layers',      roles: ['admin', 'lab_manager', 'analyst'] },
+  { label: 'Worksheet',         href: '/dashboard/worksheets',        icon: 'table_chart', roles: ['admin', 'lab_manager', 'analyst', 'reviewer'] },
   { label: 'Quality',           href: '/dashboard/quality',           icon: 'verified',    roles: ['admin', 'lab_manager', 'analyst', 'reviewer', 'client'] },
   { label: 'Storage Manager',   href: '/dashboard/storage',           icon: 'inventory_2', roles: ['admin', 'lab_manager', 'analyst', 'client'] },
   // Inventory
   {
     group: 'Instruments',
     icon: 'science',
-    roles: ['admin', 'lab_manager', 'analyst', 'reviewer'],
+    roles: ['admin', 'lab_manager', 'analyst'],
     children: [
-      { label: 'Import Results', href: '/dashboard/instruments/import', icon: 'upload_file', roles: ['admin', 'lab_manager', 'analyst'] },
-      { label: 'Multi-Instrument Report', href: '/dashboard/instruments/report', icon: 'summarize', roles: ['admin', 'lab_manager', 'analyst', 'reviewer'] },
       { label: 'Test Schedule', href: '/dashboard/schedule', icon: 'event_note', roles: ['admin', 'lab_manager', 'analyst'] },
       { label: 'Inventory Dashboard', href: '/dashboard/inventory-dashboard', icon: 'monitoring', roles: ['admin', 'lab_manager', 'analyst'] },
       { label: 'Reagents & Standards', href: '/dashboard/inventory-items', icon: 'biotech', roles: ['admin', 'lab_manager', 'analyst'] },
@@ -53,47 +52,18 @@ const NAV: NavEntry[] = [
     ],
   },
   { label: 'Reports',          href: '/dashboard/reports',           icon: 'bar_chart',               roles: null },
-  { label: 'XEL Analytics', href: '/dashboard/analytics',         icon: 'insights',                roles: ['admin', 'lab_manager', 'analyst'] },
-  // Compliance
-  {
-    group: 'Compliance',
-    icon: 'gavel',
-    roles: ['admin', 'lab_manager', 'reviewer'],
-    children: [
-      { label: 'Approvals', href: '/dashboard/approvals', icon: 'fact_check', roles: ['admin', 'lab_manager', 'reviewer'] },
-      { label: 'Audit Trail', href: '/dashboard/audit-trail', icon: 'history', roles: ['admin', 'lab_manager'] },
-    ],
-  },
-  // Administration group — visibility is intentionally wide open (null) because
-  // several children below (Tasks, Results, Chain of Custody, Analysis Requests)
-  // are visible to roles (analyst/reviewer/client/receptionist) narrower than the
-  // classic admin/lab_manager set. Each child still gates itself via its own
-  // `roles` — this group-level gate must stay at least as wide as the widest child.
-  {
-    group: 'Administration',
-    icon: 'admin_panel_settings',
-    roles: null,
-    children: [
-      { label: 'Users',        href: '/dashboard/admin',        icon: 'group',       roles: ['admin', 'lab_manager'] },
-      { label: 'Sample Types', href: '/dashboard/sample-types', icon: 'category',   roles: ['admin', 'lab_manager'] },
-      { label: 'Sample Templates', href: '/dashboard/sample-templates', icon: 'view_list', roles: ['admin', 'lab_manager'] },
-      { label: 'Analysis Profiles', href: '/dashboard/analysis-profiles', icon: 'science', roles: ['admin', 'lab_manager'] },
-      { label: 'Tests',        href: '/dashboard/tests',        icon: 'assignment',  roles: ['admin', 'lab_manager', 'analyst'] },
-      { label: 'Specifications', href: '/dashboard/specifications', icon: 'rule',    roles: ['admin', 'lab_manager'] },
-      { label: 'Analysis Requests', href: '/dashboard/analysis-requests', icon: 'assignment_turned_in', roles: ['admin', 'lab_manager', 'analyst', 'reviewer'] },
-      { label: 'Results',      href: '/dashboard/results',      icon: 'science',     roles: ['admin', 'lab_manager', 'analyst', 'reviewer'] },
-      { label: 'Tasks',        href: '/dashboard/tasks',        icon: 'checklist',   roles: null },
-      { label: 'Chain of Custody', href: '/dashboard/chain-of-custody', icon: 'link', roles: ['admin', 'lab_manager', 'analyst', 'reviewer', 'client'] },
-      { label: 'Approvals',    href: '/dashboard/approvals',    icon: 'fact_check',  roles: ['admin', 'lab_manager', 'reviewer'] },
-      { label: 'Audit Trail',  href: '/dashboard/audit-trail',  icon: 'history',     roles: ['admin', 'lab_manager'] },
-      { label: 'Master Data Import', href: '/dashboard/master-data-import', icon: 'upload_file', roles: ['admin', 'lab_manager'] },
-      { label: 'Instrument Register', href: '/dashboard/instruments', icon: 'build_circle', roles: ['admin'], exact: true },
-      { label: 'Instrument List', href: '/dashboard/instrument-list', icon: 'precision_manufacturing', roles: ['admin', 'lab_manager'] },
-      { label: 'Storage List', href: '/dashboard/storage-list', icon: 'inventory_2', roles: ['admin', 'lab_manager'] },
-      { label: 'Report Templates', href: '/dashboard/settings/report-templates', icon: 'description', roles: ['admin'] },
-      { label: 'Tenant Management', href: '/dashboard/tenant-management', icon: 'corporate_fare', roles: ['admin'], superuserOnly: true },
-    ],
-  },
+  // Data Analytics and Compliance (Approvals, Audit Trail) intentionally not top-level —
+  // reachable via the Administration group/grid instead, to keep the top-level
+  // sidebar limited to: Dashboard, Clients, Samples, Methods, Batches, Worksheet,
+  // Quality, Storage Manager, Instruments, Reports, Administration. Do not add a
+  // new top-level entry here without asking first — see CLAUDE.md.
+  // Administration is a single entry point (not a dropdown) — clicking it opens
+  // the /dashboard/admin grid page, which renders ADMIN_SECTIONS as tiles from
+  // the same single source (adminNav.ts). Visibility stays wide open (null)
+  // because the grid page itself gates each tile per its own roles, and several
+  // sections are visible to roles narrower than the classic admin/lab_manager
+  // set — the grid page filters them, so the entry point must not pre-gate.
+  { label: 'Administration', href: '/dashboard/admin', icon: 'admin_panel_settings', roles: null },
 ]
 
 interface Props {
@@ -108,23 +78,8 @@ export default function Sidebar({ onToggle, role, reportDraftCount, isSuperuser 
 
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
     const open = new Set<string>()
-    const onInstrumentRegister =
-      pathname === '/dashboard/instruments'
-      || (pathname.startsWith('/dashboard/instruments/')
-        && !pathname.startsWith('/dashboard/instruments/import')
-        && !pathname.startsWith('/dashboard/instruments/report'))
-    if ([
-      '/dashboard/admin', '/dashboard/sample-types', '/dashboard/sample-templates', '/dashboard/analysis-profiles',
-      '/dashboard/tests', '/dashboard/specifications', '/dashboard/analysis-requests', '/dashboard/results',
-      '/dashboard/tasks', '/dashboard/chain-of-custody', '/dashboard/approvals', '/dashboard/audit-trail',
-      '/dashboard/master-data-import', '/dashboard/instrument-list', '/dashboard/storage-list', '/dashboard/settings', '/dashboard/tenant-management',
-    ].some(p => pathname.startsWith(p)) || onInstrumentRegister) open.add('Administration')
-    if (['/dashboard/samples-overview', '/dashboard/samples/new', '/dashboard/lab-samples', '/dashboard/lab-worksheets'].some(p => pathname.startsWith(p))) open.add('Samples')
-    if ([
-      '/dashboard/inventory-items', '/dashboard/inventory-lots', '/dashboard/instrument-maintenance',
-      '/dashboard/schedule', '/dashboard/inventory-dashboard',
-      '/dashboard/instruments/import', '/dashboard/instruments/report',
-    ].some(p => pathname.startsWith(p))) open.add('Instruments')
+    if (['/dashboard/samples-overview', '/dashboard/samples/new'].some(p => pathname.startsWith(p))) open.add('Samples')
+    if (['/dashboard/inventory-items', '/dashboard/inventory-lots', '/dashboard/instrument-maintenance', '/dashboard/schedule', '/dashboard/inventory-dashboard'].some(p => pathname.startsWith(p))) open.add('Instruments')
     return open
   })
 
@@ -166,6 +121,17 @@ export default function Sidebar({ onToggle, role, reportDraftCount, isSuperuser 
 
           if (isGroup(entry)) {
             const anyChildActive = entry.children.some(c => c.exact ? pathname === c.href : (pathname === c.href || pathname.startsWith(c.href + '/')))
+
+            if (entry.linkOnly && entry.href) {
+              const active = anyChildActive || pathname === entry.href || pathname.startsWith(entry.href + '/')
+              return (
+                <Link key={entry.group} href={entry.href} style={linkStyle(active)}>
+                  <MI name={entry.icon} size={16} />
+                  <span>{entry.group}</span>
+                </Link>
+              )
+            }
+
             const isOpen = openGroups.has(entry.group)
             return (
               <div key={entry.group}>

@@ -6,12 +6,13 @@ from rest_framework.viewsets import ModelViewSet
 from rest_framework.generics import ListAPIView, RetrieveUpdateAPIView
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
-from rest_framework.authentication import TokenAuthentication
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.authtoken.models import Token
 from django_filters.rest_framework import DjangoFilterBackend
 
+from .authentication import TenantAwareTokenAuthentication as TokenAuthentication
 from .models import Client, Tenant
 from .permissions import IsLabManagerOrAbove, IsSuperAdmin
 from .serializers import ClientSerializer, UserSerializer, StaffUserSerializer, TenantSerializer, TenantLogoSerializer
@@ -29,6 +30,24 @@ class FlexibleTokenView(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
 
+    @staticmethod
+    def _log_login(request, username_attempted, user=None, success=False):
+        """LoginEvent for every attempt — success AND failure (compliance).
+        Never blocks the login flow itself."""
+        try:
+            from audittrail.models import LoginEvent
+            xff = request.META.get('HTTP_X_FORWARDED_FOR')
+            ip = xff.split(',')[0].strip() if xff else request.META.get('REMOTE_ADDR')
+            LoginEvent.objects.create(
+                user=user,
+                username_attempted=username_attempted[:150],
+                success=success,
+                ip_address=ip,
+                user_agent=request.META.get('HTTP_USER_AGENT', '')[:1000],
+            )
+        except Exception:
+            logger.exception("Failed to write LoginEvent for '%s'.", username_attempted)
+
     def post(self, request):
         identifier = request.data.get('username', '').strip()
         password = request.data.get('password', '').strip()
@@ -44,6 +63,7 @@ class FlexibleTokenView(APIView):
                 user_obj = User.objects.get(email__iexact=identifier)
                 username = user_obj.username
             except User.DoesNotExist:
+                self._log_login(request, identifier)
                 return Response({'non_field_errors': ['No account found with that email address.']}, status=400)
             except User.MultipleObjectsReturned:
                 logger.error("Duplicate accounts share email '%s' (case-insensitive) — data integrity issue.", identifier)
@@ -61,10 +81,13 @@ class FlexibleTokenView(APIView):
 
         user = authenticate(request=request, username=username, password=password)
         if not user:
+            self._log_login(request, identifier)
             return Response({'non_field_errors': ['Invalid credentials.']}, status=400)
         if not user.is_active:
+            self._log_login(request, identifier, user=user)
             return Response({'non_field_errors': ['This account is disabled.']}, status=400)
 
+        self._log_login(request, identifier, user=user, success=True)
         token, _ = Token.objects.get_or_create(user=user)
         return Response({'token': token.key})
 
@@ -107,7 +130,7 @@ class UserViewSet(ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        from django.utils.crypto import get_random_string
+        from django.contrib.auth.password_validation import validate_password
         from rest_framework.exceptions import ValidationError as DRFValidationError
 
         username = serializer.validated_data.get('username', '').strip()
@@ -116,21 +139,132 @@ class UserViewSet(ModelViewSet):
         if User.objects.filter(username__iexact=username).exists():
             raise DRFValidationError({'username': [f'A user with username "{username}" already exists.']})
 
-        temp_password = get_random_string(20)
-        user = serializer.save(tenant=self.request.user.tenant)
-        user.set_password(temp_password)
-        user.save(update_fields=['password'])
-        logger.info("Created staff user '%s' with role '%s' by '%s'.", user.username, user.role, self.request.user.username)
-        # Surfaced once in the create response, same one-time-reveal pattern as
-        # ClientViewSet.perform_create — never logged, never returned again.
-        self.request._created_staff_password = temp_password
+        # password/confirm_password are write-only serializer fields, not real
+        # columns on User (the model's own `password` field stores a hash, never
+        # the plaintext) — pop them out here so ModelSerializer.save() never
+        # touches that column directly; set_password() below is the only path.
+        password = serializer.validated_data.pop('password', '')
+        confirm_password = serializer.validated_data.pop('confirm_password', '')
+        if not password:
+            raise DRFValidationError({'password': ['Password is required.']})
+        if password != confirm_password:
+            raise DRFValidationError({'confirm_password': ['Passwords do not match.']})
+        try:
+            validate_password(password)
+        except Exception as exc:
+            raise DRFValidationError({'password': list(exc.messages)})
 
-    def create(self, request, *args, **kwargs):
-        response = super().create(request, *args, **kwargs)
-        password = getattr(request, '_created_staff_password', None)
-        if password:
-            response.data['login_password'] = password
+        # No role concept at creation, matching SENAITE's own "Add New User" form —
+        # assigned/changed afterward via the edit flow. Default matches the
+        # frontend form's own default so a fresh account isn't accidentally
+        # under-permissioned relative to what the UI implies.
+        role = serializer.validated_data.setdefault('role', 'analyst')
+
+        user = serializer.save(tenant=self.request.user.tenant)
+        user.set_password(password)
+        user.save(update_fields=['password'])
+        logger.info("Created staff user '%s' with role '%s' by '%s'.", user.username, role, self.request.user.username)
+
+        # Mirror this staff user into SENAITE (matching Group = real SENAITE
+        # permissions for their role) — the admin-supplied password is the same
+        # one used here, so the same credentials log into both systems.
+        from core.tasks import sync_staff_user_to_senaite
+        sync_staff_user_to_senaite.apply_async(args=[user.pk, password], countdown=2)
+
+    def list(self, request, *args, **kwargs):
+        """Merge each user's live SENAITE roles into the list response — one
+        bulk SENAITE call for the whole page, not one per row (see
+        senaite_service.list_senaite_users), so the Users page can render a
+        role checkbox matrix without an N+1 fan-out of HTTP calls."""
+        from .senaite_service import list_senaite_users
+        response = super().list(request, *args, **kwargs)
+        by_username = {u['username']: u['roles'] for u in list_senaite_users()}
+        rows = response.data.get('results', response.data) if isinstance(response.data, dict) else response.data
+        for row in rows:
+            row['senaite_roles'] = by_username.get(row['username'], [])
         return response
+
+    @action(detail=True, methods=['post'], url_path='senaite-roles')
+    def senaite_roles(self, request, pk=None):
+        """POST /api/users/{id}/senaite-roles/  { "role": "Analyst", "enabled": true }
+        Grants or revokes one SENAITE role directly on this user's SENAITE account —
+        the same operation as ticking a checkbox on SENAITE's own Users matrix."""
+        from .senaite_service import set_senaite_user_role, SENAITE_USER_ROLES
+        from rest_framework.exceptions import ValidationError as DRFValidationError
+
+        user = self.get_object()
+        role = request.data.get('role')
+        enabled = bool(request.data.get('enabled'))
+        if role not in SENAITE_USER_ROLES:
+            raise DRFValidationError({'role': [f'Must be one of {SENAITE_USER_ROLES}.']})
+
+        result = set_senaite_user_role(user.username, role, enabled)
+        if not result['ok']:
+            return Response({'detail': result['error']}, status=502)
+        return Response({'role': role, 'enabled': enabled})
+
+
+class SenaiteGroupsView(APIView):
+    """
+    GET  /api/senaite-groups/   -> list every SENAITE group + its role matrix
+    POST /api/senaite-groups/   { "id": "MyGroup", "title": "My Group" } -> create a group
+    There is no Django model backing this — groups exist only inside SENAITE,
+    mirroring senaite_service.list_senaite_users()'s relationship to UserViewSet.
+    """
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated, IsLabManagerOrAbove]
+
+    def get(self, request):
+        from .senaite_service import list_senaite_groups
+        return Response(list_senaite_groups())
+
+    def post(self, request):
+        from .senaite_service import create_senaite_group
+        from rest_framework.exceptions import ValidationError as DRFValidationError
+
+        group_id = (request.data.get('id') or '').strip()
+        if not group_id:
+            raise DRFValidationError({'id': ['Group ID is required.']})
+
+        result = create_senaite_group(group_id, request.data.get('title', ''))
+        if not result['ok']:
+            return Response({'detail': result['error']}, status=502)
+        return Response({'id': group_id}, status=201)
+
+
+class SenaiteGroupDetailView(APIView):
+    """DELETE /api/senaite-groups/{id}/ -> remove a SENAITE group."""
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated, IsLabManagerOrAbove]
+
+    def delete(self, request, group_id=None):
+        from .senaite_service import delete_senaite_group
+        result = delete_senaite_group(group_id)
+        if not result['ok']:
+            return Response({'detail': result['error']}, status=502)
+        return Response(status=204)
+
+
+class SenaiteGroupRoleView(APIView):
+    """POST /api/senaite-groups/{id}/role/  { "role": "Analyst", "enabled": true }
+    Grants or revokes one SENAITE role on this group — the same operation as
+    ticking a checkbox on SENAITE's own Groups matrix."""
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated, IsLabManagerOrAbove]
+
+    def post(self, request, group_id=None):
+        from .senaite_service import set_senaite_group_role, SENAITE_USER_ROLES
+        from rest_framework.exceptions import ValidationError as DRFValidationError
+
+        role = request.data.get('role')
+        enabled = bool(request.data.get('enabled'))
+        if role not in SENAITE_USER_ROLES:
+            raise DRFValidationError({'role': [f'Must be one of {SENAITE_USER_ROLES}.']})
+
+        result = set_senaite_group_role(group_id, role, enabled)
+        if not result['ok']:
+            return Response({'detail': result['error']}, status=502)
+        return Response({'role': role, 'enabled': enabled})
 
 
 class ClientViewSet(ModelViewSet):
@@ -186,8 +320,13 @@ class ClientResetPasswordView(APIView):
         if len(new_password) < 8:
             raise DRFValidationError({'new_password': ['Password must be at least 8 characters.']})
 
+        # Tenant scoping: an admin may only reset passwords for clients of
+        # their own tenant. (Superusers without a tenant may reset any.)
+        clients = Client.objects.all()
+        if request.user.tenant_id:
+            clients = clients.filter(tenant=request.user.tenant)
         try:
-            client = Client.objects.get(pk=client_id)
+            client = clients.get(pk=client_id)
         except Client.DoesNotExist:
             return Response({'detail': 'Client not found.'}, status=404)
 
@@ -423,7 +562,7 @@ class SenaiteInstrumentImportView(APIView):
             return Response({'detail': 'No file uploaded.'}, status=400)
 
         try:
-            rows = read_excel_rows(file_obj, required_columns={'title'})
+            rows = read_excel_rows(file_obj, required_columns={'title'}, filename=file_obj.name)
         except ValueError as exc:
             return Response({'detail': str(exc)}, status=400)
 
@@ -452,7 +591,7 @@ class SenaiteStorageLocationImportView(APIView):
             return Response({'detail': 'No file uploaded.'}, status=400)
 
         try:
-            rows = read_excel_rows(file_obj, required_columns={'title'})
+            rows = read_excel_rows(file_obj, required_columns={'title'}, filename=file_obj.name)
         except ValueError as exc:
             return Response({'detail': str(exc)}, status=400)
 

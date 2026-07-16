@@ -7,6 +7,11 @@ export type Method = {
   name: string
   code: string
   description: string
+  accredited: boolean
+  instructions: string
+  document: string | null
+  instruments: number[]
+  calculations: number[]
   is_active: boolean
   created_at: string
 }
@@ -26,10 +31,23 @@ export async function getMethods(): Promise<Method[]> {
   } catch { return [] }
 }
 
+function buildMethodFormData(formData: FormData): FormData {
+  const fd = new FormData()
+  fd.append('name', ((formData.get('name') as string) || '').trim())
+  fd.append('code', ((formData.get('code') as string) || '').trim())
+  fd.append('description', ((formData.get('description') as string) || '').trim())
+  fd.append('instructions', ((formData.get('instructions') as string) || '').trim())
+  fd.append('accredited', formData.get('accredited') ? 'true' : 'false')
+  for (const id of formData.getAll('instrument_ids')) fd.append('instrument_ids', id as string)
+  for (const id of formData.getAll('calculation_ids')) fd.append('calculations', id as string)
+  const doc = formData.get('document')
+  if (doc instanceof File && doc.size > 0) fd.append('document', doc)
+  return fd
+}
+
 export async function createMethod(_state: MethodFormState, formData: FormData): Promise<MethodFormState> {
   const name = (formData.get('name') as string)?.trim()
   const code = (formData.get('code') as string)?.trim()
-  const description = (formData.get('description') as string)?.trim()
 
   const errors: Record<string, string[]> = {}
   if (!name) errors.name = ['Name is required']
@@ -37,9 +55,11 @@ export async function createMethod(_state: MethodFormState, formData: FormData):
   if (Object.keys(errors).length) return { errors }
 
   try {
+    const fd = buildMethodFormData(formData)
+    fd.append('is_active', 'true')
     const res = await djangoFetch('/api/lims/methods/', {
       method: 'POST',
-      body: JSON.stringify({ name, code, description: description || '', is_active: true }),
+      body: fd,
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) {
@@ -95,7 +115,6 @@ export async function createMethodQuick(
 export async function updateMethod(id: number, _state: MethodFormState, formData: FormData): Promise<MethodFormState> {
   const name = (formData.get('name') as string)?.trim()
   const code = (formData.get('code') as string)?.trim()
-  const description = (formData.get('description') as string)?.trim()
 
   const errors: Record<string, string[]> = {}
   if (!name) errors.name = ['Name is required']
@@ -103,9 +122,10 @@ export async function updateMethod(id: number, _state: MethodFormState, formData
   if (Object.keys(errors).length) return { errors }
 
   try {
+    const fd = buildMethodFormData(formData)
     const res = await djangoFetch(`/api/lims/methods/${id}/`, {
       method: 'PATCH',
-      body: JSON.stringify({ name, code, description: description || '' }),
+      body: fd,
     })
     if (!res.ok) {
       const data = await res.json().catch(() => ({})) as { detail?: string }

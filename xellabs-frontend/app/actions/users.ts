@@ -13,13 +13,12 @@ export type StaffUser = {
   role: StaffRole
   is_active: boolean
   date_joined: string
+  senaite_roles: string[]
 }
 
 export type StaffUserFormState = {
   success?: boolean
   message?: string
-  login_username?: string
-  login_password?: string
   errors?: Record<string, string[]>
 }
 
@@ -39,18 +38,23 @@ export async function createStaffUser(
   formData: FormData
 ): Promise<StaffUserFormState> {
   const g = (key: string) => (formData.get(key) as string)?.trim() ?? ''
+  // Not trimmed — a password legitimately may start/end with a space.
+  const raw = (key: string) => (formData.get(key) as string) ?? ''
 
   const username = g('username')
-  const role     = g('role')
+  const password = raw('password')
+  const confirmPassword = raw('confirm_password')
 
   const errors: Record<string, string[]> = {}
   if (!username) errors.username = ['Username is required']
-  if (!role)     errors.role     = ['Role is required']
+  if (!password) errors.password = ['Password is required']
+  if (password && password !== confirmPassword) errors.confirm_password = ['Passwords do not match']
   if (Object.keys(errors).length) return { errors }
 
   const payload = {
     username,
-    role,
+    password,
+    confirm_password: confirmPassword,
     email: g('email'),
     first_name: g('first_name'),
     last_name: g('last_name'),
@@ -64,17 +68,12 @@ export async function createStaffUser(
     if (!res.ok) {
       const err = await res.json().catch(() => ({}))
       if (err.username) return { errors: { username: err.username } }
-      if (err.role)     return { errors: { role: err.role } }
+      if (err.password) return { errors: { password: err.password } }
+      if (err.confirm_password) return { errors: { confirm_password: err.confirm_password } }
       return { message: err.detail ?? 'Failed to create user.' }
     }
-    const created = await res.json()
-    revalidatePath('/dashboard/admin')
-    return {
-      success: true,
-      message: `User "${username}" created successfully.`,
-      login_username: created.username,
-      login_password: created.login_password ?? '',
-    }
+    revalidatePath('/dashboard/admin/users')
+    return { success: true, message: `User "${username}" created successfully.` }
   } catch {
     return { message: 'Could not reach the server. Please try again.' }
   }
@@ -109,7 +108,7 @@ export async function updateStaffUser(
       if (err.role) return { errors: { role: err.role } }
       return { message: err.detail ?? 'Failed to update user.' }
     }
-    revalidatePath('/dashboard/admin')
+    revalidatePath('/dashboard/admin/users')
     return { success: true, message: 'User updated successfully.' }
   } catch {
     return { message: 'Could not reach the server. Please try again.' }
@@ -126,8 +125,29 @@ export async function toggleStaffUserActive(
       body: JSON.stringify({ is_active }),
     })
     if (!res.ok) return { success: false, message: `Server error ${res.status}` }
-    revalidatePath('/dashboard/admin')
+    revalidatePath('/dashboard/admin/users')
     return { success: true, message: is_active ? 'User activated.' : 'User deactivated.' }
+  } catch {
+    return { success: false, message: 'Could not reach the server.' }
+  }
+}
+
+export async function toggleSenaiteRole(
+  id: number,
+  role: string,
+  enabled: boolean
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    const res = await djangoFetch(`/api/users/${id}/senaite-roles/`, {
+      method: 'POST',
+      body: JSON.stringify({ role, enabled }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      return { success: false, message: err.detail ?? `Server error ${res.status}` }
+    }
+    revalidatePath('/dashboard/admin/users')
+    return { success: true }
   } catch {
     return { success: false, message: 'Could not reach the server.' }
   }

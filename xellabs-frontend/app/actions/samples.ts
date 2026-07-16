@@ -13,16 +13,7 @@ import {
   SenaiteAnalysisService,
 } from '@/app/lib/senaite'
 
-const SENAITE_USER = process.env.SENAITE_ADMIN_USER ?? 'admin'
-const SENAITE_PASS = process.env.SENAITE_ADMIN_PASS ?? 'admin'
-
-function serverToken(): string {
-  return Buffer.from(`${SENAITE_USER}:${SENAITE_PASS}`).toString('base64')
-}
-
-function sessionToken(session: { senaiteToken?: string } | null): string {
-  return session?.senaiteToken ?? serverToken()
-}
+import { serverToken, sessionToken } from '@/app/lib/senaite-auth'
 
 // ─── List ─────────────────────────────────────────────────────────────────────
 
@@ -113,4 +104,11 @@ export async function publishSample(uid: string): Promise<WorkflowResult> {
   const result = await senaiteWorkflowAction(sessionToken(session), uid, 'publish')
   revalidatePath('/dashboard/samples')
   return { success: result.success, message: result.success ? 'Sample published.' : (result.error ?? 'Failed to publish sample.') }
+}
+
+export async function cancelSample(uid: string): Promise<WorkflowResult> {
+  const session = await getSession()
+  const result = await senaiteWorkflowAction(sessionToken(session), uid, 'cancel')
+  revalidatePath('/dashboard/samples')
+  return { success: result.success, message: result.success ? 'Sample cancelled.' : (result.error ?? 'Failed to cancel sample.') }
 }

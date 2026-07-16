@@ -212,7 +212,12 @@ class InstrumentRun(models.Model):
 
 
 class InstrumentResultImport(models.Model):
-    STATUS = [("pending", "Pending"), ("processed", "Processed"), ("failed", "Failed")]
+    STATUS = [
+        ("pending", "Pending"),
+        ("processing", "Processing"),
+        ("processed", "Processed"),
+        ("failed", "Failed"),
+    ]
     instrument = models.ForeignKey(Instrument, on_delete=models.CASCADE)
     file = models.FileField(upload_to="instrument_imports/")
     file_format = models.CharField(max_length=20, default="csv",

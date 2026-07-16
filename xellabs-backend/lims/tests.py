@@ -5,12 +5,12 @@ Covers: sample registration, analysis request, worksheet, result entry, review/a
 from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.authtoken.models import Token
-from core.test_utils import TenantAPITestCase
+from core.tenant_test import TenantAPITestCase
 
 from core.models import Client
 from lims.models import (
-    SampleType, Method, Test,
-    Sample, AnalysisRequest, Worksheet, WorksheetAssignment, Result,
+    SampleType, Method,
+    Sample, AnalysisRequest, AnalysisRequestAnalysis, Worksheet, WorksheetAssignment, Result,
 )
 
 User = get_user_model()
@@ -73,15 +73,16 @@ class ResultWorkflowTest(TenantAPITestCase):
         self.reviewer, self.reviewer_key = make_user("res_reviewer", "reviewer")
         self.client_obj = Client.objects.create(name="Result Client")
         st = SampleType.objects.create(name="Urine", prefix="URN")
-        method = Method.objects.create(name="Titration", code="TITR")
-        self.test_obj = Test.objects.create(name="pH", code="PH01", method=method)
+        Method.objects.create(name="Titration", code="TITR")
         sample = Sample.objects.create(
             sample_id="URN-001", client=self.client_obj, sample_type=st, created_by=self.analyst
         )
         ar = AnalysisRequest.objects.create(ar_id="AR-URN-001", sample=sample, created_by=self.analyst)
-        ar.tests.add(self.test_obj)
+        AnalysisRequestAnalysis.objects.create(analysis_request=ar, senaite_service_uid="ph-uid", senaite_service_name="pH")
         ws = Worksheet.objects.create(ws_id="WS-URN-001", analyst=self.analyst)
-        self.wa = WorksheetAssignment.objects.create(worksheet=ws, analysis_request=ar, test=self.test_obj)
+        self.wa = WorksheetAssignment.objects.create(
+            worksheet=ws, analysis_request=ar, senaite_service_uid="ph-uid", senaite_service_name="pH"
+        )
         self.result = Result.objects.create(worksheet_assignment=self.wa, value="7.4")
 
     def _auth(self, key):

@@ -1,6 +1,8 @@
 import os
 
+from django.http import JsonResponse
 from django_tenants.middleware.main import TenantMainMiddleware
+from django_tenants.utils import get_tenant_model
 
 
 class XelLabsTenantMiddleware(TenantMainMiddleware):
@@ -16,6 +18,20 @@ class XelLabsTenantMiddleware(TenantMainMiddleware):
     tenant from the Host header as normal (covers direct browser→Django calls
     and the public schema on localhost).
     """
+
+    def process_request(self, request):
+        # A tenant schema that no longer exists (deleted tenant, or a session
+        # cookie issued before a DB reset) must never surface as an unhandled
+        # 500 — the frontend needs a clean, machine-readable signal so it can
+        # clear the stale session and bounce the user back to /login instead
+        # of showing a raw stack trace on every page.
+        try:
+            return super().process_request(request)
+        except get_tenant_model().DoesNotExist:
+            return JsonResponse(
+                {"detail": "Tenant session is no longer valid.", "code": "invalid_tenant"},
+                status=401,
+            )
 
     def hostname_from_request(self, request):
         schema = request.META.get('HTTP_X_TENANT_SCHEMA', '').strip().lower()

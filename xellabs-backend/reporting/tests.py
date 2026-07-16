@@ -4,8 +4,7 @@ Functional tests for reporting — COA generation and dashboard.
 from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.authtoken.models import Token
-
-from core.test_utils import TenantAPITestCase
+from core.tenant_test import TenantAPITestCase
 
 User = get_user_model()
 

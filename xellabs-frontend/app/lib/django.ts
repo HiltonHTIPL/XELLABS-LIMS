@@ -10,7 +10,8 @@
  */
 import 'server-only'
 import { headers } from 'next/headers'
-import { getSession } from '@/app/lib/session'
+import { redirect } from 'next/navigation'
+import { getSession, deleteSession } from '@/app/lib/session'
 
 const DJANGO_API = process.env.DJANGO_API_URL ?? 'http://django:8001'
 
@@ -21,7 +22,14 @@ export async function djangoFetch(
   const [session, headerStore] = await Promise.all([getSession(), headers()])
 
   // Tenant: prefer session value (reliable after login), fall back to
-  // middleware header (useful for unauthenticated requests like login itself)
+  // middleware header (useful for unauthenticated requests like login itself),
+  // then DEFAULT_TENANT_SCHEMA (demo-phase only — see auth.ts's identical
+  // fallback and CLAUDE.md). This must match auth.ts's login() resolution:
+  // login() calls this same djangoFetch for /api/auth/me/ BEFORE any session
+  // exists and with no subdomain header on plain localhost access, so without
+  // this fallback here too, any non-superuser tenant user fails login with
+  // "This account does not belong to the requested tenant" even though the
+  // session it's about to create would have had the right tenant all along.
   const tenantSubdomain =
     session?.tenantSubdomain ||
     headerStore.get('x-tenant-subdomain') ||
@@ -50,7 +58,7 @@ export async function djangoFetch(
   // multipart boundary, and a forced 'application/json' here would break uploads.
   const isFormData = typeof FormData !== 'undefined' && fetchInit.body instanceof FormData
 
-  return fetch(`${DJANGO_API}${path}`, {
+  const res = await fetch(`${DJANGO_API}${path}`, {
     ...fetchInit,
     headers: {
       ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
@@ -60,4 +68,26 @@ export async function djangoFetch(
     },
     cache: fetchInit.cache ?? 'no-store',
   })
+
+  // Only an *existing* session can go stale this way — a fresh/unauthenticated
+  // request (e.g. the login form's own djangoFetch call) hitting this means
+  // the tenant name itself was wrong, which the caller already handles as a
+  // normal auth failure. Only clear+redirect when a logged-in session's
+  // frozen tenantSubdomain no longer resolves in the DB (deleted tenant, or a
+  // cookie issued before a tenant/DB reset) — otherwise every request made
+  // with that cookie would silently 500 for the rest of its 8-hour lifetime.
+  if (session && res.status === 401) {
+    const probe = res.clone()
+    let code: string | undefined
+    try {
+      code = (await probe.json())?.code
+    } catch { /* not JSON — not our invalid_tenant signal */ }
+
+    if (code === 'invalid_tenant') {
+      await deleteSession()
+      redirect('/login')
+    }
+  }
+
+  return res
 }

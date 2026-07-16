@@ -8,13 +8,15 @@ import LiveBarcode from '@/app/dashboard/_components/LiveBarcode'
 import { STICKER_TEMPLATES, printSticker, type StickerTemplate } from '@/app/lib/stickerTemplates'
 import { type CocSample } from '@/app/actions/storage'
 import DisposeSampleModal from '../../_components/DisposeSampleModal'
+import { sampleDisplayId as displayId } from '@/app/lib/sampleDisplay'
 
 // renderSticker/printSticker were built for the chain-of-custody lookup shape
 // (CocSample) — adapt LabSample into it rather than writing a second sticker
 // renderer, so both pages print from the exact same templates/logic.
+
 function toCocSample(s: LabSample): CocSample {
   return {
-    sample_id: s.sample_id, status: s.status, status_display: s.status,
+    sample_id: displayId(s), status: s.status, status_display: s.status,
     sample_type: s.sample_type_name, client: s.client_name, barcode: s.barcode,
     collection_date: s.collection_date, received_date: s.received_date, expiry_date: s.expiry_date,
     condition: s.condition, seal_condition: '', priority: s.priority,
@@ -23,6 +25,7 @@ function toCocSample(s: LabSample): CocSample {
     received_by: s.received_by_name, receipt_notes: '', collector: s.contact_name,
     client_order_number: s.client_order_number, composite: s.composite,
     container_type: s.container_type, preservation: s.preservation, sample_point: s.sample_point,
+    batch_id: s.batch_id, batch_sub_group: s.batch_sub_group,
   }
 }
 
@@ -100,13 +103,17 @@ function EditDrawer({ sample, onClose, onSaved }: { sample: LabSample; onClose: 
     batch_id:        sample.batch_id ?? '',
   })
 
+  // Snapshot of the values as the drawer opened — a field is PATCHed when it
+  // differs from this, so clearing a field ('' when it had a value) is sent too.
+  const [initialVals] = useState(vals)
+
   function set(k: string, v: string) { setVals(prev => ({ ...prev, [k]: v })) }
 
   function handleSave() {
     startTransition(async () => {
       const patch: Record<string, unknown> = {}
       for (const [k, v] of Object.entries(vals)) {
-        if (v !== '') patch[k] = v
+        if (v !== initialVals[k as keyof typeof initialVals]) patch[k] = v
       }
       const res = await patchLabSample(sample.id, patch)
       setToast({ ok: res.ok, msg: res.ok ? 'Changes saved.' : (res.message ?? 'Save failed.') })
@@ -128,7 +135,7 @@ function EditDrawer({ sample, onClose, onSaved }: { sample: LabSample; onClose: 
         <div style={{ padding: '16px 20px', borderBottom: '1px solid #F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <div>
             <h3 style={{ fontSize: 15, fontWeight: 700, color: '#14265E', margin: 0 }}>Edit Sample</h3>
-            <p style={{ fontSize: 11, color: '#9CA3AF', margin: '2px 0 0' }}>{sample.sample_id}</p>
+            <p style={{ fontSize: 11, color: '#9CA3AF', margin: '2px 0 0' }}>{displayId(sample)}</p>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
             <MI name="close" size={18} color="#9CA3AF" />
@@ -253,10 +260,9 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
   )
   const docUrl = sample.attachment_url || sample.attachment || null
 
-  // Flatten analysis requests -> one row per test
+  // Flatten analysis requests -> one row per analysis
   const analysisRows = analysisRequests.flatMap(ar =>
-    (ar.tests_detail?.length ? ar.tests_detail : ar.test_names?.map((n, i) => ({ id: i, name: n, code: '', unit: '' })) ?? [])
-      .map(t => ({ test: t, ar }))
+    ar.analyses.map(a => ({ test: { name: a.senaite_service_name }, ar }))
   )
 
   return (
@@ -322,7 +328,7 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             <MI name="inventory_2" size={16} /><span>Storage History</span>
           </button>
-          <button onClick={() => router.push(`/dashboard/audit-trail?sample=${sample.sample_id}`)}
+          <button onClick={() => router.push(`/dashboard/audit-trail?sample=${displayId(sample)}`)}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             <MI name="shield" size={16} /><span>Audit Trail</span>
           </button>
@@ -376,9 +382,9 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
             </div>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 22, fontWeight: 800, color: '#14265E' }}>{sample.sample_id}</span>
+                <span style={{ fontSize: 22, fontWeight: 800, color: '#14265E' }}>{displayId(sample)}</span>
                 <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2 }}
-                  onClick={() => navigator.clipboard?.writeText(sample.sample_id)}>
+                  onClick={() => navigator.clipboard?.writeText(displayId(sample))}>
                   <MI name="content_copy" size={14} color="#9CA3AF" />
                 </button>
               </div>
@@ -411,8 +417,8 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
           {/* Barcode */}
           <div style={{ textAlign: 'center', paddingLeft: 20, borderLeft: '1px solid #E8EAF2' }}>
             <p style={{ fontSize: 11, color: '#9CA3AF', margin: '0 0 6px' }}>Sample Bar Code</p>
-            <div style={{ height: 32, width: 160 }}><LiveBarcode value={sample.barcode || sample.sample_id} height={32} /></div>
-            <p style={{ fontSize: 11, fontWeight: 600, color: '#14265E', margin: '4px 0 0', letterSpacing: '0.05em' }}>{sample.sample_id}</p>
+            <div style={{ height: 32, width: 160 }}><LiveBarcode value={sample.barcode || displayId(sample)} height={32} /></div>
+            <p style={{ fontSize: 11, fontWeight: 600, color: '#14265E', margin: '4px 0 0', letterSpacing: '0.05em' }}>{displayId(sample)}</p>
           </div>
         </div>
 
@@ -423,7 +429,9 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
             { label: 'Received On', value: fmt(sample.received_date) },
             { label: 'Due Date', value: fmtShort(sample.expiry_date), icon: 'event' },
             { label: 'Received By', value: sample.received_by_name },
-            { label: 'TAT (Days)', value: sample.collection_date && nowMs !== null ? String(Math.max(0, Math.floor((nowMs - new Date(sample.collection_date).getTime()) / (1000 * 60 * 60 * 24)))) : '—' },
+            // TAT counts from receipt (same as the samples list), not collection —
+            // the clock only starts when the lab actually has the sample.
+            { label: 'TAT (Days)', value: sample.received_date && nowMs !== null ? String(Math.max(0, Math.floor((nowMs - new Date(sample.received_date).getTime()) / (1000 * 60 * 60 * 24)))) : '—' },
           ].map((m, i, arr) => (
             <div key={m.label} style={{ flex: 1, minWidth: 130, textAlign: 'center', borderRight: i < arr.length - 1 ? '1px solid #E8EAF2' : 'none' }}>
               <p style={{ fontSize: 11, color: '#9CA3AF', margin: '0 0 4px' }}>{m.label}</p>
@@ -470,7 +478,7 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
                   return (
                     <tr key={`${ar.id}-${i}`}>
                       <td style={{ ...td, fontWeight: 600 }}>{test.name}</td>
-                      <td style={{ ...td, color: '#2563EB', cursor: 'pointer' }} onClick={() => router.push('/dashboard/analysis-requests')}>{ar.ar_id}</td>
+                      <td style={{ ...td, color: '#2563EB', cursor: 'pointer' }} onClick={() => router.push(`/dashboard/analysis-requests?ar=${ar.id}`)}>{ar.ar_id}</td>
                       <td style={td}><span style={{ background: arBadge.bg, color: arBadge.color, borderRadius: 20, padding: '3px 9px', fontWeight: 600, fontSize: 11 }}>{arBadge.label}</span></td>
                       <td style={td}><span style={{ background: prBadge.bg, color: prBadge.color, borderRadius: 20, padding: '3px 9px', fontWeight: 600, fontSize: 11, textTransform: 'capitalize' }}>{ar.priority}</span></td>
                       <td style={td}>{fmtShort(ar.due_date)}</td>
@@ -510,11 +518,14 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
         <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #E8EAF2', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: 18 }}>
           <p style={{ fontSize: 13, fontWeight: 700, color: '#14265E', margin: '0 0 10px' }}>Documents</p>
           {docUrl ? (
-            <a href={docUrl} target="_blank" rel="noreferrer"
-              className="flex items-center gap-2 hover:underline"
-              style={{ fontSize: 13, fontWeight: 600, color: '#2563EB', textDecoration: 'none' }}>
-              <MI name="attach_file" size={18} color="#2563EB" />
-              View attachment / disposal certificate
+            <a href={docUrl} target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-2 px-3 py-2 rounded-lg"
+              style={{ border: '1px solid #E8EAF2', textDecoration: 'none', backgroundColor: '#F9FAFB' }}>
+              <MI name="description" size={18} color="#0154FC" />
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#2563EB', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {decodeURIComponent(docUrl.split('/').pop() ?? 'Attachment')}
+              </span>
+              <MI name="open_in_new" size={13} color="#9CA3AF" />
             </a>
           ) : (
             <div style={{ textAlign: 'center', padding: '18px 0', color: '#9CA3AF' }}>
