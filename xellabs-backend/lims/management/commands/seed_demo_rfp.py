@@ -60,7 +60,7 @@ class Command(BaseCommand):
     def _seed(self, schema: str) -> dict:
         from core.models import Client, Tenant, User
         from lims.models import (
-            SampleType, Method, Test, Sample, AnalysisRequest,
+            SampleType, Method, Sample, AnalysisRequest, AnalysisRequestAnalysis,
             Worksheet, WorksheetAssignment, QCSample, ChainOfCustody,
         )
         from instruments.models import (
@@ -177,7 +177,7 @@ class Command(BaseCommand):
             )
             methods[code] = m
 
-        test_specs = [
+        service_specs = [
             ("AS-ICPMS", "Arsenic (ICP-MS)", "µg/L", "EPA-200.8"),
             ("PB-ICPMS", "Lead (ICP-MS)", "µg/L", "EPA-200.8"),
             ("GLY-RES", "Glyphosate Residue", "mg/kg", "AOAC-2007.01"),
@@ -185,19 +185,13 @@ class Command(BaseCommand):
             ("AI-ASSAY", "Active Ingredient Assay", "%", "CIPAC-MT184"),
             ("PH-FORM", "Formulation pH", "pH", "CIPAC-MT184"),
         ]
-        tests = {}
-        for code, name, unit, method_code in test_specs:
-            t, _ = Test.objects.update_or_create(
-                code=code,
-                defaults={
-                    "name": name,
-                    "unit": unit,
-                    "method": methods[method_code],
-                    "description": f"Demo analysis for {name}",
-                    "is_active": True,
-                },
-            )
-            tests[code] = t
+        services = self._ensure_senaite_analysis_services(service_specs)
+        for code, name, _unit, method_code in service_specs:
+            if code not in services:
+                services[code] = {"uid": f"demo-svc-{code}", "name": name}
+                self.stderr.write(
+                    self.style.WARNING(f"SENAITE service '{code}' missing — using local fallback UID.")
+                )
 
         # ── Instruments (TC-6 multi-instrument) ───────────────────────────────
         itype_icp, _ = InstrumentType.objects.get_or_create(name="ICP-MS", defaults={"description": "Inductively coupled plasma mass spectrometry"})
@@ -378,8 +372,8 @@ class Command(BaseCommand):
                 )
 
         # ── Analysis requests + worksheet assignments (TC-6 import needs these) ─
-        def upsert_ar(ar_id, sample, test_codes, status="in_progress"):
-            ar, created = AnalysisRequest.objects.update_or_create(
+        def upsert_ar(ar_id, sample, service_codes, status="in_progress"):
+            ar, _ = AnalysisRequest.objects.update_or_create(
                 ar_id=ar_id,
                 defaults={
                     "sample": sample,
@@ -390,7 +384,17 @@ class Command(BaseCommand):
                     "created_by": admin,
                 },
             )
-            ar.tests.set([tests[c] for c in test_codes])
+            wanted_uids = {services[c]["uid"] for c in service_codes}
+            AnalysisRequestAnalysis.objects.filter(analysis_request=ar).exclude(
+                senaite_service_uid__in=wanted_uids,
+            ).delete()
+            for code in service_codes:
+                svc = services[code]
+                AnalysisRequestAnalysis.objects.get_or_create(
+                    analysis_request=ar,
+                    senaite_service_uid=svc["uid"],
+                    defaults={"senaite_service_name": svc["name"]},
+                )
             return ar
 
         ar_multi = upsert_ar("AR-DEMO-MULTI-002", s_multi, ["AS-ICPMS", "PB-ICPMS", "GLY-RES", "ATZ-RES"])
@@ -405,10 +409,12 @@ class Command(BaseCommand):
         for ar, codes in [(ar_multi, ["AS-ICPMS", "PB-ICPMS", "GLY-RES", "ATZ-RES"]),
                           (ar_open, ["AI-ASSAY", "PH-FORM"])]:
             for code in codes:
+                svc = services[code]
                 WorksheetAssignment.objects.get_or_create(
                     worksheet=ws,
                     analysis_request=ar,
-                    test=tests[code],
+                    senaite_service_uid=svc["uid"],
+                    defaults={"senaite_service_name": svc["name"]},
                 )
 
         # ── QC samples (TC-5) ────────────────────────────────────────────────
@@ -416,7 +422,8 @@ class Command(BaseCommand):
             qc_id="QC-DEMO-CTRL-FAIL",
             defaults={
                 "qc_type": "control",
-                "test": tests["AS-ICPMS"],
+                "senaite_service_uid": services["AS-ICPMS"]["uid"],
+                "senaite_service_name": services["AS-ICPMS"]["name"],
                 "worksheet": ws,
                 "lot_number": "CTRL-AS-2409",
                 "expiry_date": date.today() + timedelta(days=180),
@@ -433,7 +440,8 @@ class Command(BaseCommand):
             qc_id="QC-DEMO-CTRL-PASS",
             defaults={
                 "qc_type": "control",
-                "test": tests["PB-ICPMS"],
+                "senaite_service_uid": services["PB-ICPMS"]["uid"],
+                "senaite_service_name": services["PB-ICPMS"]["name"],
                 "worksheet": ws,
                 "lot_number": "CTRL-PB-2409",
                 "expiry_date": date.today() + timedelta(days=180),
@@ -450,7 +458,8 @@ class Command(BaseCommand):
             qc_id="QC-DEMO-BLANK-01",
             defaults={
                 "qc_type": "blank",
-                "test": tests["AS-ICPMS"],
+                "senaite_service_uid": services["AS-ICPMS"]["uid"],
+                "senaite_service_name": services["AS-ICPMS"]["name"],
                 "worksheet": ws,
                 "lot_number": "BLK-REAG-01",
                 "target_value": Decimal("0.0000"),
@@ -476,7 +485,7 @@ class Command(BaseCommand):
             "clients": len(clients),
             "sample_types": len(sample_types),
             "senaite_sample_types": senaite_types,
-            "tests": len(tests),
+            "tests": len(services),
             "instruments": Instrument.objects.filter(instrument_id__startswith="INST-DEMO-").count(),
             "samples": Sample.objects.filter(sample_id__startswith="DEMO-").count(),
             "qc_failed": qc_fail.qc_id,
@@ -543,6 +552,89 @@ class Command(BaseCommand):
             except Exception as exc:
                 self.stderr.write(self.style.WARNING(f"SENAITE create '{name}' error: {exc}"))
         return created
+
+    def _ensure_senaite_analysis_services(
+        self, specs: list[tuple[str, str, str, str]]
+    ) -> dict[str, dict[str, str]]:
+        """Ensure demo AnalysisServices exist in SENAITE; return keyword → {uid, name}."""
+        import base64
+        import os
+
+        import requests as http_requests
+        from django.conf import settings
+
+        base = getattr(settings, "SENAITE_URL", os.getenv("SENAITE_URL", "http://senaite:8080/senaite")).rstrip("/")
+        user = os.getenv("SENAITE_ADMIN_USER", "admin")
+        password = os.getenv("SENAITE_ADMIN_PASS", "admin")
+        auth = base64.b64encode(f"{user}:{password}".encode()).decode()
+        headers = {"Authorization": f"Basic {auth}", "Accept": "application/json", "Content-Type": "application/json"}
+        site_path = "/senaite" if settings.DEBUG else ""
+
+        try:
+            existing_res = http_requests.get(
+                f"{base}/@@API/senaite/v1/AnalysisService",
+                headers=headers,
+                params={"complete": "true", "limit": 1000},
+                timeout=15,
+            )
+            existing_res.raise_for_status()
+            by_keyword: dict[str, dict[str, str]] = {}
+            for item in existing_res.json().get("items") or []:
+                keyword = (item.get("Keyword") or "").strip()
+                if keyword:
+                    by_keyword[keyword] = {
+                        "uid": item.get("uid") or item.get("UID") or "",
+                        "name": (item.get("title") or "").strip(),
+                    }
+        except Exception as exc:
+            self.stderr.write(self.style.WARNING(f"SENAITE analysis services list failed: {exc}"))
+            return {}
+
+        for code, name, unit, _method_code in specs:
+            if code in by_keyword and by_keyword[code]["uid"]:
+                continue
+            try:
+                res = http_requests.post(
+                    f"{base}/@@API/senaite/v1/create",
+                    headers=headers,
+                    json={
+                        "portal_type": "AnalysisService",
+                        "parent_path": f"{site_path}/bika_setup/bika_analysisservices",
+                        "title": name,
+                        "Keyword": code,
+                        "Unit": unit,
+                        "description": f"Demo analysis for {name}",
+                    },
+                    timeout=15,
+                )
+                if not res.ok:
+                    self.stderr.write(
+                        self.style.WARNING(f"SENAITE create service '{code}' failed: {res.status_code} {res.text[:200]}")
+                    )
+            except Exception as exc:
+                self.stderr.write(self.style.WARNING(f"SENAITE create service '{code}' error: {exc}"))
+
+            # Re-fetch — create may succeed even when response body errors (SENAITE quirk).
+            try:
+                verify = http_requests.get(
+                    f"{base}/@@API/senaite/v1/AnalysisService",
+                    headers=headers,
+                    params={"complete": "true", "limit": 1000},
+                    timeout=15,
+                )
+                verify.raise_for_status()
+                for item in verify.json().get("items") or []:
+                    keyword = (item.get("Keyword") or "").strip()
+                    if keyword == code:
+                        by_keyword[code] = {
+                            "uid": item.get("uid") or item.get("UID") or "",
+                            "name": (item.get("title") or name).strip(),
+                        }
+                        break
+            except Exception as exc:
+                self.stderr.write(self.style.WARNING(f"SENAITE verify service '{code}' failed: {exc}"))
+
+        return by_keyword
 
     def _write_import_csvs(self, sample_id: str):
         """Overwrite frontend demo CSVs with live sample_id + test codes."""
