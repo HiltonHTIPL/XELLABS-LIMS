@@ -30,4 +30,16 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { label: 'Storage List', href: '/dashboard/storage-list', icon: 'inventory_2', roles: ['admin', 'lab_manager'] },
   { label: 'Report Templates', href: '/dashboard/settings/report-templates', icon: 'description', roles: ['admin'] },
   { label: 'Data Analytics', href: '/dashboard/analytics', icon: 'insights', roles: ['admin', 'lab_manager', 'analyst'] },
+  // Reference-data setup sections (mirror of SENAITE's setup matrix)
+  { label: 'Analysis Categories', href: '/dashboard/analysis-categories', icon: 'account_tree', roles: ['admin', 'lab_manager'] },
+  { label: 'Attachment Types', href: '/dashboard/attachment-types', icon: 'attach_file', roles: ['admin', 'lab_manager'] },
+  { label: 'Batch Labels', href: '/dashboard/batch-labels', icon: 'label', roles: ['admin', 'lab_manager'] },
+  { label: 'Instrument Locations', href: '/dashboard/instrument-locations', icon: 'place', roles: ['admin', 'lab_manager'] },
+  { label: 'Instrument Types', href: '/dashboard/instrument-types', icon: 'category', roles: ['admin', 'lab_manager'] },
+  { label: 'Interpretation Templates', href: '/dashboard/interpretation-templates', icon: 'description', roles: ['admin', 'lab_manager'] },
+  { label: 'Lab Contacts', href: '/dashboard/lab-contacts', icon: 'contact_page', roles: ['admin', 'lab_manager'] },
+  { label: 'Lab Departments', href: '/dashboard/lab-departments', icon: 'corporate_fare', roles: ['admin', 'lab_manager'] },
+  { label: 'Lab Products', href: '/dashboard/lab-products', icon: 'shopping_bag', roles: ['admin', 'lab_manager'] },
+  { label: 'Labels', href: '/dashboard/labels', icon: 'sell', roles: ['admin', 'lab_manager'] },
+  { label: 'Laboratory Information', href: '/dashboard/laboratory', icon: 'apartment', roles: ['admin', 'lab_manager'] },
 ]

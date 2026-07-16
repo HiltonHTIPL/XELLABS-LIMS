@@ -1,12 +1,20 @@
-const SENAITE_URL = process.env.SENAITE_URL ?? 'http://senaite:8080/senaite'
+export const SENAITE_URL = process.env.SENAITE_URL ?? 'http://senaite:8080/senaite'
 // Plone/SENAITE site root path — used for legacy create API parent_path.
 // When SENAITE_URL has no path (e.g. http://172.21.0.1:8096), pathname is '/'
 // which produces '//batches' — incorrect. Always use '/senaite' as the site root.
-const SENAITE_SITE_PATH = (() => {
+export const SENAITE_SITE_PATH = (() => {
   try {
     const p = new URL(SENAITE_URL).pathname.replace(/\/$/, '')
     return p || '/senaite'
   } catch { return '/senaite' }
+})()
+// Protocol+host only, no site path — object `path` values returned by SENAITE
+// (e.g. "/senaite/clients/client-8") already include the site path, so custom
+// Zope browser views invoked on an object/folder's own path must be built as
+// `${SENAITE_ORIGIN}${path}/@@view-name`, never `${SENAITE_URL}${path}/...`
+// (that doubles the site path segment and 404s).
+export const SENAITE_ORIGIN = (() => {
+  try { return new URL(SENAITE_URL).origin } catch { return SENAITE_URL.replace(/\/senaite\/?$/, '') }
 })()
 
 export type SenaiteUser = {
@@ -344,50 +352,69 @@ function hasContactData(p: SenaiteContactPayload): boolean {
   return Boolean(p.Firstname || p.Surname || p.EmailAddress || p.BusinessPhone || p.MobilePhone || p.JobTitle || p.Department)
 }
 
-/** Create a Client (+ its primary Contact) in SENAITE. Returns the new client UID. */
+/** Create a Client (+ its primary Contact) in SENAITE. Returns the new client
+ * UID/path (and the contact's UID, if one was created) — the caller needs
+ * these to keep saving into the SAME record on subsequent tab-by-tab saves
+ * instead of creating a duplicate client each time.
+ *
+ * Uses the custom `@@create-client-safe` Zope view (see
+ * senaite-rebrand/client_address_views.py), NOT the legacy
+ * `@@API/senaite/v1/create` endpoint — that endpoint (and plone.restapi's own
+ * PATCH) both call `obj.validate(data=True)`, which crashes with
+ * "'NoneType' object has no attribute 'get'" the moment Country/State/
+ * District on any Address block is non-blank (a SENAITE core bug: the
+ * validator needs a real Zope REQUEST that neither REST path ever supplies).
+ * The custom view sets fields via mutators instead, bypassing validate()
+ * entirely — confirmed fixed by direct testing against a live instance. */
 export async function createSenaiteClientObj(
   token: string, client: SenaiteClientPayload, contact: SenaiteContactPayload,
-): Promise<{ success: boolean; uid?: string; error?: string }> {
+): Promise<{ success: boolean; uid?: string; path?: string; contactUid?: string; error?: string }> {
   const headers = { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }
   try {
-    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
+    const res = await fetch(`${SENAITE_ORIGIN}${CLIENTS_PATH}/@@create-client-safe`, {
       method: 'POST', headers, cache: 'no-store',
-      body: JSON.stringify({ portal_type: 'Client', parent_path: CLIENTS_PATH, ...client }),
+      body: JSON.stringify({ ...client }),
     })
     const data = await res.json().catch(() => ({})) as Record<string, unknown>
-    if (!res.ok || data.success === false) return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
-    const item = ((data.items as Record<string, unknown>[]) ?? [])[0]
-    const uid = (item?.uid as string) ?? ''
-    const path = (item?.path as string) ?? ''
+    if (!res.ok || data.success === false) return { success: false, error: (data.error as string) ?? `HTTP ${res.status}` }
+    const uid = (data.uid as string) ?? ''
+    const path = (data.path as string) ?? ''
     if (!uid || !path) return { success: false, error: 'No client returned from the lab system.' }
-    if (hasContactData(contact)) await createSenaiteContactObj(token, path, contact)
-    return { success: true, uid }
+    let contactUid: string | undefined
+    if (hasContactData(contact)) {
+      const contactRes = await createSenaiteContactObj(token, path, contact)
+      contactUid = contactRes.uid
+    }
+    return { success: true, uid, path, contactUid }
   } catch (e) { return { success: false, error: String(e) } }
 }
 
-/** Update an existing Client, and upsert its primary Contact. */
+/** Update an existing Client, and upsert its primary Contact. See
+ * createSenaiteClientObj's docstring — uses `@@update-client-safe`, not the
+ * legacy/restapi update paths, for the same Address-validator crash reason. */
 export async function updateSenaiteClientObj(
   token: string, uid: string, clientPath: string,
   client: SenaiteClientPayload, contact: SenaiteContactPayload, existingContactUid: string | null,
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; contactUid?: string; error?: string }> {
   const headers = { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }
   try {
-    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update/${uid}`, {
+    const res = await fetch(`${SENAITE_ORIGIN}${clientPath}/@@update-client-safe`, {
       method: 'POST', headers, cache: 'no-store', body: JSON.stringify(client),
     })
     const data = await res.json().catch(() => ({})) as Record<string, unknown>
-    if (!res.ok || data.success === false) return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    if (!res.ok || data.success === false) return { success: false, error: (data.error as string) ?? `HTTP ${res.status}` }
+    let contactUid = existingContactUid ?? undefined
     if (hasContactData(contact)) {
       if (existingContactUid) await updateSenaiteContactObj(token, existingContactUid, contact)
-      else await createSenaiteContactObj(token, clientPath, contact)
+      else contactUid = (await createSenaiteContactObj(token, clientPath, contact)).uid
     }
-    return { success: true }
+    return { success: true, contactUid }
   } catch (e) { return { success: false, error: String(e) } }
 }
 
 export async function createSenaiteContactObj(
   token: string, clientPath: string, contact: SenaiteContactPayload,
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; uid?: string; error?: string }> {
   const headers = { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }
   try {
     const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
@@ -396,7 +423,8 @@ export async function createSenaiteContactObj(
     })
     const data = await res.json().catch(() => ({})) as Record<string, unknown>
     if (!res.ok || data.success === false) return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
-    return { success: true }
+    const item = ((data.items as Record<string, unknown>[]) ?? [])[0]
+    return { success: true, uid: (item?.uid as string) ?? undefined }
   } catch (e) { return { success: false, error: String(e) } }
 }
 
@@ -1209,13 +1237,16 @@ function first(value: unknown): string {
 }
 
 function mapSenaiteSampleTemplate(t: Record<string, unknown>): SenaiteSampleTemplate {
-  const partitions = ((t.partitions as Record<string, unknown>[]) ?? []).map(p => ({
+  // Same class of bug fixed in fetchSenaiteCalculations: SENAITE can
+  // serialize an empty reference/records field as `{}` instead of `[]`,
+  // which crashes a bare `?? []`.map() (only null/undefined is replaced).
+  const partitions = asArray(t.partitions).map(p => ({
     partId: (p.part_id as string) ?? '',
     containerUid: first(p.container),
     preservationUid: first(p.preservation),
     sampleTypeUid: first(p.sampletype),
   }))
-  const services = ((t.services as Record<string, unknown>[]) ?? []).map(s => ({
+  const services = asArray(t.services).map(s => ({
     uid: (s.uid as string) ?? '',
     hidden: Boolean(s.hidden),
     partId: (s.part_id as string) ?? '',
@@ -2228,6 +2259,8 @@ export async function createSenaiteSample(
     Priority?: string     // "1"-"5"
     ClientSampleID?: string
     Batch?: string         // Batch UID — groups this sample under a Batch (optional)
+    Composite?: boolean
+    InternalUse?: boolean
   }
 ): Promise<{ success: boolean; sample?: SenaiteSample; error?: string }> {
   const headers = {
@@ -2260,6 +2293,11 @@ export async function createSenaiteSample(
     if (payload.ClientSampleID)      body.ClientSampleID = payload.ClientSampleID
     if (payload.Contact)             body.Contact        = payload.Contact
     if (payload.Batch)               body.Batch          = payload.Batch
+    // Always sent (not gated on truthiness like the optional fields above) —
+    // these are real toggles the user can flip back to false, and SENAITE
+    // needs the explicit false to actually clear a previously-true value.
+    body.Composite   = payload.Composite ?? false
+    body.InternalUse = payload.InternalUse ?? false
 
     const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
       method: 'POST',
@@ -2957,6 +2995,16 @@ function mapInterimField(f: Record<string, unknown>): SenaiteCalculationInterimF
   }
 }
 
+// SENAITE's v1 API serializes an empty reference/records field as `{}` (an
+// object), not `[]`, when it has zero items — `?? []` only replaces
+// null/undefined, so `(c.Field ?? []).map(...)` threw on every calculation
+// with no dependent services, which the outer try/catch silently swallowed
+// as "no calculations at all". Confirmed via runtime logs, not guessed —
+// `TypeError: (a.DependentServices ?? []).map is not a function`.
+function asArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value : []
+}
+
 export async function fetchSenaiteCalculations(token: string): Promise<SenaiteCalculation[]> {
   try {
     const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Calculation?complete=true&limit=1000`, {
@@ -2965,19 +3013,19 @@ export async function fetchSenaiteCalculations(token: string): Promise<SenaiteCa
     })
     if (!res.ok) return []
     const data = await res.json()
-    const all: SenaiteCalculation[] = (data.items ?? []).map((c: Record<string, unknown>) => ({
+    const all: SenaiteCalculation[] = asArray(data.items).map((c: Record<string, unknown>) => ({
       uid: (c.uid as string) ?? '',
       id: (c.id as string) ?? '',
       title: (c.title as string) ?? '',
       description: (c.description as string) ?? '',
       formula: (c.Formula as string) ?? '',
-      interimFields: ((c.InterimFields as Record<string, unknown>[]) ?? []).map(mapInterimField),
-      dependentServiceUids: ((c.DependentServices as Record<string, unknown>[]) ?? [])
+      interimFields: asArray(c.InterimFields).map(mapInterimField),
+      dependentServiceUids: asArray(c.DependentServices)
         .map(d => (d.uid as string) ?? '').filter(Boolean),
-      pythonImports: ((c.PythonImports as Record<string, unknown>[]) ?? []).map(p => ({
+      pythonImports: asArray(c.PythonImports).map(p => ({
         module: (p.module as string) ?? '', function: (p.function as string) ?? '',
       })),
-      testParameters: ((c.TestParameters as Record<string, unknown>[]) ?? []).map(p => ({
+      testParameters: asArray(c.TestParameters).map(p => ({
         keyword: (p.keyword as string) ?? '', value: String(p.value ?? ''),
       })),
       testResult: (c.TestResult as string) ?? '',
@@ -2986,7 +3034,14 @@ export async function fetchSenaiteCalculations(token: string): Promise<SenaiteCa
     // Same unreliable-headless-create caveat as AnalysisService — a failed
     // create call can still leave an untitled orphan behind. Filter blanks.
     return all.filter(c => c.uid && c.title)
-  } catch { return [] }
+  } catch (e) {
+    // Next.js throws a special internal error (digest === 'DYNAMIC_SERVER_USAGE')
+    // during its own static-render trial pass for routes using a no-store
+    // fetch — that must propagate to Next's own handler, not be swallowed
+    // here as if it were a real network failure.
+    if ((e as { digest?: string })?.digest?.startsWith('DYNAMIC_SERVER_USAGE')) throw e
+    return []
+  }
 }
 
 export type CalculationPayload = {
@@ -3004,13 +3059,13 @@ function calculationFromViewResponse(d: Record<string, unknown>): SenaiteCalcula
     title: (d.title as string) ?? '',
     description: (d.description as string) ?? '',
     formula: (d.formula as string) ?? '',
-    interimFields: ((d.interim_fields as Record<string, unknown>[]) ?? []).map(mapInterimField),
-    dependentServiceUids: ((d.dependent_services as Record<string, unknown>[]) ?? [])
+    interimFields: asArray(d.interim_fields).map(mapInterimField),
+    dependentServiceUids: asArray(d.dependent_services)
       .map(s => (s.uid as string) ?? '').filter(Boolean),
-    pythonImports: ((d.python_imports as Record<string, unknown>[]) ?? []).map(p => ({
+    pythonImports: asArray(d.python_imports).map(p => ({
       module: (p.module as string) ?? '', function: (p.function as string) ?? '',
     })),
-    testParameters: ((d.test_parameters as Record<string, unknown>[]) ?? []).map(p => ({
+    testParameters: asArray(d.test_parameters).map(p => ({
       keyword: (p.keyword as string) ?? '', value: String(p.value ?? ''),
     })),
     testResult: (d.test_result as string) ?? '',

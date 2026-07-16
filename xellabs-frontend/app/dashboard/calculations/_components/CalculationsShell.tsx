@@ -332,6 +332,11 @@ function CalculationDrawer({ editing, services, onClose, onSaved }: {
   // Local mirror of test-run results so the panel updates without a full
   // drawer re-open (editing.testParameters/testResult only refresh on router.refresh()).
   const [testState, setTestState] = useState<{ params: SenaiteCalculationTestParameter[]; result: string } | null>(null)
+  // The parent page's toast renders behind this drawer's full-screen overlay
+  // (z-index 1000), so it was never actually visible on save — confirmed by
+  // reproducing in a real browser and checking the DOM. Show confirmation
+  // inside the drawer itself instead.
+  const [savedMsg, setSavedMsg] = useState('')
 
   function setVal<K extends keyof FV>(k: K, v: FV[K]) {
     setVals(prev => ({ ...prev, [k]: v }))
@@ -344,12 +349,22 @@ function CalculationDrawer({ editing, services, onClose, onSaved }: {
   // Imports are also freshest right after a save, e.g. Dependent Services).
   const createAction = async (prev: CalculationFormState, fd: FormData) => {
     const result = await createCalculation(prev, fd)
-    if (result.success && result.calculation) { setTestState(null); onSaved(result.calculation, result.message ?? 'Calculation created.') }
+    if (result.success && result.calculation) {
+      setTestState(null)
+      setSavedMsg(result.message ?? 'Calculation created.')
+      setTimeout(() => setSavedMsg(''), 3000)
+      onSaved(result.calculation, result.message ?? 'Calculation created.')
+    }
     return result
   }
   const editAction = async (prev: CalculationFormState, fd: FormData) => {
     const result = await updateCalculation(editing!.uid, prev, fd)
-    if (result.success && result.calculation) { setTestState(null); onSaved(result.calculation, result.message ?? 'Calculation updated.') }
+    if (result.success && result.calculation) {
+      setTestState(null)
+      setSavedMsg(result.message ?? 'Calculation updated.')
+      setTimeout(() => setSavedMsg(''), 3000)
+      onSaved(result.calculation, result.message ?? 'Calculation updated.')
+    }
     return result
   }
   const [state, action, pending] = useActionState(isEdit ? editAction : createAction, {})
@@ -439,6 +454,12 @@ function CalculationDrawer({ editing, services, onClose, onSaved }: {
           {state.message && !state.success && (
             <p className="text-xs" style={{ color: '#EF4444' }}>{state.message}</p>
           )}
+          {savedMsg && (
+            <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0' }}>
+              <MI name="check_circle" size={13} color="#166534" />
+              <span style={{ fontSize: 11, color: '#166534', fontWeight: 600 }}>{savedMsg}</span>
+            </div>
+          )}
           <div className="flex items-center justify-end gap-2 pt-1 mt-1" style={{ borderTop: '1px solid #F3F4F6' }}>
             <button type="button" onClick={onClose} disabled={pending}
               style={{ fontSize: 12, fontWeight: 500, padding: '7px 16px', borderRadius: 8, border: '1px solid #E5E7EB', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
@@ -469,11 +490,9 @@ export default function CalculationsShell({ initialCalculations, services }: {
   function openCreate() { setEditing(null); setShowDrawer(true) }
   function openEdit(c: SenaiteCalculation) { setEditing(c); setShowDrawer(true) }
   function closeDrawer() { setShowDrawer(false); setEditing(null) }
-  // Stays open after a successful save (switches into edit mode against the
-  // just-saved calculation) so Test Parameters is usable right away instead
-  // of requiring a manual reopen. Only the X/Cancel buttons actually close.
   function handleSaved(calc: SenaiteCalculation, message: string) {
-    setEditing(calc)
+    setShowDrawer(false)
+    setEditing(null)
     setToast({ ok: true, msg: message })
     setTimeout(() => setToast(null), 4000)
     router.refresh()

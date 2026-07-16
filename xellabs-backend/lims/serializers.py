@@ -157,6 +157,7 @@ class AnalysisSpecificationSerializer(serializers.ModelSerializer):
 class SampleSerializer(RecordLockMixin, serializers.ModelSerializer):
     sample_type_name = serializers.CharField(source="sample_type.name", read_only=True)
     client_name = serializers.CharField(source="client.name", read_only=True)
+    client_senaite_uid = serializers.CharField(source="client.senaite_uid", read_only=True)
     received_by_name = serializers.SerializerMethodField(read_only=True)
     reason_for_change = serializers.CharField(write_only=True, required=False, allow_blank=True)
 

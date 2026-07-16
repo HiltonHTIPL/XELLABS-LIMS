@@ -11,15 +11,68 @@ import { StatCard, Pagination, EmptyState } from '@/app/dashboard/_components/ui
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
 
+// ── Column config ─────────────────────────────────────────────────────────────
+const ALL_COLUMNS = [
+  { key: 'client_id',   label: 'Client ID',       defaultVisible: true  },
+  { key: 'name',        label: 'Client Name',     defaultVisible: true  },
+  { key: 'contact',     label: 'Primary Contact', defaultVisible: true  },
+  { key: 'phone',       label: 'Phone',           defaultVisible: true  },
+  { key: 'email',       label: 'Email',           defaultVisible: true  },
+  { key: 'status',      label: 'Status',          defaultVisible: true  },
+  { key: 'tax_number',  label: 'Tax Number',      defaultVisible: false },
+  { key: 'account_name', label: 'Account Name',   defaultVisible: false },
+  { key: 'account_number', label: 'Account Number', defaultVisible: false },
+  { key: 'physical_address', label: 'Physical Address', defaultVisible: false },
+  { key: 'billing_address',  label: 'Billing Address',  defaultVisible: false },
+] as const
+type ColKey = typeof ALL_COLUMNS[number]['key']
+const DEFAULT_VISIBLE = new Set<ColKey>(ALL_COLUMNS.filter(c => c.defaultVisible).map(c => c.key))
+const COLS_LS_KEY = 'xl_clients_cols'
+const SAVED_FILTERS_LS_KEY = 'xl_clients_saved_filters'
+
+type ClientFilterSnapshot = { search: string; status: 'all' | 'active' | 'inactive'; contactsOnly: boolean }
+type ClientSavedFilter = { name: string; filters: ClientFilterSnapshot }
+
+type SortKey = 'name' | 'status'
+type SortDir = 'asc' | 'desc'
+
+function fmtAddress(a: { address: string; city: string; state: string; zip: string; country: string } | null): string {
+  if (!a) return ''
+  return [a.address, a.city, a.state, a.zip, a.country].filter(Boolean).join(', ')
+}
+
+function primaryContactNameOf(c: SenaiteClientFull): string {
+  return [c.contact?.Salutation, c.contact?.Firstname, c.contact?.Surname].filter(Boolean).join(' ')
+}
+
+// Shared CSV export — used by both the toolbar "Export" (respects filters) and
+// the bulk-actions "Export Selected" (only checked rows).
+function exportClientsCsv(rows: SenaiteClientFull[], filenamePrefix: string) {
+  const headers = ['Client ID', 'Client Name', 'Primary Contact', 'Phone', 'Email', 'Status']
+  const csvRows = rows.map(c => [
+    c.ClientID || '', c.title, primaryContactNameOf(c), c.Phone || '', c.EmailAddress || '',
+    c.review_state === 'active' ? 'Active' : 'Inactive',
+  ])
+  const esc = (v: string) => (v.includes(',') || v.includes('"') ? `"${v.replace(/"/g, '""')}"` : v)
+  const csv = [headers.join(','), ...csvRows.map(r => r.map(esc).join(','))].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${filenamePrefix}-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
 }
 
 // ── Controlled field ──────────────────────────────────────────────────────────
-function Field({ label, name, type = 'text', placeholder, required, error, as, value, onChange }: {
+function Field({ label, name, type = 'text', placeholder, required, error, as, value, onChange, onBlur }: {
   label: string; name: string; type?: string; placeholder?: string
   required?: boolean; error?: string; as?: 'textarea'
-  value: string; onChange: (v: string) => void
+  value: string; onChange: (v: string) => void; onBlur?: (v: string) => void
 }) {
   const base = 'w-full px-3 py-2 text-xs rounded-lg outline-none'
   const style = { border: `1px solid ${error ? '#FCA5A5' : '#D1D5DB'}`, color: '#111827' }
@@ -30,24 +83,72 @@ function Field({ label, name, type = 'text', placeholder, required, error, as, v
       </label>
       {as === 'textarea'
         ? <textarea name={name} rows={4} placeholder={placeholder} value={value}
-            onChange={e => onChange(e.target.value)} className={`${base} resize-none`} style={style} />
-        : <input name={name} type={type} placeholder={placeholder} value={value}
-            onChange={e => onChange(e.target.value)} className={base} style={style} />}
+            onChange={e => onChange(e.target.value)} onBlur={e => onBlur?.(e.target.value)} className={`${base} resize-none`} style={style} />
+        // type="text" (not "email") — the browser's native email constraint
+        // validation only surfaces at submit time via a blocking tooltip
+        // ("Please enter a part following '@'"), which is exactly the
+        // late/inline-elsewhere validation UX this was built to avoid. Format
+        // checking instead runs onBlur below, showing the same inline error
+        // style as every other field in this form.
+        : <input name={name} type={type === 'email' ? 'text' : type} placeholder={placeholder} value={value}
+            onChange={e => onChange(e.target.value)} onBlur={e => onBlur?.(e.target.value)} className={base} style={style} />}
       {error && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{error}</p>}
     </div>
   )
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
 function Row({ children }: { children: React.ReactNode }) {
   return <div className="flex gap-3">{children}</div>
 }
 
-function AddressBlock({ prefix, label, vals, set }: {
+// SENAITE-style "Copy from" — copies another address block's field values
+// (street/city/state/zip/country) into this block's fields in one click.
+function CopyFromMenu({ options, onCopy }: { options: { label: string; prefix: string }[]; onCopy: (prefix: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    function handler(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+  if (!options.length) return null
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button type="button" onClick={() => setOpen(o => !o)} className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium"
+        style={{ border: '1px solid #BFDBFE', color: '#2563EB', background: '#fff', cursor: 'pointer' }}>
+        <MI name="content_copy" size={12} color="#2563EB" /> Copy from
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, zIndex: 20, backgroundColor: '#fff', border: '1px solid #E8EAF2', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: 150, padding: '4px 0' }}>
+          {options.map(o => (
+            <button key={o.prefix} type="button" onClick={() => { onCopy(o.prefix); setOpen(false) }}
+              className="flex items-center w-full px-3 py-1.5 text-xs hover:bg-gray-50" style={{ color: '#374151', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AddressBlock({ prefix, label, vals, set, copyOptions }: {
   prefix: string; label: string; vals: FV; set: (k: string, v: string) => void
+  copyOptions?: { label: string; prefix: string }[]
 }) {
+  function copyFrom(sourcePrefix: string) {
+    for (const suffix of ['street', 'city', 'state', 'zip', 'country']) {
+      set(`${prefix}_${suffix}`, vals[`${sourcePrefix}_${suffix}`] ?? '')
+    }
+  }
   return (
     <div className="space-y-2.5 rounded-xl p-4" style={{ border: '1px solid #E8EAF2', backgroundColor: '#FAFAFA' }}>
-      <p className="text-xs font-semibold" style={{ color: '#374151' }}>{label}</p>
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold" style={{ color: '#374151' }}>{label}</p>
+        <CopyFromMenu options={copyOptions ?? []} onCopy={copyFrom} />
+      </div>
       <Field label="Street / Address" name={`${prefix}_street`} placeholder="123 Main Street" value={vals[`${prefix}_street`] ?? ''} onChange={v => set(`${prefix}_street`, v)} />
       <Row>
         <Field label="City" name={`${prefix}_city`} placeholder="City" value={vals[`${prefix}_city`] ?? ''} onChange={v => set(`${prefix}_city`, v)} />
@@ -69,20 +170,33 @@ const STEPS = [
   { label: 'Notes', icon: 'notes' },
 ] as const
 
-function StepBar({ step }: { step: number }) {
+function StepBar({ step, onStepClick }: { step: number; onStepClick?: (i: number) => void }) {
+  // Clickable only when editing (onStepClick passed) — matches SENAITE: an
+  // existing object's tabs are freely navigable, but the one-pass Create
+  // wizard only moves forward via Next, tab-by-tab.
   return (
     <div className="flex items-center gap-0 mb-5">
       {STEPS.map((s, i) => {
         const done = i < step; const active = i === step; const isLast = i === STEPS.length - 1
+        const content = (
+          <>
+            <div className="w-8 h-8 rounded-full flex items-center justify-center"
+              style={{ backgroundColor: done ? '#0154FC' : active ? '#DBEAFE' : '#F3F4F6', border: (active || done) ? '2px solid #0154FC' : '2px solid #E5E7EB' }}>
+              {done ? <MI name="check" size={14} color="#fff" /> : <MI name={s.icon} size={13} color={active ? '#0154FC' : '#9CA3AF'} />}
+            </div>
+            <span className="mt-1 text-center" style={{ fontSize: 9, fontWeight: active ? 600 : 400, color: (active || done) ? '#0154FC' : '#9CA3AF', lineHeight: 1.2, whiteSpace: 'nowrap' }}>{s.label}</span>
+          </>
+        )
         return (
           <div key={s.label} className="flex items-center flex-1">
-            <div className="flex flex-col items-center" style={{ minWidth: 56 }}>
-              <div className="w-8 h-8 rounded-full flex items-center justify-center"
-                style={{ backgroundColor: done ? '#0154FC' : active ? '#DBEAFE' : '#F3F4F6', border: (active || done) ? '2px solid #0154FC' : '2px solid #E5E7EB' }}>
-                {done ? <MI name="check" size={14} color="#fff" /> : <MI name={s.icon} size={13} color={active ? '#0154FC' : '#9CA3AF'} />}
-              </div>
-              <span className="mt-1 text-center" style={{ fontSize: 9, fontWeight: active ? 600 : 400, color: (active || done) ? '#0154FC' : '#9CA3AF', lineHeight: 1.2, whiteSpace: 'nowrap' }}>{s.label}</span>
-            </div>
+            {onStepClick ? (
+              <button type="button" onClick={() => onStepClick(i)} className="flex flex-col items-center"
+                style={{ minWidth: 56, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}>
+                {content}
+              </button>
+            ) : (
+              <div className="flex flex-col items-center" style={{ minWidth: 56 }}>{content}</div>
+            )}
             {!isLast && <div className="flex-1 h-px mx-1 mb-4" style={{ backgroundColor: done ? '#0154FC' : '#E5E7EB' }} />}
           </div>
         )
@@ -182,33 +296,146 @@ function ActionsMenu({ client, onEdit, onDone }: { client: SenaiteClientFull; on
   )
 }
 
-export default function ClientsShell({ initialClients, clientIdByUid }: { initialClients: SenaiteClientFull[]; clientIdByUid: Record<string, number> }) {
+export default function ClientsShell({ initialClients }: { initialClients: SenaiteClientFull[] }) {
   const router = useRouter()
   const [showForm, setShowForm] = useState(false)
   const [step, setStep] = useState(0)
   const [editing, setEditing] = useState<SenaiteClientFull | null>(null)
+  // Identity captured after the FIRST successful save of a brand-new client —
+  // matches SENAITE's own progressive-save behavior: saving on an earlier tab
+  // actually creates the record right then, and every subsequent tab save
+  // updates that same record instead of creating a duplicate. Kept separate
+  // from `editing` so button labels (Save Changes vs Create) still reflect
+  // whether the drawer was opened via "New Client" vs "Edit".
+  const [sessionIdentity, setSessionIdentity] = useState<{ uid: string; path: string; contactUid?: string } | null>(null)
   const [vals, setVals] = useState<FV>(blankFV)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [clientIdCheck, setClientIdCheck] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle')
-  const [checkingNext, setCheckingNext] = useState(false)
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
+  const [contactsOnly, setContactsOnly] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [refreshing, startRefresh] = useTransition()
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
 
+  // ── Sorting ──
+  const [sortKey, setSortKey] = useState<SortKey | null>(null)
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+    else { setSortKey(key); setSortDir('asc') }
+  }
+
+  // ── Column chooser ──
+  const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(() => {
+    if (typeof window === 'undefined') return DEFAULT_VISIBLE
+    try {
+      const saved = localStorage.getItem(COLS_LS_KEY)
+      if (saved) return new Set(JSON.parse(saved) as ColKey[])
+    } catch { /* ignore */ }
+    return DEFAULT_VISIBLE
+  })
+  const [colMenuOpen, setColMenuOpen] = useState(false)
+  const [colMenuPos, setColMenuPos] = useState<{ top: number; right: number } | null>(null)
+  const colBtnRef = useRef<HTMLButtonElement>(null)
+  function openColMenu() {
+    const rect = colBtnRef.current!.getBoundingClientRect()
+    setColMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+    setColMenuOpen(o => !o)
+  }
+  function toggleCol(key: ColKey) {
+    setVisibleCols(prev => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      try { localStorage.setItem(COLS_LS_KEY, JSON.stringify([...next])) } catch { /* ignore */ }
+      return next
+    })
+  }
+  const vis = (key: ColKey) => visibleCols.has(key)
+
+  // ── Saved filters ──
+  const [savedFilters, setSavedFilters] = useState<ClientSavedFilter[]>(() => {
+    if (typeof window === 'undefined') return []
+    try {
+      const raw = localStorage.getItem(SAVED_FILTERS_LS_KEY)
+      return raw ? (JSON.parse(raw) as ClientSavedFilter[]) : []
+    } catch { return [] }
+  })
+  const [savedFiltersOpen, setSavedFiltersOpen] = useState(false)
+  const [savedFiltersPos, setSavedFiltersPos] = useState<{ top: number; right: number } | null>(null)
+  const savedFiltersBtnRef = useRef<HTMLButtonElement>(null)
+  const [saveFilterModalOpen, setSaveFilterModalOpen] = useState(false)
+  const [newFilterName, setNewFilterName] = useState('')
+
+  function persistSavedFilters(next: ClientSavedFilter[]) {
+    setSavedFilters(next)
+    try { localStorage.setItem(SAVED_FILTERS_LS_KEY, JSON.stringify(next)) } catch { /* ignore */ }
+  }
+  function openSavedFilters() {
+    const rect = savedFiltersBtnRef.current!.getBoundingClientRect()
+    setSavedFiltersPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+    setSavedFiltersOpen(o => !o)
+  }
+  function saveCurrentFilters() { setNewFilterName(''); setSaveFilterModalOpen(true) }
+  function confirmSaveFilter() {
+    const name = newFilterName.trim()
+    if (!name) return
+    const snapshot: ClientFilterSnapshot = { search, status: statusFilter, contactsOnly }
+    const next = [...savedFilters.filter(f => f.name !== name), { name, filters: snapshot }]
+    persistSavedFilters(next)
+    setSaveFilterModalOpen(false)
+    setSavedFiltersOpen(false)
+  }
+  function applySavedFilter(f: ClientSavedFilter) {
+    setSearch(f.filters.search); setStatusFilter(f.filters.status); setContactsOnly(f.filters.contactsOnly)
+    setPage(1)
+    setSavedFiltersOpen(false)
+  }
+  function deleteSavedFilter(name: string) { persistSavedFilters(savedFilters.filter(f => f.name !== name)) }
+
+  // ── Bulk actions ──
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkMenuOpen, setBulkMenuOpen] = useState(false)
+  const [bulkMenuPos, setBulkMenuPos] = useState<{ top: number; right: number } | null>(null)
+  const [bulkPending, setBulkPending] = useState(false)
+  const bulkBtnRef = useRef<HTMLButtonElement>(null)
+  function toggleRow(uid: string) {
+    setSelected(prev => { const n = new Set(prev); n.has(uid) ? n.delete(uid) : n.add(uid); return n })
+  }
+  function openBulkMenu() {
+    if (selected.size === 0) return
+    const rect = bulkBtnRef.current!.getBoundingClientRect()
+    setBulkMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+    setBulkMenuOpen(o => !o)
+  }
+  async function runBulkActivate(active: boolean) {
+    setBulkPending(true)
+    setBulkMenuOpen(false)
+    try {
+      await Promise.all([...selected].map(uid => toggleSenaiteClientActive(uid, active)))
+      setSelected(new Set())
+      router.refresh()
+      showToast(true, `${active ? 'Activated' : 'Deactivated'} ${selected.size} client${selected.size !== 1 ? 's' : ''}.`)
+    } finally {
+      setBulkPending(false)
+    }
+  }
+  function handleExportSelected() {
+    exportClientsCsv(initialClients.filter(c => selected.has(c.uid)), 'clients-selected')
+  }
+
   useEffect(() => { setLastUpdated(new Date()) }, [initialClients])
 
-  const primaryContactName = (c: SenaiteClientFull) =>
-    [c.contact?.Salutation, c.contact?.Firstname, c.contact?.Surname].filter(Boolean).join(' ')
+  const primaryContactName = primaryContactNameOf
 
-  const filtered = initialClients.filter(c => {
+  const filteredUnsorted = initialClients.filter(c => {
     const active = c.review_state === 'active'
     if (statusFilter === 'active' && !active) return false
     if (statusFilter === 'inactive' && active) return false
+    if (contactsOnly && !(c.contact && (c.contact.Firstname || c.contact.Surname))) return false
     if (search) {
       const needle = search.toLowerCase()
       const hay = [c.title, c.ClientID, primaryContactName(c), c.EmailAddress].filter(Boolean).join(' ').toLowerCase()
@@ -216,6 +443,15 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
     }
     return true
   })
+
+  const filtered = sortKey
+    ? [...filteredUnsorted].sort((a, b) => {
+        const av = sortKey === 'name' ? a.title.toLowerCase() : a.review_state
+        const bv = sortKey === 'name' ? b.title.toLowerCase() : b.review_state
+        const cmp = av < bv ? -1 : av > bv ? 1 : 0
+        return sortDir === 'asc' ? cmp : -cmp
+      })
+    : filteredUnsorted
 
   const total = initialClients.length
   const activeCount = initialClients.filter(c => c.review_state === 'active').length
@@ -225,8 +461,11 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize)
 
-  function clearFilters() { setSearch(''); setStatusFilter('all'); setPage(1) }
+  function clearFilters() { setSearch(''); setStatusFilter('all'); setContactsOnly(false); setPage(1) }
   function handleRefresh() { startRefresh(() => { router.refresh(); setLastUpdated(new Date()) }) }
+
+  // Export to CSV — respects the currently-applied search/status/contacts filters
+  function handleExport() { exportClientsCsv(filtered, 'clients') }
   function showToast(ok: boolean, msg: string) { setToast({ ok, msg }); setTimeout(() => setToast(null), 4000) }
 
   function setVal(k: string, v: string) {
@@ -236,12 +475,28 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
 
   const [, action, pending] = useActionState(
     async (prev: ClientFormState, fd: FormData) => {
-      const result = editing
-        ? await updateSenaiteClient(editing.uid, editing.path, editing.contact?.uid ?? null, prev, fd)
+      const identity = editing
+        ? { uid: editing.uid, path: editing.path, contactUid: editing.contact?.uid }
+        : sessionIdentity
+      const result = identity
+        ? await updateSenaiteClient(identity.uid, identity.path, identity.contactUid ?? null, prev, fd)
         : await createSenaiteClient(prev, fd)
       if (result.success) {
-        setShowForm(false); setStep(0); setEditing(null); setVals(blankFV()); setFieldErrors({})
-        showToast(true, result.message ?? 'Saved.')
+        const wasLastStep = step === STEPS.length - 1
+        if (!editing && result.uid && result.path) {
+          // First successful save of a brand-new client — remember its
+          // identity so every save from here on updates this same record.
+          setSessionIdentity({ uid: result.uid, path: result.path, contactUid: result.contactUid })
+        }
+        if (wasLastStep) {
+          setShowForm(false); setStep(0); setEditing(null); setVals(blankFV()); setFieldErrors({}); setSessionIdentity(null)
+          showToast(true, result.message ?? 'Saved.')
+        } else {
+          // Progressive save, SENAITE-style: persist what's filled in so far
+          // and move to the next tab — the drawer stays open, nothing is lost.
+          setStep(s => s + 1)
+          showToast(true, result.message ?? 'Saved.')
+        }
         router.refresh()
       } else if (result.errors) {
         const fe: Record<string, string> = {}
@@ -267,9 +522,9 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
     {},
   )
 
-  function openCreate() { setEditing(null); setVals(blankFV()); setFieldErrors({}); setClientIdCheck('idle'); setStep(0); setShowForm(true) }
-  function openEdit(c: SenaiteClientFull) { setEditing(c); setVals(clientToFV(c)); setFieldErrors({}); setClientIdCheck('idle'); setStep(0); setShowForm(true) }
-  function closeForm() { setShowForm(false); setStep(0); setEditing(null); setFieldErrors({}); setClientIdCheck('idle') }
+  function openCreate() { setEditing(null); setSessionIdentity(null); setVals(blankFV()); setFieldErrors({}); setClientIdCheck('idle'); setStep(0); setShowForm(true) }
+  function openEdit(c: SenaiteClientFull) { setEditing(c); setSessionIdentity(null); setVals(clientToFV(c)); setFieldErrors({}); setClientIdCheck('idle'); setStep(0); setShowForm(true) }
+  function closeForm() { setShowForm(false); setStep(0); setEditing(null); setSessionIdentity(null); setFieldErrors({}); setClientIdCheck('idle') }
 
   const isFirst = step === 0
   const isLast = step === STEPS.length - 1
@@ -290,30 +545,21 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
     }
   }
 
-  async function handleNext() {
-    if (step === 0) {
-      const errs: Record<string, string> = {}
-      if (!vals.name?.trim()) errs.name = 'Client name is required'
-      const clientId = vals.client_id?.trim()
-      if (!clientId) errs.client_id = 'Client ID is required'
-      if (Object.keys(errs).length) { setFieldErrors(prev => ({ ...prev, ...errs })); return }
-
-      setCheckingNext(true)
-      const available = await checkClientIdAvailable(clientId, editing?.uid)
-      setCheckingNext(false)
-      setClientIdCheck(available === false ? 'taken' : 'available')
-      if (available === false) {
-        setFieldErrors(prev => ({ ...prev, client_id: 'This Client ID is already in use — choose a different one.' }))
-        return
-      }
-    }
-    setStep(s => s + 1)
+  function handleEmailBlur(field: 'email' | 'contact_email', value: string) {
+    const trimmed = value.trim()
+    setFieldErrors(prev => {
+      const next = { ...prev }
+      if (trimmed && !EMAIL_RE.test(trimmed)) next[field] = 'Enter a valid email address.'
+      else delete next[field]
+      return next
+    })
   }
 
+
   return (
-    <div style={{ padding: 20, minHeight: '100%' }}>
+    <div style={{ padding: 20, height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-3" style={{ flexShrink: 0 }}>
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Clients</h1>
           <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Manage all clients and their contact information.</p>
@@ -337,7 +583,7 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
       )}
 
       {/* Stat cards — first 3 act as quick status filters */}
-      <div className="grid grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-4 gap-3 mb-4" style={{ flexShrink: 0 }}>
         <button onClick={() => { setStatusFilter('all'); setPage(1) }} className="text-left rounded-xl"
           style={{ cursor: 'pointer', border: 'none', background: 'none', padding: 0, outline: statusFilter === 'all' ? '2px solid #0154FC' : 'none' }}>
           <StatCard icon="groups" label="Total Clients" value={total} sub="All time" />
@@ -352,11 +598,17 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
           <StatCard icon="person_off" iconColor="#D97706" iconBg="#FFFBEB" label="Inactive Clients" value={inactiveCount}
             sub={total ? `${((inactiveCount / total) * 100).toFixed(1)}% of total` : undefined} />
         </button>
-        <StatCard icon="contact_page" iconColor="#7C3AED" iconBg="#F5F3FF" label="Contacts" value={contactsCount} sub="Across all clients" />
+        <button onClick={() => { setContactsOnly(v => !v); setPage(1) }} className="text-left rounded-xl"
+          style={{ cursor: 'pointer', border: 'none', background: 'none', padding: 0, outline: contactsOnly ? '2px solid #7C3AED' : 'none' }}>
+          <StatCard icon="contact_page" iconColor="#7C3AED" iconBg="#F5F3FF" label="Contacts" value={contactsCount} sub={contactsOnly ? 'Showing clients with contacts' : 'Across all clients'} />
+        </button>
       </div>
 
-      {/* Filter bar */}
-      <div className="flex items-center gap-2 mb-3 flex-wrap">
+      {/* Filter bar — bottom-aligned (items-end), not centered: Status/Export/
+          Columns/Saved Filters each sit under a label (even an invisible one,
+          for height-matching) while Search has none, so center-alignment made
+          the buttons visibly sit lower than the search box. */}
+      <div className="flex items-end gap-2 mb-3 flex-wrap" style={{ flexShrink: 0 }}>
         <div className="relative" style={{ flex: 1, minWidth: 260, maxWidth: 420 }}>
           <span className="absolute" style={{ left: 10, top: '50%', transform: 'translateY(-50%)' }}>
             <MI name="search" size={16} color="#9CA3AF" />
@@ -374,6 +626,36 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
             <option value="inactive">Inactive</option>
           </select>
         </div>
+        <div>
+          <label className="block" style={{ fontSize: 10, color: 'transparent' }}>Export</label>
+          <button onClick={handleExport} className="flex items-center gap-1.5 px-3 rounded-lg text-xs font-medium"
+            style={{ height: 36, border: '1px solid #D1D5DB', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
+            <MI name="download" size={14} color="#374151" /> Export
+          </button>
+        </div>
+        <div>
+          <label className="block" style={{ fontSize: 10, color: 'transparent' }}>Columns</label>
+          <button ref={colBtnRef} onClick={openColMenu} className="flex items-center gap-1.5 px-3 rounded-lg text-xs font-medium"
+            style={{ height: 36, border: '1px solid #D1D5DB', color: '#374151', backgroundColor: colMenuOpen ? '#F3F4F6' : '#fff', cursor: 'pointer' }}>
+            <MI name="view_column" size={14} color="#374151" /> Columns
+          </button>
+        </div>
+        <div>
+          <label className="block" style={{ fontSize: 10, color: 'transparent' }}>Saved Filters</label>
+          <button ref={savedFiltersBtnRef} onClick={openSavedFilters} className="flex items-center gap-1.5 px-3 rounded-lg text-xs font-medium"
+            style={{ height: 36, border: '1px solid #D1D5DB', color: '#374151', backgroundColor: savedFiltersOpen ? '#F3F4F6' : '#fff', cursor: 'pointer' }}>
+            <MI name="filter_list" size={14} color="#374151" /> Saved Filters
+          </button>
+        </div>
+        {selected.size > 0 && (
+          <div>
+            <label className="block" style={{ fontSize: 10, color: 'transparent' }}>Bulk</label>
+            <button ref={bulkBtnRef} onClick={openBulkMenu} disabled={bulkPending} className="flex items-center gap-1.5 px-3 rounded-lg text-xs font-medium"
+              style={{ height: 36, border: '1px solid #D1D5DB', color: '#374151', backgroundColor: bulkMenuOpen ? '#F3F4F6' : '#fff', cursor: bulkPending ? 'not-allowed' : 'pointer', opacity: bulkPending ? 0.6 : 1 }}>
+              <MI name="checklist" size={14} color="#374151" /> Bulk Actions ({selected.size})
+            </button>
+          </div>
+        )}
         <div className="flex-1" />
         <button onClick={clearFilters} className="flex items-center gap-1.5 px-3 rounded-lg text-xs font-medium"
           style={{ height: 36, border: '1px solid #D1D5DB', color: '#374151', backgroundColor: '#fff' }}>
@@ -383,6 +665,111 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
           <MI name="add" size={14} color="#fff" /> New Client
         </button>
       </div>
+
+      {/* ── Column chooser dropdown ── */}
+      {colMenuOpen && colMenuPos && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 9990 }} onClick={() => setColMenuOpen(false)} />
+          <div style={{ position: 'fixed', top: colMenuPos.top, right: colMenuPos.right, zIndex: 9999, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 200, padding: '8px 0', overflow: 'hidden' }}>
+            <div style={{ padding: '6px 14px 8px', borderBottom: '1px solid #F3F4F6' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Toggle Columns</span>
+            </div>
+            {ALL_COLUMNS.map(col => (
+              <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', cursor: 'pointer', fontSize: 13, color: '#374151' }}>
+                <input type="checkbox" checked={vis(col.key)} onChange={() => toggleCol(col.key)}
+                  style={{ width: 14, height: 14, accentColor: '#2563EB', cursor: 'pointer' }} />
+                {col.label}
+              </label>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* ── Bulk actions dropdown ── */}
+      {bulkMenuOpen && bulkMenuPos && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 9990 }} onClick={() => setBulkMenuOpen(false)} />
+          <div style={{ position: 'fixed', top: bulkMenuPos.top, right: bulkMenuPos.right, zIndex: 9999, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 220, padding: '8px 0', overflow: 'hidden' }}>
+            <div style={{ padding: '6px 14px 8px', borderBottom: '1px solid #F3F4F6' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', letterSpacing: '0.05em', textTransform: 'uppercase' }}>{selected.size} Selected</span>
+            </div>
+            <button onClick={() => runBulkActivate(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#374151', textAlign: 'left' }}>
+              <MI name="check_circle" size={15} color="#0154FC" /> Activate Selected
+            </button>
+            <button onClick={() => runBulkActivate(false)}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#374151', textAlign: 'left' }}>
+              <MI name="block" size={15} color="#DC2626" /> Deactivate Selected
+            </button>
+            <div style={{ borderTop: '1px solid #F3F4F6', margin: '4px 0' }} />
+            <button onClick={() => { setBulkMenuOpen(false); handleExportSelected() }}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#374151', textAlign: 'left' }}>
+              <MI name="download" size={15} color="#6B7280" /> Export Selected
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ── Saved filters dropdown ── */}
+      {savedFiltersOpen && savedFiltersPos && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 9990 }} onClick={() => setSavedFiltersOpen(false)} />
+          <div style={{ position: 'fixed', top: savedFiltersPos.top, right: savedFiltersPos.right, zIndex: 9999, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 240, padding: '8px 0', overflow: 'hidden' }}>
+            <div style={{ padding: '6px 14px 8px', borderBottom: '1px solid #F3F4F6' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Saved Filters</span>
+            </div>
+            {savedFilters.length === 0 ? (
+              <p style={{ padding: '10px 14px', fontSize: 12, color: '#9CA3AF' }}>No saved filters yet.</p>
+            ) : savedFilters.map(f => (
+              <div key={f.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 6px' }}>
+                <button onClick={() => applySavedFilter(f)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, padding: '9px 8px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#374151', textAlign: 'left' }}>
+                  <MI name="bookmark" size={15} color="#2563EB" /> {f.name}
+                </button>
+                <button onClick={() => deleteSavedFilter(f.name)} title="Delete"
+                  style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 6, borderRadius: 4, color: '#9CA3AF' }}>
+                  <MI name="close" size={14} />
+                </button>
+              </div>
+            ))}
+            <div style={{ borderTop: '1px solid #F3F4F6', marginTop: 4 }}>
+              <button onClick={saveCurrentFilters}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#2563EB', fontWeight: 600, textAlign: 'left' }}>
+                <MI name="add" size={15} color="#2563EB" /> Save Current Filters
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Save filter view modal ── */}
+      {saveFilterModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div onClick={() => setSaveFilterModalOpen(false)} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)' }} />
+          <div style={{ position: 'relative', width: 360, backgroundColor: '#fff', borderRadius: 14, boxShadow: '0 12px 40px rgba(0,0,0,0.18)', padding: 20 }}>
+            <h3 className="text-sm font-semibold mb-3" style={{ color: '#111827' }}>Name this filter view</h3>
+            <input
+              autoFocus
+              value={newFilterName}
+              onChange={e => setNewFilterName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') confirmSaveFilter() }}
+              placeholder="e.g. Active Farms Clients"
+              className="w-full px-3 py-2 text-sm rounded-lg outline-none mb-4"
+              style={{ border: '1px solid #D1D5DB', color: '#111827' }}
+            />
+            <div className="flex items-center justify-end gap-2">
+              <button onClick={() => setSaveFilterModalOpen(false)}
+                style={{ fontSize: 12, fontWeight: 500, padding: '7px 16px', borderRadius: 8, border: '1px solid #E8EAF2', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button onClick={confirmSaveFilter} disabled={!newFilterName.trim()}
+                style={{ fontSize: 12, fontWeight: 600, padding: '7px 18px', borderRadius: 8, backgroundColor: '#0154FC', color: '#fff', border: 'none', cursor: newFilterName.trim() ? 'pointer' : 'not-allowed', opacity: newFilterName.trim() ? 1 : 0.5 }}>
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Drawer ── */}
       <div style={{ position: 'fixed', top: 0, bottom: 0, left: 0, right: 0, zIndex: 200, pointerEvents: showForm ? 'auto' : 'none' }}>
@@ -401,7 +788,7 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
             <button onClick={closeForm} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
           </div>
 
-          <div className="px-6 pt-4 shrink-0"><StepBar step={step} /></div>
+          <div className="px-6 pt-4 shrink-0"><StepBar step={step} onStepClick={setStep} /></div>
 
           <form
             action={action}
@@ -431,7 +818,7 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
                       </label>
                       <div className="relative">
                         <input
-                          placeholder="e.g. CL-001" required value={vals.client_id}
+                          placeholder="e.g. CL-001" value={vals.client_id}
                           onChange={e => { setVal('client_id', e.target.value); setClientIdCheck('idle') }}
                           onBlur={e => handleClientIdBlur(e.target.value)}
                           className="w-full px-3 py-2 text-xs rounded-lg outline-none"
@@ -450,7 +837,7 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
                     </div>
                   </Row>
                   <Row>
-                    <Field label="Email Address" name="_email" type="email" placeholder="contact@client.com" value={vals.email} onChange={v => setVal('email', v)} />
+                    <Field label="Email Address" name="_email" type="email" placeholder="contact@client.com" value={vals.email} onChange={v => setVal('email', v)} onBlur={v => handleEmailBlur('email', v)} error={fieldErrors.email} />
                     <Field label="Phone" name="_phone" placeholder="+1 555 000 0000" value={vals.phone} onChange={v => setVal('phone', v)} />
                   </Row>
                   <Row>
@@ -476,7 +863,7 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
                     <Field label="Last Name" name="_cl" placeholder="Last name" value={vals.contact_last_name} onChange={v => setVal('contact_last_name', v)} />
                   </Row>
                   <Row>
-                    <Field label="Contact Email" name="_ce" type="email" placeholder="person@client.com" value={vals.contact_email} onChange={v => setVal('contact_email', v)} />
+                    <Field label="Contact Email" name="_ce" type="email" placeholder="person@client.com" value={vals.contact_email} onChange={v => setVal('contact_email', v)} onBlur={v => handleEmailBlur('contact_email', v)} error={fieldErrors.contact_email} />
                     <Field label="Business Phone" name="_cp" placeholder="+1 555 000 0003" value={vals.contact_phone} onChange={v => setVal('contact_phone', v)} />
                   </Row>
                   <Row>
@@ -493,9 +880,12 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
               {/* Step 3 — Addresses */}
               <div style={{ display: step === 2 ? 'block' : 'none' }}>
                 <div className="space-y-3">
-                  <AddressBlock prefix="physical" label="Physical Address" vals={vals} set={setVal} />
-                  <AddressBlock prefix="postal" label="Postal Address" vals={vals} set={setVal} />
-                  <AddressBlock prefix="billing" label="Billing Address" vals={vals} set={setVal} />
+                  <AddressBlock prefix="physical" label="Physical Address" vals={vals} set={setVal}
+                    copyOptions={[{ label: 'Postal Address', prefix: 'postal' }, { label: 'Billing Address', prefix: 'billing' }]} />
+                  <AddressBlock prefix="postal" label="Postal Address" vals={vals} set={setVal}
+                    copyOptions={[{ label: 'Physical Address', prefix: 'physical' }, { label: 'Billing Address', prefix: 'billing' }]} />
+                  <AddressBlock prefix="billing" label="Billing Address" vals={vals} set={setVal}
+                    copyOptions={[{ label: 'Physical Address', prefix: 'physical' }, { label: 'Postal Address', prefix: 'postal' }]} />
                 </div>
               </div>
 
@@ -553,40 +943,35 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
                 <MI name={isFirst ? 'close' : 'arrow_back'} size={13} color="#374151" />{isFirst ? 'Cancel' : 'Back'}
               </button>
               <div className="flex-1" />
-              {!isLast ? (
-                <button key="wizard-next" type="button" onClick={handleNext} disabled={checkingNext}
-                  className="flex items-center gap-1.5 px-4 py-2 text-xs rounded-lg font-medium text-white"
-                  style={{ backgroundColor: checkingNext ? '#DBEAFE' : '#0154FC', cursor: checkingNext ? 'not-allowed' : 'pointer' }}>
-                  {checkingNext ? 'Checking…' : 'Next'}
-                  <MI name={checkingNext ? 'hourglass_top' : 'arrow_forward'} size={13} color="#fff" />
-                </button>
-              ) : (
-                // Distinct `key` from the Next button above is load-bearing, not
-                // cosmetic: without it React reuses the same <button> DOM node
-                // across the isLast flip and just patches its `type` attribute
-                // button -> submit. Clicking "Next" on the second-to-last step
-                // flips isLast to true via a synchronous setState, so React
-                // patches the node's type to "submit" DURING that same click's
-                // synchronous handler execution — and the browser's native click
-                // default-action (which decides whether to submit) reads the
-                // attribute AFTER React's synchronous re-render, sees "submit",
-                // and submits the form immediately, with whatever step you were
-                // just leaving. This is what silently created clients before the
-                // user ever reached the Notes step. A distinct key forces React
-                // to unmount the old node and mount a genuinely new one instead
-                // of patching type in place, closing the race entirely.
-                <button key="wizard-submit" type="submit" disabled={pending} className="flex items-center gap-1.5 px-4 py-2 text-xs rounded-lg font-medium text-white"
-                  style={{ backgroundColor: pending ? '#DBEAFE' : isEditing ? '#2563EB' : '#0154FC', cursor: pending ? 'not-allowed' : 'pointer' }}>
-                  <MI name={pending ? 'hourglass_top' : 'check'} size={13} color="#fff" />
-                  {pending ? (isEditing ? 'Saving…' : 'Creating…') : isEditing ? 'Save Changes' : 'Create Client'}
-                </button>
-              )}
+              {/* Tabs above are always clickable (see StepBar) — no Next/Back
+                  step navigation needed. A single Save button is always present:
+                  "Save Changes" on every step, except the final Notes step on a
+                  brand-new client, which reads "Create" since that's the first
+                  time the record actually gets created. */}
+              {/* Disabled whenever a field currently has a validation error (e.g. a
+                  bad email left over from an onBlur check) — the error must be
+                  fixed at the field that raised it, not discovered again after
+                  a submit attempt. setVal() clears the entry for a field the
+                  moment its value changes, so this re-enables immediately once
+                  the user starts correcting it. */}
+              <button type="submit" disabled={pending || Object.keys(fieldErrors).length > 0}
+                className="flex items-center gap-1.5 px-4 py-2 text-xs rounded-lg font-medium text-white"
+                style={{
+                  backgroundColor: pending || Object.keys(fieldErrors).length > 0 ? '#DBEAFE' : isEditing ? '#2563EB' : '#0154FC',
+                  cursor: pending || Object.keys(fieldErrors).length > 0 ? 'not-allowed' : 'pointer',
+                }}>
+                <MI name={pending ? 'hourglass_top' : 'check'} size={13} color="#fff" />
+                {pending
+                  ? (isEditing ? 'Saving…' : isLast ? 'Creating…' : 'Saving…')
+                  : (isEditing ? 'Save Changes' : isLast ? 'Create' : 'Save Changes')}
+              </button>
             </div>
           </form>
         </div>
       </div>
 
-      {/* Table */}
+      {/* Table — only this area scrolls; header/stat cards/filter bar above stay fixed. */}
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       {initialClients.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="people" size={36} color="#D1D5DB" />
@@ -601,18 +986,46 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
           <EmptyState icon="search_off" title="No clients match your filters" sub="Try a different search or clear the filters." />
         </div>
       ) : (
-        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
-          <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-            <colgroup>
-              <col style={{ width: '10%' }} /><col style={{ width: '20%' }} /><col style={{ width: '18%' }} />
-              <col style={{ width: '13%' }} /><col style={{ width: '20%' }} /><col style={{ width: '10%' }} />
-              <col style={{ width: '9%' }} />
-            </colgroup>
+        <div className="bg-white rounded-xl" style={{ border: '1px solid #E8EAF2', overflow: 'hidden' }}>
+          <div style={{ overflowX: 'auto' }}>
+          <table className="w-full" style={{ tableLayout: 'auto', borderCollapse: 'collapse', minWidth: 900 }}>
             <thead>
               <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                {['Client ID', 'Client Name', 'Primary Contact', 'Phone', 'Email', 'Status', 'Actions'].map(h => (
-                  <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
-                ))}
+                <th className="px-3 py-2" style={{ width: 36 }}>
+                  <input type="checkbox" checked={pageRows.length > 0 && pageRows.every(c => selected.has(c.uid))}
+                    onChange={() => {
+                      const allSelected = pageRows.every(c => selected.has(c.uid))
+                      setSelected(prev => {
+                        const n = new Set(prev)
+                        pageRows.forEach(c => (allSelected ? n.delete(c.uid) : n.add(c.uid)))
+                        return n
+                      })
+                    }} />
+                </th>
+                {vis('client_id') && <th className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Client ID</th>}
+                {vis('name') && (
+                  <th onClick={() => toggleSort('name')} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    <span className="inline-flex items-center gap-0.5">Client Name
+                      {sortKey === 'name' && <MI name={sortDir === 'asc' ? 'arrow_upward' : 'arrow_downward'} size={11} color="#6B7280" />}
+                    </span>
+                  </th>
+                )}
+                {vis('contact') && <th className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Primary Contact</th>}
+                {vis('phone') && <th className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Phone</th>}
+                {vis('email') && <th className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Email</th>}
+                {vis('status') && (
+                  <th onClick={() => toggleSort('status')} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    <span className="inline-flex items-center gap-0.5">Status
+                      {sortKey === 'status' && <MI name={sortDir === 'asc' ? 'arrow_upward' : 'arrow_downward'} size={11} color="#6B7280" />}
+                    </span>
+                  </th>
+                )}
+                {vis('tax_number') && <th className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Tax Number</th>}
+                {vis('account_name') && <th className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Account Name</th>}
+                {vis('account_number') && <th className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Account Number</th>}
+                {vis('physical_address') && <th className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Physical Address</th>}
+                {vis('billing_address') && <th className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Billing Address</th>}
+                <th className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -621,28 +1034,47 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
                 return (
                   <tr key={c.uid} style={{ borderBottom: i < pageRows.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
                     <td className="px-3 py-2">
-                      <Link href={`/dashboard/clients/${c.uid}`} className="font-mono text-xs font-medium" style={{ color: '#0154FC', textDecoration: 'none' }}>{c.ClientID || '—'}</Link>
+                      <input type="checkbox" checked={selected.has(c.uid)} onChange={() => toggleRow(c.uid)} />
                     </td>
-                    <td className="px-3 py-2">
-                      <Link
-                        href={clientIdByUid[c.uid] ? `/dashboard/samples-overview?client=${clientIdByUid[c.uid]}` : `/dashboard/clients/${c.uid}`}
-                        className="flex items-center gap-2"
-                        title={clientIdByUid[c.uid] ? `View samples logged under ${c.title}` : 'View client details'}
-                      >
-                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 10, backgroundColor: '#0154FC' }}>
-                          {c.title.slice(0, 1).toUpperCase()}
-                        </div>
-                        <span className="text-xs font-medium truncate" style={{ color: '#111827' }}>{c.title}</span>
-                      </Link>
-                    </td>
-                    <td className="px-3 py-2 text-xs truncate" style={{ color: '#374151' }}>{primaryContactName(c) || '—'}</td>
-                    <td className="px-3 py-2 text-xs" style={{ color: '#6B7280' }}>{c.Phone || '—'}</td>
-                    <td className="px-3 py-2 text-xs truncate" style={{ color: '#6B7280' }}>{c.EmailAddress || '—'}</td>
-                    <td className="px-3 py-2">
-                      <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ backgroundColor: active ? '#ECFDF5' : '#FFFBEB', color: active ? '#059669' : '#D97706' }}>
-                        {active ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
+                    {vis('client_id') && (
+                      <td className="px-3 py-2">
+                        <Link
+                          href={`/dashboard/samples-overview?client=${c.uid}`}
+                          className="font-mono text-xs font-medium"
+                          style={{ color: '#0154FC', textDecoration: 'none', whiteSpace: 'nowrap' }}
+                          title={`View samples logged under ${c.title}`}
+                        >{c.ClientID || '—'}</Link>
+                      </td>
+                    )}
+                    {vis('name') && (
+                      <td className="px-3 py-2">
+                        <Link
+                          href={`/dashboard/clients/${c.uid}`}
+                          className="flex items-center gap-2"
+                          title="View client details"
+                        >
+                          <div className="w-6 h-6 rounded-full flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 10, backgroundColor: '#0154FC' }}>
+                            {c.title.slice(0, 1).toUpperCase()}
+                          </div>
+                          <span className="text-xs font-medium truncate" style={{ color: '#111827' }}>{c.title}</span>
+                        </Link>
+                      </td>
+                    )}
+                    {vis('contact') && <td className="px-3 py-2 text-xs truncate" style={{ color: '#374151' }}>{primaryContactName(c) || '—'}</td>}
+                    {vis('phone') && <td className="px-3 py-2 text-xs" style={{ color: '#6B7280', whiteSpace: 'nowrap' }}>{c.Phone || '—'}</td>}
+                    {vis('email') && <td className="px-3 py-2 text-xs truncate" style={{ color: '#6B7280' }}>{c.EmailAddress || '—'}</td>}
+                    {vis('status') && (
+                      <td className="px-3 py-2">
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ backgroundColor: active ? '#ECFDF5' : '#FFFBEB', color: active ? '#059669' : '#D97706' }}>
+                          {active ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                    )}
+                    {vis('tax_number') && <td className="px-3 py-2 text-xs" style={{ color: '#6B7280', whiteSpace: 'nowrap' }}>{c.TaxNumber || '—'}</td>}
+                    {vis('account_name') && <td className="px-3 py-2 text-xs truncate" style={{ color: '#6B7280' }}>{c.AccountName || '—'}</td>}
+                    {vis('account_number') && <td className="px-3 py-2 text-xs" style={{ color: '#6B7280', whiteSpace: 'nowrap' }}>{c.AccountNumber || '—'}</td>}
+                    {vis('physical_address') && <td className="px-3 py-2 text-xs truncate" style={{ color: '#6B7280', maxWidth: 220 }} title={fmtAddress(c.PhysicalAddress)}>{fmtAddress(c.PhysicalAddress) || '—'}</td>}
+                    {vis('billing_address') && <td className="px-3 py-2 text-xs truncate" style={{ color: '#6B7280', maxWidth: 220 }} title={fmtAddress(c.BillingAddress)}>{fmtAddress(c.BillingAddress) || '—'}</td>}
                     <td className="px-3 py-2">
                       <ActionsMenu client={c} onEdit={openEdit} onDone={() => router.refresh()} />
                     </td>
@@ -651,6 +1083,7 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
               })}
             </tbody>
           </table>
+          </div>
           <div className="px-3 py-2.5 flex items-center justify-between gap-3 flex-wrap" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
             <p style={{ fontSize: 12, color: '#6B7280' }}>
               Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, filtered.length)} of {filtered.length} result{filtered.length !== 1 ? 's' : ''}
@@ -669,6 +1102,7 @@ export default function ClientsShell({ initialClients, clientIdByUid }: { initia
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

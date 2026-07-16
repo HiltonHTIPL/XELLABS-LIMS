@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-07-16
+
+- Built the **Administration setup matrix** — 11 new SENAITE-backed reference-data sections mirroring SENAITE's own setup grid (Administration group only, no new top-level nav): Analysis Categories, Attachment Types, Batch Labels, Instrument Locations, Instrument Types, Interpretation Templates, Lab Contacts, Lab Departments, Lab Products, Labels, Laboratory Information.
+- Every field mapped 1:1 with SENAITE's schema (verified by source/schema introspection), mandatory fields enforced client- and server-side.
+- DRY infra: one config-driven `AdminRefShell` renders 9 of 11 pages from field config; one `admin-crud.ts` owns CRUD glue; one `senaite-setup.ts` isolates SENAITE REST quirks.
+- Discovered + documented (CLAUDE.md §16d): SENAITE setup writes must go through **plone.restapi**, not the v1 create/update API — v1 rejects UIDReferenceField uid strings (department/manager) and chokes on LabProduct's computed fields; restapi handles both. Reads stay on v1 (restapi @search doesn't index SETUP_CATALOG). Also caught the `ARTemplate`→`SampleTemplate` rename inconsistency breaking `analysis_templates`.
+- Lab Contacts + Laboratory (Archetypes) reuse the §16c custom-Zope-view address-validator bypass via 3 new views (`@@create-labcontact-safe`/`@@update-labcontact-safe`/`@@update-laboratory-safe`) baked into the SENAITE image, plus base64 image upload (Signature / Accreditation logo) and Laboratory banking fields.
+- Fixed the Methods "Choose File" button (was an unstyled raw browser file input).
+- Verified: tsc clean, production build ok, all 11 routes render (307), every SENAITE write path (single/multi refs, float sort_key, string price, addresses incl. country, base64 images, banking) tested live against the running instance.
+
 ## 2026-07-15
 
 - Fixed Sample ID display mismatch on Samples Overview and Sample Detail pages — both now show the real SENAITE-assigned ID (`senaite_ar_id`) instead of Django's own internal date-stamped `sample_id`.

@@ -85,8 +85,8 @@ export default function ReferenceListShell({ title, subtitle, entityLabel, icon,
   }
 
   return (
-    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
-      <div className="flex items-center justify-between mb-3">
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div className="flex items-center justify-between mb-3" style={{ flexShrink: 0 }}>
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>{title}</h1>
           <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>{subtitle}</p>
@@ -105,7 +105,7 @@ export default function ReferenceListShell({ title, subtitle, entityLabel, icon,
 
       {toast && (
         <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
-          style={{ backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', border: `1px solid ${toast.ok ? '#93C5FD' : '#FECACA'}`, color: toast.ok ? '#0154FC' : '#991B1B' }}>
+          style={{ backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', border: `1px solid ${toast.ok ? '#93C5FD' : '#FECACA'}`, color: toast.ok ? '#0154FC' : '#991B1B', flexShrink: 0 }}>
           <MI name={toast.ok ? 'check_circle' : 'error'} size={13} color={toast.ok ? '#0154FC' : '#DC2626'} />
           {toast.msg}
         </div>
@@ -176,7 +176,8 @@ export default function ReferenceListShell({ title, subtitle, entityLabel, icon,
         </div>
       </div>
 
-      {/* Table / empty state */}
+      {/* Table / empty state — only this area scrolls; header above stays fixed. */}
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       {items.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name={icon} size={36} color="#D1D5DB" />
@@ -252,6 +253,7 @@ export default function ReferenceListShell({ title, subtitle, entityLabel, icon,
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

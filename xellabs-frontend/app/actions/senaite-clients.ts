@@ -11,6 +11,12 @@ export type ClientFormState = {
   success?: boolean
   message?: string
   errors?: Record<string, string[]>
+  // Populated on a successful create/update so the caller can keep saving
+  // into the SAME client on subsequent tab-by-tab saves (SENAITE-style
+  // progressive save) instead of creating a duplicate record each time.
+  uid?: string
+  path?: string
+  contactUid?: string
 }
 
 export async function getSenaiteClients(): Promise<SenaiteClientFull[]> {
@@ -98,7 +104,7 @@ export async function createSenaiteClient(_state: ClientFormState, fd: FormData)
   const res = await createSenaiteClientObj(serverToken(), client, contact)
   if (!res.success) return { message: res.error ?? 'Failed to create client.' }
   revalidatePath('/dashboard/clients')
-  return { success: true, message: `Client "${client.title}" created.` }
+  return { success: true, message: `Client "${client.title}" saved.`, uid: res.uid, path: res.path, contactUid: res.contactUid }
 }
 
 export async function updateSenaiteClient(
@@ -112,7 +118,7 @@ export async function updateSenaiteClient(
   if (!res.success) return { message: res.error ?? 'Failed to update client.' }
   revalidatePath('/dashboard/clients')
   revalidatePath(`/dashboard/clients/${uid}`)
-  return { success: true, message: `Client "${client.title}" updated.` }
+  return { success: true, message: `Client "${client.title}" saved.`, uid, path: clientPath, contactUid: res.contactUid }
 }
 
 export async function toggleSenaiteClientActive(

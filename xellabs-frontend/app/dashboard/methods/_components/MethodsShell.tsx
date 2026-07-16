@@ -1,5 +1,5 @@
 'use client'
-import { useState, useActionState, useTransition, useEffect } from 'react'
+import { useState, useActionState, useTransition, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createMethod, updateMethod, toggleMethodActive, type Method, type MethodFormState } from '@/app/actions/methods'
 import type { Calculation } from '@/app/actions/calculations'
@@ -68,6 +68,8 @@ export default function MethodsShell({ initialMethods, calculations, instruments
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
   const [, startTransition] = useTransition()
   const [vals, setVals] = useState<FV>(blank)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [fileName, setFileName] = useState('')
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   const isEdit = editing !== null
@@ -86,6 +88,7 @@ export default function MethodsShell({ initialMethods, calculations, instruments
         setEditing(null)
         setVals(blank())
         setFieldErrors({})
+        setFileName('')
         setToast({ ok: true, msg: editing ? 'Method updated.' : 'Method created.' })
         setTimeout(() => setToast(null), 4000)
         router.refresh()
@@ -99,7 +102,7 @@ export default function MethodsShell({ initialMethods, calculations, instruments
     {}
   )
 
-  function openCreate() { setEditing(null); setVals(blank()); setFieldErrors({}); setShowDrawer(true) }
+  function openCreate() { setEditing(null); setVals(blank()); setFieldErrors({}); setFileName(''); setShowDrawer(true) }
   function openEdit(m: Method) {
     setEditing(m)
     setVals({
@@ -188,7 +191,18 @@ export default function MethodsShell({ initialMethods, calculations, instruments
 
               <div>
                 <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Method Document</label>
-                <input type="file" name="document" className="w-full text-xs" />
+                <input ref={fileInputRef} type="file" name="document" className="hidden"
+                  onChange={e => setFileName(e.target.files?.[0]?.name ?? '')} />
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => fileInputRef.current?.click()}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium"
+                    style={{ border: '1px solid #D1D5DB', color: '#374151', backgroundColor: '#F9FAFB', cursor: 'pointer' }}>
+                    Choose File
+                  </button>
+                  <span className="text-xs truncate" style={{ color: fileName ? '#374151' : '#9CA3AF' }}>
+                    {fileName || 'No file chosen'}
+                  </span>
+                </div>
                 {isEdit && editing!.document && (
                   <a href={editing!.document} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs" style={{ color: '#2563EB' }}>
                     View current document

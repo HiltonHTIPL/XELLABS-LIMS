@@ -227,7 +227,12 @@ export async function syncClientsFromSenaite(): Promise<SyncResult> {
     }
   }
 
-  revalidatePath('/dashboard/clients')
+  // No revalidatePath here — this is called during a Server Component's own
+  // render (samples-overview/new's page.tsx, mirroring syncSampleTypesFromSenaite's
+  // render-safe pattern in lab-samples.ts), and revalidatePath is only valid
+  // from a Server Action or Route Handler, not mid-render (confirmed: caused
+  // a hard render error there). Not currently wired to any manual "Sync"
+  // button elsewhere, so nothing depends on the stale-cache invalidation.
   return {
     success: failed === 0,
     message: failed === 0

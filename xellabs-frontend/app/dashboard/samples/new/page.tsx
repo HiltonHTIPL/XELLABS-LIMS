@@ -1,21 +1,24 @@
 import { getSampleTypes, getAnalysisServices } from '@/app/actions/samples'
-import { getClients } from '@/app/actions/clients'
+import { getSenaiteClients } from '@/app/actions/senaite-clients'
 import { getSampleTemplatesPageData } from '@/app/actions/sample-templates'
 import { getAnalysisProfiles } from '@/app/actions/analysis-profiles'
 import NewSamplePage from './_components/NewSamplePage'
 
 export default async function NewSamplePageServer() {
   const [clients, sampleTypes, analysisServices, templateData, analysisProfiles] = await Promise.all([
-    getClients(),
+    getSenaiteClients(),
     getSampleTypes(),
     getAnalysisServices(),
     getSampleTemplatesPageData(),
     getAnalysisProfiles(),
   ])
 
-  const clientOptions = clients
-    .filter(c => c.senaite_uid)
-    .map(c => ({ uid: c.senaite_uid!, name: c.name, client_id: c.client_id }))
+  // SENAITE is the CRUD source of truth for clients (see Clients dashboard) —
+  // read the dropdown straight from there instead of Django's own Client
+  // model, whose senaite_uid only gets populated for clients created through
+  // an older sync path. That mismatch silently hid any client created/edited
+  // via the Clients page from this dropdown.
+  const clientOptions = clients.map(c => ({ uid: c.uid, name: c.title, client_id: c.ClientID }))
 
   return (
     <NewSamplePage

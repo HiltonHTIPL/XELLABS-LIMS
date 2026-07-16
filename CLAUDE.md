@@ -87,11 +87,13 @@ See Section 11 for the full rule. The running log of features vs. principles app
 
 ## 0b. When the User Says "Start the Project"
 
+**Before starting containers, ensure WSL2 has at least 8GB memory.** Read `C:\Users\HILTON\.wslconfig`; if `memory=` is below `8GB` (or unset), raise it to at least `8GB` (higher if the project clearly needs more), then apply with `wsl --shutdown` + Docker Desktop restart before `docker compose up -d`. If it is already ≥8GB, leave it and start directly. (Host has only ~15.7GB total — never set the WSL cap so high it starves Windows; 8GB is the floor, not a target to exceed without reason.)
+
 **Everything runs in Docker Desktop — one command starts all services:**
 
 ```powershell
 # PowerShell (IDE integrated terminal)
-cd C:\Users\Lijish\Downloads\xellabs-lims\xellabs-lims
+cd c:\Hilton\Projects\XELLABS-LIMS
 docker compose up -d
 ```
 
@@ -107,7 +109,7 @@ Django auto-runs `migrate` on startup.
 
 ### After code changes — rebuild Django/Celery image:
 ```powershell
-cd C:\Users\Lijish\Downloads\xellabs-lims\xellabs-lims
+cd c:\Hilton\Projects\XELLABS-LIMS
 docker compose up -d --build
 ```
 
@@ -138,13 +140,13 @@ docker stop senaite
 
 | What | Path / Value |
 |---|---|
-| Project root | `C:\Users\Lijish\Downloads\xellabs-lims\xellabs-lims` |
-| Django backend | `C:\Users\Lijish\Downloads\xellabs-lims\xellabs-lims\xellabs-backend` |
-| Django .env | `C:\Users\Lijish\Downloads\xellabs-lims\xellabs-lims\xellabs-backend\.env` |
+| Project root | `c:\Hilton\Projects\XELLABS-LIMS` |
+| Django backend | `c:\Hilton\Projects\XELLABS-LIMS\xellabs-backend` |
+| Django .env | `c:\Hilton\Projects\XELLABS-LIMS\xellabs-backend\.env` |
 | Django settings module | `config.settings` |
 | Django root urls | `config.urls` |
 | Celery app module | `config.celery:app` |
-| Docker Compose file | `C:\Users\Lijish\Downloads\xellabs-lims\xellabs-lims\docker-compose.yml` |
+| Docker Compose file | `c:\Hilton\Projects\XELLABS-LIMS\docker-compose.yml` |
 | Django container | `xellabs-lims-django-1` — port 8001 |
 | Celery container | `xellabs-lims-celery-1` |
 | PostgreSQL container | `xellabs-lims-postgres-1` — port 5432 |
@@ -152,7 +154,7 @@ docker stop senaite
 | SENAITE container | `xellabs-lims-senaite-1` — port 8080 |
 | SENAITE image | `senaite/senaite:v2.6.0` |
 | Broken SENAITE buildout | `~/senaite-dev/senaite.core` — **DO NOT USE** |
-| start-commands.txt | `C:\Users\Lijish\Downloads\xellabs-lims\xellabs-lims\start-commands.txt` |
+| start-commands.txt | `c:\Hilton\Projects\XELLABS-LIMS\start-commands.txt` |
 
 ---
 
@@ -318,16 +320,14 @@ DB_PORT=5432
 
 ## 10. Infrastructure & Environment Facts
 
-### PostgreSQL + Redis — installed in WSL Ubuntu (not Docker)
-- WSL distro: `Ubuntu-22.04`
-- Install command (run in WSL terminal): `sudo apt-get install -y postgresql postgresql-contrib redis-server`
-- Start: `sudo service postgresql start` / `sudo service redis-server start`
-- Stop: `sudo service postgresql stop` / `sudo service redis-server stop`
-- DB setup (run once after install):
-  ```bash
-  sudo -u postgres psql -c "CREATE USER xellabs_user WITH PASSWORD '3333';"
-  sudo -u postgres psql -c "CREATE DATABASE xellabs_lims OWNER xellabs_user;"
-  ```
+### PostgreSQL + Redis — run as Docker containers (NOT in WSL)
+- **There is no standalone WSL Ubuntu distro on this machine** — `wsl -l -v` shows only `docker-desktop`. Any older instruction using `wsl -d Ubuntu-22.04 -- sudo ...` or host `apt-get` is obsolete and will fail (`WSL_E_DISTRO_NOT_FOUND`).
+- Postgres and Redis are Docker containers started by `docker compose up -d`:
+  - `xellabs-lims-postgres-1` (host port `127.0.0.1:15432` → 5432)
+  - `xellabs-lims-redis-1` (host port `127.0.0.1:6380` → 6379)
+- Start/stop with compose, not `service`: `docker compose start postgres redis` / `docker compose stop postgres redis`.
+- The `xellabs_user`/`xellabs_lims` DB is created automatically by the Postgres container's env/init — no manual `sudo -u postgres psql` step.
+- WSL2 memory is capped in `C:\Users\HILTON\.wslconfig` (`memory=8GB`, `processors=6`). Changing it needs `wsl --shutdown` + Docker Desktop restart to take effect.
 
 ### SENAITE — runs in Docker container (WSL)
 - Container: `senaite`, image: `senaite/senaite:v2.6.0`
@@ -340,16 +340,16 @@ DB_PORT=5432
 |---|---|
 | Django runs via **gunicorn with no `--reload`** | `docker-compose.yml`'s django/celery commands never pass `--reload`/watchmedo for Django itself (only Celery uses `watchmedo auto-restart`). Even though `./xellabs-backend:/app` is volume-mounted, gunicorn workers cache imported Python modules in memory — editing `models.py`/`serializers.py`/`views.py` and hitting the API again silently keeps serving the OLD code (e.g. new serializer fields just don't appear in the response, no error). **After any backend code change, `docker restart xellabs-lims-django-1`** (no rebuild needed for pure `.py` changes) before testing — this cost real debugging time twice in one session (looked like a routing 404, then looked like missing serializer fields, both were just stale gunicorn workers). |
 | `lims`/`inventory`/`instruments`/`workflow`/`audittrail`/`reporting` are **TENANT_APPS**, not shared | Their tables/API routes only exist inside a real tenant schema (e.g. `demo`), never in `public`. A fresh dev env's one-time setup only creates the `public` tenant — hitting `/api/lims/*` (or any tenant-app endpoint) via `public` 404s even though the model/serializer/view/urls.py are all correctly wired, while `core` (SHARED_APPS: users, clients) endpoints work fine. Fix: set `DEFAULT_TENANT_SCHEMA=<real-tenant-schema>` (e.g. `demo`) in the root `.env` and recreate the frontend container — `app/lib/django.ts` reads this env var and sends it as the `X-Tenant-Schema` header when no subdomain-based tenant is present. Check existing tenants first: `docker exec xellabs-lims-django-1 python manage.py shell -c "from core.models import Tenant; [print(t.schema_name) for t in Tenant.objects.all()]"`. |
-| Git Bash ≠ WSL Ubuntu | The Bash tool runs in MINGW64 (Git Bash), NOT WSL. `sudo` does not work in Git Bash. Always use PowerShell `wsl -d Ubuntu-22.04 --` prefix or run directly in WSL terminal |
-| `winget` is blocked | Network policy returns 403 Forbidden on this machine. Never use winget. Install everything via WSL `apt` |
-| `wsl -- sudo` needs TTY | Running `wsl -d Ubuntu-22.04 -- sudo <cmd>` from PowerShell silently fails if sudo needs a password. For sudo commands, ask user to run directly in WSL terminal |
+| Git Bash ≠ WSL | The Bash tool runs in MINGW64 (Git Bash), NOT WSL. `sudo` does not work in Git Bash. There is no user Ubuntu distro here — only `docker-desktop`. Run infra commands against Docker containers (`docker exec ...`), not a WSL shell. |
+| `winget` is blocked | Network policy returns 403 Forbidden on this machine. Never use winget. |
+| No standalone WSL distro | `wsl -l -v` shows only `docker-desktop`. Any `wsl -d Ubuntu-22.04 -- ...` command fails with `WSL_E_DISTRO_NOT_FOUND`. Do host-level work through Docker containers instead. |
 | Multiple background apt processes stack | Never spawn more than one `apt-get` background command. If one is running, wait for it — spawning more causes dpkg lock conflicts |
 | Docker Desktop path | `C:\Program Files\Docker\Docker\Docker Desktop.exe` |
 | SENAITE Docker tags | Use `v2.6.0` not `latest` — `latest` tag doesn't exist on Docker Hub |
 | `TENANT_DOMAIN_MODEL` not `DOMAIN_MODEL` | django-tenants requires `TENANT_DOMAIN_MODEL = "core.Domain"` in settings. Using `DOMAIN_MODEL` causes `AttributeError` on every request — 500 on all endpoints |
 | Public tenant + localhost domain required | django-tenants `TenantMainMiddleware` needs a `Tenant(schema_name='public')` and `Domain(domain='localhost')` row in the DB or all requests to `localhost` return 404. Create once after DB reset via `manage.py shell` |
 | Django superuser lost on container rebuild | `docker compose up -d --build` recreates the image but **not** the volume, so the DB is preserved. Superuser survives. But first-ever build starts with empty DB — create superuser with: `docker exec xellabs-lims-django-1 python manage.py shell -c "from django.contrib.auth import get_user_model; User = get_user_model(); User.objects.create_superuser('admin','admin@xellabs.com','admin')"` |
-| Next.js runs in **production mode** (`npm run build && npm start`) | Frontend Dockerfile CMD is `npm run build && npm start`. Source is volume-mounted so the build always uses latest host code. After any `.tsx/.ts` change: `docker compose stop frontend; docker compose rm -f frontend; docker compose up -d frontend` — no `--build` needed unless `package.json` or `Dockerfile` changes. Do NOT use `/app/.next` anonymous volume in production (dev-only Turbopack workaround). |
+| Next.js runs in **production mode** (`npm run build && npm start`) | Frontend Dockerfile CMD is `npm run build && npm start`. Source is volume-mounted so the build always uses latest host code. After any `.tsx/.ts` change: `docker compose stop frontend; docker compose rm -f frontend; docker compose up -d frontend` — no `--build` needed unless `package.json` or `Dockerfile` changes. Do NOT use `/app/.next` anonymous volume in production (dev-only Turbopack workaround) — but `/app/.next/cache` (webpack/SWC compilation cache only, not build output) IS safe as a **named** volume (`frontend_next_cache`, added to `docker-compose.yml` 2026-07-16) and persists across every recreate, meaningfully speeding up rebuilds without ever serving stale code — source is still re-read fresh and changed files still recompile every time, this only skips recompiling byte-identical unchanged files. |
 | TypeScript strict mode catches `unknown` in JSX | In production build, `ev.details?.someField` returns `unknown` and cannot be used directly in JSX or template literals. Always cast: `ev.details.field as string` or use `(ev.details?.field as string \| undefined)` in the condition. |
 | Recharts `formatter` prop type mismatch | Recharts `Tooltip formatter` receives `ValueType | undefined`, not `number`. Do NOT type the parameter as `number`. Use `(v) => ...` and guard with `v ?? 0`. |
 | `type` re-export from action files | If a component imports `type Foo` from an action file (`'use server'`), the action file must explicitly re-export it. Otherwise import directly from the source (e.g. `@/app/lib/senaite`). |
@@ -371,6 +371,7 @@ DB_PORT=5432
 | SENAITE `@groups` role PATCH silently no-ops on the dict-diff shape that works for `@users` | `PATCH @users/<username> {"roles": {"Analyst": true}}` is a genuine diff against the user's current roles (confirmed, used by `set_senaite_user_role`). The exact same shape sent to `PATCH @groups/<id>` returns 200/204 (looks successful) but **does not change the group's role list at all** — confirmed by toggling a role on then back off and re-fetching the group: still shows the stale list. Also, group creation needs `{"groupname": id, "title": ...}` — POSTing `{"id": ...}` 400s with "Property 'groupname' is required" (the field name differs from `@users`' own `{"username": ...}` POST shape). Fixed in `core/senaite_service.py`'s `set_senaite_group_role()`: GET the group first, mutate the roles set locally, then PATCH back the **full** `roles` list. Any future SENAITE group-role write must use this read-modify-write pattern, never the users-style dict diff. |
 | SENAITE `Calculation.Formula` field can **never** be written via any REST API path when it references an Interim Field keyword | Root-caused by reading the actual source inside the running container (`bika/lims/content/calculation.py` + `validators.py`), not guessing. The registered `FormulaValidator` (`validators=('formulavalidator',)` on the AT `Formula` field) reads `request.form.get("InterimFields", [])` — raw classic Zope form-POST data, populated only by SENAITE's own browser form submission. `plone.restapi`'s JSON body parsing never touches `request.form`, so this validator sees `interim_fields=[]` on every REST call (legacy v1 create, restapi POST/PATCH, any field ordering, even PATCHing Formula in a separate request *after* InterimFields was already saved and confirmed present via GET) — a formula like `[Ca]+[Mg]` (real AnalysisService keywords) works fine via REST since those are checked against the live services catalog instead, but any interim/custom keyword is rejected forever, permanently, not fixable by request sequencing. `Calculation` is Archetypes-based (unlike Dexterity types such as `SampleTemplate`), so the existing `IFieldDeserializer` fix pattern doesn't apply. Fixed with two custom Zope `browser:page` views (`senaite-rebrand/calculation_views.py`, registered via `patch_calculation_zcml.py`, baked into the SENAITE Dockerfile) — `@@create-calculation` on the `bika_setup/bika_calculations` folder and `@@update-calculation` on the object itself — that call `bika.lims.api.create()`/`api.edit()`. Those SENAITE-blessed helpers set AT fields via `field.getMutator(obj)` directly, never `field.validate()`, so the broken validator is never invoked; `Calculation.setFormula()` itself is already safe to call unvalidated since it only extracts real-service keywords for `DependentServices` and silently ignores everything else. **Also confirmed**: Calculation object creation is unreliable the same way `AnalysisService` is — a failing/invalid v1 or restapi create call still leaves an untitled orphan shell object behind; the new custom views avoid this entirely by not going through either of those paths. |
 | SENAITE `Calculation.TestParameters`/`TestResult` also never auto-populate via direct API calls | These two fields are normally computed by an `objectmodified` event subscriber (`Calculation.setTestParameters()`/`setTestResult()` in `calculation.py` — confirmed by reading the source) that fires only on the classic UI's form-processing publish path, never for direct `bika.lims.api.edit()` mutator calls (confirmed empirically: created/updated a Calculation via the custom views above, then re-fetched — both fields stayed empty/null). Fix: added a third custom view, `@@test-calculation` on the Calculation object, that explicitly replicates the subscriber's own logic — glom together every InterimField + DependentService keyword into a value list (`_refresh_test_parameters()` in `calculation_views.py`), then call `obj.setTestResult(None)` (the method ignores its argument and recomputes from `self.getTestParameters()` internally, per source). `UpdateCalculationView` also calls `_refresh_test_parameters()` whenever Formula/InterimFields change, preserving existing values for keywords that still exist, so the test-panel's parameter list stays in sync with the formula without a manual refresh. Verified live: `RESULT1=3, RESULT2=4` → formula `[RESULT1]+[RESULT2]` → `TestResult="7"`. |
+| SENAITE's v1 API serializes an empty reference/records field as `{}`, not `[]` — a bare `?? []` doesn't catch it | `(c.DependentServices ?? []).map(...)` looks safe but only substitutes on `null`/`undefined` — when SENAITE returns `{}` for a zero-item reference field (confirmed: every `Calculation` with no dependent services), the expression evaluates to `{}` and `.map` throws `TypeError`. This crashed inside a broad `try/catch` in `fetchSenaiteCalculations` (`app/lib/senaite.ts`), which swallowed it and returned an empty array for the **entire list** — surfacing as "No calculations yet" even when calculations existed, and matching the identical shape of bug in `mapSenaiteSampleTemplate`'s `partitions`/`services` fields (fixed preemptively once the pattern was spotted). Root-caused via runtime `console.error` logging inside the live container, not guessed — a plain `node -e` fetch outside the Next.js server process did NOT reproduce it, only the real running server did (Next's request-scoped `DYNAMIC_SERVER_USAGE` control error was also visible in the same logs and was being incorrectly swallowed by the same catch block). Fixed with one shared `asArray(value)` helper (`Array.isArray(value) ? value : []`) used everywhere SENAITE's JSON gets mapped to a list — safer than a bare `?? []` for any field that might come back as an object instead of an array. **Any new SENAITE list-mapping code must use `asArray()`, never a bare `(x ?? []).map(...)`, for reference/records fields that can be empty.** |
 
 ### One-time setup after a full DB wipe:
 ```bash
@@ -395,6 +396,24 @@ if not User.objects.filter(username='admin').exists():
     print('Created')
 "
 ```
+
+---
+
+## 10a. Frontend Reachability Rule — Diagnose Before Declaring Broken, Always Recover
+
+**"Frontend not reachable" (`http://127.0.0.1:3000` / `http://localhost:3000` hangs, resets, or gives an empty reply) has recurred multiple times on this machine. Root cause confirmed empirically (2026-07-16): it is Docker Desktop's WSL2/Hyper-V port-forwarding proxy (`vpnkit`) periodically dropping the host↔container loopback tunnel — NOT the Next.js app crashing. Confirmed by `docker exec xellabs-lims-frontend-1 wget http://127.0.0.1:3000` succeeding from inside the container at the exact same moment the host `curl` got `000`/empty-reply.**
+
+**Whenever the frontend seems unreachable, always follow this exact sequence — never just tell the user "it's down" without doing this first:**
+
+1. Check the container is actually up: `docker ps --filter "name=xellabs-lims-frontend-1" --format "table {{.Names}}\t{{.Status}}"`.
+2. Test **from inside the container** first: `docker exec xellabs-lims-frontend-1 wget -qO- --timeout=5 http://127.0.0.1:3000 -O /dev/null` (or curl if present). If this succeeds but the host-side `curl http://127.0.0.1:3000` fails/resets — it's the Docker Desktop proxy, not the app. Do not restart/rebuild the app in this case; that wastes a 30-60s rebuild for a networking-layer problem.
+3. Fix: `docker compose restart frontend` — but this re-runs the FULL `npm run build && npm start` entrypoint (Dockerfile CMD), not a quick bounce. **Always wait for `✓ Ready in` in `docker logs xellabs-lims-frontend-1 --tail 5` (poll every ~10s) before re-testing** — testing too early just re-confirms "still broken" on a container that's mid-build.
+4. If restarting the container doesn't fix it (proxy itself is wedged, not just this container's tunnel): `wsl --shutdown` then reopen Docker Desktop — this fully reinitializes vpnkit. Confirm with the user before `wsl --shutdown` since it stops every other container too (Postgres, Redis, Django, SENAITE) — they'll need `docker compose up -d` again afterward.
+5. Always re-verify with a live `curl` (expect a `307` redirect to `/login` for the unauthenticated root, or `200`) before telling the user it's fixed — do not report success from log lines alone.
+
+**Reducing recurrence (mitigation, not a full fix — this is inherent to Docker Desktop on Windows/WSL2, there is no code-level permanent fix):**
+- Keep WSL2 memory capped sensibly (`C:\Users\HILTON\.wslconfig`, currently `memory=8GB`) — memory pressure makes vpnkit drop connections more often.
+- Expect this to resurface after the host machine sleeps/hibernates with Docker running — a common vpnkit-staleness trigger. If reachability breaks right after a resume-from-sleep, jump straight to step 4 rather than looping through step 3 first.
 
 ---
 
@@ -567,6 +586,18 @@ When the user says to push the code, follow these steps in order — do not skip
 Never reorder this (e.g. never push before pulling/merging or before the pre-push checks pass), and never force-push (`--force`/`-f`) unless the user explicitly asks for it in that exact request.
 
 **One-time per clone (does NOT carry over from another machine — the hook file being present in the repo is not enough on its own):** run `git config core.hooksPath .githooks` once so `git push` actually runs the pre-push checks. Without it, the hook is silently skipped. Pass this along to any colleague who hasn't set it up.
+
+---
+
+## 13b-i. Post-Pull Rebuild Rule — Non-Negotiable After Any `git pull`/Merge
+
+**Confirmed root cause of a real incident (2026-07-16):** after pulling `staging-development` (which added `whitenoise`/`weasyprint`/`django-weasyprint`/`openpyxl` to `requirements.txt` and a new `InstrumentType` model), the running Django container was never rebuilt. Every single request then re-triggered `ModuleNotFoundError: No module named 'whitenoise'` during URL-conf import, crashing and respawning gunicorn workers in a tight loop — CPU pegged at 125%+, every dashboard page that touches the Django API hung or crawled. `docker ps` still showed the container "healthy" the whole time (the healthcheck had passed moments before the crash loop started) — **container health status is not proof the app is actually serving requests correctly; always check `docker logs` for a live crash loop when something is "slow", not just `docker ps`.**
+
+**Rule: after ANY `git pull`, merge, or stash-pop that could have changed backend/frontend code, before declaring the stack working:**
+1. Check whether `xellabs-backend/requirements.txt` or `xellabs-frontend/package.json` changed in the pulled/merged diff (`git diff <old>..<new> -- xellabs-backend/requirements.txt xellabs-frontend/package.json`). If either changed, a plain `docker restart` is NOT enough — rebuild the image: `docker compose up -d --build django celery celery-beat celery-reports` and/or `docker compose up -d --build frontend`.
+2. Even if neither dependency file changed, still restart Django/Celery after any pulled `.py` change (per the existing gunicorn-no-reload gotcha in this section) — pulled code counts the same as locally-edited code for that rule.
+3. After rebuilding/restarting, don't just check `docker ps`/healthy status — tail `docker logs <container> --tail 20` and confirm clean startup (migrations applied, gunicorn workers booted, no traceback), then hit a real endpoint and check `docker stats --no-stream` briefly to confirm CPU isn't pegged from a crash loop.
+4. If the user reports the frontend/dashboard as "slow" or "broken" after any recent pull/merge, checking the Django container logs for an active crash loop is now a standard first diagnostic step — alongside the Docker Desktop vpnkit check in Section 10a.
 
 ---
 
@@ -773,3 +804,117 @@ docker cp senaite-rebrand/apply_sampletype_stickers_fix.sh senaite:/tmp/
 docker exec --user root senaite bash /tmp/apply_sampletype_stickers_fix.sh
 docker restart senaite
 ```
+
+## 16c. SENAITE Client Address Country/State/District — Broken on Every REST Path
+
+**Discovery (2026-07-16):** Creating/editing a Client and filling in Country,
+State, or District on ANY of the three Address blocks (Physical/Postal/
+Billing) crashed every save with `'NoneType' object has no attribute 'get'`
+— reproduced deterministically via direct API calls (not guessed): a blank
+address always saves fine; the instant `country`/`state`/`district` gets a
+non-empty value, the save fails 100% of the time, via **both** the legacy
+`@@API/senaite/v1/create`/`update` endpoints **and** `plone.restapi`'s own
+PATCH deserializer.
+
+**Root cause (confirmed by reading source inside the running container):**
+`Client` inherits `PhysicalAddress`/`PostalAddress`/`BillingAddress` from the
+shared `Organisation` base class (`bika/lims/content/organisation.py`), where
+each field declares `subfield_validators={"country": "inline_field_validator",
+"state": "inline_field_validator", "district": "inline_field_validator"}`.
+`InlineFieldValidator.__call__` (`bika/lims/validators.py`) does:
+```python
+request = kwargs['REQUEST']
+data = request.get(field.getName())   # request is None → crash
+```
+Every REST path validates via `bika.lims.api.validate(obj)` →
+`obj.validate(data=True)` (`Products.Archetypes.BaseObject.validate`), whose
+signature is `validate(self, REQUEST=None, ...)` — **no caller ever passes a
+real REQUEST**, so it's always `None` there. `street`/`city`/`zip` have no
+subfield validator attached and are unaffected — same defect class already
+fixed for `Calculation.Formula` (§16b), just a different field/content type.
+
+**Fix:** Two new custom Zope browser views,
+`senaite-rebrand/client_address_views.py` — `@@create-client-safe` (registered
+`for="bika.lims.interfaces.IClientFolder"`, called on the `clients` folder)
+and `@@update-client-safe` (`for="bika.lims.interfaces.IClient"`, called on
+the object itself) — both call `bika.lims.api.create()`/`api.edit()`, which
+set fields via mutators and never invoke `field.validate()` at all (same
+bypass mechanism as the Calculation fix). Wired via
+`senaite-rebrand/patch_client_address_zcml.py`, baked into
+`senaite-rebrand/Dockerfile` (same pattern/marker as the other custom-view
+patches — `docker compose build senaite` carries it forward automatically).
+
+**Frontend (`app/lib/senaite.ts`):** `createSenaiteClientObj`/
+`updateSenaiteClientObj` now POST to these custom views instead of the legacy
+v1 endpoints. Added a `SENAITE_ORIGIN` constant (protocol+host only, no site
+path) — object `path` values returned by SENAITE already include the site
+path (e.g. `/senaite/clients/client-8`), so a custom view on an object's own
+path must be built as `${SENAITE_ORIGIN}${path}/@@view-name`, **never**
+`${SENAITE_URL}${path}/...` (`SENAITE_URL` already ends in `/senaite`,
+doubling the segment and 404ing — confirmed by testing the doubled path
+directly). Contact create/update stays on the legacy v1 API since Contact has
+no Address fields and isn't affected.
+
+**Verified:** reproduced the crash via raw API calls (blank address → 200
+success; `country: "USA"` → 500/`success:false` with the exact reported
+error) before touching any code; confirmed the new custom views handle the
+same payload correctly; rebuilt+redeployed the SENAITE image; re-ran the
+exact failing flow live through the actual UI (multi-step Client wizard,
+Country + State filled on the Addresses tab) and confirmed no crash, save
+succeeds, progresses to the next tab. All test/orphan Client objects created
+during investigation deactivated.
+
+## 16d. SENAITE Setup-Content Writes — Use plone.restapi, NOT the v1 create/update API
+
+**Discovery (2026-07-16)** while building the 11-section Administration setup
+matrix (Analysis Categories, Attachment Types, Batch Labels, Instrument
+Locations/Types, Interpretation Templates, Lab Contacts, Lab Departments, Lab
+Products, Labels, Laboratory). The legacy `@@API/senaite/v1/create` +
+`/update` endpoints are unreliable for these Dexterity setup types:
+
+| Symptom (via v1 API) | Cause |
+|---|---|
+| `{"department": ""}` / `{"manager": ""}` error when creating `AnalysisCategory`/`Department` | v1's `UIDReferenceField` deserializer rejects a bare uid string (and a `[uid]` list, and `{"uid":...}`) — it silently blanks the ref then fails "required". |
+| `{"labproduct_vat_amount": "wrong type", "labproduct_total_price": "wrong type"}` creating `LabProduct` | v1 create tries to write LabProduct's **computed/readonly** fields from defaults and type-fails. |
+
+**Fix / rule:** write SENAITE setup content via **plone.restapi** (the modern
+framework bundled in the same build), not the v1 API — it is Dexterity-native:
+accepts a plain uid string for single `UIDReferenceField`s and a uid array for
+multi-valued ones, and skips computed/readonly fields entirely.
+- CREATE: `POST ${SENAITE_ORIGIN}${SENAITE_SITE_PATH}/<parent-folder>` with body `{"@type": "<PortalType>", ...fields}`, `Accept: application/json`.
+- UPDATE: `PATCH ${SENAITE_ORIGIN}${object_path}` with the changed fields (204 = success, no body).
+- **`description` MUST be sent as a string** — restapi create fails with
+  `description: Object is of wrong type` if the field exists on the type and you
+  omit it (it applies a `None` default that fails validation). Send `""` when empty.
+  (Types with no `description` field, e.g. `BatchLabel`, must NOT send it.)
+- **Reads stay on the v1 list API** (`@@API/senaite/v1/<PortalType>?limit=…`) —
+  restapi's `@search`/folder listing returns `items_total: 0` for setup content
+  because it queries a catalog that doesn't index SENAITE's `SETUP_CATALOG`.
+  This read-via-v1 / write-via-restapi split is the same one already documented
+  for `SampleType` (§16b). Implemented generically in
+  `app/lib/senaite-setup.ts` (`fetchSetupList` = v1 read; `createSetupItem`/
+  `updateSetupItem` = restapi write) + `app/lib/admin-crud.ts`.
+
+**Also confirmed — `ARTemplate` → `SampleTemplate` rename inconsistency:**
+`InterpretationTemplate.analysis_templates` declares `allowed_types=("ARTemplate",)`,
+but in this build sample templates are stored as portal_type **`SampleTemplate`**
+(v1 `?portal_type=ARTemplate` returns 0; `SampleTemplate` returns them). So the
+field's own validator rejects every real template ("Only the following types are
+allowed: ARTemplate") — it is effectively unusable for SampleTemplates in this
+version, matching SENAITE's own widget (which queries `ARTemplate` and shows
+nothing). The frontend therefore sources that field's options from `ARTemplate`
+(accurate empty set → never offers an un-saveable option); `sample_types`
+(→ `SampleType`) works normally. **When wiring any SENAITE reference field,
+verify the *actual* stored portal_type via the v1 API rather than trusting the
+schema's `allowed_types` string — the 2.x renames left several stale.**
+
+**Lab Contacts & Laboratory (Archetypes, address validator):** these two reuse
+the §16c custom-Zope-view bypass — `@@create-labcontact-safe`,
+`@@update-labcontact-safe`, `@@update-laboratory-safe` in
+`senaite-rebrand/labcontact_lab_views.py` (baked into the SENAITE Dockerfile) —
+because they inherit the same broken country/state/district
+`inline_field_validator` from Person/Organisation. Those views also decode
+base64 image payloads (LabContact `Signature`, Laboratory `AccreditationBodyLogo`)
+since JSON can't carry binary. Laboratory is a **singleton** (edit-only, at
+`bika_setup/laboratory`) and inherits banking fields (AccountName/AccountNumber/
+BankName/BankBranch) from Organisation — all exposed in the frontend edit form.

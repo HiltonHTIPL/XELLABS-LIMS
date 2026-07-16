@@ -6,16 +6,18 @@ import CommandPalette from './CommandPalette'
 import { logout } from '@/app/actions/auth'
 import { ENV_OVERRIDE_EVENT, getEnvOverride, type EnvLabel } from '@/app/lib/envOverride'
 
-// Simple list/table pages where short (or filtered/last-page) results should
-// let the footer follow the content instead of being pinned to the viewport
-// bottom, which otherwise leaves a large empty gap above it. Deliberately an
-// allowlist, not the default — most pages (Storage Manager, Worksheet, etc.)
-// rely on `main` being a fixed-height container to drive their own internal
-// full-height split-pane/grid layouts, and switching that globally silently
-// collapses those to near-zero height instead (confirmed regression, reverted
-// once already — do not flip the default without re-checking every page that
-// uses height:'100%'/similar inside `main`).
-const NATURAL_HEIGHT_ROUTES = ['/dashboard/clients']
+// Reverted (2026-07-16): a "natural height" mode used to let the footer
+// follow short content on this route instead of staying pinned to the
+// viewport bottom. That left the footer floating mid-page with a mismatched
+// blank strip BELOW it (the column wrapper still stretches to match the
+// sidebar's full height, so shrinking header+content+footer to their own
+// content height just relocates the empty space rather than removing it).
+// The footer must always sit pinned at the true viewport bottom, matching
+// every other page (Storage Manager, Worksheet, etc.) — short content
+// leaving blank space ABOVE a bottom-pinned footer is normal, expected
+// app-shell behavior, not a bug. Keep this empty rather than deleting the
+// mechanism outright in case a genuine future page needs it.
+const NATURAL_HEIGHT_ROUTES: string[] = []
 
 const ENV_BADGE_STYLE: Record<EnvLabel, { bg: string; border: string; dot: string; text: string }> = {
   Development: { bg: '#DCFCE7', border: '#86EFAC', dot: '#16A34A', text: '#16A34A' },

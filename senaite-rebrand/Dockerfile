@@ -38,6 +38,32 @@ RUN chown senaite:senaite \
     ${CORE}/adapters/calculation_views.py \
     ${CORE}/adapters/configure.zcml
 
+# Client's Address fields (PhysicalAddress/PostalAddress/BillingAddress,
+# inherited from the shared Organisation base class) have a country/state/
+# district validator ("inline_field_validator" in bika/lims/validators.py)
+# that reads kwargs['REQUEST'].get(...) — REQUEST is always None via
+# obj.validate(data=True), the call every REST path (legacy jsonapi AND
+# plone.restapi's own PATCH) uses, so any non-blank Country/State/District
+# crashes on every save. Same bypass pattern as calculation_views.py — see
+# client_address_views.py docstring.
+COPY client_address_views.py ${CORE}/adapters/client_address_views.py
+COPY patch_client_address_zcml.py /tmp/patch_client_address_zcml.py
+RUN python2.7 /tmp/patch_client_address_zcml.py
+RUN chown senaite:senaite \
+    ${CORE}/adapters/client_address_views.py \
+    ${CORE}/adapters/configure.zcml
+
+# Same broken Address validator affects LabContact (from Person) and the
+# Laboratory singleton (from Organisation). Custom views bypass it via mutators,
+# and also handle base64 image uploads (Signature / AccreditationBodyLogo) —
+# see labcontact_lab_views.py docstring.
+COPY labcontact_lab_views.py ${CORE}/adapters/labcontact_lab_views.py
+COPY patch_labcontact_lab_zcml.py /tmp/patch_labcontact_lab_zcml.py
+RUN python2.7 /tmp/patch_labcontact_lab_zcml.py
+RUN chown senaite:senaite \
+    ${CORE}/adapters/labcontact_lab_views.py \
+    ${CORE}/adapters/configure.zcml
+
 # Replace branding templates
 COPY logo.pt          ${BASE}/viewlets/templates/logo.pt
 COPY toolbar.pt       ${BASE}/viewlets/templates/toolbar.pt

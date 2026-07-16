@@ -226,7 +226,7 @@ services:
       context: ./xellabs-frontend
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3000:3000"   # reach the app at http://127.0.0.1:3000 (and http://<host-lan-ip>:3000 on the LAN)
     environment:
       - DJANGO_API_URL=http://django:8001
       - SENAITE_URL=${SENAITE_URL:-http://senaite:8080/senaite}
@@ -239,11 +239,12 @@ services:
       # stored in the session. Set it via the root .env only if a dev default is needed.
       - DEFAULT_TENANT_SCHEMA=${DEFAULT_TENANT_SCHEMA:-}
       - NODE_ENV=${NODE_ENV:-production}
-      - COOKIE_SECURE=${COOKIE_SECURE:-true}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}   # LAN access is plain HTTP; secure cookies would be dropped and break login. Set true only behind real TLS.
       - NEXT_PUBLIC_APP_ENV=${NEXT_PUBLIC_APP_ENV:-development}
     volumes:
       - ./xellabs-frontend:/app   # source mount — build runs against latest code on every container start
       - /app/node_modules         # preserve packages installed during image build
+      - frontend_next_cache:/app/.next/cache   # persist webpack/SWC build cache across recreates — speeds up rebuilds without serving stale output (source is still re-read fresh every time)
     depends_on:
       django:
         condition: service_healthy
@@ -267,3 +268,4 @@ services:
 volumes:
   postgres_data:
   senaite_data:
+  frontend_next_cache:

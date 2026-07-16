@@ -1,8 +1,8 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { type LabSample, type SampleStats, type DjangoSampleType, patchLabSample } from '@/app/actions/lab-samples'
-import { type DjangoClient } from '@/app/actions/clients'
+import { type LabSample, type DjangoSampleType, patchLabSample } from '@/app/actions/lab-samples'
+import { type SenaiteClientFull } from '@/app/lib/senaite'
 import { sampleDisplayId as displayId } from '@/app/lib/sampleDisplay'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
@@ -113,13 +113,14 @@ function fmt(dateStr: string | null): string {
 }
 
 // ── Main Shell ────────────────────────────────────────────────────────────────
-type Props = { initialSamples: LabSample[]; sampleTypes: DjangoSampleType[]; stats: SampleStats; clients: DjangoClient[] }
+type Props = { initialSamples: LabSample[]; sampleTypes: DjangoSampleType[]; clients: SenaiteClientFull[] }
 
-export default function SamplesOverviewShell({ initialSamples, sampleTypes, stats, clients }: Props) {
+export default function SamplesOverviewShell({ initialSamples, sampleTypes, clients }: Props) {
   const router = useRouter()
-  // Pre-select a Client when arriving from that client's "Client Name" link
-  // (/dashboard/samples-overview?client=<id>) — same query-param pre-fill
-  // pattern already used by New Sample's ?batch= param.
+  // Pre-select a Client when arriving from that client's "Client ID" link
+  // (/dashboard/samples-overview?client=<senaite-uid>). The SENAITE uid is the
+  // single client identity used everywhere — samples carry it as
+  // client_senaite_uid, so the filter matches on it directly (no Django id).
   const initialClientId = useSearchParams().get('client') ?? ''
   const [samples, setSamples] = useState(initialSamples)
   const [nowMs, setNowMs] = useState<number | null>(null)
@@ -143,21 +144,45 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
   const [actionMenu, setActionMenu] = useState<{ id: number; top: number; right: number } | null>(null)
   const PAGE_SIZE = 25
 
-  const filtered = samples.filter(s => {
+  // Base filters exclude the status/overdue toggle so the stat cards (which ARE
+  // the status buckets) don't collapse when one status is selected. The client
+  // filter matches on the SENAITE client uid carried on each sample.
+  function matchesBaseFilters(s: LabSample): boolean {
     if (search && !displayId(s).toLowerCase().includes(search.toLowerCase()) &&
         !s.client_name.toLowerCase().includes(search.toLowerCase())) return false
     if (filterSampleType && String(s.sample_type) !== filterSampleType) return false
-    if (filterClient && String(s.client) !== filterClient) return false
+    if (filterClient && s.client_senaite_uid !== filterClient) return false
+    if (filterPriority && s.priority !== filterPriority) return false
+    if (filterFrom && s.received_date && new Date(s.received_date) < new Date(filterFrom)) return false
+    if (filterTo && s.received_date && new Date(s.received_date) > new Date(filterTo)) return false
+    return true
+  }
+
+  const filtered = samples.filter(s => {
+    if (!matchesBaseFilters(s)) return false
     if (filterStatus) {
       if (filterStatus === 'on_hold_for_qa') { if (!s.hold_for_qa) return false }
       else { if (s.status !== filterStatus) return false }
     }
-    if (filterPriority && s.priority !== filterPriority) return false
-    if (filterFrom && s.received_date && new Date(s.received_date) < new Date(filterFrom)) return false
-    if (filterTo && s.received_date && new Date(s.received_date) > new Date(filterTo)) return false
     if (filterOverdue && !isOverdueSample(s)) return false
     return true
   })
+
+  // Stat-card counts derive from the same in-memory sample set the table uses,
+  // scoped by the base filters (incl. the selected client) but NOT by the
+  // status/overdue toggle — so each card shows how many of that client's
+  // samples sit in each status.
+  const statScope = samples.filter(matchesBaseFilters)
+  const statCounts: Record<string, number> = {
+    all: statScope.length,
+    logged: statScope.filter(s => s.status === 'registered').length,
+    received: statScope.filter(s => s.status === 'received').length,
+    in_process: statScope.filter(s => s.status === 'in_progress').length,
+    to_be_verified: statScope.filter(s => s.status === 'results_pending').length,
+    on_hold_for_qa: statScope.filter(s => s.hold_for_qa).length,
+    completed: statScope.filter(s => s.status === 'published').length,
+    overdue: statScope.filter(isOverdueSample).length,
+  }
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -370,7 +395,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
         {/* ── STATIC: stat cards ── */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 10, marginBottom: 20, flexShrink: 0 }}>
           {STAT_CARDS.map(card => {
-            const count = card.key === 'all' ? samples.length : stats[card.key as keyof SampleStats]
+            const count = statCounts[card.key] ?? 0
             const isActive = card.key === 'all'
               ? (filterStatus === '' && !filterOverdue)
               : card.key === 'overdue' ? filterOverdue : (filterStatus !== '' && filterStatus === STAT_CARD_STATUS[card.key])
@@ -409,7 +434,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, stat
             </select>
             <select value={filterClient} onChange={e => { setFilterClient(e.target.value); setPage(1) }} style={sel}>
               <option value="">All Clients</option>
-              {clients.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+              {clients.map(c => <option key={c.uid} value={c.uid}>{c.title}</option>)}
             </select>
             <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(1) }} style={sel}>
               {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}

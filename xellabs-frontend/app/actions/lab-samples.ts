@@ -41,6 +41,7 @@ export type LabSample = {
   sample_id: string
   client: number | null
   client_name: string
+  client_senaite_uid: string
   sample_type: number | null
   sample_type_name: string
   description: string
@@ -144,6 +145,8 @@ export async function createSampleWithAnalyses(
       Priority: senaitePriority(payload.priority),
       ...(payload.client_sample_id ? { ClientSampleID: payload.client_sample_id } : {}),
       ...(payload.batch_senaite_uid ? { Batch: payload.batch_senaite_uid } : {}),
+      Composite: payload.composite ?? false,
+      InternalUse: payload.internal_use ?? false,
     })
     if (!senaiteResult.success || !senaiteResult.sample) {
       return { success: false, message: `The lab system rejected the sample: ${senaiteResult.error ?? 'unknown error'}` }

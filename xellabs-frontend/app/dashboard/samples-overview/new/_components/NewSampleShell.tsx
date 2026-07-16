@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { createSampleWithAnalyses, type DjangoSampleType } from '@/app/actions/lab-samples'
+import { createSampleWithAnalyses, type DjangoSampleType, type LabSample } from '@/app/actions/lab-samples'
 import { type DjangoClient } from '@/app/actions/clients'
 import { type AnalysisSpecification } from '@/app/actions/specifications'
 import { type SenaiteBatch, type SenaiteSampleTemplate, type SenaiteRefOption, type SenaiteAnalysisService } from '@/app/lib/senaite'
@@ -79,6 +79,8 @@ type SampleForm = {
   clientReference: string; clientSampleId: string; remarks: string; selectedTests: SenaiteAnalysisService[]
 }
 
+type AttachmentEntry = { file: File; status: 'pending' | 'uploading' | 'failed' | 'done' }
+
 function blankForm(): SampleForm {
   return {
     primarySample: 'yes', clientId: '', contactName: '', ccContact: '', ccEmails: [],
@@ -95,10 +97,37 @@ type Props = {
   sampleTypes: DjangoSampleType[]; clients: DjangoClient[]; services: SenaiteAnalysisService[]
   sampleTemplates: SenaiteSampleTemplate[]; sampleContainers: SenaiteRefOption[]; batches: SenaiteBatch[]
   analysisSpecifications: AnalysisSpecification[]; preservations: SenaiteRefOption[]; samplingDeviations: SenaiteRefOption[]
-  samplePoints: SenaiteRefOption[]
+  samplePoints: SenaiteRefOption[]; existingSamples: LabSample[]
 }
 
-export default function NewSampleShell({ sampleTypes, clients, services, sampleTemplates, sampleContainers, batches, analysisSpecifications, preservations, samplingDeviations, samplePoints }: Props) {
+// A sample counts as "complete" once it has the two fields handleSubmit itself
+// requires — kept as one pure function so the tab-strip badges and the submit
+// guard can never silently drift apart from each other.
+function isFormComplete(form: SampleForm): boolean {
+  return Boolean(form.clientId && form.sampleTypeId)
+}
+
+// Statuses that no longer represent an "open" sample — a cancelled/rejected
+// sample shouldn't trigger a duplicate warning against a brand new one.
+const CLOSED_STATUSES = ['cancelled', 'rejected', 'invalid']
+const DUPLICATE_WINDOW_HOURS = 24
+
+function findLikelyDuplicate(form: SampleForm, clients: DjangoClient[], sampleTypes: DjangoSampleType[], existingSamples: LabSample[]): LabSample | null {
+  if (!form.clientId || !form.sampleTypeId) return null
+  const client = clients.find(c => String(c.id) === form.clientId)
+  if (!client) return null
+  const targetTime = form.dateSampled ? new Date(form.dateSampled).getTime() : null
+  return existingSamples.find(s => {
+    if (CLOSED_STATUSES.includes(s.status)) return false
+    if (s.client !== client.id) return false
+    if (String(s.sample_type ?? '') !== form.sampleTypeId) return false
+    if (targetTime === null || !s.collection_date) return true
+    const diffHours = Math.abs(new Date(s.collection_date).getTime() - targetTime) / 3_600_000
+    return diffHours <= DUPLICATE_WINDOW_HOURS
+  }) ?? null
+}
+
+export default function NewSampleShell({ sampleTypes, clients, services, sampleTemplates, sampleContainers, batches, analysisSpecifications, preservations, samplingDeviations, samplePoints, existingSamples }: Props) {
   const router = useRouter()
   // Pre-select a Batch when arriving from that batch's "New Sample" button
   // (/dashboard/samples-overview/new?batch=<uid>) — only applied to the first
@@ -139,7 +168,22 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
   const [success, setSuccess] = useState('')
   const [showAddAnalysis, setShowAddAnalysis] = useState(false)
   const [analysisSearch, setAnalysisSearch] = useState('')
-  const [attachments, setAttachments] = useState<File[]>([])
+  const [attachments, setAttachments] = useState<AttachmentEntry[]>([])
+  const [toast, setToast] = useState('')
+  function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(''), 3000) }
+
+  // Ctrl+Left/Right to move between sample tabs — scoped to this component's
+  // own keydown listener (not a page-wide shortcut) so it never fights other
+  // pages' own key handling.
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      if (!e.ctrlKey) return
+      if (e.key === 'ArrowRight') { e.preventDefault(); setActiveTab(t => Math.min(t + 1, forms.length - 1)) }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); setActiveTab(t => Math.max(t - 1, 0)) }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [forms.length])
   // Date.now() is impure — capture it after mount rather than during render.
   const [nowLocal, setNowLocal] = useState<string | null>(null)
   useEffect(() => {
@@ -253,24 +297,59 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
       // Upload attachments to EVERY created sample in the batch — previously only
       // the first sample got them, silently. Must use the numeric DB id — the
       // display sample_id ("BL-2026-001") 404s against the DRF detail route.
-      let failedUploads = 0
       const createdIds = results.map(r => r.id).filter((id): id is number => Boolean(id))
+      setCreatedSampleIds(createdIds)
+      let anyFailed = false
       if (createdIds.length > 0 && attachments.length > 0) {
-        const { uploadSampleAttachment } = await import('@/app/actions/lab-samples')
-        for (const sid of createdIds) {
-          for (const file of attachments) {
-            const fd = new FormData(); fd.append('attachment', file)
-            const up = await uploadSampleAttachment(String(sid), fd)
-            if (!up.ok) failedUploads++
-          }
-        }
+        anyFailed = await uploadAttachmentsTo(createdIds)
       }
       const ids = results.map(r => r.sample_id).filter(Boolean).join(', ')
-      const uploadWarning = failedUploads > 0
-        ? ` — note: ${failedUploads} attachment${failedUploads > 1 ? 's' : ''} failed to upload; edit the sample to retry.`
+      const uploadWarning = anyFailed
+        ? ' — note: one or more attachments failed to upload; use Retry below.'
         : ''
       setSuccess(`${forms.length} sample${forms.length > 1 ? 's' : ''} logged: ${ids}${uploadWarning}`)
-      setTimeout(() => router.push('/dashboard/samples-overview'), 1800)
+      // Only auto-navigate away when every attachment actually made it — if
+      // something failed, the Retry UI needs the page to stay mounted.
+      if (!anyFailed) setTimeout(() => router.push('/dashboard/samples-overview'), 1800)
+    }
+  }
+
+  const [createdSampleIds, setCreatedSampleIds] = useState<number[]>([])
+
+  // Uploads every 'pending'/'failed' attachment to all given sample ids,
+  // updating each entry's own status so the UI can show exactly which file
+  // failed instead of a single aggregate count. Returns whether anything failed.
+  async function uploadAttachmentsTo(sampleIds: number[]): Promise<boolean> {
+    const { uploadSampleAttachment } = await import('@/app/actions/lab-samples')
+    let anyFailed = false
+    for (let i = 0; i < attachments.length; i++) {
+      if (attachments[i].status === 'done') continue
+      setAttachments(prev => prev.map((a, j) => j === i ? { ...a, status: 'uploading' } : a))
+      let ok = true
+      for (const sid of sampleIds) {
+        const fd = new FormData(); fd.append('attachment', attachments[i].file)
+        const up = await uploadSampleAttachment(String(sid), fd)
+        if (!up.ok) ok = false
+      }
+      if (!ok) anyFailed = true
+      setAttachments(prev => prev.map((a, j) => j === i ? { ...a, status: ok ? 'done' : 'failed' } : a))
+    }
+    return anyFailed
+  }
+
+  async function retryAttachment(index: number) {
+    if (createdSampleIds.length === 0) return
+    setAttachments(prev => prev.map((a, j) => j === index ? { ...a, status: 'uploading' } : a))
+    const { uploadSampleAttachment } = await import('@/app/actions/lab-samples')
+    let ok = true
+    for (const sid of createdSampleIds) {
+      const fd = new FormData(); fd.append('attachment', attachments[index].file)
+      const up = await uploadSampleAttachment(String(sid), fd)
+      if (!up.ok) ok = false
+    }
+    setAttachments(prev => prev.map((a, j) => j === index ? { ...a, status: ok ? 'done' : 'failed' } : a))
+    if (ok && attachments.every((a, j) => j === index || a.status === 'done')) {
+      router.push('/dashboard/samples-overview')
     }
   }
 
@@ -306,6 +385,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
   // Propagate ALL Section 1 fields from active tab to every other tab
   function applyClientToAll() {
     if (!f.clientId) return
+    const otherCount = forms.length - 1
     setForms(prev => prev.map((form, i) => i === activeTab ? form : {
       ...form,
       primarySample: f.primarySample,
@@ -318,6 +398,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
       sampleTemplateId: f.sampleTemplateId,
       analysisProfiles: f.analysisProfiles,
     }))
+    if (otherCount > 0) showToast(`Applied to ${otherCount} other sample${otherCount > 1 ? 's' : ''}.`)
   }
 
   // Selecting a Sample Template auto-fills Sample Type, Container, and Lab Analyses
@@ -442,6 +523,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
             {forms.map((_, idx) => {
               const isActive = idx === activeTab
               const hasData = forms[idx].clientId || forms[idx].sampleTypeId
+              const incomplete = !isFormComplete(forms[idx])
               return (
                 <div key={idx} style={{ position: 'relative' }}>
                   <button
@@ -475,6 +557,9 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                         {clients.find(c => String(c.id) === forms[idx].clientId)?.name ?? ''}
                       </span>
                     )}
+                    {incomplete && (
+                      <span title="Missing required fields" style={{ width: 8, height: 8, borderRadius: '50%', background: '#EF4444', flexShrink: 0 }} />
+                    )}
                   </button>
                   {/* Remove tab button */}
                   <button
@@ -493,6 +578,17 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                 </div>
               )
             })}
+          </div>
+        )}
+        {sampleCount > 1 && forms.some(form => !isFormComplete(form)) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: -12, marginBottom: 16, fontSize: 12, color: '#B45309' }}>
+            <MI name="error_outline" size={14} color="#B45309" />
+            {forms.filter(form => !isFormComplete(form)).length} of {sampleCount} samples incomplete (missing Client or Sample Type)
+          </div>
+        )}
+        {toast && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16, padding: '8px 14px', borderRadius: 8, background: '#F0FDF4', border: '1px solid #BBF7D0', fontSize: 12, color: '#166534' }}>
+            <MI name="check_circle" size={14} color="#166534" /> {toast}
           </div>
         )}
 
@@ -615,6 +711,19 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
         {/* Section 2 */}
         <div style={section}>
           <SectionHeader num={2} title="Sampling Details" />
+          {(() => {
+            const dup = findLikelyDuplicate(f, clients, sampleTypes, existingSamples)
+            if (!dup) return null
+            return (
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px 14px', borderRadius: 8, background: '#FFFBEB', border: '1px solid #FDE68A', marginBottom: 16, fontSize: 12, color: '#92400E' }}>
+                <MI name="warning_amber" size={16} color="#B45309" />
+                <span>
+                  Possible duplicate: <strong>{dup.sample_id}</strong> for this client and sample type
+                  {dup.collection_date ? ` was sampled around ${new Date(dup.collection_date).toLocaleString()}` : ''} and is still {dup.status}. Double-check before logging this one.
+                </span>
+              </div>
+            )
+          })()}
           <div style={{ ...grid4, marginBottom: 16 }}>
             <div style={field}><label style={lbl}>Date Sampled *</label>
               <input type="datetime-local" value={f.dateSampled} max={nowLocal ?? undefined}
@@ -624,6 +733,11 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                 {!f.sampleTemplateId && <option value="">— select —</option>}
                 {sampleTypeOptionsFor(f.sampleTemplateId).map(st => <option key={st.id} value={st.id}>{st.name}</option>)}
               </select>
+              {f.sampleTypeId && (() => {
+                const st = sampleTypes.find(s => String(s.id) === f.sampleTypeId)
+                if (!st?.prefix) return null
+                return <span style={{ fontSize: 11, color: '#9CA3AF', marginTop: 3 }}>ID format: {st.prefix}-{new Date().getFullYear()}-### (assigned on save)</span>
+              })()}
               {f.sampleTemplateId && (
                 <span style={{ fontSize: 11, color: '#9CA3AF', marginTop: 3 }}>Filtered to the type set by this template</span>
               )}</div>
@@ -726,7 +840,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
               <label style={lbl}>Attachments</label>
               <label style={{ border: `2px dashed ${attachments.length ? '#2563EB' : '#D1D5DB'}`, borderRadius: 8, padding: '20px 16px', textAlign: 'center', cursor: 'pointer', background: attachments.length ? '#EFF6FF' : '#FAFAFA', display: 'block', transition: 'all 0.15s' }}>
                 <input type="file" accept=".pdf,.jpg,.jpeg,.png" multiple style={{ display: 'none' }}
-                  onChange={e => { if (e.target.files) setAttachments(prev => [...prev, ...Array.from(e.target.files!)]) }} />
+                  onChange={e => { if (e.target.files) setAttachments(prev => [...prev, ...Array.from(e.target.files!).map(file => ({ file, status: 'pending' as const }))]) }} />
                 <MI name="cloud_upload" size={28} color={attachments.length ? '#2563EB' : '#D1D5DB'} />
                 <p style={{ margin: '6px 0 3px', fontSize: 13, color: '#374151' }}>
                   {attachments.length ? `${attachments.length} file${attachments.length > 1 ? 's' : ''} selected` : <>Drag and drop files here<br /><span style={{ color: '#2563EB', fontWeight: 600 }}>or browse</span></>}
@@ -735,12 +849,19 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
               </label>
               {attachments.length > 0 && (
                 <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {attachments.map((file, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 10px', background: '#F0F7FF', borderRadius: 6, fontSize: 12 }}>
+                  {attachments.map((entry, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 10px', background: entry.status === 'failed' ? '#FEF2F2' : '#F0F7FF', borderRadius: 6, fontSize: 12 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                        <MI name="description" size={14} color="#2563EB" />
-                        <span style={{ color: '#1D4ED8', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
-                        <span style={{ color: '#9CA3AF', flexShrink: 0 }}>({(file.size / 1024).toFixed(0)} KB)</span>
+                        <MI name={entry.status === 'failed' ? 'error_outline' : entry.status === 'done' ? 'check_circle' : entry.status === 'uploading' ? 'hourglass_top' : 'description'}
+                          size={14} color={entry.status === 'failed' ? '#DC2626' : entry.status === 'done' ? '#059669' : '#2563EB'} />
+                        <span style={{ color: entry.status === 'failed' ? '#991B1B' : '#1D4ED8', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.file.name}</span>
+                        <span style={{ color: '#9CA3AF', flexShrink: 0 }}>({(entry.file.size / 1024).toFixed(0)} KB)</span>
+                        {entry.status === 'failed' && (
+                          <button type="button" onClick={() => retryAttachment(i)}
+                            style={{ fontSize: 11, fontWeight: 600, color: '#DC2626', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>
+                            Retry
+                          </button>
+                        )}
                       </div>
                       <button type="button" onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', padding: 2 }}>
