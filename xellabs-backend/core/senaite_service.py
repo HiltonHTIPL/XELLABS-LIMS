@@ -73,9 +73,16 @@ def push_client(client) -> str | None:
             url = _api(f"update/{client.senaite_uid}")
             resp = s.post(url, json=payload, timeout=15)
         else:
-            # Create new via create endpoint with portal_type + parent_path
+            # Create new via create endpoint with portal_type + parent_path.
+            # senaite.jsonapi's find_target_container() does a portal-relative
+            # restrictedTraverse() when parent_path doesn't literally start
+            # with the portal's own physical path -- a leading-slash path
+            # like "/senaite/clients" therefore never matches and 404s with
+            # "No target container found" (confirmed live 2026-07-16, this
+            # broke every client creation in production). Portal-relative,
+            # no leading slash, is what actually resolves.
             payload["portal_type"] = "Client"
-            payload["parent_path"] = "/senaite/clients"
+            payload["parent_path"] = "clients"
             url = _api("create")
             resp = s.post(url, json=payload, timeout=15)
 
