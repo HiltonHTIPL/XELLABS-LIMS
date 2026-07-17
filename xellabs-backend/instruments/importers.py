@@ -130,6 +130,61 @@ def parse_xml(file_content: bytes) -> tuple[list[dict], list[dict]]:
     return rows, errors
 
 
+# ── Parser registry (Strategy / Adapter) ──────────────────────────────────────
+# Keyed by Instrument.import_data_interface. Vendor parsers (Shimadzu / Agilent /
+# Thermo per IDOA B.4) register here without touching the view layer.
+
+ParserFn = callable  # (bytes) -> tuple[list[dict], list[dict]]
+
+_PARSER_REGISTRY: dict[str, dict[str, ParserFn]] = {
+    # interface_code → {file_format → parser}
+    "generic": {"csv": parse_csv, "xml": parse_xml},
+    # Placeholders: until vendor parsers land, fall through to generic via resolve.
+    "shimadzu": {},
+    "agilent": {},
+    "thermo": {},
+}
+
+
+def register_parser(interface_code: str, file_format: str, parser: ParserFn) -> None:
+    """Register or replace a vendor parser. Safe to call from AppConfig.ready()."""
+    code = (interface_code or "generic").strip().lower()
+    fmt = (file_format or "csv").strip().lower()
+    _PARSER_REGISTRY.setdefault(code, {})[fmt] = parser
+
+
+def resolve_parser(interface_code: str | None, file_format: str = "csv") -> ParserFn:
+    """
+    Resolve the parser for an instrument's import_data_interface.
+    Unknown / empty interface → generic. Missing format for a vendor → generic same format.
+    """
+    code = (interface_code or "").strip().lower() or "generic"
+    # Allow comma-separated interfaces (Instrument.import_data_interface stores that);
+    # use the first known code.
+    for part in code.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        parsers = _PARSER_REGISTRY.get(part)
+        if parsers and file_format in parsers:
+            return parsers[file_format]
+        if parsers:
+            break
+    generic = _PARSER_REGISTRY["generic"]
+    return generic.get(file_format, parse_csv)
+
+
+def parse_instrument_file(
+    file_content: bytes,
+    *,
+    file_format: str = "csv",
+    interface_code: str | None = None,
+) -> tuple[list[dict], list[dict]]:
+    """Single entrypoint used by preview + apply_import."""
+    parser = resolve_parser(interface_code, file_format)
+    return parser(file_content)
+
+
 def _fetch_senaite_services_by_keyword() -> dict:
     """Live SENAITE AnalysisServices keyed by Keyword (the instrument-file
     test code) — replaces the old Django Test.code lookup now that SENAITE
@@ -191,13 +246,15 @@ def build_preview(rows: list[dict], parse_errors: list[dict]) -> tuple[list[dict
     Validate parsed rows against the database without writing anything.
 
     A row is "valid" (it will create or refresh a Result on commit) when its
-    sample and test both exist and an open worksheet assignment links them.
-    Everything else is surfaced as an "error" row so the analyst sees exactly
-    what will be skipped before confirming the import.
+    sample and test both exist, an open worksheet assignment links them, and
+    any existing Result is still pending (or absent).
 
-    Returns (preview_rows, summary) where summary = {total, valid, invalid}.
+    Rows with an already submitted/verified/rejected Result are status "skip"
+    so the analyst sees the no-overwrite guard before confirming.
+
+    Returns (preview_rows, summary) where summary = {total, valid, invalid, skipped}.
     """
-    from lims.models import WorksheetAssignment
+    from lims.models import WorksheetAssignment, Result
 
     sample_ids = {r["sample_id"] for r in rows}
     sample_cache = _build_sample_cache(sample_ids)
@@ -205,11 +262,18 @@ def build_preview(rows: list[dict], parse_errors: list[dict]) -> tuple[list[dict
     # Resolved to canonical sample_id here (not the raw CSV/XML id, which may be
     # a senaite_ar_id/barcode) so the membership check below lines up correctly.
     canonical_ids = {s.sample_id for s in sample_cache.values()}
-    assignment_pairs = set(
+    assignments = list(
         WorksheetAssignment.objects.filter(
             analysis_request__sample__sample_id__in=canonical_ids,
-        ).values_list("analysis_request__sample__sample_id", "senaite_service_uid")
+        ).select_related("analysis_request__sample")
     )
+    assignment_pairs = {
+        (a.analysis_request.sample.sample_id, a.senaite_service_uid): a for a in assignments
+    }
+    existing_by_wa = {
+        r.worksheet_assignment_id: r
+        for r in Result.objects.filter(worksheet_assignment__in=assignments)
+    }
 
     preview: list[dict] = []
 
@@ -238,14 +302,30 @@ def build_preview(rows: list[dict], parse_errors: list[dict]) -> tuple[list[dict
             continue
         base["test_name"] = service["title"]
         base["sample_status"] = sample.status
-        if (sample.sample_id, service["uid"]) not in assignment_pairs:
+        wa = assignment_pairs.get((sample.sample_id, service["uid"]))
+        if not wa:
             preview.append({**base, "status": "error",
                             "detail": "No open worksheet assignment for this sample and test."})
+            continue
+        existing = existing_by_wa.get(wa.pk)
+        if existing and existing.status != "pending":
+            preview.append({
+                **base,
+                "status": "skip",
+                "detail": f"Result already {existing.status}, will not overwrite.",
+            })
             continue
         preview.append({**base, "status": "valid", "detail": ""})
 
     valid = sum(1 for p in preview if p["status"] == "valid")
-    summary = {"total": len(preview), "valid": valid, "invalid": len(preview) - valid}
+    skipped = sum(1 for p in preview if p["status"] == "skip")
+    invalid = sum(1 for p in preview if p["status"] == "error")
+    summary = {
+        "total": len(preview),
+        "valid": valid,
+        "invalid": invalid,
+        "skipped": skipped,
+    }
     return preview, summary
 
 

@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { type LabSample, type DjangoSampleType, patchLabSample } from '@/app/actions/lab-samples'
 import { type SenaiteClientFull } from '@/app/lib/senaite'
 import { sampleDisplayId as displayId } from '@/app/lib/sampleDisplay'
+import DisposeSampleModal from './DisposeSampleModal'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -155,6 +156,8 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
     if (filterPriority && s.priority !== filterPriority) return false
     if (filterFrom && s.received_date && new Date(s.received_date) < new Date(filterFrom)) return false
     if (filterTo && s.received_date && new Date(s.received_date) > new Date(filterTo)) return false
+    // Active lists exclude disposed; use Status → Disposed to see them.
+    if (!filterStatus && !filterOverdue && s.status === 'disposed') return false
     return true
   }
 
@@ -318,21 +321,8 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
     }
   }
 
-  // ── Delete (soft — marks as disposed, never hard-deletes for audit/compliance reasons) ──
-  const [deletingId, setDeletingId] = useState<number | null>(null)
-  async function handleDeleteSample(id: number) {
-    const sample = samples.find(s => s.id === id)
-    if (!sample) return
-    if (!window.confirm(`Mark sample "${displayId(sample)}" as disposed? This cannot be undone and the record will move to the Disposed status.`)) return
-    setDeletingId(id)
-    try {
-      const result = await patchLabSample(id, { status: 'disposed' })
-      if (result.ok) setSamples(prev => prev.map(s => (s.id === id ? { ...s, status: 'disposed' } : s)))
-      else window.alert(result.message ?? 'Failed to update sample.')
-    } finally {
-      setDeletingId(null)
-    }
-  }
+  // ── Dispose (regulatory basis + optional certificate) ──
+  const [disposeTarget, setDisposeTarget] = useState<LabSample | null>(null)
 
   const sel ={ border: '1px solid #D1D5DB', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: '#374151', background: '#fff', outline: 'none', cursor: 'pointer' as const }
   const [now, setNow] = useState('')
@@ -744,7 +734,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
               { icon: 'visibility',     label: 'View Details',   action: () => router.push(`/dashboard/samples-overview/${actionMenu.id}`) },
               { icon: 'move_to_inbox',  label: 'Receive Sample', action: () => { router.push(`/dashboard/sample-receipts?id=${actionMenu.id}`); setActionMenu(null) } },
               { icon: 'edit',           label: 'Edit Sample',    action: () => router.push(`/dashboard/samples-overview/${actionMenu.id}?edit=1`) },
-              { icon: 'delete_outline', label: 'Delete',         action: () => handleDeleteSample(actionMenu.id), danger: true },
+              { icon: 'delete_outline', label: 'Dispose', action: () => setDisposeTarget(samples.find(s => s.id === actionMenu.id) ?? null), danger: true },
             ].map(item => (
               <button key={item.label} onClick={() => { item.action(); setActionMenu(null) }}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: (item as { danger?: boolean }).danger ? '#EF4444' : '#374151', textAlign: 'left' }}>
@@ -754,6 +744,21 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
             ))}
           </div>
         </>
+      )}
+
+      {disposeTarget && (
+        <DisposeSampleModal
+          sampleId={disposeTarget.id}
+          sampleLabel={displayId(disposeTarget)}
+          onClose={() => setDisposeTarget(null)}
+          onDisposed={update => {
+            setSamples(prev => prev.map(s =>
+              s.id === disposeTarget.id
+                ? { ...s, ...update }
+                : s
+            ))
+          }}
+        />
       )}
 
     </div>

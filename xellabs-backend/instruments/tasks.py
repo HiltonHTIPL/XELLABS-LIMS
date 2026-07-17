@@ -1,10 +1,13 @@
 """
 Instrument file import processing.
 
-`apply_import` runs the full parse -> map -> create -> audit pipeline
+`apply_import` runs the full parse -> map -> create -> submit -> audit pipeline
 synchronously and returns a summary. Both the Celery task (background path)
 and the "commit" API action (interactive path used by the import UX) call it,
 so the two paths never drift.
+
+Imported Results land as `submitted` (reviewable) — same path as manual entry
+after submit. Already verified/submitted/rejected Results are skipped, never overwritten.
 """
 import json
 import logging
@@ -15,16 +18,19 @@ logger = logging.getLogger(__name__)
 
 def apply_import(imp) -> dict:
     """
-    Parse the uploaded file, map rows to existing samples/tests, create or refresh
-    Result records, and write an audit event. Returns a summary dict:
-    {created, updated, skipped, errors, sample_ids, status}.
+    Parse the uploaded file (parser selected via instrument.import_data_interface),
+    map rows to existing samples/tests, create/refresh pending Results, submit them
+    into the review workflow, and write an audit event.
+
+    Returns {created, updated, skipped, errors, sample_ids, status}.
     """
     from django.db import transaction
     from django.contrib.contenttypes.models import ContentType
     from audittrail.models import AuditEvent
     from lims.models import Result, WorksheetAssignment
+    from lims.services import submit_result
     from .models import InstrumentResultImport
-    from .importers import parse_csv, parse_xml, map_results
+    from .importers import parse_instrument_file, map_results
 
     imp.status = "pending"
     imp.save(update_fields=["status"])
@@ -35,11 +41,13 @@ def apply_import(imp) -> dict:
         _fail(imp, f"Could not read file: {e}")
         return {"created": 0, "updated": 0, "skipped": 0, "errors": 1, "sample_ids": [], "status": "failed"}
 
+    interface = getattr(imp.instrument, "import_data_interface", "") or ""
     try:
-        if imp.file_format == "xml":
-            rows, parse_errors = parse_xml(file_content)
-        else:
-            rows, parse_errors = parse_csv(file_content)
+        rows, parse_errors = parse_instrument_file(
+            file_content,
+            file_format=imp.file_format or "csv",
+            interface_code=interface,
+        )
     except Exception as e:
         # parse_csv/parse_xml raise on a genuinely malformed file (e.g. a
         # binary file uploaded under the wrong File Format, confirmed live —
@@ -97,6 +105,17 @@ def apply_import(imp) -> dict:
                         "detail": f"Result for {row['sample_id']}/{row['test_code']} already {result.status}, skipped.",
                     })
                     skipped_count += 1
+                    continue
+
+                # Enter the same review path as manual entry: pending → submitted.
+                if result.status == "pending" and result.value:
+                    try:
+                        submit_result(result, imp.imported_by)
+                    except ValueError as e:
+                        all_errors.append({
+                            "row": row["sample_id"],
+                            "detail": f"Imported but could not submit for review: {e}",
+                        })
     except Exception as e:
         logger.exception("Import #%d crashed during create.", imp.pk)
         _fail(imp, f"Import failed unexpectedly: {e}")
@@ -112,6 +131,7 @@ def apply_import(imp) -> dict:
         object_repr=f"Import #{imp.pk} - {imp.instrument.name}",
         extra_data={
             "file_format": imp.file_format,
+            "import_interface": interface,
             "total_rows": len(rows),
             "created": created_count,
             "updated": updated_count,

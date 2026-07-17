@@ -63,8 +63,14 @@ class Instrument(models.Model):
     STATUS = [
         ("active", "Active"),
         ("inactive", "Inactive"),
-        ("maintenance", "Under Maintenance"),
+        ("under_maintenance", "Under Maintenance"),
+        ("out_of_service", "Out of Service"),
         ("retired", "Retired"),
+    ]
+    USABILITY = [
+        ("valid", "Valid"),
+        ("expired", "Expired"),
+        ("out_of_service", "Out of Service"),
     ]
     name = models.CharField(max_length=200)
     instrument_id = models.CharField(max_length=50, unique=True)
@@ -87,28 +93,36 @@ class Instrument(models.Model):
     asset_number = models.CharField(max_length=100, blank=True)
     location = models.CharField(max_length=200, blank=True)
     status = models.CharField(max_length=20, choices=STATUS, default="active")
+    usability = models.CharField(
+        max_length=20, choices=USABILITY, default="valid", db_index=True,
+        help_text="Derived from status + latest calibration/certification/validation",
+    )
     purchase_date = models.DateField(null=True, blank=True)
     installation_date = models.DateField(null=True, blank=True)
     installation_certificate = models.FileField(
         upload_to="instrument_install_certs/", null=True, blank=True
     )
     photo = models.ImageField(upload_to="instrument_photos/", null=True, blank=True)
-    # SENAITE Export/Import Data Interface vocabularies (interface module codes)
+    # Export/Import Data Interface vocabularies (interface module codes)
     data_interface = models.CharField(
         max_length=200, blank=True,
-        help_text="Export data interface code (SENAITE DataInterface)",
+        help_text="Export data interface code",
     )
     import_data_interface = models.CharField(
         max_length=500, blank=True,
-        help_text="Comma-separated import interface codes (SENAITE ImportDataInterface)",
+        help_text="Comma-separated import interface codes",
     )
     result_files_folder = models.TextField(
         blank=True,
         help_text="One line per import path: InterfaceCode|/path/to/folder",
     )
+    data_interface_options = models.TextField(
+        blank=True,
+        help_text="Key=Value lines passed to export/import modules",
+    )
     dispose_until_next_calibration = models.BooleanField(
         default=False,
-        help_text="Unavailable until the next valid calibration (SENAITE DisposeUntilNextCalibrationTest)",
+        help_text="Unavailable until the next valid calibration",
     )
     inlab_calibration_procedure = models.TextField(blank=True)
     preventive_maintenance_procedure = models.TextField(blank=True)
@@ -124,10 +138,15 @@ class Instrument(models.Model):
         indexes = [
             models.Index(fields=["status"], name="instrument_status_idx"),
             models.Index(fields=["next_calibration"], name="instrument_next_cal_idx"),
+            models.Index(fields=["usability"], name="instrument_usability_idx"),
         ]
 
     def __str__(self):
         return f"{self.name} ({self.instrument_id})"
+
+    @property
+    def is_usable(self) -> bool:
+        return self.usability == "valid" and self.status == "active"
 
     def save(self, *args, **kwargs):
         # Keep string caches in sync with catalog FKs for list/report columns.

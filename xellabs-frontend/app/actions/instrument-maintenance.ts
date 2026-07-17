@@ -10,6 +10,9 @@ export type InstrumentOption = {
   id: number
   name: string
   instrument_id: string
+  status?: string
+  usability?: 'valid' | 'expired' | 'out_of_service'
+  is_usable?: boolean
 }
 
 export type Calibration = {
@@ -78,12 +81,23 @@ const REVALIDATE_PATH = '/dashboard/instrument-maintenance'
 /* Instruments dropdown                                                 */
 /* ------------------------------------------------------------------ */
 
-export async function getInstrumentOptions(): Promise<InstrumentOption[]> {
+export async function getInstrumentOptions(params?: {
+  usableOnly?: boolean
+}): Promise<InstrumentOption[]> {
   try {
-    const res = await djangoFetch('/api/instruments/instruments/?ordering=name')
+    const qs = new URLSearchParams({ ordering: 'name' })
+    if (params?.usableOnly) qs.set('usability', 'valid')
+    const res = await djangoFetch(`/api/instruments/instruments/?${qs.toString()}`)
     if (!res.ok) return []
     const data = await res.json()
-    return unwrap<InstrumentOption>(data)
+    const rows = unwrap<InstrumentOption>(data)
+    // Prefer usable instruments first for picker UX; keep non-usable available (warn on select).
+    return [...rows].sort((a, b) => {
+      const au = a.is_usable || a.usability === 'valid' ? 0 : 1
+      const bu = b.is_usable || b.usability === 'valid' ? 0 : 1
+      if (au !== bu) return au - bu
+      return a.name.localeCompare(b.name)
+    })
   } catch { return [] }
 }
 

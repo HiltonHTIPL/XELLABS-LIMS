@@ -35,15 +35,49 @@ class InstrumentSupplierSerializer(serializers.ModelSerializer):
 
 
 class InstrumentSerializer(serializers.ModelSerializer):
-    # Read-friendly names alongside the FK ids (white-label: plain labels, no SENAITE refs)
+    # Read-friendly names alongside the FK ids (white-label: plain labels)
     instrument_type_name = serializers.CharField(source="instrument_type.name", read_only=True, default="")
     instrument_location_name = serializers.CharField(source="instrument_location.name", read_only=True, default="")
     manufacturer_org_name = serializers.CharField(source="manufacturer_org.name", read_only=True, default="")
     supplier_org_name = serializers.CharField(source="supplier_org.name", read_only=True, default="")
+    is_usable = serializers.BooleanField(read_only=True)
+    method_ids = serializers.ListField(
+        child=serializers.IntegerField(), required=False, allow_empty=True
+    )
 
     class Meta:
         model = Instrument
         fields = "__all__"
+        read_only_fields = ("usability", "created_at")
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["method_ids"] = list(
+            instance.methods.filter(is_active=True).values_list("method_id", flat=True)
+        )
+        return data
+
+    def _sync_methods(self, instrument, method_ids):
+        if method_ids is None:
+            return
+        from .models import InstrumentMethod
+        InstrumentMethod.objects.filter(instrument=instrument).exclude(method_id__in=method_ids).delete()
+        for mid in method_ids:
+            InstrumentMethod.objects.update_or_create(
+                instrument=instrument, method_id=mid, defaults={"is_active": True}
+            )
+
+    def create(self, validated_data):
+        method_ids = validated_data.pop("method_ids", None)
+        instrument = super().create(validated_data)
+        self._sync_methods(instrument, method_ids)
+        return instrument
+
+    def update(self, instance, validated_data):
+        method_ids = validated_data.pop("method_ids", None)
+        instrument = super().update(instance, validated_data)
+        self._sync_methods(instrument, method_ids)
+        return instrument
 
 
 class InstrumentMethodSerializer(serializers.ModelSerializer):

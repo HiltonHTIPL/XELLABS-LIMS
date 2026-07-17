@@ -50,17 +50,47 @@ function InstrumentFilter({ instruments, value, onChange }: {
   )
 }
 
+function isInstrumentUsable(i: InstrumentOption): boolean {
+  if (typeof i.is_usable === 'boolean') return i.is_usable
+  return i.usability === 'valid' && (i.status == null || i.status === 'active')
+}
+
 function InstrumentSelectField({ instruments, defaultValue, error }: {
   instruments: InstrumentOption[]; defaultValue?: number; error?: string
 }) {
+  const [selected, setSelected] = useState(defaultValue != null ? String(defaultValue) : '')
+  const chosen = instruments.find(i => String(i.id) === selected)
+  const warn = chosen && !isInstrumentUsable(chosen)
+  const usable = instruments.filter(isInstrumentUsable)
+  const other = instruments.filter(i => !isInstrumentUsable(i))
+
   return (
     <Field label="Instrument" required hint={error}>
-      <select name="instrument" defaultValue={defaultValue ?? ''} required style={selectStyle}>
+      <select name="instrument" value={selected} required style={selectStyle}
+        onChange={e => setSelected(e.target.value)}>
         <option value="" disabled>Select instrument…</option>
-        {instruments.map(i => (
-          <option key={i.id} value={i.id}>{i.name} ({i.instrument_id})</option>
-        ))}
+        {usable.length > 0 && (
+          <optgroup label="Usable">
+            {usable.map(i => (
+              <option key={i.id} value={i.id}>{i.name} ({i.instrument_id})</option>
+            ))}
+          </optgroup>
+        )}
+        {other.length > 0 && (
+          <optgroup label="Not currently usable">
+            {other.map(i => (
+              <option key={i.id} value={i.id}>
+                {i.name} ({i.instrument_id}) — {i.usability ?? i.status ?? 'unavailable'}
+              </option>
+            ))}
+          </optgroup>
+        )}
       </select>
+      {warn && (
+        <p style={{ fontSize: 11, color: '#D97706', marginTop: 6 }}>
+          This instrument is not currently usable ({chosen?.usability ?? chosen?.status}). You can continue, but results may be flagged.
+        </p>
+      )}
     </Field>
   )
 }

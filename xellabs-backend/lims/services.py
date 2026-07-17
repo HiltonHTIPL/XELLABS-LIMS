@@ -152,6 +152,64 @@ def receive_sample(sample, user, location="", notes="", **receipt_fields):
     return sample
 
 
+# Disposal-eligible statuses mirror lab dispatch exit-transitions:
+# received / to_be_verified / verified / published (Django names below).
+DISPOSAL_ELIGIBLE_STATUSES = frozenset({
+    "received",
+    "results_pending",   # to_be_verified
+    "reviewed",          # verified
+    "published",
+})
+
+
+@transaction.atomic
+def dispose_sample(sample, user, basis, notes="", certificate=None):
+    """
+    Transition sample → disposed with required regulatory basis.
+    Stamps description, optional certificate attachment, ChainOfCustody row.
+    AuditEvent/DataChangeLog fire automatically via audittrail post_save.
+    """
+    from .models import ChainOfCustody
+
+    basis = (basis or "").strip()
+    if not basis:
+        raise ValueError("Regulatory basis is required (e.g. 40 CFR / state disposal rule).")
+
+    if sample.status not in DISPOSAL_ELIGIBLE_STATUSES:
+        raise ValueError(
+            f"Cannot dispose a sample with status '{sample.status}'. "
+            "Dispose is allowed from received, to be verified, reviewed, or published."
+        )
+
+    extra_notes = (notes or "").strip()
+    stamp = f"[Disposed] {basis}"
+    if extra_notes:
+        stamp = f"{stamp} — {extra_notes}"
+
+    sample.description = (
+        f"{sample.description}\n{stamp}".strip() if sample.description else stamp
+    )
+    update_fields = ["status", "description", "updated_at"]
+    if certificate is not None:
+        if sample.attachment:
+            sample.attachment.delete(save=False)
+        sample.attachment = certificate
+        update_fields.append("attachment")
+
+    sample.status = "disposed"
+    sample.save(update_fields=update_fields)
+
+    ChainOfCustody.objects.create(
+        sample=sample,
+        action="disposed",
+        from_location=sample.storage_location or "",
+        to_location="Disposed",
+        transferred_by=user,
+        notes=stamp,
+    )
+    return sample
+
+
 # ── Result workflow ───────────────────────────────────────────────────────────
 
 @transaction.atomic
@@ -328,3 +386,45 @@ def complete_analysis_request(ar):
         ar.status = "completed"
         ar.save(update_fields=["status", "updated_at"])
     return ar
+
+
+# ── Sample dispose → lab system dispatch (OPTIONAL — not wired; see tc9 plan §6) ─
+
+def schedule_lab_dispatch_after_dispose(sample, regulatory_basis: str, schema_name: str) -> str:
+    """
+    After Django dispose: resolve/link senaite_uid, set sync status, enqueue Celery dispatch.
+    Returns senaite_sync_status for the API response.
+    """
+    from django.db import transaction
+
+    from core.senaite_service import resolve_analysis_request_uid_by_client_sample_id
+    from lims.tasks import dispatch_sample_to_lab
+
+    uid = (sample.senaite_uid or "").strip()
+    update_fields = ["senaite_sync_status", "senaite_sync_error"]
+
+    if not uid:
+        resolved = resolve_analysis_request_uid_by_client_sample_id(sample.sample_id)
+        if resolved:
+            uid = resolved
+            sample.senaite_uid = uid
+            update_fields.append("senaite_uid")
+
+    if not uid:
+        sample.senaite_sync_status = "not_linked"
+        sample.senaite_sync_error = ""
+        sample.save(update_fields=update_fields)
+        return "not_linked"
+
+    sample.senaite_sync_status = "pending"
+    sample.senaite_sync_error = ""
+    sample.save(update_fields=update_fields)
+
+    sample_pk = sample.pk
+    transaction.on_commit(
+        lambda: dispatch_sample_to_lab.apply_async(
+            args=[schema_name, sample_pk, regulatory_basis],
+            countdown=1,
+        )
+    )
+    return "pending"

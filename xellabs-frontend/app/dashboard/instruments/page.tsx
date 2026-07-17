@@ -4,6 +4,7 @@ import { getInstruments } from '@/app/actions/instruments'
 import {
   getInstrumentTypes, getInstrumentLocations, getManufacturers, getSuppliers,
 } from '@/app/actions/instrument-workflows'
+import { getMethods } from '@/app/actions/methods'
 import InstrumentsShell from './_components/InstrumentsShell'
 
 export default async function InstrumentsPage() {
@@ -11,9 +12,9 @@ export default async function InstrumentsPage() {
   if (!session) redirect('/login')
   if (session.role !== 'admin') redirect('/dashboard')
 
-  const [instruments, types, locations, manufacturers, suppliers] = await Promise.all([
+  const [instruments, types, locations, manufacturers, suppliers, methods] = await Promise.all([
     getInstruments(), getInstrumentTypes(), getInstrumentLocations(),
-    getManufacturers(), getSuppliers(),
+    getManufacturers(), getSuppliers(), getMethods(),
   ])
   return (
     <InstrumentsShell
@@ -22,6 +23,7 @@ export default async function InstrumentsPage() {
       locations={locations}
       manufacturers={manufacturers}
       suppliers={suppliers}
+      methods={methods.map(m => ({ id: m.id, name: m.name, code: m.code }))}
     />
   )
 }

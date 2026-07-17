@@ -175,3 +175,98 @@ class IDGenerationTest(TenantAPITestCase):
         seq1 = int(r1.data["sample_id"].split("-")[-1])
         seq2 = int(r2.data["sample_id"].split("-")[-1])
         self.assertEqual(seq2, seq1 + 1)
+
+
+class SampleDisposeWorkflowTest(TenantAPITestCase):
+    def setUp(self):
+        self.manager, self.key = make_user("dispose_mgr", "lab_manager")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.key}")
+        self.client_obj = Client.objects.create(name="Dispose Client")
+        self.st = SampleType.objects.create(name="Water", prefix="GW")
+        self.sample = Sample.objects.create(
+            sample_id="GW-DISP-001",
+            client=self.client_obj,
+            sample_type=self.st,
+            created_by=self.manager,
+            status="reviewed",
+            description="Past retention sample",
+        )
+
+    def test_dispose_from_eligible_state(self):
+        from lims.models import ChainOfCustody
+        from audittrail.models import AuditEvent
+
+        r = self.client.post(
+            f"/api/lims/samples/{self.sample.pk}/dispose/",
+            {"regulatory_basis": "40 CFR Part 261 — retention exceeded"},
+            format="multipart",
+        )
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        self.assertEqual(r.data["status"], "disposed")
+        self.assertIn("[Disposed] 40 CFR Part 261", r.data["description"])
+
+        self.sample.refresh_from_db()
+        self.assertEqual(self.sample.status, "disposed")
+        self.assertTrue(
+            ChainOfCustody.objects.filter(sample=self.sample, action="disposed").exists()
+        )
+        self.assertTrue(
+            AuditEvent.objects.filter(
+                object_id=str(self.sample.pk),
+                content_type__model="sample",
+            ).exists()
+        )
+
+    def test_dispose_ineligible_status_returns_400(self):
+        self.sample.status = "registered"
+        self.sample.save(update_fields=["status"])
+        r = self.client.post(
+            f"/api/lims/samples/{self.sample.pk}/dispose/",
+            {"regulatory_basis": "40 CFR Part 261"},
+            format="multipart",
+        )
+        self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
+        self.sample.refresh_from_db()
+        self.assertEqual(self.sample.status, "registered")
+
+    def test_dispose_already_disposed_returns_400(self):
+        self.sample.status = "disposed"
+        self.sample.save(update_fields=["status"])
+        r = self.client.post(
+            f"/api/lims/samples/{self.sample.pk}/dispose/",
+            {"regulatory_basis": "40 CFR Part 261"},
+            format="multipart",
+        )
+        self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_disposed_sample_leaves_analysis_active_list(self):
+        from lims.models import AnalysisRequest
+
+        ar = AnalysisRequest.objects.create(
+            ar_id="AR-DISP-001", sample=self.sample, created_by=self.manager, status="completed",
+        )
+        r = self.client.post(
+            f"/api/lims/samples/{self.sample.pk}/dispose/",
+            {"regulatory_basis": "40 CFR Part 261 — retention exceeded"},
+            format="multipart",
+        )
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+
+        active = self.client.get("/api/lims/analysis-requests/")
+        self.assertEqual(active.status_code, status.HTTP_200_OK)
+        rows = active.data if isinstance(active.data, list) else active.data.get("results", [])
+        ids = [row["id"] for row in rows]
+        self.assertNotIn(ar.id, ids)
+
+        disposed_filter = self.client.get("/api/lims/samples/?status=disposed")
+        self.assertEqual(disposed_filter.status_code, status.HTTP_200_OK)
+        samples = disposed_filter.data if isinstance(disposed_filter.data, list) else disposed_filter.data.get("results", [])
+        self.assertIn("GW-DISP-001", [s["sample_id"] for s in samples])
+
+    def test_missing_basis_returns_400(self):
+        r = self.client.post(
+            f"/api/lims/samples/{self.sample.pk}/dispose/",
+            {},
+            format="multipart",
+        )
+        self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)

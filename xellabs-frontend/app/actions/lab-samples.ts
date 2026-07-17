@@ -24,6 +24,7 @@ export type DjangoSampleType = {
   id: number
   name: string
   prefix: string
+  retention_days?: number
   senaite_uid?: string
   is_active?: boolean
 }
@@ -59,7 +60,6 @@ export type LabSample = {
   barcode: string
   is_locked: boolean
   received_by_name: string
-  attachment?: string | null
   created_at: string
   senaite_uid?: string
   senaite_ar_id?: string
@@ -79,6 +79,10 @@ export type LabSample = {
   client_order_number: string
   client_reference: string
   client_sample_id: string
+  attachment?: string | null
+  attachment_url?: string | null
+  senaite_sync_status?: string
+  senaite_sync_error?: string
 }
 
 export type NewSamplePayload = {
@@ -436,6 +440,42 @@ export async function uploadSampleAttachment(sampleId: string, formData: FormDat
     revalidatePath('/dashboard/samples-overview')
     return { ok: true, attachment_url: data.attachment_url }
   } catch { return { ok: false } }
+}
+
+export type DisposeSampleResult = {
+  ok: boolean
+  message?: string
+  sample_id?: string
+  status?: string
+  description?: string
+  attachment_url?: string | null
+  sync_status?: string
+}
+
+export async function disposeSample(id: number, formData: FormData): Promise<DisposeSampleResult> {
+  try {
+    const res = await djangoFetch(`/api/lims/samples/${id}/dispose/`, {
+      method: 'POST',
+      body: formData,
+    })
+    const data = await res.json().catch(() => ({})) as DisposeSampleResult & { detail?: string }
+    if (!res.ok) {
+      return { ok: false, message: data.detail ?? data.message ?? `Error ${res.status}` }
+    }
+    revalidatePath('/dashboard/samples-overview')
+    revalidatePath(`/dashboard/samples-overview/${id}`)
+    revalidatePath('/dashboard/chain-of-custody')
+    return {
+      ok: true,
+      sample_id: data.sample_id,
+      status: data.status,
+      description: data.description,
+      attachment_url: data.attachment_url,
+      sync_status: data.sync_status,
+    }
+  } catch (e) {
+    return { ok: false, message: String(e) }
+  }
 }
 
 export async function syncSampleTypesFromSenaite(): Promise<void> {

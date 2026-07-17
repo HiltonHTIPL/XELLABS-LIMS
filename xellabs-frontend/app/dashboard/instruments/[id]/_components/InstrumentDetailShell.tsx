@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { RecordRow } from '@/app/actions/instrument-workflows'
@@ -7,6 +7,10 @@ import {
   createCertification, createScheduledTask, createValidation,
   createCalibration, createMaintenance,
 } from '@/app/actions/instrument-workflows'
+import {
+  transitionInstrument,
+  type InstrumentTransition,
+} from '@/app/actions/instruments'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, lineHeight: 1, color }}>{name}</span>
@@ -21,11 +25,66 @@ type TabDef = {
   create: (fd: FormData) => Promise<{ ok: boolean; message: string }>
 }
 
+const STATUS_LABELS: Record<string, string> = {
+  active: 'Active',
+  inactive: 'Inactive',
+  under_maintenance: 'Under Maintenance',
+  maintenance: 'Under Maintenance',
+  out_of_service: 'Out of Service',
+  retired: 'Retired',
+}
+
+const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
+  active: { bg: '#ECFDF5', fg: '#059669' },
+  inactive: { bg: '#F3F4F6', fg: '#6B7280' },
+  under_maintenance: { bg: '#FFFBEB', fg: '#D97706' },
+  maintenance: { bg: '#FFFBEB', fg: '#D97706' },
+  out_of_service: { bg: '#FEF2F2', fg: '#B91C1C' },
+  retired: { bg: '#FEF2F2', fg: '#991B1B' },
+}
+
+const USABILITY_COLORS: Record<string, { bg: string; fg: string }> = {
+  valid: { bg: '#ECFDF5', fg: '#059669' },
+  expired: { bg: '#FFFBEB', fg: '#D97706' },
+  out_of_service: { bg: '#FEF2F2', fg: '#B91C1C' },
+}
+
+const TRANSITIONS_BY_STATUS: Record<string, { action: InstrumentTransition; label: string }[]> = {
+  active: [
+    { action: 'deactivate', label: 'Deactivate' },
+    { action: 'set-under-maintenance', label: 'Under Maintenance' },
+    { action: 'set-out-of-service', label: 'Out of Service' },
+    { action: 'retire', label: 'Retire' },
+  ],
+  inactive: [
+    { action: 'activate', label: 'Activate' },
+    { action: 'retire', label: 'Retire' },
+  ],
+  under_maintenance: [
+    { action: 'return-to-service', label: 'Return to Service' },
+    { action: 'activate', label: 'Activate' },
+    { action: 'set-out-of-service', label: 'Out of Service' },
+    { action: 'retire', label: 'Retire' },
+  ],
+  maintenance: [
+    { action: 'return-to-service', label: 'Return to Service' },
+    { action: 'activate', label: 'Activate' },
+    { action: 'set-out-of-service', label: 'Out of Service' },
+    { action: 'retire', label: 'Retire' },
+  ],
+  out_of_service: [
+    { action: 'return-to-service', label: 'Return to Service' },
+    { action: 'activate', label: 'Activate' },
+    { action: 'retire', label: 'Retire' },
+  ],
+  retired: [],
+}
+
 const TABS: TabDef[] = [
   {
     key: 'calibrations', label: 'Calibrations', icon: 'tune', create: createCalibration,
     cols: [{ key: 'calibration_date', header: 'Date', kind: 'date' }, { key: 'next_due', header: 'Next Due', kind: 'date' }, { key: 'status', header: 'Status' }],
-    fields: [{ name: 'calibration_date', label: 'Calibration Date', type: 'date' }, { name: 'next_due', label: 'Next Due', type: 'date' }, { name: 'status', label: 'Status', type: 'select', options: ['pending', 'pass', 'fail'] }, { name: 'notes', label: 'Notes', type: 'textarea' }],
+    fields: [{ name: 'calibration_date', label: 'Calibration Date', type: 'date' }, { name: 'next_due', label: 'Next Due', type: 'date' }, { name: 'status', label: 'Status', type: 'select', options: ['pending', 'passed', 'failed'] }, { name: 'notes', label: 'Notes', type: 'textarea' }],
   },
   {
     key: 'certifications', label: 'Certifications', icon: 'verified', create: createCertification,
@@ -85,11 +144,17 @@ export default function InstrumentDetailShell(
   const [files, setFiles] = useState<Record<string, File | null>>({})
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [transitioning, startTransition] = useTransition()
+  const [status, setStatus] = useState(String(instrument.status ?? 'active'))
+  const [usability, setUsability] = useState(String(instrument.usability ?? 'valid'))
 
   const tab = TABS.find(t => t.key === active)!
   const rows = rowsByTab[active] ?? []
   const iid = Number(instrument.id)
   const name = String(instrument.name ?? 'Instrument')
+  const statusColors = STATUS_COLORS[status] ?? STATUS_COLORS.active
+  const usabilityColors = USABILITY_COLORS[usability] ?? USABILITY_COLORS.valid
+  const transitions = TRANSITIONS_BY_STATUS[status] ?? []
 
   function fmt(v: unknown, kind?: string) {
     if (v === null || v === undefined || v === '') return '—'
@@ -120,6 +185,19 @@ export default function InstrumentDetailShell(
     if (res.ok) { setDrawer(false); router.refresh() }
   }
 
+  function runTransition(action: InstrumentTransition) {
+    startTransition(async () => {
+      const res = await transitionInstrument(iid, action)
+      setToast({ ok: res.ok, msg: res.message })
+      setTimeout(() => setToast(null), 3500)
+      if (res.ok && res.instrument) {
+        setStatus(res.instrument.status)
+        setUsability(res.instrument.usability)
+        router.refresh()
+      }
+    })
+  }
+
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
       <Link href="/dashboard/instruments" className="inline-flex items-center gap-1 mb-3" style={{ fontSize: 12, color: '#6B7280' }}>
@@ -147,10 +225,30 @@ export default function InstrumentDetailShell(
               ) : null}
             </div>
           </div>
-          <span style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 999, backgroundColor: '#ECFDF5', color: '#059669', textTransform: 'capitalize' }}>
-            {String(instrument.status ?? 'active')}
-          </span>
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <span style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 999, backgroundColor: statusColors.bg, color: statusColors.fg }}>
+              {STATUS_LABELS[status] ?? status}
+            </span>
+            <span style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 999, backgroundColor: usabilityColors.bg, color: usabilityColors.fg }}>
+              {usability === 'out_of_service' ? 'Usability: Out of service' : usability === 'expired' ? 'Usability: Expired' : 'Usability: Valid'}
+            </span>
+          </div>
         </div>
+        {transitions.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap mt-3">
+            {transitions.map(t => (
+              <button key={t.action} type="button" disabled={transitioning}
+                onClick={() => runTransition(t.action)}
+                style={{
+                  fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 8,
+                  border: '1px solid #E5E7EB', backgroundColor: '#fff', color: '#374151',
+                  cursor: transitioning ? 'not-allowed' : 'pointer', opacity: transitioning ? 0.7 : 1,
+                }}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="grid grid-cols-4 gap-4 mt-3" style={{ fontSize: 12 }}>
           <Meta label="Type" value={String(instrument.instrument_type_name || '—')} />
           <Meta label="Location" value={String(instrument.instrument_location_name || instrument.location || '—')} />

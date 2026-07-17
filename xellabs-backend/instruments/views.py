@@ -7,13 +7,14 @@ from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
 from core.permissions import (
     ReadOnlyOrLabManager, ReadOnlyOrAnalystOrAbove, IsAdminRole, IsAnalystOrAbove,
+    IsLabManagerOrAbove,
 )
 from .models import (
     Instrument, InstrumentMethod, Calibration, Maintenance, InstrumentRun,
     InstrumentResultImport, InstrumentType, InstrumentLocation, Certification,
     ScheduledTask, Validation, InstrumentManufacturer, InstrumentSupplier,
 )
-from .importers import parse_csv, parse_xml, build_preview, build_provenance_map
+from .importers import build_provenance_map
 from .serializers import (
     InstrumentSerializer, InstrumentMethodSerializer, CalibrationSerializer,
     MaintenanceSerializer, InstrumentRunSerializer, InstrumentResultImportSerializer,
@@ -21,6 +22,7 @@ from .serializers import (
     ScheduledTaskSerializer, ValidationSerializer,
     InstrumentManufacturerSerializer, InstrumentSupplierSerializer,
 )
+from . import services as instrument_services
 
 
 class InstrumentViewSet(viewsets.ModelViewSet):
@@ -29,15 +31,57 @@ class InstrumentViewSet(viewsets.ModelViewSet):
     ).all()
     serializer_class = InstrumentSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["status"]
+    filterset_fields = ["status", "usability"]
     search_fields = ["name", "instrument_id", "serial_number", "manufacturer", "supplier"]
-    ordering_fields = ["name", "next_calibration", "next_maintenance"]
+    ordering_fields = ["name", "next_calibration", "next_maintenance", "status", "usability"]
 
     def get_permissions(self):
         # Registration writes = admin only; analysts can still list for maintenance/import UX.
         if self.action in ("create", "update", "partial_update", "destroy"):
             return [IsAdminRole()]
         return [IsAnalystOrAbove()]
+
+    def _transition(self, request, service_fn):
+        instrument = self.get_object()
+        try:
+            service_fn(instrument)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(InstrumentSerializer(instrument, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsLabManagerOrAbove])
+    def activate(self, request, pk=None):
+        return self._transition(request, instrument_services.activate)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsLabManagerOrAbove])
+    def deactivate(self, request, pk=None):
+        return self._transition(request, instrument_services.deactivate)
+
+    @action(detail=True, methods=["post"], url_path="set-under-maintenance",
+            permission_classes=[IsLabManagerOrAbove])
+    def set_under_maintenance(self, request, pk=None):
+        return self._transition(request, instrument_services.set_under_maintenance)
+
+    @action(detail=True, methods=["post"], url_path="set-out-of-service",
+            permission_classes=[IsLabManagerOrAbove])
+    def set_out_of_service(self, request, pk=None):
+        return self._transition(request, instrument_services.set_out_of_service)
+
+    @action(detail=True, methods=["post"], url_path="return-to-service",
+            permission_classes=[IsLabManagerOrAbove])
+    def return_to_service(self, request, pk=None):
+        return self._transition(request, instrument_services.return_to_service)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsLabManagerOrAbove])
+    def retire(self, request, pk=None):
+        return self._transition(request, instrument_services.retire)
+
+    @action(detail=True, methods=["post"], url_path="refresh-usability",
+            permission_classes=[IsLabManagerOrAbove])
+    def refresh_usability(self, request, pk=None):
+        instrument = self.get_object()
+        instrument_services.refresh_usability(instrument)
+        return Response(InstrumentSerializer(instrument, context={"request": request}).data)
 
     @action(detail=False, methods=["get"], url_path="calibration-due")
     def calibration_due(self, request):
@@ -110,6 +154,7 @@ class InstrumentRunViewSet(viewsets.ModelViewSet):
 class InstrumentResultImportViewSet(viewsets.ModelViewSet):
     queryset = InstrumentResultImport.objects.select_related("instrument", "imported_by").all()
     serializer_class = InstrumentResultImportSerializer
+    permission_classes = [IsAnalystOrAbove]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ["instrument", "status", "file_format"]
 
@@ -117,17 +162,30 @@ class InstrumentResultImportViewSet(viewsets.ModelViewSet):
     def preview(self, request):
         """
         Parse an uploaded file and validate every row against the database without
-        writing anything. Returns per-row valid/error status so the analyst can
+        writing anything. Returns per-row valid/error/skip status so the analyst can
         review the mapping before committing.
         """
+        from .importers import parse_instrument_file, build_preview
+
         upload = request.FILES.get("file")
         file_format = request.data.get("file_format", "csv")
         if not upload:
             return Response({"detail": "A file is required."}, status=status.HTTP_400_BAD_REQUEST)
 
+        interface = ""
+        instrument_id = request.data.get("instrument")
+        if instrument_id:
+            try:
+                instrument = Instrument.objects.get(pk=instrument_id)
+                interface = instrument.import_data_interface or ""
+            except (Instrument.DoesNotExist, ValueError, TypeError):
+                pass
+
         content = upload.read()
         try:
-            rows, parse_errors = (parse_xml(content) if file_format == "xml" else parse_csv(content))
+            rows, parse_errors = parse_instrument_file(
+                content, file_format=file_format, interface_code=interface,
+            )
         except Exception as e:
             return Response(
                 {"detail": f"File could not be parsed — check the File Format matches the actual file: {e}"},
@@ -135,7 +193,11 @@ class InstrumentResultImportViewSet(viewsets.ModelViewSet):
             )
         if not rows and any(e.get("row") == 0 for e in parse_errors):
             return Response(
-                {"detail": parse_errors[0]["detail"], "summary": {"total": 0, "valid": 0, "invalid": 0}, "rows": []},
+                {
+                    "detail": parse_errors[0]["detail"],
+                    "summary": {"total": 0, "valid": 0, "invalid": 0, "skipped": 0},
+                    "rows": [],
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
         preview_rows, summary = build_preview(rows, parse_errors)
@@ -207,6 +269,8 @@ class SampleInstrumentReportView(APIView):
     reconstructed from the backed-up original import files, so no result field has
     to be duplicated on the Result model.
     """
+
+    permission_classes = [IsAnalystOrAbove]
 
     def get(self, request):
         from lims.models import Sample, Result

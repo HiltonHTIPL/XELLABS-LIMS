@@ -159,6 +159,8 @@ class Client(models.Model):
     # ── Notes & SENAITE sync ──────────────────────────────────────────────────
     remarks = models.TextField(blank=True)                          # SENAITE: Remarks
     senaite_uid = models.CharField(max_length=100, blank=True)     # UID assigned after SENAITE sync
+    cc_emails = models.TextField(blank=True, default="")           # CC notification list
+    organization_type = models.CharField(max_length=100, blank=True, default="")
 
     # ── Meta ──────────────────────────────────────────────────────────────────
     tenant = models.ForeignKey(

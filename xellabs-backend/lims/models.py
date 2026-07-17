@@ -7,6 +7,10 @@ class SampleType(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
     prefix = models.CharField(max_length=10)
+    retention_days = models.PositiveIntegerField(
+        default=14,
+        help_text="Days after collection before the sample is past retention (drives due/expiry date).",
+    )
     is_active = models.BooleanField(default=True)
     senaite_uid = models.CharField(max_length=100, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -261,8 +265,19 @@ class Sample(models.Model):
     client_reference = models.CharField(max_length=200, blank=True)
     client_sample_id = models.CharField(max_length=100, blank=True)
     attachment = models.FileField(upload_to="sample_attachments/", null=True, blank=True)
+    SENAITE_SYNC_STATUS = [
+        ("", "Unspecified"),
+        ("synced", "Synced"),
+        ("pending", "Pending"),
+        ("failed", "Failed"),
+        ("not_linked", "Not linked"),
+    ]
     senaite_uid = models.CharField(max_length=100, blank=True, db_index=True)
     senaite_ar_id = models.CharField(max_length=100, blank=True)
+    senaite_sync_status = models.CharField(
+        max_length=20, choices=SENAITE_SYNC_STATUS, blank=True, default=""
+    )
+    senaite_sync_error = models.TextField(blank=True)
     last_synced_from_senaite = models.DateTimeField(null=True, blank=True)
     is_locked = models.BooleanField(default=False)
     locked_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,

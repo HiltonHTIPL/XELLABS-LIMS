@@ -313,6 +313,31 @@ class SampleViewSet(viewsets.ModelViewSet):
         url = request.build_absolute_uri(sample.attachment.url) if sample.attachment else None
         return Response({"attachment_url": url})
 
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="dispose",
+        parser_classes=[MultiPartParser, FormParser],
+        permission_classes=[IsLabManagerOrAbove],
+    )
+    def dispose(self, request, pk=None):
+        """Dispose sample via service layer (TC-9). Dual-write to lab SoR is optional/not wired."""
+        from .services import dispose_sample
+        sample = self.get_object()
+        basis = request.data.get("regulatory_basis") or ""
+        notes = request.data.get("notes") or ""
+        certificate = request.FILES.get("attachment") or request.FILES.get("certificate")
+        try:
+            dispose_sample(sample, request.user, basis=basis, notes=notes, certificate=certificate)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        attachment_url = (
+            request.build_absolute_uri(sample.attachment.url) if sample.attachment else None
+        )
+        data = SampleSerializer(sample, context={"request": request}).data
+        data["attachment_url"] = attachment_url
+        return Response(data)
+
     @action(detail=True, methods=["post"], permission_classes=[CanReceiveOrStoreSamples])
     def receive(self, request, pk=None):
         from .services import receive_sample
@@ -346,6 +371,13 @@ class AnalysisRequestViewSet(viewsets.ModelViewSet):
     filterset_fields = ["status", "priority", "sample"]
     search_fields = ["ar_id"]
     ordering_fields = ["created_at", "due_date"]
+
+    def get_queryset(self):
+        # Disposed samples leave active analysis work lists.
+        qs = super().get_queryset()
+        if self.request.query_params.get("include_disposed") == "1":
+            return qs
+        return qs.exclude(sample__status="disposed")
 
 
 class WorksheetViewSet(viewsets.ModelViewSet):
@@ -403,15 +435,33 @@ class WorksheetAssignmentViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ["worksheet", "senaite_service_uid"]
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request.query_params.get("include_disposed") == "1":
+            return qs
+        return qs.exclude(analysis_request__sample__status="disposed")
+
 
 class ResultViewSet(viewsets.ModelViewSet):
     queryset = Result.objects.select_related(
-        "worksheet_assignment", "submitted_by", "verified_by"
+        "worksheet_assignment",
+        "worksheet_assignment__analysis_request",
+        "worksheet_assignment__analysis_request__sample",
+        "submitted_by",
+        "verified_by",
     ).all()
     serializer_class = ResultSerializer
     permission_classes = [ReadOnlyOrAnalystOrAbove]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ["status", "is_out_of_range", "worksheet_assignment"]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request.query_params.get("include_disposed") == "1":
+            return qs
+        return qs.exclude(
+            worksheet_assignment__analysis_request__sample__status="disposed"
+        )
 
     @action(detail=True, methods=["post"], permission_classes=[ReadOnlyOrAnalystOrAbove])
     def submit(self, request, pk=None):
