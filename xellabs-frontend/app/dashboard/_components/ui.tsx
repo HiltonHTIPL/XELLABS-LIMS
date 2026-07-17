@@ -453,7 +453,7 @@ export function ConfirmModal({
     <div
       onClick={e => { if (e.currentTarget === e.target) onCancel() }}
       style={{
-        position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 1000,
+        position: 'fixed', top: 'var(--dashboard-header-h)', bottom: 'var(--dashboard-footer-h)', left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 1000,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}
     >

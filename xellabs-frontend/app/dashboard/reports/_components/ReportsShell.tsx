@@ -73,7 +73,7 @@ function SampleTooltip({ sample }: { sample: LabSample }) {
 function PdfViewer({ reportId, title, onClose }: { reportId: number; title: string; onClose: () => void }) {
   return (
     <div style={{
-      position: 'fixed', inset: 0, zIndex: 500, display: 'flex',
+      position: 'fixed', top: 'var(--dashboard-header-h)', bottom: 'var(--dashboard-footer-h)', left: 0, right: 0, zIndex: 500, display: 'flex',
       backgroundColor: 'rgba(0,0,0,0.5)',
     }} onClick={e => { if (e.currentTarget === e.target) onClose() }}>
       <div style={{ marginLeft: 'auto', width: '55%', minWidth: 520, backgroundColor: '#fff', display: 'flex', flexDirection: 'column', boxShadow: '-8px 0 32px rgba(0,0,0,0.2)' }}>
@@ -181,7 +181,7 @@ function NewReportModal({
   return (
     <div
       onClick={e => { if (e.currentTarget === e.target) onClose() }}
-      style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', zIndex: 1000, display: 'flex', justifyContent: 'flex-end' }}
+      style={{ position: 'fixed', top: 'var(--dashboard-header-h)', bottom: 'var(--dashboard-footer-h)', left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.35)', zIndex: 1000, display: 'flex', justifyContent: 'flex-end' }}
     >
       <div style={{ backgroundColor: '#fff', width: 480, height: '100%', boxShadow: '-8px 0 32px rgba(0,0,0,0.15)', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
         {/* Header */}

@@ -198,17 +198,26 @@ export type SenaiteClientFull = {
   contact: SenaiteContact | null
 }
 
-// NOTE: deliberately NOT `${SENAITE_SITE_PATH}/clients`. This proxy (8096)
-// mounts the SENAITE site at the URL root via nginx VirtualHostMonster, so a
-// direct URL fetch (as opposed to a jsonapi parent_path body param, a
-// different resolution mechanism entirely) must stay root-relative. Confirmed
-// live 2026-07-16: mixing a "/senaite/..."-prefixed browser-view URL into the
-// same fetch() keep-alive connection pool as the prefix-less v1/restapi list
-// calls above breaks Zope's VHM traversal and 404s ("Resource not found:
-// <origin>/senaite") on the SECOND+ request on that connection -- reproduced
-// reliably by replaying the real GET Client / GET Contact / POST
-// create-client-safe sequence, and reliably fixed by dropping the prefix.
-const CLIENTS_PATH = '/clients'
+// NOTE: deliberately NOT SENAITE_SITE_PATH (which always falls back to
+// '/senaite' when SENAITE_URL has no path — correct for the legacy v1
+// parent_path mechanism, but not here). This is a DIRECT url fetch() to a
+// browser view, a different resolution mechanism than parent_path, and it
+// must reflect SENAITE_URL's actual path segment with no fallback: when a
+// VHM-proxied SENAITE_URL has no path (e.g. http://172.21.0.1:8096, site
+// mounted at the origin root), a hardcoded '/senaite' prefix breaks Zope's
+// VHM traversal and 404s ("Resource not found: <origin>/senaite") on the
+// SECOND+ request sharing that fetch() keep-alive connection pool with the
+// prefix-less v1/restapi list calls above — reproduced reliably by replaying
+// the real GET Client / GET Contact / POST create-client-safe sequence.
+// Confirmed live 2026-07-17: local dev's SENAITE_URL DOES carry a path
+// (.../senaite), so dropping it unconditionally 404s there instead ("POST
+// /clients/@@create-client-safe" with no site segment at all). Compute the
+// prefix from SENAITE_URL's own raw pathname so both cases resolve
+// correctly: empty for a root-mounted proxy, '/senaite' for local dev.
+const SENAITE_RAW_PATH = (() => {
+  try { return new URL(SENAITE_URL).pathname.replace(/\/$/, '') } catch { return '/senaite' }
+})()
+const CLIENTS_PATH = `${SENAITE_RAW_PATH}/clients`
 
 function mapAddress(a: unknown): SenaiteAddress | null {
   if (!a || typeof a !== 'object') return null
@@ -407,13 +416,18 @@ export async function updateSenaiteClientObj(
   client: SenaiteClientPayload, contact: SenaiteContactPayload, existingContactUid: string | null,
 ): Promise<{ success: boolean; contactUid?: string; error?: string }> {
   const headers = { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }
-  // clientPath comes back from SENAITE already prefixed with its own physical
-  // site path (e.g. "/senaite/clients/client-8") -- strip it for the same
-  // reason CLIENTS_PATH is root-relative above, or this hits the identical
-  // VHM/connection-reuse 404 on update.
-  const rootRelativeClientPath = SENAITE_SITE_PATH && clientPath.startsWith(SENAITE_SITE_PATH)
-    ? clientPath.slice(SENAITE_SITE_PATH.length)
-    : clientPath
+  // clientPath comes back from SENAITE prefixed with whatever site path
+  // Zope's own internal config thinks it has — which may or may not match
+  // SENAITE_URL's actual externally-reachable path (see the CLIENTS_PATH
+  // note above for why that distinction matters). Re-derive the path
+  // relative to our own SENAITE_RAW_PATH instead of guessing whether to
+  // strip a hardcoded prefix: take clientPath's "/clients/..." suffix
+  // (stripping whatever internal prefix it came with) and re-prepend the
+  // prefix this app actually needs — correct whether that's '/senaite'
+  // (local dev) or '' (a root-mounted VHM proxy).
+  const clientsSuffixIdx = clientPath.indexOf('/clients/')
+  const clientPathSuffix = clientsSuffixIdx >= 0 ? clientPath.slice(clientsSuffixIdx) : clientPath
+  const rootRelativeClientPath = `${SENAITE_RAW_PATH}${clientPathSuffix}`
   try {
     const res = await fetch(`${SENAITE_ORIGIN}${rootRelativeClientPath}/@@update-client-safe`, {
       method: 'POST', headers, cache: 'no-store', body: JSON.stringify(client),
@@ -2782,10 +2796,29 @@ export async function submitAnalysisResult(
     // testing) — never actually set a Result, ever. The `/update/<uid>` form
     // (uid in the URL, plain object body) is the one proven working pattern
     // already used everywhere else in this file (Client, Batch, etc).
+    //
+    // Found while building Quality Result Import (2026-07-17): that same
+    // /update/<uid> call 400s with "Calculation Interim Fields is required"
+    // for ANY Analysis whose Service has an Interim Fields template
+    // configured — even with no Calculation formula attached (confirmed
+    // live: SOIL_PH has a non-null InterimFields entry and always 400s on a
+    // bare {Result} body; PH Test has InterimFields: null and never did).
+    // This silently broke every Result submission for such analyses,
+    // including through the existing Batches UI, not just the new importer.
+    // Fix: fetch the analysis's current InterimFields and pass it back
+    // unchanged (default null to []) — satisfies the validator without
+    // altering any real interim sub-result data.
+    const beforeRes = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Analysis/${analysisUid}?complete=true`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    const beforeData = await beforeRes.json().catch(() => ({})) as Record<string, unknown>
+    const interimFields = (beforeData.items as Record<string, unknown>[] | undefined)?.[0]?.InterimFields ?? []
+
     const updateRes = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update/${analysisUid}`, {
       method: 'POST',
       headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ Result: result }),
+      body: JSON.stringify({ Result: result, InterimFields: interimFields }),
       cache: 'no-store',
     })
     const updateData = await updateRes.json().catch(() => ({})) as Record<string, unknown>

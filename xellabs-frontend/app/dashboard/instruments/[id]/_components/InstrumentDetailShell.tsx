@@ -313,7 +313,7 @@ export default function InstrumentDetailShell(
       {/* Add drawer */}
       <div style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: drawer ? 'auto' : 'none' }}>
         <div onClick={() => setDrawer(false)} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.30)', opacity: drawer ? 1 : 0, transition: 'opacity 0.25s' }} />
-        <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 440, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.12)', transform: drawer ? 'translateX(0)' : 'translateX(100%)', transition: 'transform 0.28s', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ position: 'absolute', top: 'var(--dashboard-header-h)', right: 0, bottom: 'var(--dashboard-footer-h)', width: 440, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.12)', transform: drawer ? 'translateX(0)' : 'translateX(100%)', transition: 'transform 0.28s', display: 'flex', flexDirection: 'column' }}>
           <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #F3F4F6' }}>
             <h2 style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Add {tab.label.replace(/s$/, '')}</h2>
             <button onClick={() => setDrawer(false)}><MI name="close" size={16} color="#9CA3AF" /></button>

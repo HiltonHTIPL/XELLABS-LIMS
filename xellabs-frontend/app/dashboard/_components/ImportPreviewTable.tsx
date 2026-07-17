@@ -36,6 +36,9 @@ function RowStatus({ status, detail }: { status: PreviewRow['status']; detail: s
   )
 }
 
+/** Shared preview table for bulk result imports (Instrument Result Import,
+ * Quality Result Import) — one definition (DRY) since both produce the same
+ * row/summary shape. */
 export default function ImportPreviewTable({ rows, summary }: { rows: PreviewRow[]; summary: PreviewSummary }) {
   return (
     <div>

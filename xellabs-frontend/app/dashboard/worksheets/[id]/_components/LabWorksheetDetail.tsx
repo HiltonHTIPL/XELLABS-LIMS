@@ -371,7 +371,7 @@ export default function LabWorksheetDetail({
       {showAssignModal && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 1000 }}>
           <div onClick={() => setShowAssignModal(false)} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)' }} />
-          <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 420, background: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.15)', overflowY: 'auto', padding: 24 }}>
+          <div style={{ position: 'absolute', top: 'var(--dashboard-header-h)', right: 0, bottom: 'var(--dashboard-footer-h)', width: 420, background: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.15)', overflowY: 'auto', padding: 24 }}>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: '#14265E', margin: '0 0 16px' }}>Assign Test to Worksheet</h3>
             <div style={{ marginBottom: 16 }}>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>Analysis Request</label>

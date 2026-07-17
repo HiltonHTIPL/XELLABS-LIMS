@@ -38,7 +38,7 @@ export default function SlotInfoModal({
     <div
       onClick={e => { if (e.currentTarget === e.target) onClose() }}
       style={{
-        position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)',
+        position: 'fixed', top: 'var(--dashboard-header-h)', bottom: 'var(--dashboard-footer-h)', left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.45)',
         zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}
     >

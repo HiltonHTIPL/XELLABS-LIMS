@@ -10,6 +10,7 @@ import {
   type QCSample, type QCSampleFormState, type QCWorksheet,
 } from '@/app/actions/quality'
 import { type SenaiteAnalysisService } from '@/app/lib/senaite'
+import QualityResultImportPanel from './QualityResultImportPanel'
 
 const QC_TYPES: { value: QCSample['qc_type']; label: string }[] = [
   { value: 'blank', label: 'Blank' },
@@ -68,7 +69,7 @@ function QCModal({
   return (
     <div onClick={e => { if (e.currentTarget === e.target) onClose() }}
       style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', zIndex: 1000 }}>
-      <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 560, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.15)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ position: 'fixed', top: 'var(--dashboard-header-h)', right: 0, bottom: 'var(--dashboard-footer-h)', width: 560, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.15)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${T.cardBorder}` }}>
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: isEdit ? '#EFF6FF' : '#DBEAFE' }}>
@@ -267,6 +268,7 @@ export default function QualityShell({
   const [statusFilter, setStatusFilter] = useState('')
   const [needsReviewOnly, setNeedsReviewOnly] = useState(false)
   const [page, setPage] = useState(1)
+  const [tab, setTab] = useState<'qc' | 'import'>('qc')
 
   const worksheetIdById = useMemo(() => {
     const m = new Map<number, string>()
@@ -318,10 +320,32 @@ export default function QualityShell({
         title="Quality Control"
         subtitle="Controls, blanks, spikes — failed QC is flagged for administrator review before release"
         right={
-          <Btn variant="primary" icon="add" onClick={openCreate}>New QC Sample</Btn>
+          tab === 'qc' ? <Btn variant="primary" icon="add" onClick={openCreate}>New QC Sample</Btn> : undefined
         }
       />
 
+      <div className="flex items-center gap-1 mb-4" style={{ borderBottom: `1px solid ${T.cardBorder}` }}>
+        {([['qc', 'QC Samples'], ['import', 'Result Import']] as const).map(([key, label]) => (
+          <button key={key} type="button" onClick={() => setTab(key)}
+            className="px-4 py-2 text-sm font-medium"
+            style={{
+              border: 'none', background: 'none', cursor: 'pointer',
+              color: tab === key ? T.primary : T.muted,
+              borderBottom: tab === key ? `2px solid ${T.primary}` : '2px solid transparent',
+            }}>
+            {label}
+          </button>
+        ))}
+      </div>
+      </div>
+
+      {tab === 'import' && (
+        <Card title="Import Results" icon="upload_file">
+          <QualityResultImportPanel />
+        </Card>
+      )}
+
+      {tab === 'qc' && <>
       {toast && (
         <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
           style={{ backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', border: toast.ok ? '1px solid #93C5FD' : '1px solid #FECACA', color: toast.ok ? T.primary : '#991B1B' }}>
@@ -352,7 +376,6 @@ export default function QualityShell({
         <StatCard icon="cancel" iconColor={T.danger} iconBg="#FEF2F2" label="Failed" value={failed} />
         <StatCard icon="hourglass_top" iconColor={T.warning} iconBg="#FFF7ED" label="Pending" value={pending} />
         <StatCard icon="policy" iconColor="#DC2626" iconBg="#FEF2F2" label="Needs Review" value={needsReview} />
-      </div>
       </div>
 
       {showModal && <QCModal editing={editing} services={services} worksheets={worksheets} onClose={closeModal} onDone={() => handleDone(editing ? 'QC sample updated.' : 'QC sample created.')} />}
@@ -468,6 +491,7 @@ export default function QualityShell({
         )}
       </Card>
       </div>
+      </>}
     </div>
   )
 }

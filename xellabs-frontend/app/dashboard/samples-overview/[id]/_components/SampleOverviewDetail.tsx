@@ -131,7 +131,7 @@ function EditDrawer({ sample, onClose, onSaved }: { sample: LabSample; onClose: 
   return (
     <>
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 400, backgroundColor: 'rgba(0,0,0,0.28)' }} />
-      <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 460, zIndex: 401, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.12)', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ position: 'fixed', top: 'var(--dashboard-header-h)', right: 0, bottom: 'var(--dashboard-footer-h)', width: 460, zIndex: 401, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.12)', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '16px 20px', borderBottom: '1px solid #F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <div>
             <h3 style={{ fontSize: 15, fontWeight: 700, color: '#14265E', margin: 0 }}>Edit Sample</h3>

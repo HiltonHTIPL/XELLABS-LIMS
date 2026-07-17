@@ -93,7 +93,7 @@ export default function QrScanModal({ title = 'Scan Barcode / QR', hint, onClose
   }, [onDecode])
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 100, backgroundColor: 'rgba(17,24,39,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ position: 'fixed', top: 'var(--dashboard-header-h)', bottom: 'var(--dashboard-footer-h)', left: 0, right: 0, zIndex: 100, backgroundColor: 'rgba(17,24,39,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div className="bg-white rounded-xl" style={{ width: 380, maxWidth: '92vw', overflow: 'hidden' }}>
         <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid #F3F4F6' }}>
           <div className="flex items-center gap-2">

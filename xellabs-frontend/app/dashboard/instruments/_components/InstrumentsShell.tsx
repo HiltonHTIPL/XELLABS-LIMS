@@ -127,7 +127,7 @@ export default function InstrumentsShell(
       />
 
       {confirmDelete && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)' }}>
+        <div style={{ position: 'fixed', top: 'var(--dashboard-header-h)', bottom: 'var(--dashboard-footer-h)', left: 0, right: 0, zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)' }}>
           <div style={{ backgroundColor: '#fff', borderRadius: 12, padding: 20, width: 360 }}>
             <h3 style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Delete instrument?</h3>
             <p style={{ fontSize: 12, color: '#6B7280', marginTop: 6 }}>

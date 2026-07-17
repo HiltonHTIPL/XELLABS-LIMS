@@ -50,7 +50,7 @@ export default function DisposeSampleModal({ sampleId, sampleLabel, onClose, onD
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 10050, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ position: 'fixed', top: 'var(--dashboard-header-h)', bottom: 'var(--dashboard-footer-h)', left: 0, right: 0, zIndex: 10050, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div onClick={onClose} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.40)' }} />
       <div style={{ position: 'relative', width: 460, maxWidth: '94vw', backgroundColor: '#fff', borderRadius: 14, boxShadow: '0 16px 48px rgba(0,0,0,0.2)', padding: 22 }}>
         <div className="flex items-start gap-3 mb-3">

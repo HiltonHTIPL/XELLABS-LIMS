@@ -23,7 +23,10 @@ export type LabContactRow = {
   PhysicalAddress: Address; PostalAddress: Address
 }
 
-export type LabContactFormState = { success?: boolean; message?: string; errors?: Record<string, string[]> }
+export type LabContactFormState = {
+  success?: boolean; message?: string; errors?: Record<string, string[]>
+  uid?: string; title?: string  // set on create success, so callers can auto-select the new record
+}
 
 function refUid(v: unknown): string {
   if (!v) return ''
@@ -116,9 +119,10 @@ export async function createLabContact(_p: LabContactFormState, fd: FormData): P
   const { body, errors } = buildBody(fd)
   if (Object.keys(errors).length) return { errors }
   const r = await createLabContactSafe(serverToken(), body)
-  if (!r.success) return { message: r.error ?? 'Failed to create lab contact.' }
+  if (!r.success || !r.uid) return { message: r.error ?? 'Failed to create lab contact.' }
   revalidatePath(REVALIDATE)
-  return { success: true, message: `Lab contact "${body.Firstname} ${body.Surname}" created.` }
+  const title = `${body.Firstname} ${body.Surname}`
+  return { success: true, message: `Lab contact "${title}" created.`, uid: r.uid, title }
 }
 
 export async function updateLabContact(path: string, _p: LabContactFormState, fd: FormData): Promise<LabContactFormState> {

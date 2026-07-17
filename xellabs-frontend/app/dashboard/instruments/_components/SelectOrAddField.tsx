@@ -93,7 +93,7 @@ export function NamedRefSlide({
         }}
       />
       <div style={{
-        position: 'absolute', top: 0, right: 0, bottom: 0, width: 380, backgroundColor: '#fff',
+        position: 'absolute', top: 'var(--dashboard-header-h)', right: 0, bottom: 'var(--dashboard-footer-h)', width: 380, backgroundColor: '#fff',
         boxShadow: '-6px 0 32px rgba(0,0,0,0.12)',
         transform: open ? 'translateX(0)' : 'translateX(100%)',
         transition: 'transform 0.28s cubic-bezier(0.4,0,0.2,1)',

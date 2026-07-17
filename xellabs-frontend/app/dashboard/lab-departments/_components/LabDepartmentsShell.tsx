@@ -1,8 +1,11 @@
 'use client'
 import AdminRefShell, { type AdminRow, type RefOption } from '../../_components/AdminRefShell'
 import { createLabDepartment, updateLabDepartment } from '@/app/actions/lab-departments'
+import LabContactCreateSlide from './LabContactCreateSlide'
 
-export default function LabDepartmentsShell({ rows, managers }: { rows: AdminRow[]; managers: RefOption[] }) {
+export default function LabDepartmentsShell({ rows, managers, contactDepartments }: {
+  rows: AdminRow[]; managers: RefOption[]; contactDepartments: RefOption[]
+}) {
   const mgrTitle = (uid: string) => managers.find(m => m.uid === uid)?.title ?? ''
   return (
     <AdminRefShell
@@ -18,7 +21,13 @@ export default function LabDepartmentsShell({ rows, managers }: { rows: AdminRow
       fields={[
         { name: 'title', label: 'Name', kind: 'text', required: true, placeholder: 'e.g. Microbiology' },
         { name: 'department_id', label: 'Department ID', kind: 'text', required: true, placeholder: 'e.g. MICRO' },
-        { name: 'manager', label: 'Manager', kind: 'select', required: true, options: managers, help: managers.length === 0 ? 'Create a Lab Contact first to assign as manager' : undefined },
+        {
+          name: 'manager', label: 'Manager', kind: 'select-or-add', required: true, options: managers,
+          entityLabel: 'Lab Contact',
+          customCreateSlide: ({ open, onClose, onCreated }) => (
+            <LabContactCreateSlide open={open} onClose={onClose} onCreated={onCreated} departments={contactDepartments} />
+          ),
+        },
         { name: 'description', label: 'Description', kind: 'textarea', placeholder: 'Optional description' },
       ]}
       rows={rows}

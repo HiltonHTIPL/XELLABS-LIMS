@@ -688,7 +688,7 @@ export default function ChainOfCustodyPage() {
       {assignOpen && sample && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 100 }}>
           <div onClick={() => setAssignOpen(false)} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(17,24,39,0.55)' }} />
-          <div className="bg-white" style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 420, maxWidth: '92vw', padding: 20, boxShadow: '-6px 0 32px rgba(0,0,0,0.15)', overflowY: 'auto' }}>
+          <div className="bg-white" style={{ position: 'absolute', top: 'var(--dashboard-header-h)', right: 0, bottom: 'var(--dashboard-footer-h)', width: 420, maxWidth: '92vw', padding: 20, boxShadow: '-6px 0 32px rgba(0,0,0,0.15)', overflowY: 'auto' }}>
             <div className="flex items-center justify-between mb-1">
               <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>
                 {assignMode === 'transfer' ? 'Transfer Custody' : 'Assign Storage'}
@@ -738,7 +738,7 @@ export default function ChainOfCustodyPage() {
       {/* ── Full history modal ── */}
       {historyOpen && (
         <div onClick={e => { if (e.currentTarget === e.target) setHistoryOpen(false) }}
-          style={{ position: 'fixed', inset: 0, zIndex: 100, backgroundColor: 'rgba(17,24,39,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          style={{ position: 'fixed', top: 'var(--dashboard-header-h)', bottom: 'var(--dashboard-footer-h)', left: 0, right: 0, zIndex: 100, backgroundColor: 'rgba(17,24,39,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div className="bg-white rounded-2xl flex flex-col" style={{ width: 560, maxWidth: '94vw', maxHeight: '84vh', overflow: 'hidden' }}>
             <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #F3F4F6', flexShrink: 0 }}>
               <div className="flex items-center gap-2">

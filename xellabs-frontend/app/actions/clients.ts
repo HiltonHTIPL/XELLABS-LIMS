@@ -2,7 +2,7 @@
 import { revalidatePath } from 'next/cache'
 import { getSession } from '@/app/lib/session'
 import { djangoFetch } from '@/app/lib/django'
-import { fetchSenaiteClients } from '@/app/lib/senaite'
+import { fetchSenaiteClientsFull } from '@/app/lib/senaite'
 import { sessionToken } from '@/app/lib/senaite-auth'
 
 export type SenaiteAddress = {
@@ -192,7 +192,7 @@ export async function syncClientsFromSenaite(): Promise<SyncResult> {
 
   // 2. Fetch all clients from SENAITE (raw fetch — not a Django endpoint)
   const senaiteToken = sessionToken(session)
-  const senaiteClients = await fetchSenaiteClients(senaiteToken)
+  const senaiteClients = await fetchSenaiteClientsFull(senaiteToken)
   if (senaiteClients.length === 0) {
     return { success: false, message: 'No clients found in XelLabs. Verify XelLabs is running and you are logged in as a XelLabs user.', created: 0, updated: 0, total: 0 }
   }
@@ -203,20 +203,30 @@ export async function syncClientsFromSenaite(): Promise<SyncResult> {
 
   // 3. Upsert each SENAITE client into Django
   for (const sc of senaiteClients) {
+    const contact = sc.contact
     const payload = {
-      name:             sc.title,
-      client_id:        sc.ClientID || sc.id,
-      email:            sc.EmailAddress || '',
-      phone:            sc.Phone || '',
-      fax:              sc.Fax || '',
-      tax_number:       sc.TaxNumber || '',
-      bank_name:        sc.BankName || '',
-      bank_branch:      sc.BankBranch || '',
-      physical_address: sc.PhysicalAddress ?? {},
-      postal_address:   sc.PostalAddress ?? {},
-      billing_address:  sc.BillingAddress ?? {},
-      is_active:        sc.review_state !== 'inactive',
-      senaite_uid:      sc.uid,
+      name:                 sc.title,
+      client_id:            sc.ClientID || sc.id,
+      email:                sc.EmailAddress || '',
+      phone:                sc.Phone || '',
+      fax:                  sc.Fax || '',
+      tax_number:           sc.TaxNumber || '',
+      bank_name:            sc.BankName || '',
+      bank_branch:          sc.BankBranch || '',
+      physical_address:     sc.PhysicalAddress ?? {},
+      postal_address:       sc.PostalAddress ?? {},
+      billing_address:      sc.BillingAddress ?? {},
+      is_active:            sc.review_state !== 'inactive',
+      senaite_uid:          sc.uid,
+      cc_emails:            sc.CCEmails || '',
+      salutation:           contact?.Salutation || '',
+      contact_first_name:   contact?.Firstname || '',
+      contact_last_name:    contact?.Surname || '',
+      contact_person:       contact ? [contact.Firstname, contact.Surname].filter(Boolean).join(' ') : '',
+      contact_email:        contact?.EmailAddress || '',
+      contact_phone:        contact?.BusinessPhone || contact?.MobilePhone || '',
+      contact_job_title:    contact?.JobTitle || '',
+      contact_department:   contact?.Department || '',
     }
 
     const existingId = byUid.get(sc.uid)

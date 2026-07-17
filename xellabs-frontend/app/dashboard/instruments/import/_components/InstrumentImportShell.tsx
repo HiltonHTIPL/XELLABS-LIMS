@@ -10,7 +10,7 @@ import type { InstrumentOption, InstrumentResultImport } from '@/app/actions/ins
 import {
   PageHeader, Card, Btn, Field, MI, T, selectStyle,
 } from '@/app/dashboard/_components/ui'
-import ImportPreviewTable from './ImportPreviewTable'
+import ImportPreviewTable from '@/app/dashboard/_components/ImportPreviewTable'
 import ImportHistory from './ImportHistory'
 
 type Step = 'select' | 'preview' | 'done'

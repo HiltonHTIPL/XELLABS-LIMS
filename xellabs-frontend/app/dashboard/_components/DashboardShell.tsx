@@ -122,7 +122,10 @@ export default function DashboardShell({ children, initials, displayName, roleLa
   }
 
   return (
-    <div className="flex flex-1 min-h-0 overflow-hidden">
+    <div
+      className="flex flex-1 min-h-0 overflow-hidden"
+      style={{ '--dashboard-header-h': '56px', '--dashboard-footer-h': '40px' } as React.CSSProperties}
+    >
       {/* Sidebar */}
       <div
         style={{
@@ -376,10 +379,12 @@ export default function DashboardShell({ children, initials, displayName, roleLa
           {children}
         </main>
 
-        {/* Universal footer — full width of content area */}
+        {/* Universal footer — full width of content area. Height is explicit
+            (not just padding-derived) so it exactly matches --dashboard-footer-h,
+            the value every drawer/modal overlay bounds itself against. */}
         <div
-          className="flex items-center justify-between shrink-0 px-5 py-2.5"
-          style={{ borderTop: '1px solid #E8EAF2', backgroundColor: '#fff', fontSize: 11, color: '#9AA1B2' }}
+          className="flex items-center justify-between shrink-0 px-5"
+          style={{ height: 40, borderTop: '1px solid #E8EAF2', backgroundColor: '#fff', fontSize: 11, color: '#9AA1B2' }}
         >
           <span>© 2026 XELLABS LIMS. All rights reserved.</span>
           <div className="flex items-center gap-3">

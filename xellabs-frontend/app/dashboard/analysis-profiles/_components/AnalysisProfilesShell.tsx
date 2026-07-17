@@ -203,7 +203,7 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
 
       {/* ── Delete confirmation modal ── */}
       {deleteTarget && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ position: 'fixed', top: 'var(--dashboard-header-h)', left: 0, right: 0, bottom: 'var(--dashboard-footer-h)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div onClick={() => !deleting && setDeleteTarget(null)} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)' }} />
           <div style={{ position: 'relative', width: 380, backgroundColor: '#fff', borderRadius: 14, boxShadow: '0 12px 40px rgba(0,0,0,0.18)', padding: 20 }}>
             <div className="flex items-center gap-2.5 mb-3">
