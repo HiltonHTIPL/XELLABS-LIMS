@@ -115,7 +115,13 @@ fi
 # NODE_ENV=development — `next build` behaves incorrectly, failing with a
 # "<Html> should not be imported outside of pages/_document" prerender
 # error, unless NODE_ENV is explicitly production for the build itself).
-if docker exec -e NODE_ENV=production xellabs-lims-frontend-1 npm run build > /tmp/build_check.log 2>&1; then
+# BUILD_CHECK=1 makes next.config.ts build into a separate distDir
+# (.next-buildcheck) instead of the default .next — this check runs inside
+# the SAME long-lived container as the local `next dev` server, and both
+# writing the same .next dir at once corrupts the dev server's build
+# manifest and sends `next build` into an infinite retry loop (confirmed
+# live). Never remove BUILD_CHECK here without also reverting next.config.ts.
+if docker exec -e NODE_ENV=production -e BUILD_CHECK=1 xellabs-lims-frontend-1 npm run build > /tmp/build_check.log 2>&1; then
   pass "Next.js production build"
 else
   fail "Next.js build failed:"

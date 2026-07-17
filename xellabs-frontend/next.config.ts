@@ -25,6 +25,15 @@ const extraOrigins = (process.env.NEXT_PUBLIC_ALLOWED_ORIGINS ?? '')
   .filter(Boolean)
 
 const nextConfig: NextConfig = {
+  // BUILD_CHECK=1 is set by .githooks/pre-push's production-build check, which
+  // runs `next build` inside the same long-lived container as the local `next
+  // dev` server (docker-compose.yml's frontend command). Both would otherwise
+  // read/write the same default `.next` dir at once — confirmed live to
+  // corrupt the dev server's build manifest ("MODULE_NOT_FOUND" on
+  // .next/server/app/page.js) and send `next build` into an infinite retry
+  // loop. A separate distDir keeps the isolated check from ever touching the
+  // dev server's own `.next`.
+  distDir: process.env.BUILD_CHECK === '1' ? '.next-buildcheck' : '.next',
   experimental: {
     serverActions: {
       allowedOrigins: [
