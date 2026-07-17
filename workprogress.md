@@ -5,6 +5,14 @@
 
 ---
 
+## 2026-07-17
+
+- Client → New Sample client pre-fill: clicking "Client ID" on a Client row now carries the client through to Samples Overview's "New Sample" button (`?client=<senaite_uid>`), which pre-selects that same Client on the New Sample form (mirrors the existing `?batch=` pre-fill pattern) — also cascades contact name + CC emails via the existing `handleClientChange()` logic. Verified live via Playwright (Client select pre-filled with real client name, not blank).
+- Fixed Laboratory Information page's large empty right-hand gutter — content was a fixed `maxWidth: 880` form left-aligned inside a full-width page container; wrapped the whole page body (header + toasts + form) in one centered container.
+- Rebuilt Laboratory Information as a **4-tab layout** matching SENAITE's own Laboratory edit page exactly (confirmed via live HTML inspection of SENAITE's `base_edit` tab markup — Default, Address, Bank details, Accreditation) instead of one long stacked form.
+- Added **View/Edit mode toggle** to Laboratory Information, matching SENAITE's own view/edit pattern — page opens read-only (labels + values, no inputs) with an Edit button; Edit switches to the editable form with Save/Cancel; Cancel discards in-progress changes and reverts to view; a successful save auto-returns to view mode.
+- All changes verified with `tsc --noEmit` (clean) and a full frontend rebuild/restart each time; not yet committed or pushed (pending explicit user go-ahead per §13b).
+
 ## 2026-07-16
 
 - Built the **Administration setup matrix** — 11 new SENAITE-backed reference-data sections mirroring SENAITE's own setup grid (Administration group only, no new top-level nav): Analysis Categories, Attachment Types, Batch Labels, Instrument Locations, Instrument Types, Interpretation Templates, Lab Contacts, Lab Departments, Lab Products, Labels, Laboratory Information.

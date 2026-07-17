@@ -68,10 +68,12 @@ export default function InstrumentListShell({ initialInstruments }: { initialIns
   }
 
   return (
-    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flexShrink: 0 }}>
       <PageHeader
         title="Instrument List"
         subtitle="Lab instruments — imported or managed via Master Data Import"
+        backHref="/dashboard/admin"
         right={
           <Link
             href="/dashboard/master-data-import"
@@ -103,7 +105,9 @@ export default function InstrumentListShell({ initialInstruments }: { initialIns
         <StatCard icon="precision_manufacturing" label="Total Instruments" value={initialInstruments.length} />
         <StatCard icon="check_circle" iconColor={T.success} iconBg="#ECFDF5" label="Active" value={activeCount} />
       </div>
+      </div>
 
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       <Card>
         <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
           <input
@@ -185,6 +189,7 @@ export default function InstrumentListShell({ initialInstruments }: { initialIns
           onCancel={() => setConfirmOpen(false)}
         />
       )}
+      </div>
     </div>
   )
 }

@@ -1,6 +1,7 @@
 'use client'
 import { useState, useActionState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { type SenaiteRefOption } from '@/app/lib/senaite'
 import { type CreateRefOptionState, type ToggleRefOptionState } from '@/app/actions/reference-data'
 
@@ -87,9 +88,14 @@ export default function ReferenceListShell({ title, subtitle, entityLabel, icon,
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div className="flex items-center justify-between mb-3" style={{ flexShrink: 0 }}>
-        <div>
-          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>{title}</h1>
-          <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>{subtitle}</p>
+        <div className="flex items-center gap-3">
+          <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
+            <MI name="arrow_back" size={16} color="#6B7280" />
+          </Link>
+          <div>
+            <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>{title}</h1>
+            <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>{subtitle}</p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => router.refresh()} disabled={isPending}

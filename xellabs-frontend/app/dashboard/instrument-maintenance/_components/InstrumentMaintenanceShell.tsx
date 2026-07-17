@@ -468,7 +468,8 @@ export default function InstrumentMaintenanceShell({
   }
 
   return (
-    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flexShrink: 0 }}>
       <PageHeader
         title="Instrument Maintenance"
         subtitle="Calibrations, maintenance, runs and result imports for lab instruments"
@@ -495,7 +496,9 @@ export default function InstrumentMaintenanceShell({
       <div className="mb-3">
         <InstrumentFilter instruments={instruments} value={instrumentFilter} onChange={setInstrumentFilter} />
       </div>
+      </div>
 
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       {tab === 'calibrations' && (
         <Card pad={false}>
           {filteredCalibrations.length === 0 ? (
@@ -644,6 +647,7 @@ export default function InstrumentMaintenanceShell({
           )}
         </Card>
       )}
+      </div>
 
       {showCalModal && (
         <CalibrationModal instruments={instruments} editing={editingCal}

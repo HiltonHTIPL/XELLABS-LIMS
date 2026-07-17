@@ -198,7 +198,7 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
   }
 
   return (
-    <div style={{ backgroundColor: T.pageBg, minHeight: '100%', padding: 20, boxSizing: 'border-box' }}>
+    <div style={{ backgroundColor: T.pageBg, height: '100%', padding: 20, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
       {/* Toast */}
       {actionMsg && (
@@ -243,30 +243,33 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
         </>
       )}
 
-      <PageHeader
-        title="Samples"
-        subtitle="Manage and track laboratory samples throughout their lifecycle."
-        right={
-          <div className="flex items-center gap-2">
-            <span style={{ fontSize: 12, color: T.faint }}>Last updated: {now}</span>
-            <IconBtn icon="refresh" size={16} onClick={() => router.refresh()} />
-            <Btn variant="primary" icon="add" onClick={() => setShowNewSample(true)}>New Sample</Btn>
-          </div>
-        }
-      />
+      <div style={{ flexShrink: 0 }}>
+        <PageHeader
+          title="Samples"
+          subtitle="Manage and track laboratory samples throughout their lifecycle."
+          right={
+            <div className="flex items-center gap-2">
+              <span style={{ fontSize: 12, color: T.faint }}>Last updated: {now}</span>
+              <IconBtn icon="refresh" size={16} onClick={() => router.refresh()} />
+              <Btn variant="primary" icon="add" onClick={() => setShowNewSample(true)}>New Sample</Btn>
+            </div>
+          }
+        />
+      </div>
 
       {/* KPI row */}
-      <div className="grid gap-3 mb-5" style={{ gridTemplateColumns: 'repeat(7,1fr)' }}>
+      <div className="grid gap-3 mb-5" style={{ gridTemplateColumns: 'repeat(7,1fr)', flexShrink: 0 }}>
         {kpis.map(k => (
           <StatCard key={k.label} icon={k.icon} iconBg={k.iconBg} iconColor={k.iconColor} label={k.label} value={k.value} />
         ))}
       </div>
 
       {/* Two-column layout */}
-      <div className="flex gap-4" style={{ alignItems: 'flex-start' }}>
+      <div className="flex gap-4" style={{ alignItems: 'flex-start', flex: 1, minHeight: 0, overflow: 'hidden' }}>
 
         {/* Main column */}
-        <div className="flex-1 min-w-0 flex flex-col gap-3">
+        <div className="flex-1 min-w-0 flex flex-col gap-3" style={{ height: '100%', overflow: 'hidden' }}>
+          <div style={{ flexShrink: 0 }}>
 
           {/* Filter card */}
           <Card pad={false}>
@@ -315,7 +318,9 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
               {filtered.length === 0 ? '0 results' : `${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, filtered.length)} of ${filtered.length}`}
             </span>
           </div>
+          </div>
 
+          <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
           {/* Table */}
           {filtered.length === 0 ? (
             <Card pad={false}>
@@ -384,6 +389,7 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
               </div>
             </Card>
           )}
+          </div>
         </div>
 
         {/* Right rail */}

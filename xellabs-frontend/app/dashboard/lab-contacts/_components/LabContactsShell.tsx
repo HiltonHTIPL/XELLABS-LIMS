@@ -62,12 +62,20 @@ const ADDR_FIELDS: { key: keyof Address; label: string }[] = [
   { key: 'district', label: 'District' }, { key: 'state', label: 'State' }, { key: 'country', label: 'Country' },
 ]
 
+type TabKey = 'overview' | 'contact' | 'address'
+const TABS: { key: TabKey; label: string }[] = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'contact', label: 'Contact' },
+  { key: 'address', label: 'Address' },
+]
+
 export default function LabContactsShell({ rows, departments }: { rows: LabContactRow[]; departments: RefOption[] }) {
   const router = useRouter()
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<LabContactRow | null>(null)
   const [vals, setVals] = useState<FV>(blankFV())
   const [sigName, setSigName] = useState('')
+  const [tab, setTab] = useState<TabKey>('overview')
   const sigRef = useRef<HTMLInputElement>(null)
   const isEditing = editing !== null
 
@@ -76,13 +84,14 @@ export default function LabContactsShell({ rows, departments }: { rows: LabConta
       const path = fd.get('_path') as string | null
       const result = path ? await updateLabContact(path, prev, fd) : await createLabContact(prev, fd)
       if (result.success) { closeForm(); router.refresh() }
+      else if (result.errors?.Firstname || result.errors?.Surname) setTab('overview')
       return result
     },
     {},
   )
 
-  function openCreate() { setEditing(null); setVals(blankFV()); setSigName(''); setShowForm(true) }
-  function openEdit(r: LabContactRow) { setEditing(r); setVals(rowToFV(r)); setSigName(''); setShowForm(true) }
+  function openCreate() { setEditing(null); setVals(blankFV()); setSigName(''); setTab('overview'); setShowForm(true) }
+  function openEdit(r: LabContactRow) { setEditing(r); setVals(rowToFV(r)); setSigName(''); setTab('overview'); setShowForm(true) }
   function closeForm() { setShowForm(false); setEditing(null); setSigName('') }
   function set<K extends keyof FV>(k: K, v: FV[K]) { setVals(p => ({ ...p, [k]: v })) }
   function setAddr(which: 'PhysicalAddress' | 'PostalAddress', key: keyof Address, v: string) {
@@ -105,8 +114,8 @@ export default function LabContactsShell({ rows, departments }: { rows: LabConta
   const deptTitle = (uid: string) => departments.find(d => d.uid === uid)?.title ?? ''
 
   return (
-    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
-      <div className="flex items-center justify-between mb-3">
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div className="flex items-center justify-between mb-3" style={{ flexShrink: 0 }}>
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Lab Contacts</h1>
           <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Manage laboratory staff and their contact details</p>
@@ -139,71 +148,95 @@ export default function LabContactsShell({ rows, departments }: { rows: LabConta
             {ADDR_FIELDS.map(f => <input key={`ph-${f.key}`} type="hidden" name={`physical_${f.key}`} value={vals.PhysicalAddress[f.key]} />)}
             {ADDR_FIELDS.map(f => <input key={`po-${f.key}`} type="hidden" name={`postal_${f.key}`} value={vals.PostalAddress[f.key]} />)}
 
+            <div className="flex gap-1 px-6 pt-3 shrink-0" style={{ borderBottom: '1px solid #F3F4F6' }}>
+              {TABS.map(t => (
+                <button key={t.key} type="button" onClick={() => setTab(t.key)}
+                  className="px-3 py-2 text-xs font-medium"
+                  style={{
+                    color: tab === t.key ? '#0154FC' : '#6B7280',
+                    borderBottom: tab === t.key ? '2px solid #0154FC' : '2px solid transparent',
+                    marginBottom: -1,
+                  }}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-              <Section title="Personal">
-                <div className="grid grid-cols-2 gap-3">
-                  <Txt label="Salutation" value={vals.Salutation} onChange={v => set('Salutation', v)} placeholder="e.g. Dr" />
-                  <Txt label="Job Title" value={vals.JobTitle} onChange={v => set('JobTitle', v)} />
-                  <Txt label="First name" value={vals.Firstname} onChange={v => set('Firstname', v)} required error={state.errors?.Firstname?.[0]} />
-                  <Txt label="Surname" value={vals.Surname} onChange={v => set('Surname', v)} required error={state.errors?.Surname?.[0]} />
-                  <Txt label="Middle initial" value={vals.Middleinitial} onChange={v => set('Middleinitial', v)} />
-                  <Txt label="Middle name" value={vals.Middlename} onChange={v => set('Middlename', v)} />
-                </div>
-              </Section>
+              {tab === 'overview' && (
+                <>
+                  <Section title="Personal">
+                    <div className="grid grid-cols-2 gap-3">
+                      <Txt label="Salutation" value={vals.Salutation} onChange={v => set('Salutation', v)} placeholder="e.g. Dr" />
+                      <Txt label="Job Title" value={vals.JobTitle} onChange={v => set('JobTitle', v)} />
+                      <Txt label="First name" value={vals.Firstname} onChange={v => set('Firstname', v)} required error={state.errors?.Firstname?.[0]} />
+                      <Txt label="Surname" value={vals.Surname} onChange={v => set('Surname', v)} required error={state.errors?.Surname?.[0]} />
+                      <Txt label="Middle initial" value={vals.Middleinitial} onChange={v => set('Middleinitial', v)} />
+                      <Txt label="Middle name" value={vals.Middlename} onChange={v => set('Middlename', v)} />
+                    </div>
+                  </Section>
 
-              <Section title="Contact">
-                <div className="grid grid-cols-2 gap-3">
-                  <Txt label="Email" value={vals.EmailAddress} onChange={v => set('EmailAddress', v)} placeholder="name@lab.com" />
-                  <Txt label="Phone (business)" value={vals.BusinessPhone} onChange={v => set('BusinessPhone', v)} />
-                  <Txt label="Fax (business)" value={vals.BusinessFax} onChange={v => set('BusinessFax', v)} />
-                  <Txt label="Phone (mobile)" value={vals.MobilePhone} onChange={v => set('MobilePhone', v)} />
-                  <Txt label="Phone (home)" value={vals.HomePhone} onChange={v => set('HomePhone', v)} />
-                  <Txt label="Department (text)" value={vals.Department} onChange={v => set('Department', v)} />
-                </div>
-              </Section>
+                  <Section title="Departments">
+                    <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Assigned Departments</label>
+                    <div className="rounded-lg p-2 space-y-1 max-h-36 overflow-y-auto" style={{ border: '1px solid #D1D5DB' }}>
+                      {departments.length === 0
+                        ? <p style={{ fontSize: 11, color: '#9CA3AF' }}>No departments available</p>
+                        : departments.map(d => (
+                          <label key={d.uid} className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: '#374151' }}>
+                            <input type="checkbox" checked={vals.Departments.includes(d.uid)} onChange={() => toggleDept(d.uid)} />
+                            {d.title}
+                          </label>
+                        ))}
+                    </div>
+                    <div className="mt-2">
+                      <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Default Department</label>
+                      <select value={vals.DefaultDepartment} onChange={e => set('DefaultDepartment', e.target.value)}
+                        className={inputBase} style={{ border: '1px solid #D1D5DB', color: '#111827' }}>
+                        <option value="">— None —</option>
+                        {defaultDeptOptions.map(d => <option key={d.uid} value={d.uid}>{d.title}</option>)}
+                      </select>
+                      {vals.DefaultDepartment && !vals.Departments.includes(vals.DefaultDepartment) && (
+                        <p className="mt-0.5" style={{ fontSize: 10, color: '#9CA3AF' }}>Select the department above to keep it as default.</p>
+                      )}
+                    </div>
+                  </Section>
 
-              <Section title="Departments">
-                <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Assigned Departments</label>
-                <div className="rounded-lg p-2 space-y-1 max-h-36 overflow-y-auto" style={{ border: '1px solid #D1D5DB' }}>
-                  {departments.length === 0
-                    ? <p style={{ fontSize: 11, color: '#9CA3AF' }}>No departments available</p>
-                    : departments.map(d => (
-                      <label key={d.uid} className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: '#374151' }}>
-                        <input type="checkbox" checked={vals.Departments.includes(d.uid)} onChange={() => toggleDept(d.uid)} />
-                        {d.title}
-                      </label>
-                    ))}
-                </div>
-                <div className="mt-2">
-                  <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Default Department</label>
-                  <select value={vals.DefaultDepartment} onChange={e => set('DefaultDepartment', e.target.value)}
-                    className={inputBase} style={{ border: '1px solid #D1D5DB', color: '#111827' }}>
-                    <option value="">— None —</option>
-                    {defaultDeptOptions.map(d => <option key={d.uid} value={d.uid}>{d.title}</option>)}
-                  </select>
-                  {vals.DefaultDepartment && !vals.Departments.includes(vals.DefaultDepartment) && (
-                    <p className="mt-0.5" style={{ fontSize: 10, color: '#9CA3AF' }}>Select the department above to keep it as default.</p>
-                  )}
-                </div>
-              </Section>
+                  <Section title="Signature">
+                    <input ref={sigRef} type="file" accept="image/*" className="hidden" onChange={onSigFile} />
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={() => sigRef.current?.click()}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium"
+                        style={{ border: '1px solid #D1D5DB', color: '#374151', backgroundColor: '#F9FAFB', cursor: 'pointer' }}>
+                        Choose Image
+                      </button>
+                      <span className="text-xs truncate" style={{ color: sigName ? '#374151' : '#9CA3AF' }}>
+                        {sigName || (isEditing && editing?.Signature ? 'Signature on file (upload to replace)' : 'No file chosen')}
+                      </span>
+                    </div>
+                    <p className="mt-1" style={{ fontSize: 10, color: '#9CA3AF' }}>Ideal size 250×150px, used on printed reports.</p>
+                  </Section>
+                </>
+              )}
 
-              <AddressSection title="Physical Address" addr={vals.PhysicalAddress} onChange={(k, v) => setAddr('PhysicalAddress', k, v)} />
-              <AddressSection title="Postal Address" addr={vals.PostalAddress} onChange={(k, v) => setAddr('PostalAddress', k, v)} />
+              {tab === 'contact' && (
+                <Section title="Contact">
+                  <div className="grid grid-cols-2 gap-3">
+                    <Txt label="Email" value={vals.EmailAddress} onChange={v => set('EmailAddress', v)} placeholder="name@lab.com" />
+                    <Txt label="Phone (business)" value={vals.BusinessPhone} onChange={v => set('BusinessPhone', v)} />
+                    <Txt label="Fax (business)" value={vals.BusinessFax} onChange={v => set('BusinessFax', v)} />
+                    <Txt label="Phone (mobile)" value={vals.MobilePhone} onChange={v => set('MobilePhone', v)} />
+                    <Txt label="Phone (home)" value={vals.HomePhone} onChange={v => set('HomePhone', v)} />
+                  </div>
+                </Section>
+              )}
 
-              <Section title="Signature">
-                <input ref={sigRef} type="file" accept="image/*" className="hidden" onChange={onSigFile} />
-                <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => sigRef.current?.click()}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium"
-                    style={{ border: '1px solid #D1D5DB', color: '#374151', backgroundColor: '#F9FAFB', cursor: 'pointer' }}>
-                    Choose Image
-                  </button>
-                  <span className="text-xs truncate" style={{ color: sigName ? '#374151' : '#9CA3AF' }}>
-                    {sigName || (isEditing && editing?.Signature ? 'Signature on file (upload to replace)' : 'No file chosen')}
-                  </span>
-                </div>
-                <p className="mt-1" style={{ fontSize: 10, color: '#9CA3AF' }}>Ideal size 250×150px, used on printed reports.</p>
-              </Section>
+              {tab === 'address' && (
+                <>
+                  <AddressSection title="Physical Address" addr={vals.PhysicalAddress} onChange={(k, v) => setAddr('PhysicalAddress', k, v)} />
+                  <AddressSection title="Postal Address" addr={vals.PostalAddress} onChange={(k, v) => setAddr('PostalAddress', k, v)}
+                    onCopyFrom={() => setVals(p => ({ ...p, PostalAddress: { ...p.PhysicalAddress } }))} />
+                </>
+              )}
 
               {state.message && !state.success && <p className="text-xs" style={{ color: '#DC2626' }}>{state.message}</p>}
             </div>
@@ -224,11 +257,12 @@ export default function LabContactsShell({ rows, departments }: { rows: LabConta
       </div>
 
       {state.success && (
-        <div className="mb-3 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#DBEAFE', border: '1px solid #93C5FD', color: '#0154FC' }}>
+        <div className="mb-3 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#DBEAFE', border: '1px solid #93C5FD', color: '#0154FC', flexShrink: 0 }}>
           <div className="flex items-center gap-2"><MI name="check_circle" size={13} color="#0154FC" /><span>{state.message}</span></div>
         </div>
       )}
 
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       {rows.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="contact_page" size={36} color="#D1D5DB" />
@@ -269,6 +303,7 @@ export default function LabContactsShell({ rows, departments }: { rows: LabConta
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }
@@ -282,9 +317,17 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-function AddressSection({ title, addr, onChange }: { title: string; addr: Address; onChange: (k: keyof Address, v: string) => void }) {
+function AddressSection({ title, addr, onChange, onCopyFrom }: {
+  title: string; addr: Address; onChange: (k: keyof Address, v: string) => void; onCopyFrom?: () => void
+}) {
   return (
     <Section title={title}>
+      {onCopyFrom && (
+        <button type="button" onClick={onCopyFrom} className="mb-2 flex items-center gap-1" style={{ fontSize: 11, color: '#0154FC', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+          <span className="material-icons" style={{ fontSize: 13, lineHeight: 1 }}>content_copy</span>
+          Copy from Physical Address
+        </button>
+      )}
       <div className="grid grid-cols-2 gap-3">
         {ADDR_FIELDS.map(f => (
           <Txt key={f.key} label={f.label} value={addr[f.key]} onChange={v => onChange(f.key, v)} />

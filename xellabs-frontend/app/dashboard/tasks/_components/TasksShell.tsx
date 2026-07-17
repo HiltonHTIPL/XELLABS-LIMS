@@ -1,6 +1,7 @@
 'use client'
 import { useState, useMemo, useActionState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import {
   createTask, updateTask, updateTaskStatus, deleteTask, assignTask,
   type Task, type TaskAssignment, type TaskFormState,
@@ -269,11 +270,17 @@ export default function TasksShell({ initialTasks, initialAssignments, users }: 
   }
 
   return (
-    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flexShrink: 0 }}>
       <div className="flex items-center justify-between mb-5">
-        <div>
-          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Task Management</h1>
-          <p className="mt-1" style={{ fontSize: 13, color: '#6B7280' }}>Create, assign, and track laboratory tasks</p>
+        <div className="flex items-center gap-3">
+          <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
+            <MI name="arrow_back" size={16} color="#6B7280" />
+          </Link>
+          <div>
+            <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Task Management</h1>
+            <p className="mt-1" style={{ fontSize: 13, color: '#6B7280' }}>Create, assign, and track laboratory tasks</p>
+          </div>
         </div>
         <button onClick={openCreate} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#2563EB', border: 'none', cursor: 'pointer' }}>
           <MI name="add" size={15} color="#fff" /> New Task
@@ -315,6 +322,7 @@ export default function TasksShell({ initialTasks, initialAssignments, users }: 
           {users.map(u => <option key={u.id} value={String(u.id)}>{u.full_name || u.username}</option>)}
         </select>
       </div>
+      </div>
 
       {showModal && <TaskModal editing={editing} users={users} onClose={closeModal} onDone={handleDone} />}
       {deleting && (
@@ -326,6 +334,7 @@ export default function TasksShell({ initialTasks, initialAssignments, users }: 
         />
       )}
 
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       {filtered.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2', borderRadius: 14 }}>
           <MI name="checklist" size={36} color="#D1D5DB" />
@@ -421,6 +430,7 @@ export default function TasksShell({ initialTasks, initialAssignments, users }: 
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

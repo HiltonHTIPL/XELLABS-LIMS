@@ -61,10 +61,12 @@ export default function ResultsShell({ initialResults }: { initialResults: Enric
   const pageResults = results.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   return (
-    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flexShrink: 0 }}>
       <PageHeader
         title="Results"
         subtitle="Search and review test results across all samples and worksheets"
+        backHref="/dashboard/admin"
       />
 
       <div className="grid grid-cols-4 gap-4 mb-5">
@@ -118,7 +120,9 @@ export default function ResultsShell({ initialResults }: { initialResults: Enric
           </Field>
         </div>
       </Card>
+      </div>
 
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       <Card title="Results" icon="science" pad={false}>
         {pageResults.length === 0 ? (
           <div className="p-4">
@@ -187,6 +191,7 @@ export default function ResultsShell({ initialResults }: { initialResults: Enric
           </div>
         )}
       </Card>
+      </div>
     </div>
   )
 }

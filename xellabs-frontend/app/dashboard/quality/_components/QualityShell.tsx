@@ -312,7 +312,8 @@ export default function QualityShell({
   }
 
   return (
-    <div style={{ padding: 20, backgroundColor: T.pageBg, minHeight: '100%' }}>
+    <div style={{ padding: 20, backgroundColor: T.pageBg, height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flexShrink: 0 }}>
       <PageHeader
         title="Quality Control"
         subtitle="Controls, blanks, spikes — failed QC is flagged for administrator review before release"
@@ -352,6 +353,7 @@ export default function QualityShell({
         <StatCard icon="hourglass_top" iconColor={T.warning} iconBg="#FFF7ED" label="Pending" value={pending} />
         <StatCard icon="policy" iconColor="#DC2626" iconBg="#FEF2F2" label="Needs Review" value={needsReview} />
       </div>
+      </div>
 
       {showModal && <QCModal editing={editing} services={services} worksheets={worksheets} onClose={closeModal} onDone={() => handleDone(editing ? 'QC sample updated.' : 'QC sample created.')} />}
       {reviewing && <ReviewModal sample={reviewing} onClose={() => setReviewing(null)} onDone={msg => { setReviewing(null); handleDone(msg) }} />}
@@ -366,6 +368,7 @@ export default function QualityShell({
         />
       )}
 
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       <Card
         title="QC Samples"
         icon="science"
@@ -464,6 +467,7 @@ export default function QualityShell({
           </>
         )}
       </Card>
+      </div>
     </div>
   )
 }

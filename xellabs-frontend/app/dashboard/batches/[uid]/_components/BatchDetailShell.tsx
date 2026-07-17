@@ -210,12 +210,12 @@ export default function BatchDetailShell({
   }
 
   return (
-    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
-      <button onClick={() => router.push('/dashboard/batches')} className="flex items-center gap-1 mb-2" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280', fontSize: 13, padding: 0 }}>
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <button onClick={() => router.push('/dashboard/batches')} className="flex items-center gap-1 mb-2" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280', fontSize: 13, padding: 0, flexShrink: 0 }}>
         <MI name="arrow_back" size={16} color="#6B7280" /> Back to Batches
       </button>
 
-      <div className="flex items-start justify-between mb-4">
+      <div className="flex items-start justify-between mb-4" style={{ flexShrink: 0 }}>
         <div className="flex items-center gap-3">
           <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: '#DBEAFE' }}>
             <MI name="layers" size={22} color="#0154FC" />
@@ -243,14 +243,14 @@ export default function BatchDetailShell({
       </div>
 
       {toast && (
-        <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', border: `1px solid ${toast.ok ? '#93C5FD' : '#FECACA'}`, color: toast.ok ? '#0154FC' : '#991B1B' }}>
+        <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', border: `1px solid ${toast.ok ? '#93C5FD' : '#FECACA'}`, color: toast.ok ? '#0154FC' : '#991B1B', flexShrink: 0 }}>
           <MI name={toast.ok ? 'check_circle' : 'error'} size={13} color={toast.ok ? '#0154FC' : '#DC2626'} />
           {toast.msg}
         </div>
       )}
 
       {/* Summary cards */}
-      <div className="grid grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-4 gap-3 mb-4" style={{ flexShrink: 0 }}>
         {[
           { label: 'Samples', value: samples.length, icon: 'science' },
           { label: 'Progress', value: `${batch.getProgress}%`, icon: 'trending_up' },
@@ -268,7 +268,7 @@ export default function BatchDetailShell({
       </div>
 
       {(batch.description || batch.Remarks) && (
-        <div className="bg-white rounded-xl p-3 mb-4" style={{ border: '1px solid #E8EAF2' }}>
+        <div className="bg-white rounded-xl p-3 mb-4" style={{ border: '1px solid #E8EAF2', flexShrink: 0 }}>
           {batch.description && <p className="text-xs" style={{ color: '#374151' }}>{batch.description}</p>}
           {batch.Remarks && <p className="text-xs mt-1" style={{ color: '#9CA3AF' }}>{batch.Remarks}</p>}
         </div>
@@ -276,7 +276,7 @@ export default function BatchDetailShell({
 
       {/* Bulk action toolbar — only appears once something is selected */}
       {selected.size > 0 && (
-        <div className="flex items-center gap-2 mb-3">
+        <div className="flex items-center gap-2 mb-3" style={{ flexShrink: 0 }}>
           <button onClick={handleReceive} disabled={busy || receivableCount === 0} style={{ ...toolbarBtn, opacity: receivableCount === 0 ? 0.5 : 1, cursor: receivableCount === 0 ? 'not-allowed' : 'pointer' }}>
             <MI name="inbox" size={14} color="#374151" /> Receive {receivableCount > 0 && <span style={{ background: '#DBEAFE', color: '#1D4ED8', borderRadius: 999, padding: '1px 6px', fontSize: 10 }}>{receivableCount}</span>}
           </button>
@@ -297,6 +297,7 @@ export default function BatchDetailShell({
       )}
 
       {/* Samples table */}
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
         <div className="px-4 py-3" style={{ borderBottom: '1px solid #F3F4F6' }}>
           <h2 style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Samples logged under this batch</h2>
@@ -360,6 +361,7 @@ export default function BatchDetailShell({
         <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
           <p style={{ fontSize: 10, color: '#9CA3AF' }}>{samples.length} sample{samples.length !== 1 ? 's' : ''}{selected.size > 0 ? ` · ${selected.size} selected` : ''}</p>
         </div>
+      </div>
       </div>
 
       {/* Results entry modal — single sample or multiple, same table */}

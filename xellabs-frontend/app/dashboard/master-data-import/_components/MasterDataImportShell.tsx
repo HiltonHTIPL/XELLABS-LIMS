@@ -157,6 +157,7 @@ export default function MasterDataImportShell() {
       <PageHeader
         title="Master Data Import"
         subtitle="Bulk-import Instruments and Storage Locations from an Excel (.xlsx) or CSV file"
+        backHref="/dashboard/admin"
       />
       <div className="flex flex-col gap-4">
         <ImportPanel

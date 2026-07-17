@@ -9,13 +9,11 @@ export default async function AuditTrailPage() {
     getRecordVersions(),
   ])
   return (
-    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
-      <AuditTrailShell
-        initialAuditEvents={auditEvents}
-        initialLoginEvents={loginEvents}
-        initialSecurityEvents={securityEvents}
-        initialRecordVersions={recordVersions}
-      />
-    </div>
+    <AuditTrailShell
+      initialAuditEvents={auditEvents}
+      initialLoginEvents={loginEvents}
+      initialSecurityEvents={securityEvents}
+      initialRecordVersions={recordVersions}
+    />
   )
 }

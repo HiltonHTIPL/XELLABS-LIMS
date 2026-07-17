@@ -1,5 +1,6 @@
 'use client'
 import { useState, useCallback, useActionState, useEffect, useRef } from 'react'
+import Link from 'next/link'
 import {
   saveTemplate, duplicateTemplate, deleteTemplate, setActiveTemplate,
   type TemplateField, type ReportTemplate, type ReportType, type TemplateSaveState,
@@ -238,11 +239,16 @@ export default function ReportTemplateShell({ initialTemplates, defaultFields }:
       )}
 
       {/* Page header */}
-      <div style={{ marginBottom: 20 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: '#111827' }}>Report Template Editor</h1>
-        <p style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>
-          Customize every line of each report type — labels, values, visibility, order, logo and colour.
-        </p>
+      <div className="flex items-center gap-3" style={{ marginBottom: 20 }}>
+        <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
+          <span className="material-icons" style={{ fontSize: 16, color: '#6B7280' }}>arrow_back</span>
+        </Link>
+        <div>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#111827' }}>Report Template Editor</h1>
+          <p style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>
+            Customize every line of each report type — labels, values, visibility, order, logo and colour.
+          </p>
+        </div>
       </div>
 
       {/* Top controls */}

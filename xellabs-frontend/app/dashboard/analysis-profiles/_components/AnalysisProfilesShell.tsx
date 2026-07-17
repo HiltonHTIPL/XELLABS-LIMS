@@ -99,10 +99,10 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
   }
 
   return (
-    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-3" style={{ flexShrink: 0 }}>
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Analysis Profiles</h1>
           <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Reusable bundles of analyses you can apply to any sample, independent of sample type</p>
@@ -114,7 +114,7 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
 
       {toast && (
         <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
-          style={{ backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', border: `1px solid ${toast.ok ? '#93C5FD' : '#FECACA'}`, color: toast.ok ? '#0154FC' : '#991B1B' }}>
+          style={{ backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', border: `1px solid ${toast.ok ? '#93C5FD' : '#FECACA'}`, color: toast.ok ? '#0154FC' : '#991B1B', flexShrink: 0 }}>
           <MI name={toast.ok ? 'check_circle' : 'error'} size={13} color={toast.ok ? '#0154FC' : '#DC2626'} />
           {toast.msg}
         </div>
@@ -122,7 +122,7 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
 
       {/* ── Inline create/edit panel ── */}
       {showForm && (
-        <div className="bg-white rounded-xl mb-3" style={{ border: '1px solid #E8EAF2' }}>
+        <div className="bg-white rounded-xl mb-3" style={{ border: '1px solid #E8EAF2', flexShrink: 0 }}>
           <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #F3F4F6' }}>
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: isEdit ? '#EFF6FF' : '#DBEAFE' }}>
@@ -231,6 +231,7 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
       )}
 
       {/* Table / empty state */}
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       {initialProfiles.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="science" size={36} color="#D1D5DB" />
@@ -286,6 +287,7 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

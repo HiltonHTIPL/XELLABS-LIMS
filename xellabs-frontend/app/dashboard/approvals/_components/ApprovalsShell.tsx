@@ -133,10 +133,12 @@ export default function ApprovalsShell({ initialApprovals }: { initialApprovals:
   }
 
   return (
-    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flexShrink: 0 }}>
       <PageHeader
         title="Approvals"
         subtitle="Review and sign pending approval requests"
+        backHref="/dashboard/admin"
       />
 
       {toast && (
@@ -152,8 +154,9 @@ export default function ApprovalsShell({ initialApprovals }: { initialApprovals:
           {toast.msg}
         </div>
       )}
+      </div>
 
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex items-center gap-2 mb-4" style={{ flexShrink: 0 }}>
         {FILTERS.map(f => (
           <button
             key={f.value}
@@ -170,6 +173,7 @@ export default function ApprovalsShell({ initialApprovals }: { initialApprovals:
         ))}
       </div>
 
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       <Card pad={false}>
         {filtered.length === 0 ? (
           <EmptyState icon="fact_check" title="No approvals" sub="There are no approval requests matching this filter." />
@@ -221,6 +225,7 @@ export default function ApprovalsShell({ initialApprovals }: { initialApprovals:
           </div>
         )}
       </Card>
+      </div>
 
       {modal && (
         <SignatureModal

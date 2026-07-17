@@ -27,9 +27,9 @@ export default function TenantManagementShell({ tenants }: { tenants: TenantDeta
   }, [state.success])
 
   return (
-    <div className="p-5 space-y-4">
+    <div className="p-5" style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between mb-4" style={{ flexShrink: 0 }}>
         <div>
           <h1 className="text-lg font-semibold" style={{ color: '#111827' }}>Tenant Management</h1>
           <p className="text-xs" style={{ color: '#6B7280' }}>
@@ -48,7 +48,7 @@ export default function TenantManagementShell({ tenants }: { tenants: TenantDeta
 
       {/* Create form */}
       {showForm && (
-        <div className="bg-white rounded-xl p-4" style={{ border: '1px solid #E8EAF2' }}>
+        <div className="bg-white rounded-xl p-4 mb-4" style={{ border: '1px solid #E8EAF2', flexShrink: 0 }}>
           <h2 className="text-xs font-semibold mb-3" style={{ color: '#374151' }}>Create Organisation</h2>
 
           {state.message && !state.success && (
@@ -108,6 +108,7 @@ export default function TenantManagementShell({ tenants }: { tenants: TenantDeta
       )}
 
       {/* Tenant table */}
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
         <table className="w-full">
           <thead>
@@ -126,6 +127,7 @@ export default function TenantManagementShell({ tenants }: { tenants: TenantDeta
             )}
           </tbody>
         </table>
+      </div>
       </div>
     </div>
   )

@@ -133,6 +133,10 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
   // (/dashboard/samples-overview/new?batch=<uid>) — only applied to the first
   // sample tab, not every subsequent "Add Another Sample" tab.
   const initialBatchUid = useSearchParams().get('batch') ?? ''
+  // Pre-select a Client when arriving from that client's Samples Overview
+  // page "New Sample" button (/dashboard/samples-overview/new?client=<senaite-uid>)
+  // — only applied to the first sample tab, same as initialBatchUid above.
+  const initialClientUid = useSearchParams().get('client') ?? ''
 
   // Sample Types valid for a given template — filtered down to the one matching
   // the template's SENAITE sample type via senaite_uid. Falls back to the full
@@ -379,6 +383,16 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
     const batch = batches.find(b => b.uid === initialBatchUid)
     if (!batch?.ClientUID) return
     const client = clients.find(c => c.senaite_uid === batch.ClientUID)
+    if (client) handleClientChange(String(client.id))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Arrived via a Client's "Client ID" link on Samples Overview
+  // (?client=<senaite-uid>) — auto-fill the Client (and its contact/CC
+  // cascade) the same way. Skipped if a Batch already pre-filled the client.
+  useEffect(() => {
+    if (!initialClientUid || initialBatchUid) return
+    const client = clients.find(c => c.senaite_uid === initialClientUid)
     if (client) handleClientChange(String(client.id))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

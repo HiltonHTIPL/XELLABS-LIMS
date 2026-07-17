@@ -1,5 +1,6 @@
 'use client'
 import { useState, useRef, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import {
   lookupChainOfCustody, resolveStorageLabel, assignSampleByLabel,
   type ChainOfCustodyResult, type CocSample, type CocEvent, type ResolvedLabel,
@@ -230,6 +231,9 @@ export default function ChainOfCustodyPage() {
         {/* Breadcrumb + actions */}
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-1.5 text-xs" style={{ color: '#6B7280' }}>
+            <Link href="/dashboard/admin" className="p-1 rounded-lg hover:bg-gray-100 shrink-0 mr-0.5" style={{ border: '1px solid #E8EAF2' }}>
+              <MI name="arrow_back" size={14} color="#6B7280" />
+            </Link>
             <span style={{ cursor: 'pointer', color: '#0154FC' }}>Samples</span>
             {sample && <><MI name="chevron_right" size={14} color="#9CA3AF" />
               <span style={{ cursor: 'pointer', color: '#0154FC' }}>{sampleDisplayId(sample)}</span></>}

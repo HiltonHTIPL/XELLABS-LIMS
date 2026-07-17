@@ -2,6 +2,7 @@
 // XelLabs shared UI kit — presentational primitives for the Product Page_v3 design.
 // Every dashboard page composes these; do not fork per-page styling.
 import React, { useState } from 'react'
+import Link from 'next/link'
 import { T, CHIP_TONES, ChipTone, statusTone } from './tokens'
 
 export { T, CHIP_TONES, statusTone }
@@ -17,12 +18,19 @@ export function MI({ name, size = 16, color, className }: { name: string; size?:
 
 /* ---------------------------------- Page header ---------------------------------- */
 
-export function PageHeader({ title, subtitle, right }: { title: string; subtitle?: string; right?: React.ReactNode }) {
+export function PageHeader({ title, subtitle, right, backHref }: { title: string; subtitle?: string; right?: React.ReactNode; backHref?: string }) {
   return (
     <div className="flex items-end justify-between gap-4 mb-5 flex-wrap">
-      <div>
-        <h1 style={{ fontSize: 26, fontWeight: 800, color: T.heading, letterSpacing: '-0.02em' }}>{title}</h1>
-        {subtitle && <p className="mt-1" style={{ fontSize: 13, color: T.muted }}>{subtitle}</p>}
+      <div className="flex items-end gap-3">
+        {backHref && (
+          <Link href={backHref} className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0 mb-0.5" style={{ border: '1px solid #E8EAF2' }}>
+            <MI name="arrow_back" size={16} color="#6B7280" />
+          </Link>
+        )}
+        <div>
+          <h1 style={{ fontSize: 26, fontWeight: 800, color: T.heading, letterSpacing: '-0.02em' }}>{title}</h1>
+          {subtitle && <p className="mt-1" style={{ fontSize: 13, color: T.muted }}>{subtitle}</p>}
+        </div>
       </div>
       {right && <div className="flex items-center gap-2 shrink-0">{right}</div>}
     </div>

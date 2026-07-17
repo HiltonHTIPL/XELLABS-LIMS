@@ -629,7 +629,7 @@ export default function ReportsShell({
   const inputBase: React.CSSProperties = { fontSize: 12, padding: '6px 10px', borderRadius: 8, border: '1px solid #E5E7EB', color: '#374151', backgroundColor: '#fff', outline: 'none' }
 
   return (
-    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
       {/* PDF Viewer */}
       {previewReport && (
@@ -641,7 +641,7 @@ export default function ReportsShell({
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4" style={{ flexShrink: 0 }}>
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Reports</h1>
           <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Generate and manage laboratory reports and Certificates of Analysis</p>
@@ -671,7 +671,7 @@ export default function ReportsShell({
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-4 gap-3 mb-4" style={{ flexShrink: 0 }}>
         {[
           { label: 'Total Reports', value: reports.length, icon: 'description',  bg: '#DBEAFE', color: '#1D4ED8' },
           { label: 'COA Reports',   value: coaCount,       icon: 'verified',     bg: '#DCFCE7', color: '#166534' },
@@ -691,7 +691,7 @@ export default function ReportsShell({
       </div>
 
       {/* Filters bar */}
-      <div className="bg-white rounded-xl px-4 py-3 mb-3 flex flex-wrap items-center gap-2" style={{ border: '1px solid #E8EAF2' }}>
+      <div className="bg-white rounded-xl px-4 py-3 mb-3 flex flex-wrap items-center gap-2" style={{ border: '1px solid #E8EAF2', flexShrink: 0 }}>
         <MI name="search" size={16} color="#9CA3AF" />
         <input
           type="text"
@@ -748,6 +748,7 @@ export default function ReportsShell({
             backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2',
             border: `1px solid ${toast.ok ? '#93C5FD' : '#FECACA'}`,
             color: toast.ok ? '#0154FC' : '#991B1B',
+            flexShrink: 0,
           }}>
           <MI name={toast.ok ? 'check_circle' : 'error'} size={13} color={toast.ok ? '#0154FC' : '#DC2626'} />
           {toast.msg}
@@ -756,7 +757,7 @@ export default function ReportsShell({
 
       {/* Bulk action bar */}
       {selected.size > 0 && (
-        <div className="mb-3 flex items-center gap-3 px-4 py-2.5 rounded-xl" style={{ backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE' }}>
+        <div className="mb-3 flex items-center gap-3 px-4 py-2.5 rounded-xl" style={{ backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE', flexShrink: 0 }}>
           <span style={{ fontSize: 12, color: '#1D4ED8', fontWeight: 600 }}>{selected.size} selected</span>
           <button
             onClick={handleBulkGenerate}
@@ -788,6 +789,7 @@ export default function ReportsShell({
       )}
 
       {/* Table */}
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       {filtered.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-16" style={{ border: '1px solid #E8EAF2' }}>
           <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3" style={{ backgroundColor: '#EFF6FF' }}>
@@ -864,6 +866,7 @@ export default function ReportsShell({
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

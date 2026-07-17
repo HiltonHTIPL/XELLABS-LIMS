@@ -20,10 +20,10 @@ const STATUS_BADGE: Record<string, { bg: string; color: string; label: string }>
   rejected:         { bg: '#FEE2E2', color: '#991B1B', label: 'Rejected' },
 }
 
-export default function LabWorksheetsShell({ initialWorksheets }: { initialWorksheets: EnrichedWorksheet[] }) {
+export default function LabWorksheetsShell({ initialWorksheets: worksheets }: { initialWorksheets: EnrichedWorksheet[] }) {
   const router = useRouter()
-  const [worksheets, setWorksheets] = useState(initialWorksheets)
   const [busy, startTransition] = useTransition()
+  const [refreshing, startRefresh] = useTransition()
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
 
   function handleCreate() {
@@ -40,36 +40,51 @@ export default function LabWorksheetsShell({ initialWorksheets }: { initialWorks
     })
   }
 
+  function handleRefresh() {
+    startRefresh(() => { router.refresh() })
+  }
+
   const th = { padding: '10px 14px', textAlign: 'left' as const, fontSize: 12, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: '0.05em', borderBottom: '1px solid #E5E7EB', whiteSpace: 'nowrap' as const }
   const td = { padding: '12px 14px', fontSize: 13, color: '#374151', borderBottom: '1px solid #F3F4F6' }
 
   return (
-    <div style={{ padding: 24, minHeight: '100%', backgroundColor: '#F9FAFB' }}>
+    <div style={{ padding: 24, height: '100%', backgroundColor: '#F9FAFB', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 12, flexShrink: 0 }}>
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em', margin: 0 }}>Worksheets</h1>
           <p style={{ fontSize: 13, color: '#6B7280', margin: '4px 0 0' }}>Create and manage worksheets for analysis result entry</p>
         </div>
-        <button
-          onClick={handleCreate}
-          disabled={busy}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 20px', borderRadius: 8, border: 'none', backgroundColor: '#0154FC', color: '#fff', fontSize: 13, fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1 }}>
-          <MI name="add" size={16} color="#fff" />
-          {busy ? 'Creating…' : 'New Worksheet'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            title="Refresh worksheet list"
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', borderRadius: 8, border: '1px solid #D1D5DB', backgroundColor: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: refreshing ? 'not-allowed' : 'pointer', opacity: refreshing ? 0.7 : 1 }}>
+            <MI name="refresh" size={16} color="#374151" />
+            {refreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
+          <button
+            onClick={handleCreate}
+            disabled={busy}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 20px', borderRadius: 8, border: 'none', backgroundColor: '#0154FC', color: '#fff', fontSize: 13, fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1 }}>
+            <MI name="add" size={16} color="#fff" />
+            {busy ? 'Creating…' : 'New Worksheet'}
+          </button>
+        </div>
       </div>
 
       {/* Toast */}
       {toast && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', borderRadius: 8, marginBottom: 16, backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', border: `1px solid ${toast.ok ? '#93C5FD' : '#FECACA'}`, fontSize: 13, color: toast.ok ? '#0154FC' : '#991B1B' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', borderRadius: 8, marginBottom: 16, backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', border: `1px solid ${toast.ok ? '#93C5FD' : '#FECACA'}`, fontSize: 13, color: toast.ok ? '#0154FC' : '#991B1B', flexShrink: 0 }}>
           <MI name={toast.ok ? 'check_circle' : 'error_outline'} size={16} color={toast.ok ? '#0154FC' : '#991B1B'} />
           {toast.msg}
         </div>
       )}
 
       {/* Worksheets table */}
-      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #E8EAF2', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #E8EAF2', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
         {worksheets.length === 0 ? (
           <div style={{ padding: 40, textAlign: 'center', color: '#9CA3AF' }}>
             <MI name="assignment" size={48} color="#D1D5DB" />
@@ -117,6 +132,7 @@ export default function LabWorksheetsShell({ initialWorksheets }: { initialWorks
             </table>
           </div>
         )}
+        </div>
       </div>
     </div>
   )

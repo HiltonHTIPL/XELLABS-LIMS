@@ -159,6 +159,37 @@ export async function createInstrument(_state: InstrumentFormState, formData: Fo
   } catch (e) { return { message: String(e) } }
 }
 
+/** Inline create from worksheet assignment — returns the created row for immediate select. */
+export async function createInstrumentQuick(
+  name: string,
+  description = '',
+  extras?: Record<string, string>,
+): Promise<{ ok: boolean; message: string; item?: { id: number; name: string; code: string; description: string } }> {
+  const trimmed = name.trim()
+  const instrumentId = (extras?.instrument_id ?? '').trim()
+  if (!trimmed) return { ok: false, message: 'Name is required.' }
+  if (!instrumentId) return { ok: false, message: 'Instrument ID is required.' }
+  try {
+    const res = await djangoFetch('/api/instruments/instruments/', {
+      method: 'POST',
+      body: JSON.stringify({ name: trimmed, instrument_id: instrumentId, description: description.trim(), status: 'active' }),
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok) {
+      const firstErr = Object.values(data)[0]
+      const msg = Array.isArray(firstErr) ? String(firstErr[0]) : (data.detail as string) ?? 'Failed to create instrument.'
+      return { ok: false, message: msg }
+    }
+    revalidatePath(REVALIDATE_PATH)
+    revalidatePath('/dashboard/instrument-maintenance')
+    return {
+      ok: true,
+      message: 'Added.',
+      item: { id: Number(data.id), name: String(data.name), code: String(data.instrument_id ?? instrumentId), description: String(data.description ?? '') },
+    }
+  } catch (e) { return { ok: false, message: String(e) } }
+}
+
 export async function updateInstrument(id: number, _state: InstrumentFormState, formData: FormData): Promise<InstrumentFormState> {
   const errors = validate(formData)
   if (Object.keys(errors).length) return { errors }

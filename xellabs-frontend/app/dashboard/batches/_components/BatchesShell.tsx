@@ -135,9 +135,9 @@ export default function BatchesShell({
   }
 
   return (
-    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-3" style={{ flexShrink: 0 }}>
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Batches</h1>
           <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Group samples into batches for tracking, billing, and reporting</p>
@@ -160,8 +160,8 @@ export default function BatchesShell({
       </div>
 
       {toast && (
-        <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
-          style={{ backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', border: `1px solid ${toast.ok ? '#93C5FD' : '#FECACA'}`, color: toast.ok ? '#0154FC' : '#991B1B' }}>
+        <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg text-xs" style={{ flexShrink: 0,
+          backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', border: `1px solid ${toast.ok ? '#93C5FD' : '#FECACA'}`, color: toast.ok ? '#0154FC' : '#991B1B' }}>
           <MI name={toast.ok ? 'check_circle' : 'error'} size={13} color={toast.ok ? '#0154FC' : '#DC2626'} />
           {toast.msg}
         </div>
@@ -251,6 +251,7 @@ export default function BatchesShell({
       </div>
 
       {/* Table / empty state */}
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       {batches.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="layers" size={36} color="#D1D5DB" />
@@ -356,6 +357,7 @@ export default function BatchesShell({
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

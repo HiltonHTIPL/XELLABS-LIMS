@@ -441,8 +441,9 @@ export default function AuditTrailShell({
   const criticalSecurity = initialSecurityEvents.filter(e => e.severity === 'critical' || e.severity === 'high').length
 
   return (
-    <div>
-      <PageHeader title="Audit Trail" subtitle="Read-only compliance log of system activity, logins, security events, and record history" />
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flexShrink: 0 }}>
+      <PageHeader title="Audit Trail" subtitle="Read-only compliance log of system activity, logins, security events, and record history" backHref="/dashboard/admin" />
 
       <div className="grid grid-cols-4 gap-3 mb-5">
         <StatCard icon="fact_check" label="Audit Events" value={initialAuditEvents.length} />
@@ -457,13 +458,16 @@ export default function AuditTrailShell({
         <TabBtn active={tab === 'security'} onClick={() => setTab('security')} icon="gpp_maybe" label="Security Events" count={initialSecurityEvents.length} />
         <TabBtn active={tab === 'versions'} onClick={() => setTab('versions')} icon="history" label="Record Versions" count={initialRecordVersions.length} />
       </div>
+      </div>
 
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       <Card pad={false} bodyClassName="p-4">
         {tab === 'events' && <AuditEventsTable events={initialAuditEvents} />}
         {tab === 'logins' && <LoginEventsTable events={initialLoginEvents} />}
         {tab === 'security' && <SecurityEventsTable events={initialSecurityEvents} />}
         {tab === 'versions' && <RecordVersionsTable versions={initialRecordVersions} />}
       </Card>
+      </div>
     </div>
   )
 }

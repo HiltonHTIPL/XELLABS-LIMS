@@ -145,9 +145,9 @@ export default function SampleReportShell({ initialSampleId }: { initialSampleId
   }, [initialSampleId])
 
   return (
-    <div style={{ padding: 20, backgroundColor: T.pageBg, minHeight: '100%' }}>
+    <div style={{ padding: 20, backgroundColor: T.pageBg, height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <style>{PRINT_CSS}</style>
-      <div className="no-print">
+      <div className="no-print" style={{ flexShrink: 0 }}>
         <PageHeader
           title="Multi-Instrument Sample Report"
           subtitle="One printable report for a sample: every result across instruments, with source instrument and import date per row."
@@ -180,19 +180,21 @@ export default function SampleReportShell({ initialSampleId }: { initialSampleId
         </Card>
       </div>
 
-      {busy && !report && (
-        <Card><div className="flex items-center gap-2" style={{ color: T.muted, fontSize: 13 }}>
-          <MI name="hourglass_top" size={16} color={T.muted} /> Loading report…
-        </div></Card>
-      )}
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+        {busy && !report && (
+          <Card><div className="flex items-center gap-2" style={{ color: T.muted, fontSize: 13 }}>
+            <MI name="hourglass_top" size={16} color={T.muted} /> Loading report…
+          </div></Card>
+        )}
 
-      {report && (
-        <Card><ReportBody report={report} /></Card>
-      )}
+        {report && (
+          <Card><ReportBody report={report} /></Card>
+        )}
 
-      {!report && !busy && !error && (
-        <Card><EmptyState icon="summarize" title="Enter a sample ID" sub="Load a sample to see all instrument results in one report" /></Card>
-      )}
+        {!report && !busy && !error && (
+          <Card><EmptyState icon="summarize" title="Enter a sample ID" sub="Load a sample to see all instrument results in one report" /></Card>
+        )}
+      </div>
     </div>
   )
 }

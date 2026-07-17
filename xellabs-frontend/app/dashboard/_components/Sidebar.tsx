@@ -45,7 +45,7 @@ export const NAV: NavEntry[] = [
     roles: ['admin', 'lab_manager', 'analyst'],
     children: [
       { label: 'Test Schedule', href: '/dashboard/schedule', icon: 'event_note', roles: ['admin', 'lab_manager', 'analyst'] },
-      { label: 'Inventory Dashboard', href: '/dashboard/inventory-dashboard', icon: 'monitoring', roles: ['admin', 'lab_manager', 'analyst'] },
+      { label: 'Inventory Dashboard', href: '/dashboard/inventory-dashboard', icon: 'insert_chart', roles: ['admin', 'lab_manager', 'analyst'] },
       { label: 'Reagents & Standards', href: '/dashboard/inventory-items', icon: 'biotech', roles: ['admin', 'lab_manager', 'analyst'] },
       { label: 'Lots & Transactions', href: '/dashboard/inventory-lots', icon: 'inventory', roles: ['admin', 'lab_manager', 'analyst'] },
       { label: 'Instrument Maintenance', href: '/dashboard/instrument-maintenance', icon: 'build', roles: ['admin', 'lab_manager', 'analyst'] },
@@ -98,9 +98,9 @@ export default function Sidebar({ onToggle, role, reportDraftCount, isSuperuser 
   }
 
   const linkStyle = (active: boolean): React.CSSProperties => ({
-    display: 'flex', alignItems: 'center', gap: 10, padding: '7px 12px',
+    display: 'flex', alignItems: 'flex-start', gap: 10, padding: '7px 12px',
     marginBottom: 2, borderRadius: 10, fontSize: 13, fontWeight: 500,
-    textDecoration: 'none', transition: 'all 0.15s',
+    textDecoration: 'none', transition: 'all 0.15s', lineHeight: 1.3,
     ...(active
       ? { backgroundColor: T.primary, color: '#fff', boxShadow: '0 4px 10px rgba(37,99,235,0.35)' }
       : { color: 'rgba(255,255,255,0.72)' }),
@@ -126,7 +126,9 @@ export default function Sidebar({ onToggle, role, reportDraftCount, isSuperuser 
               const active = anyChildActive || pathname === entry.href || pathname.startsWith(entry.href + '/')
               return (
                 <Link key={entry.group} href={entry.href} style={linkStyle(active)}>
-                  <MI name={entry.icon} size={16} />
+                  <span style={{ flexShrink: 0, display: 'flex' }}>
+                    <MI name={entry.icon} size={16} />
+                  </span>
                   <span>{entry.group}</span>
                 </Link>
               )
@@ -163,7 +165,9 @@ export default function Sidebar({ onToggle, role, reportDraftCount, isSuperuser 
                       const active = child.exact ? pathname === child.href : (pathname === child.href || pathname.startsWith(child.href + '/'))
                       return (
                         <Link key={child.href} href={child.href} style={linkStyle(active)}>
-                          <MI name={child.icon} size={15} />
+                          <span style={{ flexShrink: 0, marginTop: 1, display: 'flex' }}>
+                            <MI name={child.icon} size={15} />
+                          </span>
                           <span>{child.label}</span>
                         </Link>
                       )

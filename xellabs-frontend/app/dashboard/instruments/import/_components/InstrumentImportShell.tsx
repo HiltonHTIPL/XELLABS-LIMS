@@ -131,7 +131,8 @@ export default function InstrumentImportShell({ instruments, history }: {
   const validCount = preview?.summary?.valid ?? 0
 
   return (
-    <div style={{ padding: 20, backgroundColor: T.pageBg, minHeight: '100%' }}>
+    <div style={{ padding: 20, backgroundColor: T.pageBg, height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flexShrink: 0 }}>
       <PageHeader
         title="Import Instrument Results"
         subtitle="Upload an instrument export, map rows to sample records, then commit. The original file is stored as the backup of record."
@@ -139,6 +140,9 @@ export default function InstrumentImportShell({ instruments, history }: {
       />
 
       {error && <Banner tone="error">{error}</Banner>}
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
 
       {step === 'select' && (
         <>
@@ -280,6 +284,7 @@ export default function InstrumentImportShell({ instruments, history }: {
         <Card title="Import history" icon="history">
           <ImportHistory imports={history} instruments={instruments} />
         </Card>
+      </div>
       </div>
     </div>
   )

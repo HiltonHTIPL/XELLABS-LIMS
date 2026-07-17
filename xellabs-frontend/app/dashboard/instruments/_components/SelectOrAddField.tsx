@@ -219,9 +219,11 @@ export default function SelectOrAddField({
 
   return (
     <div>
-      <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
-        {label}{required && <span style={{ color: '#EF4444' }}> *</span>}
-      </label>
+      {label && (
+        <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
+          {label}{required && <span style={{ color: '#EF4444' }}> *</span>}
+        </label>
+      )}
       {tip && <p style={{ fontSize: 10, color: '#9CA3AF', marginBottom: 4 }}>{tip}</p>}
       <select
         name={name}

@@ -3,17 +3,24 @@ import { getAnalysisRequests } from '@/app/actions/analysis-requests'
 import { getAnalysisServices } from '@/app/actions/samples'
 import { getInstrumentOptions } from '@/app/actions/instrument-maintenance'
 import { getMethods } from '@/app/actions/methods'
+import { getInstrumentTypes, getInstrumentLocations, getManufacturers, getSuppliers } from '@/app/actions/instrument-workflows'
+import { getCalculations } from '@/app/actions/calculations'
 import LabWorksheetDetail from './_components/LabWorksheetDetail'
 
 export default async function LabWorksheetDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const [worksheet, ars, services, users, instruments, methods] = await Promise.all([
+  const [worksheet, ars, services, users, instruments, methods, instrumentTypes, instrumentLocations, manufacturers, suppliers, calculations] = await Promise.all([
     getDjangoWorksheet(Number(id)),
     getAnalysisRequests(),
     getAnalysisServices(),
     getAssignableUsers(),
     getInstrumentOptions(),
     getMethods(),
+    getInstrumentTypes(),
+    getInstrumentLocations(),
+    getManufacturers(),
+    getSuppliers(),
+    getCalculations(),
   ])
 
   if (!worksheet) {
@@ -24,5 +31,11 @@ export default async function LabWorksheetDetailPage({ params }: { params: Promi
     )
   }
 
-  return <LabWorksheetDetail worksheet={worksheet} ars={ars} services={services} users={users} instruments={instruments} methods={methods} />
+  return (
+    <LabWorksheetDetail
+      worksheet={worksheet} ars={ars} services={services} users={users} instruments={instruments} methods={methods}
+      instrumentTypes={instrumentTypes} instrumentLocations={instrumentLocations} manufacturers={manufacturers}
+      suppliers={suppliers} calculations={calculations}
+    />
+  )
 }

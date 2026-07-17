@@ -1,6 +1,7 @@
 'use client'
 import { useState, useActionState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 // Reusable, config-driven CRUD shell for SENAITE "setup" reference data pages.
 // One component drives every simple/medium Administration list (DRY): each page
@@ -105,9 +106,14 @@ export default function AdminRefShell({
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div className="flex items-center justify-between mb-3" style={{ flexShrink: 0 }}>
-        <div>
-          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>{title}</h1>
-          <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>{subtitle}</p>
+        <div className="flex items-center gap-3">
+          <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
+            <MI name="arrow_back" size={16} color="#6B7280" />
+          </Link>
+          <div>
+            <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>{title}</h1>
+            <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>{subtitle}</p>
+          </div>
         </div>
         <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
           <MI name="add" size={15} color="#fff" /> New {singularLabel}

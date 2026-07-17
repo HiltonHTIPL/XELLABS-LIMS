@@ -62,10 +62,12 @@ export default function StorageListShell({ initialStorageLocations }: { initialS
   }
 
   return (
-    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flexShrink: 0 }}>
       <PageHeader
         title="Storage List"
         subtitle="Storage locations — imported or managed via Master Data Import"
+        backHref="/dashboard/admin"
         right={
           <Link
             href="/dashboard/master-data-import"
@@ -78,6 +80,7 @@ export default function StorageListShell({ initialStorageLocations }: { initialS
           </Link>
         }
       />
+      </div>
 
       {toast && (
         <div
@@ -86,6 +89,7 @@ export default function StorageListShell({ initialStorageLocations }: { initialS
             fontSize: 13, padding: '8px 12px', borderRadius: 8,
             color: toast.ok ? T.success : T.danger,
             backgroundColor: toast.ok ? '#ECFDF5' : '#FEF2F2',
+            flexShrink: 0,
           }}
         >
           <MI name={toast.ok ? 'check_circle' : 'error'} size={16} color={toast.ok ? T.success : T.danger} />
@@ -93,13 +97,14 @@ export default function StorageListShell({ initialStorageLocations }: { initialS
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 mb-4" style={{ maxWidth: 480 }}>
+      <div className="grid grid-cols-2 gap-3 mb-4" style={{ maxWidth: 480, flexShrink: 0 }}>
         <StatCard icon="inventory_2" label="Total Storage Locations" value={initialStorageLocations.length} />
         <StatCard icon="check_circle" iconColor={T.success} iconBg="#ECFDF5" label="Active" value={activeCount} />
       </div>
 
-      <Card>
-        <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
+      <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <Card className="flex flex-col flex-1 min-h-0" bodyClassName="p-4 flex flex-col flex-1 min-h-0 overflow-hidden">
+        <div className="mb-3 flex items-center justify-between gap-3 flex-wrap" style={{ flexShrink: 0 }}>
           <input
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1) }}
@@ -120,6 +125,7 @@ export default function StorageListShell({ initialStorageLocations }: { initialS
           </Btn>
         </div>
 
+        <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
         {pageRows.length === 0 ? (
           <EmptyState icon="inventory_2" title="No storage locations found" sub={search ? 'Try a different search.' : 'Import storage locations from Master Data Import to see them here.'} />
         ) : (
@@ -155,7 +161,9 @@ export default function StorageListShell({ initialStorageLocations }: { initialS
             </div>
           </>
         )}
+        </div>
       </Card>
+      </div>
 
       {confirmOpen && (
         <ConfirmModal

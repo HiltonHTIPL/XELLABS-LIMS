@@ -1,6 +1,7 @@
 'use client'
 import { useState, useActionState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { createContainerType, updateContainerType, type ContainerTypeFormState } from '@/app/actions/container-types'
 import type { SenaiteContainerType } from '@/app/lib/senaite'
 
@@ -61,12 +62,17 @@ export default function ContainerTypesShell({ initialContainerTypes }: { initial
   function closeForm() { setShowForm(false); setEditing(null) }
 
   return (
-    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-      <div className="flex items-center justify-between mb-3">
-        <div>
-          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Container Types</h1>
-          <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Manage sample container types</p>
+      <div className="flex items-center justify-between mb-3" style={{ flexShrink: 0 }}>
+        <div className="flex items-center gap-3">
+          <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
+            <MI name="arrow_back" size={16} color="#6B7280" />
+          </Link>
+          <div>
+            <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Container Types</h1>
+            <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Manage sample container types</p>
+          </div>
         </div>
         <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
           <MI name="add" size={15} color="#fff" /> New Container Type
@@ -122,13 +128,14 @@ export default function ContainerTypesShell({ initialContainerTypes }: { initial
       </div>
 
       {state.success && (
-        <div className="mb-3 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#DBEAFE', border: '1px solid #93C5FD', color: '#0154FC' }}>
+        <div className="mb-3 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#DBEAFE', border: '1px solid #93C5FD', color: '#0154FC', flexShrink: 0 }}>
           <div className="flex items-center gap-2">
             <MI name="check_circle" size={13} color="#0154FC" /><span>{state.message}</span>
           </div>
         </div>
       )}
 
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       {initialContainerTypes.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="inventory_2" size={36} color="#D1D5DB" />
@@ -170,6 +177,7 @@ export default function ContainerTypesShell({ initialContainerTypes }: { initial
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

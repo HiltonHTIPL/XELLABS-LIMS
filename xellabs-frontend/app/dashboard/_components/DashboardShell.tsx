@@ -180,12 +180,17 @@ export default function DashboardShell({ children, initials, displayName, roleLa
           {/* Search — opens the universal command palette (⌘K / Ctrl+K) */}
           <button
             onClick={() => setPaletteOpen(true)}
-            className="flex items-center flex-1 max-w-md gap-2 px-3 py-1.5 rounded-lg ml-1"
+            className="flex items-center flex-1 min-w-0 max-w-md gap-2 px-3 py-1.5 rounded-lg ml-1"
             style={{ backgroundColor: '#F3F4F6', border: '1px solid #E5E7EB', cursor: 'pointer' }}
           >
-            <span className="material-icons" style={{ fontSize: 16, color: '#9CA3AF' }}>search</span>
-            <span className="flex-1 text-left text-sm" style={{ color: '#9CA3AF' }}>Search samples, IDs, projects, users...</span>
-            <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: '#E5E7EB', color: '#9CA3AF' }}>⌘ K</span>
+            <span className="material-icons shrink-0" style={{ fontSize: 16, color: '#9CA3AF' }}>search</span>
+            <span
+              className="flex-1 min-w-0 text-left text-sm"
+              style={{ color: '#9CA3AF', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}
+            >
+              Search samples, IDs, projects, users...
+            </span>
+            <span className="text-xs px-1.5 py-0.5 rounded shrink-0" style={{ backgroundColor: '#E5E7EB', color: '#9CA3AF' }}>⌘ K</span>
           </button>
           <CommandPalette role={role} isSuperuser={isSuperuser} open={paletteOpen} onClose={() => setPaletteOpen(false)} />
 
@@ -273,19 +278,20 @@ export default function DashboardShell({ children, initials, displayName, roleLa
           )}
 
           {/* User dropdown */}
-          <div ref={userMenuRef} className="relative pl-3" style={{ borderLeft: '1px solid #E5E7EB' }}>
+          <div ref={userMenuRef} className="relative pl-3 shrink-0" style={{ borderLeft: '1px solid #E5E7EB' }}>
             <button
-              className="flex items-center gap-2"
+              className="flex items-center gap-2.5"
               onClick={() => setUserMenuOpen(o => !o)}
             >
-              <div className="text-right">
-                <div className="flex items-center gap-0.5">
-                  <p className="text-xs font-semibold" style={{ color: '#111827' }}>{displayName}</p>
+              <div className="flex flex-col items-center justify-center" style={{ textAlign: 'center', gap: 1 }}>
+                <div className="flex items-center gap-1">
+                  <p className="text-xs font-semibold" style={{ color: '#111827', margin: 0, lineHeight: 1.2 }}>{displayName}</p>
                   <span
                     className="material-icons"
                     style={{
-                      fontSize: 16,
+                      fontSize: 15,
                       color: '#9CA3AF',
+                      lineHeight: 1,
                       transition: 'transform 0.2s',
                       transform: userMenuOpen ? 'rotate(180deg)' : 'rotate(0deg)',
                     }}
@@ -293,7 +299,7 @@ export default function DashboardShell({ children, initials, displayName, roleLa
                     keyboard_arrow_down
                   </span>
                 </div>
-                <p style={{ fontSize: 10, color: '#9CA3AF' }}>{roleLabel}</p>
+                <p style={{ fontSize: 10, color: '#9CA3AF', margin: 0, lineHeight: 1.2, textAlign: 'center' }}>{roleLabel}</p>
               </div>
               <div
                 className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"

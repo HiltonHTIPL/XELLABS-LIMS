@@ -153,7 +153,8 @@ export default function ScheduleShell({
   const overdue = schedule.filter(isOverdue).length
 
   return (
-    <div style={{ padding: 20, backgroundColor: T.pageBg, minHeight: '100%' }}>
+    <div style={{ padding: 20, backgroundColor: T.pageBg, height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flexShrink: 0 }}>
       <PageHeader
         title="Test Schedule"
         subtitle="Upcoming and ongoing analyses, grouped by their target date"
@@ -187,7 +188,9 @@ export default function ScheduleShell({
           </button>
         ))}
       </div>
+      </div>
 
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       {groups.length === 0 ? (
         <Card>
           <EmptyState icon="event_busy" title="No analyses scheduled"
@@ -212,6 +215,7 @@ export default function ScheduleShell({
           ))}
         </div>
       )}
+      </div>
     </div>
   )
 }

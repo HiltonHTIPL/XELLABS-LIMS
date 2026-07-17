@@ -444,7 +444,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
         {/* ── STATIC: table toolbar ── */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexShrink: 0, flexWrap: 'wrap', gap: 8 }}>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => router.push('/dashboard/samples-overview/new')}
+            <button onClick={() => router.push(filterClient ? `/dashboard/samples-overview/new?client=${filterClient}` : '/dashboard/samples-overview/new')}
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 7, border: 'none', background: '#2563EB', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
               <MI name="add" size={16} /><span>New Sample</span>
             </button>

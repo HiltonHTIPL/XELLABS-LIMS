@@ -1,6 +1,7 @@
 'use client'
 import { useState, useActionState, useTransition, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import {
   createAnalysisSpecification,
   updateAnalysisSpecification,
@@ -255,11 +256,16 @@ export default function SpecificationsShell({ initialSpecifications, services, s
   }
 
   return (
-    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
-      <div className="flex items-center justify-between mb-5">
-        <div>
-          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Specifications</h1>
-          <p className="mt-1" style={{ fontSize: 13, color: '#6B7280' }}>Define pass/fail ranges per test and sample type</p>
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div className="flex items-center justify-between mb-5" style={{ flexShrink: 0 }}>
+        <div className="flex items-center gap-3">
+          <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
+            <MI name="arrow_back" size={16} color="#6B7280" />
+          </Link>
+          <div>
+            <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Specifications</h1>
+            <p className="mt-1" style={{ fontSize: 13, color: '#6B7280' }}>Define pass/fail ranges per test and sample type</p>
+          </div>
         </div>
         <button onClick={openCreate} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#2563EB', border: 'none', cursor: 'pointer' }}>
           <MI name="add" size={15} color="#fff" /> New Specification
@@ -267,14 +273,14 @@ export default function SpecificationsShell({ initialSpecifications, services, s
       </div>
 
       {toast && (
-        <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
-          style={{ backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', border: toast.ok ? '1px solid #93C5FD' : '1px solid #FECACA', color: toast.ok ? '#0154FC' : '#991B1B' }}>
+        <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg text-xs" style={{ flexShrink: 0,
+          backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', border: toast.ok ? '1px solid #93C5FD' : '1px solid #FECACA', color: toast.ok ? '#0154FC' : '#991B1B' }}>
           <MI name={toast.ok ? 'check_circle' : 'error'} size={13} color={toast.ok ? '#0154FC' : '#DC2626'} />
           {toast.msg}
         </div>
       )}
 
-      <div className="flex items-center gap-2 mb-3">
+      <div className="flex items-center gap-2 mb-3" style={{ flexShrink: 0 }}>
         <select value={filterSampleType} onChange={e => setFilterSampleType(e.target.value)}
           className="px-3 py-1.5 text-xs rounded-lg outline-none bg-white" style={{ border: '1px solid #D1D5DB', color: '#374151' }}>
           <option value="">All Sample Types</option>
@@ -294,6 +300,7 @@ export default function SpecificationsShell({ initialSpecifications, services, s
         />
       )}
 
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       {filtered.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2', borderRadius: 14 }}>
           <MI name="rule" size={36} color="#D1D5DB" />
@@ -350,6 +357,7 @@ export default function SpecificationsShell({ initialSpecifications, services, s
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

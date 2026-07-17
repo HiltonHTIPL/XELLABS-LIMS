@@ -1,5 +1,6 @@
 'use client'
 import { useState, useCallback, useEffect } from 'react'
+import Link from 'next/link'
 import { getStaffUsers, toggleStaffUserActive, toggleSenaiteRole, type StaffUser } from '@/app/actions/users'
 import { getSenaiteGroups, deleteSenaiteGroup, toggleSenaiteGroupRole, type SenaiteGroup } from '@/app/actions/groups'
 import { STAFF_ROLE_LABELS, SENAITE_USER_ROLES } from '@/app/lib/roles'
@@ -95,11 +96,16 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: '#F5F6FA' }}>
       <div className="flex items-center justify-between px-5 py-3" style={{ backgroundColor: '#fff', borderBottom: '1px solid #E5E7EB' }}>
-        <div>
-          <h1 className="text-lg font-bold" style={{ color: '#111827' }}>Administration</h1>
-          <p className="text-xs mt-0.5" style={{ color: '#6B7280' }}>
-            {tab === 'users' ? 'Manage staff users and their lab roles' : 'Manage groups and the roles granted to their members'}
-          </p>
+        <div className="flex items-center gap-3">
+          <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
+            <MI name="arrow_back" size={16} color="#6B7280" />
+          </Link>
+          <div>
+            <h1 className="text-lg font-bold" style={{ color: '#111827' }}>Administration</h1>
+            <p className="text-xs mt-0.5" style={{ color: '#6B7280' }}>
+              {tab === 'users' ? 'Manage staff users and their lab roles' : 'Manage groups and the roles granted to their members'}
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center rounded-lg" style={{ border: '1px solid #E5E7EB', padding: 2 }}>

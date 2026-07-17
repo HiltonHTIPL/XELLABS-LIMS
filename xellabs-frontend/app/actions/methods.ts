@@ -20,6 +20,7 @@ export type MethodFormState = {
   success?: boolean
   message?: string
   errors?: Record<string, string[]>
+  id?: number
 }
 
 export async function getMethods(): Promise<Method[]> {
@@ -67,7 +68,7 @@ export async function createMethod(_state: MethodFormState, formData: FormData):
     }
     revalidatePath('/dashboard/methods')
     revalidatePath('/dashboard/instruments')
-    return { success: true, message: `Method "${name}" created.` }
+    return { success: true, message: `Method "${name}" created.`, id: Number(data.id) }
   } catch (e) { return { message: String(e) } }
 }
 
@@ -132,7 +133,7 @@ export async function updateMethod(id: number, _state: MethodFormState, formData
       return { message: data.detail ?? 'Failed to update method.' }
     }
     revalidatePath('/dashboard/methods')
-    return { success: true, message: `Method "${name}" updated.` }
+    return { success: true, message: `Method "${name}" updated.`, id }
   } catch (e) { return { message: String(e) } }
 }
 

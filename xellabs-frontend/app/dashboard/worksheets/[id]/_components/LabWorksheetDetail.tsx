@@ -6,6 +6,10 @@ import { type AnalysisRequest } from '@/app/actions/analysis-requests'
 import { type SenaiteAnalysisService } from '@/app/lib/senaite'
 import { type InstrumentOption } from '@/app/actions/instrument-maintenance'
 import { type Method } from '@/app/actions/methods'
+import { type NamedItem } from '@/app/actions/instrument-workflows'
+import { type Calculation } from '@/app/actions/calculations'
+import InstrumentFormDrawer from '@/app/dashboard/instruments/_components/InstrumentFormDrawer'
+import MethodFormDrawer from '@/app/dashboard/methods/_components/MethodFormDrawer'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -29,9 +33,14 @@ const RESULT_STATUS_BADGE: Record<string, { bg: string; color: string }> = {
 type Props = {
   worksheet: EnrichedWorksheet; ars: AnalysisRequest[]; services: SenaiteAnalysisService[]; users: { id: number; name: string }[]
   instruments: InstrumentOption[]; methods: Method[]
+  instrumentTypes: NamedItem[]; instrumentLocations: NamedItem[]; manufacturers: NamedItem[]; suppliers: NamedItem[]
+  calculations: Calculation[]
 }
 
-export default function LabWorksheetDetail({ worksheet: initialWs, ars, services, users, instruments, methods }: Props) {
+export default function LabWorksheetDetail({
+  worksheet: initialWs, ars, services, users, instruments, methods,
+  instrumentTypes, instrumentLocations, manufacturers, suppliers, calculations,
+}: Props) {
   const router = useRouter()
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [selectedAr, setSelectedAr] = useState('')
@@ -39,6 +48,10 @@ export default function LabWorksheetDetail({ worksheet: initialWs, ars, services
   const [resultValues, setResultValues] = useState<Record<number, string>>({})
   const [busy, startTransition] = useTransition()
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [instrumentList, setInstrumentList] = useState(instruments)
+  const [methodList, setMethodList] = useState(methods)
+  const [showInstrumentDrawer, setShowInstrumentDrawer] = useState(false)
+  const [showMethodDrawer, setShowMethodDrawer] = useState(false)
 
   function showToast(ok: boolean, msg: string) {
     setToast({ ok, msg })
@@ -201,12 +214,16 @@ export default function LabWorksheetDetail({ worksheet: initialWs, ars, services
               <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 600 }}>Instrument</span>
               <select
                 value={initialWs.instrument ?? ''}
-                onChange={e => handleAssignInstrument(e.target.value)}
+                onChange={e => {
+                  if (e.target.value === '__add__') setShowInstrumentDrawer(true)
+                  else handleAssignInstrument(e.target.value)
+                }}
                 disabled={busy || !['open', 'in_progress'].includes(initialWs.status)}
                 style={{ padding: '4px 8px', border: '1px solid #D1D5DB', borderRadius: 6, fontSize: 12, color: '#374151', background: '#fff', cursor: 'pointer' }}
               >
                 <option value="">None</option>
-                {instruments.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                {instrumentList.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                <option value="__add__">+ Add new instrument…</option>
               </select>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -214,12 +231,16 @@ export default function LabWorksheetDetail({ worksheet: initialWs, ars, services
               <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 600 }}>Method</span>
               <select
                 value={initialWs.method ?? ''}
-                onChange={e => handleAssignMethod(e.target.value)}
+                onChange={e => {
+                  if (e.target.value === '__add__') setShowMethodDrawer(true)
+                  else handleAssignMethod(e.target.value)
+                }}
                 disabled={busy || !['open', 'in_progress'].includes(initialWs.status)}
                 style={{ padding: '4px 8px', border: '1px solid #D1D5DB', borderRadius: 6, fontSize: 12, color: '#374151', background: '#fff', cursor: 'pointer' }}
               >
                 <option value="">None</option>
-                {methods.filter(m => m.is_active).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                {methodList.filter(m => m.is_active).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                <option value="__add__">+ Add new method…</option>
               </select>
             </div>
           </div>
@@ -405,6 +426,41 @@ export default function LabWorksheetDetail({ worksheet: initialWs, ars, services
           </div>
         </div>
       )}
+
+      <InstrumentFormDrawer
+        open={showInstrumentDrawer}
+        onClose={() => setShowInstrumentDrawer(false)}
+        editing={null}
+        types={instrumentTypes}
+        locations={instrumentLocations}
+        manufacturers={manufacturers}
+        suppliers={suppliers}
+        methods={methodList.map(m => ({ id: m.id, name: m.name, code: m.code }))}
+        zIndex={500}
+        onSaved={(saved) => {
+          setShowInstrumentDrawer(false)
+          if (saved) {
+            setInstrumentList(prev => [...prev, { id: saved.id, name: saved.name, instrument_id: saved.instrument_id, status: saved.status, usability: saved.usability, is_usable: saved.is_usable }])
+            handleAssignInstrument(String(saved.id))
+          }
+        }}
+      />
+
+      <MethodFormDrawer
+        open={showMethodDrawer}
+        onClose={() => setShowMethodDrawer(false)}
+        editing={null}
+        calculations={calculations}
+        instruments={instrumentList}
+        zIndex={500}
+        onSaved={(saved) => {
+          setShowMethodDrawer(false)
+          if (saved) {
+            setMethodList(prev => [...prev, saved])
+            handleAssignMethod(String(saved.id))
+          }
+        }}
+      />
     </div>
   )
 }

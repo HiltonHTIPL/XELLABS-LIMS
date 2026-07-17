@@ -1,6 +1,7 @@
 'use client'
 import { useState, useActionState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { createAnalysis, updateAnalysis, type AnalysisFormState } from '@/app/actions/analyses'
 import {
   type SenaiteAnalysisService,
@@ -44,13 +45,13 @@ function Field({
   )
 }
 
-function TextAreaField({ label, value, onChange, hint }: { label: string; value: string; onChange: (v: string) => void; hint?: string }) {
+function TextAreaField({ label, name, value, onChange, hint }: { label: string; name: string; value: string; onChange: (v: string) => void; hint?: string }) {
   return (
     <div>
       <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
         {label}{hint && <span className="ml-1 font-normal" style={{ color: '#9CA3AF' }}>{hint}</span>}
       </label>
-      <textarea rows={3} value={value} onChange={e => onChange(e.target.value)}
+      <textarea name={name} rows={3} value={value} onChange={e => onChange(e.target.value)}
         className="w-full px-3 py-2 text-xs rounded-lg outline-none resize-none"
         style={{ border: '1px solid #D1D5DB', color: '#111827' }} />
     </div>
@@ -262,13 +263,18 @@ export default function AnalysesShell({
     : initialServices
 
   return (
-    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-3">
-        <div>
-          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Analyses</h1>
-          <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Manage the analyses (test services) available for samples and analysis profiles</p>
+      <div className="flex items-center justify-between mb-3" style={{ flexShrink: 0 }}>
+        <div className="flex items-center gap-3">
+          <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
+            <MI name="arrow_back" size={16} color="#6B7280" />
+          </Link>
+          <div>
+            <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Analyses</h1>
+            <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Manage the analyses (test services) available for samples and analysis profiles</p>
+          </div>
         </div>
         <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
           <MI name="add" size={15} color="#fff" /> New Analysis
@@ -278,7 +284,7 @@ export default function AnalysesShell({
       {/* Toast */}
       {toast && (
         <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
-          style={{ backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', border: `1px solid ${toast.ok ? '#93C5FD' : '#FECACA'}`, color: toast.ok ? '#0154FC' : '#991B1B' }}>
+          style={{ backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', border: `1px solid ${toast.ok ? '#93C5FD' : '#FECACA'}`, color: toast.ok ? '#0154FC' : '#991B1B', flexShrink: 0 }}>
           <MI name={toast.ok ? 'check_circle' : 'error'} size={13} color={toast.ok ? '#0154FC' : '#DC2626'} />
           {toast.msg}
         </div>
@@ -286,7 +292,7 @@ export default function AnalysesShell({
 
       {/* Search */}
       {initialServices.length > 0 && (
-        <div className="mb-3 flex items-center gap-2 px-3 py-2 bg-white rounded-lg" style={{ border: '1px solid #E8EAF2', maxWidth: 340 }}>
+        <div className="mb-3 flex items-center gap-2 px-3 py-2 bg-white rounded-lg" style={{ border: '1px solid #E8EAF2', maxWidth: 340, flexShrink: 0 }}>
           <MI name="search" size={15} color="#9CA3AF" />
           <input
             value={search}
@@ -348,7 +354,7 @@ export default function AnalysesShell({
                 <div style={{ display: activeTab === 'Description' ? 'flex' : 'none', flexDirection: 'column', gap: 12 }}>
                     <Field label="Analysis Name" name="title" placeholder="e.g. Total Protein" required
                       error={fieldErrors.title} value={vals.title} onChange={v => setVal('title', v)} />
-                    <TextAreaField label="Description" hint="(used in item listings and search results)"
+                    <TextAreaField label="Description" name="description" hint="(used in item listings and search results)"
                       value={vals.description} onChange={v => setVal('description', v)} />
                     <Field label="Short Title" name="ShortTitle" hint="(optional — used instead of title in column headings)"
                       value={vals.ShortTitle} onChange={v => setVal('ShortTitle', v)} />
@@ -547,6 +553,7 @@ export default function AnalysesShell({
       )}
 
       {/* Table / empty state */}
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       {filtered.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="biotech" size={36} color="#D1D5DB" />
@@ -610,6 +617,7 @@ export default function AnalysesShell({
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

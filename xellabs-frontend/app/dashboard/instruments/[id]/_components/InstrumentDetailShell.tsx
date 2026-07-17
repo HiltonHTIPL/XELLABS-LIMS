@@ -199,13 +199,13 @@ export default function InstrumentDetailShell(
   }
 
   return (
-    <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
-      <Link href="/dashboard/instruments" className="inline-flex items-center gap-1 mb-3" style={{ fontSize: 12, color: '#6B7280' }}>
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <Link href="/dashboard/instruments" className="inline-flex items-center gap-1 mb-3" style={{ fontSize: 12, color: '#6B7280', flexShrink: 0 }}>
         <MI name="arrow_back" size={14} /> Instrument Register
       </Link>
 
       {/* Instrument header */}
-      <div className="bg-white mb-4" style={{ border: '1px solid #E8EAF2', borderRadius: 12, padding: 18 }}>
+      <div className="bg-white mb-4" style={{ border: '1px solid #E8EAF2', borderRadius: 12, padding: 18, flexShrink: 0 }}>
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3">
             {typeof instrument.photo === 'string' && instrument.photo ? (
@@ -262,11 +262,11 @@ export default function InstrumentDetailShell(
       </div>
 
       {toast && (
-        <div className="mb-3 px-3 py-2 rounded-lg" style={{ fontSize: 12, backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', color: toast.ok ? '#0154FC' : '#991B1B' }}>{toast.msg}</div>
+        <div className="mb-3 px-3 py-2 rounded-lg" style={{ fontSize: 12, backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', color: toast.ok ? '#0154FC' : '#991B1B', flexShrink: 0 }}>{toast.msg}</div>
       )}
 
       {/* Tab bar */}
-      <div className="flex gap-1 mb-3" style={{ borderBottom: '1px solid #E8EAF2' }}>
+      <div className="flex gap-1 mb-3" style={{ borderBottom: '1px solid #E8EAF2', flexShrink: 0 }}>
         {TABS.map(t => (
           <button key={t.key} onClick={() => setActive(t.key)}
             className="flex items-center gap-1.5 px-3 py-2" style={{ fontSize: 13, fontWeight: 600, color: active === t.key ? '#0154FC' : '#6B7280', borderBottom: active === t.key ? '2px solid #0154FC' : '2px solid transparent' }}>
@@ -277,11 +277,12 @@ export default function InstrumentDetailShell(
       </div>
 
       {/* Active tab: table + add */}
-      <div className="flex justify-end mb-2">
+      <div className="flex justify-end mb-2" style={{ flexShrink: 0 }}>
         <button onClick={openAdd} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white" style={{ fontSize: 13, fontWeight: 600, backgroundColor: '#0154FC' }}>
           <MI name="add" size={14} color="#fff" /> Add {tab.label.replace(/s$/, '')}
         </button>
       </div>
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       <div className="bg-white" style={{ border: '1px solid #E8EAF2', borderRadius: 10, overflow: 'hidden' }}>
         <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
           <thead>
@@ -306,6 +307,7 @@ export default function InstrumentDetailShell(
             ))}
           </tbody>
         </table>
+      </div>
       </div>
 
       {/* Add drawer */}
