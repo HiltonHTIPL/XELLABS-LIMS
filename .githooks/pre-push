@@ -110,7 +110,12 @@ fi
 # The single strongest signal that deployment won't break — this is the exact
 # build Docker/production runs. Slower than the checks above, but a broken
 # build reaching the shared branch is the whole reason this hook exists.
-if docker exec xellabs-lims-frontend-1 npm run build > /tmp/build_check.log 2>&1; then
+# Force NODE_ENV=production for this check regardless of the frontend
+# container's own runtime env (local dev now runs `next dev` with
+# NODE_ENV=development — `next build` behaves incorrectly, failing with a
+# "<Html> should not be imported outside of pages/_document" prerender
+# error, unless NODE_ENV is explicitly production for the build itself).
+if docker exec -e NODE_ENV=production xellabs-lims-frontend-1 npm run build > /tmp/build_check.log 2>&1; then
   pass "Next.js production build"
 else
   fail "Next.js build failed:"
