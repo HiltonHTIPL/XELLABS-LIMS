@@ -3,7 +3,7 @@ import { useState, useActionState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   createAnalysisProfile, updateAnalysisProfile, deleteAnalysisProfile,
-  type AnalysisProfile, type AnalysisProfileFormState, type AnalysisServiceRef,
+  type AnalysisProfile, type AnalysisProfileFormState, type ProfileServiceRef,
 } from '@/app/actions/analysis-profiles'
 import { type SenaiteAnalysisService } from '@/app/lib/senaite'
 
@@ -11,15 +11,29 @@ function MI({ name, size = 16, color }: { name: string; size?: number; color?: s
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
 }
 
-type FV = { name: string; analysisServices: AnalysisServiceRef[] }
-const blank = (): FV => ({ name: '', analysisServices: [] })
+type FV = {
+  name: string
+  description: string
+  profileKey: string
+  sampleTypes: string[]
+  analysisServices: ProfileServiceRef[]
+  commercialId: string
+  usePrice: boolean
+  price: string
+  vat: string
+}
+const blank = (): FV => ({
+  name: '', description: '', profileKey: '', sampleTypes: [], analysisServices: [],
+  commercialId: '', usePrice: false, price: '', vat: '',
+})
 
 type Props = {
   initialProfiles: AnalysisProfile[]
   analysisServices: SenaiteAnalysisService[]
+  sampleTypeOptions: { uid: string; title: string }[]
 }
 
-export default function AnalysisProfilesShell({ initialProfiles, analysisServices }: Props) {
+export default function AnalysisProfilesShell({ initialProfiles, analysisServices, sampleTypeOptions }: Props) {
   const router = useRouter()
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<AnalysisProfile | null>(null)
@@ -38,8 +52,8 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
 
   const [state, action, pending] = useActionState(
     async (prev: AnalysisProfileFormState, fd: FormData) => {
-      const id = fd.get('_editingId') as string | null
-      const result = id ? await updateAnalysisProfile(Number(id), prev, fd) : await createAnalysisProfile(prev, fd)
+      const path = fd.get('_editingPath') as string | null
+      const result = path ? await updateAnalysisProfile(path, prev, fd) : await createAnalysisProfile(prev, fd)
       if (result.success) {
         setShowForm(false)
         setEditing(null)
@@ -75,7 +89,17 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
   function openCreate() { setEditing(null); setVals(blank()); setFieldErrors({}); setShowForm(true) }
   function openEdit(p: AnalysisProfile) {
     setEditing(p)
-    setVals({ name: p.name, analysisServices: p.analysis_services ?? [] })
+    setVals({
+      name: p.name,
+      description: p.description ?? '',
+      profileKey: p.profile_key ?? '',
+      sampleTypes: p.sample_types ?? [],
+      analysisServices: p.analysis_services ?? [],
+      commercialId: p.commercial_id ?? '',
+      usePrice: p.use_analysis_profile_price ?? false,
+      price: p.analysis_profile_price ?? '',
+      vat: p.analysis_profile_vat ?? '',
+    })
     setFieldErrors({})
     setShowForm(true)
   }
@@ -84,10 +108,10 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
   async function confirmDelete() {
     if (!deleteTarget) return
     setDeleting(true)
-    const result = await deleteAnalysisProfile(deleteTarget.id)
+    const result = await deleteAnalysisProfile(deleteTarget.path)
     setDeleting(false)
     setDeleteTarget(null)
-    setToast({ ok: result.success, msg: result.success ? 'Analysis profile deleted.' : (result.message ?? 'Delete failed.') })
+    setToast({ ok: result.success, msg: result.success ? 'Analysis profile deactivated.' : (result.message ?? 'Deactivation failed.') })
     setTimeout(() => setToast(null), 4000)
     router.refresh()
   }
@@ -95,7 +119,17 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
   function toggleAnalysis(svc: SenaiteAnalysisService) {
     setVal('analysisServices', vals.analysisServices.some(a => a.uid === svc.uid)
       ? vals.analysisServices.filter(a => a.uid !== svc.uid)
-      : [...vals.analysisServices, { uid: svc.uid, title: svc.title }])
+      : [...vals.analysisServices, { uid: svc.uid, hidden: false }])
+  }
+
+  function toggleSampleType(uid: string) {
+    setVal('sampleTypes', vals.sampleTypes.includes(uid)
+      ? vals.sampleTypes.filter(u => u !== uid)
+      : [...vals.sampleTypes, uid])
+  }
+
+  function serviceTitle(uid: string): string {
+    return analysisServices.find(s => s.uid === uid)?.title ?? uid
   }
 
   return (
@@ -143,23 +177,71 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
           </div>
 
           <form action={action}>
-            {isEdit && <input type="hidden" name="_editingId" value={editing!.id} />}
+            {isEdit && <input type="hidden" name="_editingPath" value={editing!.path} />}
             <input type="hidden" name="analysis_services" value={JSON.stringify(vals.analysisServices)} />
+            <input type="hidden" name="sample_types" value={JSON.stringify(vals.sampleTypes)} />
 
             <div className="px-5 py-4 flex flex-col gap-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
+                    Profile Name<span style={{ color: '#EF4444' }}> *</span>
+                  </label>
+                  <input
+                    name="name"
+                    placeholder="e.g. Full Metals Panel"
+                    value={vals.name}
+                    onChange={e => setVal('name', e.target.value)}
+                    className="w-full px-3 py-2 text-xs rounded-lg outline-none"
+                    style={{ border: `1px solid ${fieldErrors.name ? '#EF4444' : '#D1D5DB'}`, color: '#111827' }}
+                  />
+                  {fieldErrors.name && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{fieldErrors.name}</p>}
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Profile Keyword</label>
+                  <input
+                    name="profile_key"
+                    placeholder="Unique profile keyword"
+                    value={vals.profileKey}
+                    onChange={e => setVal('profileKey', e.target.value)}
+                    className="w-full px-3 py-2 text-xs rounded-lg outline-none"
+                    style={{ border: '1px solid #D1D5DB', color: '#111827' }}
+                  />
+                </div>
+              </div>
+
               <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
-                  Profile Name<span style={{ color: '#EF4444' }}> *</span>
-                </label>
-                <input
-                  name="name"
-                  placeholder="e.g. Full Metals Panel"
-                  value={vals.name}
-                  onChange={e => setVal('name', e.target.value)}
-                  className="w-full max-w-md px-3 py-2 text-xs rounded-lg outline-none"
-                  style={{ border: `1px solid ${fieldErrors.name ? '#EF4444' : '#D1D5DB'}`, color: '#111827' }}
+                <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Description</label>
+                <textarea
+                  name="description"
+                  rows={2}
+                  value={vals.description}
+                  onChange={e => setVal('description', e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-lg outline-none"
+                  style={{ border: '1px solid #D1D5DB', color: '#111827', resize: 'vertical' }}
                 />
-                {fieldErrors.name && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{fieldErrors.name}</p>}
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium" style={{ color: '#374151' }}>Sample Types</label>
+                  <span style={{ fontSize: 10, color: '#9CA3AF' }}>{vals.sampleTypes.length} selected — leave empty to allow any sample type</span>
+                </div>
+                <div className="rounded-lg" style={{ border: '1px solid #D1D5DB', maxHeight: 140, overflowY: 'auto' }}>
+                  {sampleTypeOptions.length === 0 ? (
+                    <p className="px-3 py-3 text-xs" style={{ color: '#9CA3AF' }}>No sample types available.</p>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-x-3">
+                      {sampleTypeOptions.map(st => (
+                        <label key={st.uid} className="flex items-center gap-2 px-3 py-2 cursor-pointer" style={{ borderBottom: '1px solid #F3F4F6' }}>
+                          <input type="checkbox" checked={vals.sampleTypes.includes(st.uid)}
+                            onChange={() => toggleSampleType(st.uid)} style={{ accentColor: '#0154FC' }} />
+                          <span className="text-xs" style={{ color: '#111827', flex: 1 }}>{st.title}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div>
@@ -184,6 +266,47 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
                 </div>
                 {fieldErrors.analysis_services && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{fieldErrors.analysis_services}</p>}
               </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-1" style={{ borderTop: '1px solid #F3F4F6' }}>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Commercial ID</label>
+                  <input
+                    name="commercial_id"
+                    placeholder="Used for accounting"
+                    value={vals.commercialId}
+                    onChange={e => setVal('commercialId', e.target.value)}
+                    className="w-full px-3 py-2 text-xs rounded-lg outline-none"
+                    style={{ border: '1px solid #D1D5DB', color: '#111827' }}
+                  />
+                </div>
+                <div>
+                  <label className="flex items-center gap-2 mt-5 cursor-pointer text-xs" style={{ color: '#374151' }}>
+                    <input type="checkbox" name="use_analysis_profile_price" checked={vals.usePrice}
+                      onChange={e => setVal('usePrice', e.target.checked)} style={{ accentColor: '#0154FC' }} />
+                    Use profile price instead of single analyses prices
+                  </label>
+                  {vals.usePrice && (
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      <input
+                        name="analysis_profile_price"
+                        placeholder="Price (excl. VAT)"
+                        value={vals.price}
+                        onChange={e => setVal('price', e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-lg outline-none"
+                        style={{ border: '1px solid #D1D5DB', color: '#111827' }}
+                      />
+                      <input
+                        name="analysis_profile_vat"
+                        placeholder="VAT %"
+                        value={vals.vat}
+                        onChange={e => setVal('vat', e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-lg outline-none"
+                        style={{ border: '1px solid #D1D5DB', color: '#111827' }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="px-5 py-4 flex items-center justify-end gap-2" style={{ borderTop: '1px solid #F3F4F6' }}>
@@ -201,19 +324,19 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
         </div>
       )}
 
-      {/* ── Delete confirmation modal ── */}
+      {/* ── Deactivate confirmation modal ── */}
       {deleteTarget && (
         <div style={{ position: 'fixed', top: 'var(--dashboard-header-h)', left: 0, right: 0, bottom: 'var(--dashboard-footer-h)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div onClick={() => !deleting && setDeleteTarget(null)} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)' }} />
           <div style={{ position: 'relative', width: 380, backgroundColor: '#fff', borderRadius: 14, boxShadow: '0 12px 40px rgba(0,0,0,0.18)', padding: 20 }}>
             <div className="flex items-center gap-2.5 mb-3">
               <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: '#FEF2F2' }}>
-                <MI name="delete" size={16} color="#DC2626" />
+                <MI name="visibility_off" size={16} color="#DC2626" />
               </div>
-              <h3 className="text-sm font-semibold" style={{ color: '#111827' }}>Delete analysis profile?</h3>
+              <h3 className="text-sm font-semibold" style={{ color: '#111827' }}>Deactivate analysis profile?</h3>
             </div>
             <p className="text-xs mb-5" style={{ color: '#6B7280' }}>
-              This will permanently delete &ldquo;{deleteTarget.name}&rdquo;. This action cannot be undone.
+              &ldquo;{deleteTarget.name}&rdquo; will no longer be available for selection when registering samples. It can be reactivated later if needed.
             </p>
             <div className="flex items-center justify-end gap-2">
               <button onClick={() => setDeleteTarget(null)} disabled={deleting}
@@ -222,8 +345,8 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
               </button>
               <button onClick={confirmDelete} disabled={deleting} className="flex items-center gap-1.5"
                 style={{ fontSize: 12, fontWeight: 600, padding: '7px 18px', borderRadius: 8, backgroundColor: '#DC2626', color: '#fff', border: 'none', cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.7 : 1 }}>
-                <MI name={deleting ? 'hourglass_top' : 'delete'} size={13} color="#fff" />
-                {deleting ? 'Deleting…' : 'Delete'}
+                <MI name={deleting ? 'hourglass_top' : 'visibility_off'} size={13} color="#fff" />
+                {deleting ? 'Deactivating…' : 'Deactivate'}
               </button>
             </div>
           </div>
@@ -256,7 +379,7 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
             </thead>
             <tbody>
               {initialProfiles.map((p, i) => (
-                <tr key={p.id} style={{ borderBottom: i < initialProfiles.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
+                <tr key={p.uid} style={{ borderBottom: i < initialProfiles.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-2">
                       <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: '#DBEAFE' }}>
@@ -266,15 +389,15 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
                     </div>
                   </td>
                   <td className="px-3 py-2.5 text-xs truncate" style={{ color: '#6B7280' }}>
-                    {p.analysis_services?.length ? p.analysis_services.map(a => a.title).join(', ') : '—'}
+                    {p.analysis_services?.length ? p.analysis_services.map(a => serviceTitle(a.uid)).join(', ') : '—'}
                   </td>
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-1">
                       <button onClick={() => openEdit(p)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }} title="Edit">
                         <MI name="edit" size={14} color="#9CA3AF" />
                       </button>
-                      <button onClick={() => setDeleteTarget(p)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }} title="Delete">
-                        <MI name="delete" size={14} color="#9CA3AF" />
+                      <button onClick={() => setDeleteTarget(p)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }} title="Deactivate">
+                        <MI name="visibility_off" size={14} color="#9CA3AF" />
                       </button>
                     </div>
                   </td>

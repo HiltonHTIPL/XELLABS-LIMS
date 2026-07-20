@@ -109,9 +109,11 @@ def _assign_sample_to_slot(slot, sample_id, user):
     # instance.save() (not Queryset.update) so the audittrail post_save signals
     # record this storage change on the Sample itself (CLAUDE.md §5).
     from lims.models import Sample
+    client_id = None
     for _sample in Sample.objects.filter(sample_id=sample_id):
         _sample.storage_location = storage_path
         _sample.save(update_fields=["storage_location", "updated_at"])
+        client_id = _sample.client_id
 
     _queue_sample_storage_transition(sample_id, "store", slot)
 
@@ -128,6 +130,7 @@ def _assign_sample_to_slot(slot, sample_id, user):
             "storage_path": storage_path,
             "slot_id": slot.slot_id,
             "storage_location_id": slot.pk,
+            "client_id": client_id,
             # senaite_uid intentionally excluded — internal field
         },
     )
@@ -557,12 +560,14 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
         # Mirror the sync in _assign_sample_to_slot — clear the denormalized
         # Sample.storage_location so list/detail pages don't keep showing a
         # slot the sample no longer occupies.
+        released_client_id = None
         if released_sample_id:
             # instance.save() so the audittrail signals log the release on the Sample.
             from lims.models import Sample
             for _sample in Sample.objects.filter(sample_id=released_sample_id):
                 _sample.storage_location = ''
                 _sample.save(update_fields=["storage_location", "updated_at"])
+                released_client_id = _sample.client_id
 
             _queue_sample_storage_transition(released_sample_id, "recover", slot)
 
@@ -574,7 +579,12 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
             content_type=ContentType.objects.get_for_model(slot),
             object_id=slot.pk,
             object_repr=f"Slot {slot.slot_id} unassigned — {slot.name}",
-            extra_data={"slot_id": slot.slot_id, "storage_location_id": slot.pk},
+            extra_data={
+                "slot_id": slot.slot_id,
+                "storage_location_id": slot.pk,
+                "sample_id": released_sample_id,
+                "client_id": released_client_id,
+            },
         )
 
         return Response(self.get_serializer(slot).data)

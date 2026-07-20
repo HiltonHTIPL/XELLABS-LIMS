@@ -1,6 +1,7 @@
 'use client'
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   lookupChainOfCustody, resolveStorageLabel, assignSampleByLabel,
   type ChainOfCustodyResult, type CocSample, type CocEvent, type ResolvedLabel,
@@ -103,6 +104,9 @@ function eventRows(ev: CocEvent, sample: CocSample | null): Array<{ key: string;
 }
 
 export default function ChainOfCustodyPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const returnTo = searchParams.get('returnTo')
   const [sampleInput, setSampleInput] = useState('')
   const [loading, setLoading]         = useState(false)
   const [error, setError]             = useState('')
@@ -143,6 +147,15 @@ export default function ChainOfCustodyPage() {
     if (!res.success || !res.data?.sample) { setError(res.message ?? `Sample "${sid}" not found.`); return }
     setResult(res.data)
   }
+
+  // Arriving from a sample's own detail page (e.g. its "Chain of Custody"
+  // button) passes ?sample=<id> — auto-run the same lookup instead of making
+  // the user retype/rescan an id they just navigated away from.
+  useEffect(() => {
+    const sid = searchParams.get('sample')
+    if (sid) handleLookup(sid)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function openAssign(mode: 'assign' | 'transfer') {
     setAssignMode(mode); setLabelInput(''); setResolveErr(''); setAssignOpen(true)
@@ -231,9 +244,17 @@ export default function ChainOfCustodyPage() {
         {/* Breadcrumb + actions */}
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-1.5 text-xs" style={{ color: '#6B7280' }}>
-            <Link href="/dashboard/admin" className="p-1 rounded-lg hover:bg-gray-100 shrink-0 mr-0.5" style={{ border: '1px solid #E8EAF2' }}>
-              <MI name="arrow_back" size={14} color="#6B7280" />
-            </Link>
+            {returnTo ? (
+              <button onClick={() => router.push(decodeURIComponent(returnTo))}
+                className="p-1 rounded-lg hover:bg-gray-100 shrink-0 mr-0.5" style={{ border: '1px solid #E8EAF2', background: 'none', cursor: 'pointer' }}
+                title="Back">
+                <MI name="arrow_back" size={14} color="#6B7280" />
+              </button>
+            ) : (
+              <Link href="/dashboard/admin" className="p-1 rounded-lg hover:bg-gray-100 shrink-0 mr-0.5" style={{ border: '1px solid #E8EAF2' }}>
+                <MI name="arrow_back" size={14} color="#6B7280" />
+              </Link>
+            )}
             <span style={{ cursor: 'pointer', color: '#0154FC' }}>Samples</span>
             {sample && <><MI name="chevron_right" size={14} color="#9CA3AF" />
               <span style={{ cursor: 'pointer', color: '#0154FC' }}>{sampleDisplayId(sample)}</span></>}

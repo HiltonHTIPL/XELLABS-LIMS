@@ -332,6 +332,10 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             <MI name="shield" size={16} /><span>Audit Trail</span>
           </button>
+          <button onClick={() => router.push(`/dashboard/chain-of-custody?sample=${displayId(sample)}&returnTo=${encodeURIComponent(`/dashboard/samples-overview/${sample.id}`)}`)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            <MI name="fact_check" size={16} /><span>Chain of Custody</span>
+          </button>
           <button onClick={() => router.push(`/dashboard/analysis-requests?sample=${sample.id}`)}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: 'none', background: '#0154FC', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             <MI name="assignment_add" size={16} color="#fff" /><span>Create Analysis Request</span>

@@ -27,16 +27,22 @@ export type SampleTemplatesPageData = {
   analysisServices: SenaiteAnalysisService[]
 }
 
-export async function getSampleTemplatesPageData(): Promise<SampleTemplatesPageData> {
+// `includeSampleTypesAndServices` defaults true for callers (e.g. the Sample
+// Templates admin page) that need those two fields from this function's own
+// return value. Pass false when the caller already fetches sample types and
+// analysis services itself elsewhere in the same page load (e.g. New Sample) —
+// skips two redundant `complete=true` SENAITE calls that were previously
+// fetched here and then never read from this function's result.
+export async function getSampleTemplatesPageData(includeSampleTypesAndServices = true): Promise<SampleTemplatesPageData> {
   const token = serverToken()
   const [sampleTemplates, sampleTypes, samplePoints, sampleContainers, preservations, analysisServices] =
     await Promise.all([
       fetchSenaiteSampleTemplates(token),
-      fetchSenaiteSampleTypes(token),
+      includeSampleTypesAndServices ? fetchSenaiteSampleTypes(token) : Promise.resolve([]),
       getSamplePoints(),
       getSampleContainers(),
       getPreservations(),
-      fetchSenaiteAnalysisServices(token),
+      includeSampleTypesAndServices ? fetchSenaiteAnalysisServices(token) : Promise.resolve([]),
     ])
   return { sampleTemplates, sampleTypes, samplePoints, sampleContainers, preservations, analysisServices }
 }

@@ -2,7 +2,7 @@ from django.db import IntegrityError, transaction
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 from .models import (
-    SampleType, SampleTemplate, AnalysisProfile, Method, Calculation, Specification,
+    SampleType, SampleTemplate, Method, Calculation, Specification,
     DynamicAnalysisSpecification, AnalysisSpecification,
     Sample, AnalysisRequest, AnalysisRequestAnalysis, Worksheet, WorksheetAssignment,
     Result, QCSample, ChainOfCustody,
@@ -53,12 +53,6 @@ class SampleTypeSerializer(serializers.ModelSerializer):
 class SampleTemplateSerializer(serializers.ModelSerializer):
     class Meta:
         model = SampleTemplate
-        fields = "__all__"
-
-
-class AnalysisProfileSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = AnalysisProfile
         fields = "__all__"
 
 

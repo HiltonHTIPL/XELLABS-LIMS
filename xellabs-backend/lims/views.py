@@ -10,13 +10,13 @@ from core.permissions import (
     ReadOnlyOrLabManager, ReadOnlyOrAnalystOrAbove, ReadOnlyOrSampleHandler,
 )
 from .models import (
-    SampleType, SampleTemplate, AnalysisProfile, Method, Calculation, Specification,
+    SampleType, SampleTemplate, Method, Calculation, Specification,
     DynamicAnalysisSpecification, AnalysisSpecification,
     Sample, AnalysisRequest, Worksheet, WorksheetAssignment,
     Result, QCSample, ChainOfCustody,
 )
 from .serializers import (
-    SampleTypeSerializer, SampleTemplateSerializer, AnalysisProfileSerializer, MethodSerializer, CalculationSerializer, SpecificationSerializer,
+    SampleTypeSerializer, SampleTemplateSerializer, MethodSerializer, CalculationSerializer, SpecificationSerializer,
     DynamicAnalysisSpecificationSerializer, AnalysisSpecificationSerializer,
     SampleSerializer, AnalysisRequestSerializer, WorksheetSerializer,
     WorksheetAssignmentSerializer, ResultSerializer, QCSampleSerializer,
@@ -126,16 +126,6 @@ class SampleTypeViewSet(viewsets.ModelViewSet):
 class SampleTemplateViewSet(viewsets.ModelViewSet):
     queryset = SampleTemplate.objects.all()
     serializer_class = SampleTemplateSerializer
-    permission_classes = [ReadOnlyOrLabManager]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["is_active"]
-    search_fields = ["name"]
-    ordering_fields = ["name", "created_at"]
-
-
-class AnalysisProfileViewSet(viewsets.ModelViewSet):
-    queryset = AnalysisProfile.objects.all()
-    serializer_class = AnalysisProfileSerializer
     permission_classes = [ReadOnlyOrLabManager]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["is_active"]

@@ -78,6 +78,28 @@ const FEATURES = [
       </svg>
     ),
   },
+  {
+    title: 'Seamless Integration',
+    desc: 'Connect Instruments and third-party applications through standards-based integration.',
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#16A34A" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M9 6L4 12l5 6" />
+        <path d="M15 6l5 6-5 6" />
+      </svg>
+    ),
+  },
+  {
+    title: 'Configurable Laboratory Workflows',
+    desc: 'Flexible sample, analysis, worksheet, review, and reporting workflows with configurable lifecycle states and role-based approvals.',
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#16A34A" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="6" cy="6" r="2.5" />
+        <circle cx="18" cy="6" r="2.5" />
+        <circle cx="12" cy="18" r="2.5" />
+        <path d="M8.2 7.4L11 16M15.8 7.4L13 16M8.5 6h7" />
+      </svg>
+    ),
+  },
 ]
 
 export default async function LoginPage() {
