@@ -265,6 +265,7 @@ class Sample(models.Model):
     client_reference = models.CharField(max_length=200, blank=True)
     client_sample_id = models.CharField(max_length=100, blank=True)
     attachment = models.FileField(upload_to="sample_attachments/", null=True, blank=True)
+    senaite_attachment_uid = models.CharField(max_length=100, blank=True, db_index=True)
     SENAITE_SYNC_STATUS = [
         ("", "Unspecified"),
         ("synced", "Synced"),

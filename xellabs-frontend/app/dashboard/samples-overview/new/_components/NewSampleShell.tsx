@@ -137,6 +137,10 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
   // page "New Sample" button (/dashboard/samples-overview/new?client=<senaite-uid>)
   // — only applied to the first sample tab, same as initialBatchUid above.
   const initialClientUid = useSearchParams().get('client') ?? ''
+  // Arrived via a Client's "New Sample" button — lock the Client field to a
+  // permanent read-only display instead of a switchable dropdown, since every
+  // sample created from this link is for that one client.
+  const [clientLocked] = useState(Boolean(initialClientUid) && !initialBatchUid)
 
   // Sample Types valid for a given template — filtered down to the one matching
   // the template's SENAITE sample type via senaite_uid. Falls back to the full
@@ -290,6 +294,13 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
           client_sample_id: f.clientSampleId || undefined,
           client_senaite_uid: client?.senaite_uid || undefined,
           sample_type_senaite_uid: sampleType?.senaite_uid || undefined,
+          // These selects store the SENAITE object's title, not its uid — resolve
+          // against the same live lists the options were rendered from.
+          preservation_senaite_uid: preservations.find(p => p.title === f.preservation)?.uid || undefined,
+          sample_point_senaite_uid: samplePoints.find(p => p.title === f.samplePoint)?.uid || undefined,
+          sampling_deviation_senaite_uid: f.samplingDeviation !== 'none'
+            ? samplingDeviations.find(d => d.title === f.samplingDeviation)?.uid || undefined
+            : undefined,
         },
         asDraft ? [] : f.selectedTests.map(t => ({ uid: t.uid, name: t.title })),
       )
@@ -632,10 +643,18 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                     <option value="yes">Yes</option><option value="no">No</option>
                   </select></div>
                 <div style={field}><label style={lbl}>Client *</label>
-                  <select value={f.clientId} onChange={e => handleClientChange(e.target.value)} style={{ ...inp, borderColor: !f.clientId && error ? '#EF4444' : '#D1D5DB' }}>
-                    <option value="">— select —</option>
-                    {clients.filter(c => c.is_active).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select></div>
+                  {clientLocked ? (
+                    <div style={{ ...inp, display: 'flex', alignItems: 'center', background: '#F9FAFB' }}>
+                      <span style={{ fontWeight: 600, color: '#111827' }}>
+                        {clients.find(c => String(c.id) === f.clientId)?.name ?? ''}
+                      </span>
+                    </div>
+                  ) : (
+                    <select value={f.clientId} onChange={e => handleClientChange(e.target.value)} style={{ ...inp, borderColor: !f.clientId && error ? '#EF4444' : '#D1D5DB' }}>
+                      <option value="">— select —</option>
+                      {clients.filter(c => c.is_active).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  )}</div>
                 <div style={field}><label style={lbl}>Contact *</label>
                   <input value={f.contactName} onChange={e => set('contactName', e.target.value)} placeholder="e.g. Jane Doe" style={inp} /></div>
                 <div style={field}><label style={lbl}>CC Contact</label>

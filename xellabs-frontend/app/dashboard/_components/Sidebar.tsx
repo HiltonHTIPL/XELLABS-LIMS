@@ -144,11 +144,11 @@ export default function Sidebar({ onToggle, role, reportDraftCount, isSuperuser 
                   style={{
                     display: 'flex', alignItems: 'center', gap: 10, width: '100%',
                     padding: '7px 12px', marginBottom: 2, borderRadius: 10,
-                    fontSize: 13, fontWeight: 500, background: 'none', border: 'none',
+                    fontSize: 13, fontWeight: 500, border: 'none',
                     cursor: 'pointer', transition: 'all 0.15s',
                     ...(anyChildActive
                       ? { backgroundColor: 'rgba(37,99,235,0.25)', color: '#fff' }
-                      : { color: 'rgba(255,255,255,0.72)' }),
+                      : { backgroundColor: 'transparent', color: 'rgba(255,255,255,0.72)' }),
                   }}
                 >
                   <MI name={entry.icon} size={16} />

@@ -16,6 +16,9 @@ export type EntityConfig = {
   revalidate: string
   singular: string
   buildBody: (fd: FormData) => { body: SetupRecord; errors: Record<string, string[]> }
+  // Field names typed zope.schema.Float in SENAITE's schema — see
+  // forceFloatLiterals in senaite-setup.ts for why this is needed at all.
+  floatFields?: string[]
 }
 
 export async function listEntity<T>(
@@ -38,7 +41,7 @@ export async function listOptions(portalType: string): Promise<{ uid: string; ti
 export async function createEntity(cfg: EntityConfig, fd: FormData): Promise<AdminFormState> {
   const { body, errors } = cfg.buildBody(fd)
   if (Object.keys(errors).length) return { errors }
-  const r = await createSetupItem(serverToken(), cfg.portalType, cfg.parentSubPath, body)
+  const r = await createSetupItem(serverToken(), cfg.portalType, cfg.parentSubPath, body, cfg.floatFields)
   if (!r.success) return { message: r.error ?? `Failed to create ${cfg.singular.toLowerCase()}.` }
   revalidatePath(cfg.revalidate)
   return { success: true, message: `${cfg.singular} "${body.title as string}" created.` }
@@ -49,7 +52,7 @@ export async function updateEntity(cfg: EntityConfig, fd: FormData): Promise<Adm
   if (Object.keys(errors).length) return { errors }
   const path = (fd.get('_path') as string) ?? ''
   if (!path) return { message: 'Missing record path — cannot update.' }
-  const r = await updateSetupItem(serverToken(), path, body)
+  const r = await updateSetupItem(serverToken(), path, body, cfg.floatFields)
   if (!r.success) return { message: r.error ?? `Failed to update ${cfg.singular.toLowerCase()}.` }
   revalidatePath(cfg.revalidate)
   return { success: true, message: `${cfg.singular} "${body.title as string}" updated.` }

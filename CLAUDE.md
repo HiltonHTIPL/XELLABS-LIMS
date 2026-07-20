@@ -25,6 +25,17 @@ The left sidebar's **top-level** entries are fixed to exactly: Dashboard, Client
 
 ---
 
+## 0f. Model/Effort Escalation Rule — Ask Before Heavy Work, Don't Silently Guess
+
+**When a task is heavy or high-stakes enough that a stronger model or higher reasoning effort would meaningfully improve correctness — large multi-file refactors, subtle root-cause debugging, security-sensitive logic, complex SENAITE/Archetypes quirks, anything where a wrong answer is costly to unwind — say so and ask the user before proceeding, rather than pushing ahead at the current model/effort and risking a less accurate answer.**
+
+- Flag it plainly: what makes this task heavy, and what switching (model tier, e.g. Opus over Sonnet, and/or reasoning effort, e.g. high/xhigh) would likely buy in accuracy.
+- Let the user decide whether to switch, stay as-is and proceed anyway, or scope the task down instead.
+- This is not a blanket "ask before everything" rule — routine fixes, small edits, and tasks the current model/effort already handles reliably (per this session's own track record) don't need it. Reserve it for genuinely heavy/high-risk work.
+- **Why:** A silent best-effort attempt at a task that actually warranted more firepower risks a plausible-but-wrong answer — costlier to catch and fix later than a short upfront question.
+
+---
+
 ## 0. UI / Feature Design Rule — Read Code First, Present Plan, Wait for Approval
 
 **Before writing any UI or feature code, follow this sequence — no exceptions:**
@@ -87,7 +98,9 @@ See Section 11 for the full rule. The running log of features vs. principles app
 
 ## 0b. When the User Says "Start the Project"
 
-**Before starting containers, ensure WSL2 has at least 8GB memory.** Read `C:\Users\HILTON\.wslconfig`; if `memory=` is below `8GB` (or unset), raise it to at least `8GB` (higher if the project clearly needs more), then apply with `wsl --shutdown` + Docker Desktop restart before `docker compose up -d`. If it is already ≥8GB, leave it and start directly. (Host has only ~15.7GB total — never set the WSL cap so high it starves Windows; 8GB is the floor, not a target to exceed without reason.)
+**Before starting containers, ensure WSL2 has at least 12GB memory.** Read `C:\Users\HILTON\.wslconfig`; if `memory=` is below `12GB` (or unset), raise it to `12GB`, then apply with `wsl --shutdown` + Docker Desktop restart before `docker compose up -d` — do this automatically, without asking, whenever the user says to start/run the project. If it is already ≥12GB, leave it and start directly. (Host has only ~15.7GB total — never set the WSL cap so high it starves Windows; 12GB is the floor, not a target to exceed without reason.)
+
+**Floor raised from 8GB → 12GB (2026-07-20):** the full stack (SENAITE + Django + Celery×3 + Postgres + Redis + a dev-mode Next.js frontend, which spikes memory hard while webpack-compiling routes) hit a real `ENOMEM: not enough memory, write` crash at 8GB — frontend container alone was using 2.3GB with only ~173MB truly free in the VM. `docker stats --no-stream` is the fast way to confirm current usage per-container if this recurs; `free -h` inside a container shows the WSL2 VM's own memory state.
 
 **Everything runs in Docker Desktop — one command starts all services:**
 
@@ -582,12 +595,18 @@ When the user says to push the code, follow these steps in order — do not skip
 3. **Pull that branch** — `git pull <remote> <branch>`.
 4. **Merge the pulled code into the project** — resolve any conflicts with the user if they come up; never silently discard either side.
 5. **Merge the stash back in** — `git stash pop` — resolve any stash-vs-pull conflicts the same way.
-6. **Run the pre-push checks BEFORE pushing** — run the `.githooks/pre-push` suite (see Section 15b) and confirm it passes: no `.env`/secrets staged → Django `check` → `makemigrations --check --dry-run` → Django tests → `tsc --noEmit` → ESLint (warns only) → `npm run build`. If `git config core.hooksPath .githooks` is set for this clone, `git push` runs it automatically; if not, run the checks explicitly first (or run `bash .githooks/pre-push`). **Never push while any blocking check is failing** — fix the failure first (only `git push --no-verify` for a genuinely urgent push, and only if the user explicitly says so).
-7. **Ask the user which branch to push to** if not already stated, then push — `git push <remote> <branch>`.
+6. **Ask the user before running the pre-push checks** — never run `bash .githooks/pre-push` (or any of its individual checks) on your own initiative; confirm with the user first every time. Note this is separate from the checks `git push` itself auto-triggers via `core.hooksPath` at push time (see Section 15b) — that automatic run is unavoidable unless `--no-verify` is used, which still requires the user's explicit ask per the force-push-adjacent rule below. **Never push while any blocking check is failing** — fix the failure first.
+7. **Ask the user which branch to push to** if not already stated, then push as a **single commit** — `git push <remote> <branch>`.
 
 Never reorder this (e.g. never push before pulling/merging or before the pre-push checks pass), and never force-push (`--force`/`-f`) unless the user explicitly asks for it in that exact request.
 
 **One-time per clone (does NOT carry over from another machine — the hook file being present in the repo is not enough on its own):** run `git config core.hooksPath .githooks` once so `git push` actually runs the pre-push checks. Without it, the hook is silently skipped. Pass this along to any colleague who hasn't set it up.
+
+**Never add `Co-Authored-By: Claude ...` (or any AI attribution) to a commit message on this repo.** Commits go under the user's own name/identity (`git config user.name`/`user.email`) only — no exceptions, regardless of how much of the change Claude authored. This applies to every commit, not just ones the user explicitly reviews.
+
+**Exactly ONE commit per push — no exceptions, even if a fix-for-my-own-mistake surfaces mid-push (e.g. a pre-push check failing because of something the same change caused).** Fold any such follow-up fix into the same not-yet-pushed commit via `git commit --amend` (safe here since it hasn't been pushed yet — this is not the "never amend published commits" case) rather than creating a second commit. Only make more than one commit if the user explicitly asks for separate commits in that request.
+
+**Always ask the user before running the pre-push check suite** (`bash .githooks/pre-push`, or any of its individual steps run manually) — every time, not just the first time in a session. This is distinct from `git push` itself auto-triggering the same suite via `core.hooksPath` (Section 15b) — that automatic run cannot be skipped without `--no-verify`, and `--no-verify` still needs the user's explicit ask.
 
 ---
 
@@ -920,3 +939,42 @@ base64 image payloads (LabContact `Signature`, Laboratory `AccreditationBodyLogo
 since JSON can't carry binary. Laboratory is a **singleton** (edit-only, at
 `bika_setup/laboratory`) and inherits banking fields (AccountName/AccountNumber/
 BankName/BankBranch) from Organisation — all exposed in the frontend edit form.
+
+## 16e. SENAITE QC Chain — Suppliers / Reference Definitions / Reference Samples + Worksheet Blank/Control
+
+**Built 2026-07-20** (the Administration → Suppliers, Reference Definitions,
+Reference Samples modules + worksheet Blank/Control QC wiring). Root-caused live
+before building — key facts, all verified via raw REST against the running 2.6.0:
+
+| Type | Framework / location | Write path |
+|---|---|---|
+| **Supplier** | **Dexterity**, at `setup/suppliers` | Plain plone.restapi create/update — **no custom view needed**. Unlike the AT `Client`, its address subfields do **not** trip the `inline_field_validator` crash (§16c); writes fine. **But** (found 2026-07-20, fixing the Suppliers admin page): SENAITE's **v1 list API silently omits** `email`/`phone`/`tax_number`/`fax`/`account_*`/`bank_*`/`address` for this type — restapi PATCH persists them correctly (confirmed via restapi's own per-object GET + `modified` timestamp), but v1 never returns them in the list, no matter what's stored. Same class as SampleType's retention_period (§16b) — fixed with a generic `fetchRestapiOverlay()` helper (`senaite-setup.ts`) that overlays a per-object restapi GET for exactly the fields v1 drops. Address sub-fields (`senaite/core/schema/addressfield.py`) are `address`/`city`/`subdivision1`(=State)/`subdivision2`(=District)/`zip`/`country`/`type` — **different key names from Client's AT Address widget**, don't copy those. `description` is a **confirmed dead write** on Supplier (PATCH/create both return success, value never persists) — don't add a UI field for it; `remarks` is the real working free-text field. `email` (`zope.schema.Email`) validates format even though optional — omit the key entirely when blank, sending `""` is rejected. |
+| **ReferenceDefinition** | Archetypes, at `bika_setup/bika_referencedefinitions` | Plain restapi create/update. The `ReferenceResults` DataGrid (`[{uid,result,min,max}]`) and the `Blank`/`Hazardous` booleans persist cleanly in the create body — **no custom view**. |
+| **ReferenceSample** | Archetypes, child of a **Supplier** (`setup/suppliers/<id>/<QC-id>`) | See two-step flow below. |
+
+**ReferenceSample two-step create (both quirks confirmed live):**
+1. Sending `ReferenceDefinition` in the restapi **create body → HTTP 500** `"No converter for making <ReferenceDefinition> JSON compatible"` — the UIDReferenceField **response** serializer crashes (the object may or may not be created; don't rely on it). So **CREATE without the ref** (201), then **PATCH** the ref (PATCH returns 204, no response body → no serializer crash).
+2. SENAITE's auto-copy of `ReferenceResults` from the linked definition fires only on the classic-UI event path, **never via a restapi mutator** (same class as Calculation §16b). So the frontend **copies the chosen definition's `ReferenceResults` itself** and PATCHes them onto the sample alongside the ref.
+3. **`ExpiryDate` is REQUIRED** on ReferenceSample — restapi create is rejected `ValidationError: Expiry Date is required` without it. The Reference Samples form enforces it (`*`).
+- Implemented in `app/actions/{suppliers,reference-definitions,reference-samples}.ts` (read-v1 / write-restapi via the shared `senaite-setup.ts` helpers — §16d), UI in `app/dashboard/{suppliers,reference-definitions,reference-samples}/`, shared `app/dashboard/_components/ReferenceResultsGrid.tsx`. Nav entries in `adminNav.ts`.
+- **Worksheet Blank/Control**: the worksheet detail's "Add Blank/Control QC" picker lists active reference samples (`getReferenceSampleOptions`) and calls the already-baked `@@add-worksheet-reference` view (`addReferenceAnalyses(reference, service_uids)`) — the sample's own `getBlank()` decides Blank vs Control. Works even on a blank worksheet (verified: added a Control row for the QC sample's covered service).
+
+**Worksheet view additions (2026-07-20, baked into the SENAITE image — rebuild `docker compose build senaite` on other machines):**
+- `@@update-worksheet` now **clears** Instrument/Method when sent empty: `setInstrument("")` crashes inside `api.get_object("")` before its own clear step, so the view sets `ws.getField("Instrument").set(ws, None)` directly (what setInstrument does internally when the resolved instrument is None). Frontend now always sends instrument/method (incl. empty) so clearing works.
+- `@@lab-analysts` (GET, on `IWorksheetFolder`) returns lab members eligible as analyst (`api.get_users_by_roles(["Analyst","LabManager","LabClerk","Manager"])`) as `[{id,fullname}]`. **Returns `[]` in a fresh dev env** because the `admin` account is a Zope-**root** user, invisible to Plone's `searchForMembers` — real lab users created via Administration → Users (which sync into the Plone site with lab roles) will appear. The worksheet analyst field is now a dropdown of these (falls back to "Unassigned" + preserves any existing free-text/id value).
+
+**Instrument results import (frontend-only, no SENAITE change):** the worksheet detail has an "Import results" button that parses a CSV matching the page's own "Export CSV" format (matches rows by **Position**, needs `Position` + `Result` columns), pre-fills the editable result inputs, then "Submit all" submits every entered result via the existing jsonapi `update` path. KISS — reuses the proven result-entry flow, no instrument-interface parser.
+
+**Orphaned Django worksheet code removed:** `LabWorksheetsShell.tsx`, `LabWorksheetDetail.tsx`, `app/actions/django-worksheets.ts` (all dead after the SENAITE re-point; nothing else imported them — `schedule.ts` only referenced django-worksheets in a comment).
+
+## 16f. AnalysisRequest (Sample) create silently drops every non-core field — and Attachment needs its own object
+
+**Discovery (2026-07-20):** `createSenaiteSample()` (`app/lib/senaite.ts`) built one big `v1/create` body containing Contact, CCContact, CCEmails, ClientOrderNumber, ClientReference, Remarks, Preservation, SamplePoint, SamplingDeviation, Composite, InternalUse. SENAITE returned `success:true` for every one of these — but only **SampleType, DateSampled, Priority, Analyses** actually persisted; every other field in that create body was silently dropped. Confirmed by a real Playwright end-to-end test reading the AR back via v1, not by guessing. Same bug class as §16b/§16c/§16d, now confirmed for `AnalysisRequest` too — **assume `v1/create` only honors a small whitelist for any Archetypes content type in this build; verify empirically, never trust `success:true` alone.**
+
+- **Fix**: split into a minimal `v1/create` (SampleType/DateSampled/Priority/Analyses only) followed immediately by a `v1/update` call carrying every other field, then re-fetch the AR for accurate return data. `v1/update` on AnalysisRequest IS reliable for these fields (confirmed by live probing + the end-to-end test) — restapi is NOT an option here (GET/PATCH on an AR crashes the restapi response serializer: `No converter for making <Client ...> JSON compatible`, because the AR's own reference fields can't be serialized back).
+- **Reference-field UID gotchas confirmed live**: Container's real portal_type is `SampleContainer` (not "Container"); Preservation's is `SamplePreservation` (not "Preservation"). Always the object's real **UID**, never its id/slug. `ClientRemarks` does not exist on the AR schema at all — only `Remarks`.
+- **Contact/CCContact have no UID in this app's UI** (`contact_name`/`cc_contact` are free-text inputs, not pickers) — resolved via a new `resolveOrCreateContactUid()` helper in `senaite.ts` that finds-or-creates a Contact under the client's path by name match, mirroring the backend's existing `_ensure_client_contact()` pattern in `core/senaite_service.py`. Any future free-text field that maps to a SENAITE reference type needs the same resolve-or-create treatment, not a raw string in the payload.
+- **`v1/update`'s response is not trustworthy** — confirmed again here (already documented on `updateSenaiteSample`'s docstring): it can return **HTTP 400** on an AnalysisRequest update while the change is still applied server-side. **Never call `raise_for_status()`/treat non-2xx as failure on this endpoint** — always re-fetch the object afterward and check whether the value actually landed. A first version of the attachment-linking code below got this wrong and looped forever on retry, creating a duplicate object each time.
+- **Attachments need a separate `Attachment` content object — SENAITE has no field on the AR that accepts a file directly.** `push_sample_attachment()` (`core/senaite_service.py`) creates it via **plone.restapi POST to the CLIENT folder** (POSTing to the AR's own path 403s), body `{"@type":"Attachment","AttachmentFile":{"data":<base64>,"encoding":"base64","filename":...,"content-type":...}}`, then links it via `v1/update {uid: <AR uid>, "Attachment": [...existing_uids, new_uid]}` — must read the AR's current `Attachment` list first and append, never blind-overwrite, or an earlier upload's attachment silently disappears. Verify the link by re-reading the AR (per the point above), not by trusting the update response. Before creating a new Attachment, check whether one with the same filename is already linked (idempotency) — otherwise a retried Celery task creates a duplicate every time it retries.
+- Wired via a new Celery task `sync_sample_attachment_to_senaite` (`core/tasks.py`, standard `schema_context` tenant pattern) dispatched from `SampleViewSet.upload_attachment` (`lims/views.py`); new `Sample.senaite_attachment_uid` field (migration `lims/0028_add_sample_senaite_attachment_uid`) tracks the linked object.
+- **Known gap, not fixed (needs a UI decision, flagged to user, not built without approval per §0):** the New Sample form's Container field is a hardcoded local preset list (`CONTAINER_OPTIONS`) unrelated to real SENAITE `SampleContainer` objects, and Batch Sub-group (`SubGroup` on the AR, folder `setup/subgroups`) is free text with no UID source in the UI — neither reaches SENAITE. Wiring them properly needs new data fetches / a picker UI, not just a payload change.

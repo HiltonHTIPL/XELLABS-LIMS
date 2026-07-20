@@ -18,6 +18,10 @@ const CFG: EntityConfig = {
   parentSubPath: 'setup/analysiscategories',
   revalidate: '/dashboard/analysis-categories',
   singular: 'Analysis category',
+  // sort_key is zope.schema.Float — a whole-number value must be forced to
+  // serialize with a decimal point or restapi rejects it ("Object is of
+  // wrong type."). See forceFloatLiterals in senaite-setup.ts.
+  floatFields: ['sort_key'],
   buildBody: (fd) => {
     const title = str(fd, 'title')
     const department = str(fd, 'department')

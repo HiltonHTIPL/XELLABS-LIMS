@@ -13,6 +13,7 @@ export type AdminSection = {
   roles: string[] | null
   description?: string
   dependsOn?: string[]
+  countPortalType?: string
 }
 
 export const ADMIN_SECTIONS: AdminSection[] = [
@@ -50,6 +51,17 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     description: 'View and manage submitted analysis requests.' },
   { label: 'Results',      href: '/dashboard/results',      icon: 'science',     roles: ['admin', 'lab_manager', 'analyst', 'reviewer'],
     description: 'Enter, verify, and review analysis results.' },
+  { label: 'Worksheet Templates', href: '/dashboard/worksheet-templates', icon: 'grid_on', roles: ['admin', 'lab_manager'],
+    description: 'Predefined worksheet layouts — tray size, routine/QC position plan, analyses, instrument and method.',
+    dependsOn: ['Analyses', 'Instrument Register', 'Reference Definitions'] },
+  { label: 'Suppliers', href: '/dashboard/suppliers', icon: 'local_shipping', roles: ['admin', 'lab_manager'],
+    description: 'Vendors that supply QC reference materials; containers for Reference Samples.', countPortalType: 'Supplier' },
+  { label: 'Reference Definitions', href: '/dashboard/reference-definitions', icon: 'straighten', roles: ['admin', 'lab_manager'],
+    description: 'Expected QC values (result / acceptable range) per analysis — templates for Reference Samples.',
+    dependsOn: ['Analyses'], countPortalType: 'ReferenceDefinition' },
+  { label: 'Reference Samples', href: '/dashboard/reference-samples', icon: 'colorize', roles: ['admin', 'lab_manager'],
+    description: 'QC materials (control / blank) added to worksheets for quality control.',
+    dependsOn: ['Suppliers', 'Reference Definitions'], countPortalType: 'ReferenceSample' },
   { label: 'Tasks',        href: '/dashboard/tasks',        icon: 'checklist',   roles: null,
     description: 'Track lab tasks and assignments across the workflow.' },
   { label: 'Chain of Custody', href: '/dashboard/chain-of-custody', icon: 'link', roles: ['admin', 'lab_manager', 'analyst', 'reviewer', 'client'],
@@ -74,25 +86,25 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     description: 'Embedded analytics dashboards for lab performance metrics.' },
   // Reference-data setup sections (mirror of SENAITE's setup matrix)
   { label: 'Analysis Categories', href: '/dashboard/analysis-categories', icon: 'account_tree', roles: ['admin', 'lab_manager'],
-    description: 'Grouping categories used to organize Analyses.' },
+    description: 'Grouping categories used to organize Analyses.', countPortalType: 'AnalysisCategory' },
   { label: 'Attachment Types', href: '/dashboard/attachment-types', icon: 'attach_file', roles: ['admin', 'lab_manager'],
-    description: 'Classify file attachments uploaded to samples and requests.' },
+    description: 'Classify file attachments uploaded to samples and requests.', countPortalType: 'AttachmentType' },
   { label: 'Batch Labels', href: '/dashboard/batch-labels', icon: 'label', roles: ['admin', 'lab_manager'],
-    description: 'Tags applied to Batches for grouping and filtering.' },
+    description: 'Tags applied to Batches for grouping and filtering.', countPortalType: 'BatchLabel' },
   { label: 'Instrument Locations', href: '/dashboard/instrument-locations', icon: 'place', roles: ['admin', 'lab_manager'],
-    description: 'Physical locations where instruments are installed.' },
+    description: 'Physical locations where instruments are installed.', countPortalType: 'InstrumentLocation' },
   { label: 'Instrument Types', href: '/dashboard/instrument-types', icon: 'category', roles: ['admin', 'lab_manager'],
-    description: 'Categories of instruments used across the lab.' },
+    description: 'Categories of instruments used across the lab.', countPortalType: 'InstrumentType' },
   { label: 'Interpretation Templates', href: '/dashboard/interpretation-templates', icon: 'description', roles: ['admin', 'lab_manager'],
-    description: 'Reusable result-interpretation text blocks for reports.' },
+    description: 'Reusable result-interpretation text blocks for reports.', countPortalType: 'InterpretationTemplate' },
   { label: 'Lab Contacts', href: '/dashboard/lab-contacts', icon: 'contact_page', roles: ['admin', 'lab_manager'],
-    description: 'Internal lab staff contacts linked to reports and departments.' },
+    description: 'Internal lab staff contacts linked to reports and departments.', countPortalType: 'LabContact' },
   { label: 'Lab Departments', href: '/dashboard/lab-departments', icon: 'corporate_fare', roles: ['admin', 'lab_manager'],
-    description: 'Organizational departments within the lab.' },
+    description: 'Organizational departments within the lab.', countPortalType: 'Department' },
   { label: 'Lab Products', href: '/dashboard/lab-products', icon: 'shopping_bag', roles: ['admin', 'lab_manager'],
-    description: 'Billable products/services offered by the lab.' },
+    description: 'Billable products/services offered by the lab.', countPortalType: 'LabProduct' },
   { label: 'Labels', href: '/dashboard/labels', icon: 'sell', roles: ['admin', 'lab_manager'],
-    description: 'Printable label templates for samples and containers.' },
+    description: 'Printable label templates for samples and containers.', countPortalType: 'Label' },
   { label: 'Laboratory Information', href: '/dashboard/laboratory', icon: 'apartment', roles: ['admin', 'lab_manager'],
     description: 'Lab identity, accreditation, and contact details.' },
 ]

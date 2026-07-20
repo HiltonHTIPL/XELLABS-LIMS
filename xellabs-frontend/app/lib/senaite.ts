@@ -276,6 +276,32 @@ function mapContact(c: Record<string, unknown>): SenaiteContact {
   }
 }
 
+/**
+ * Lean client list for dropdowns (e.g. New Sample) — only uid/title/ClientID,
+ * active clients only, and a single server-side-filtered call. Deliberately
+ * NOT `fetchSenaiteClientsFull`: that one also bulk-fetches every Contact
+ * (complete=true&limit=2000) to support the Clients admin page's contact
+ * column, which a dropdown never renders.
+ */
+export async function fetchSenaiteClientsForDropdown(
+  token: string,
+): Promise<{ uid: string; title: string; ClientID: string }[]> {
+  const headers = { Authorization: `Basic ${token}`, Accept: 'application/json' }
+  try {
+    const res = await fetch(
+      `${SENAITE_URL}/@@API/senaite/v1/Client?review_state=active&complete=true&limit=1000`,
+      { headers, cache: 'no-store' },
+    )
+    if (!res.ok) return []
+    const data = await res.json()
+    return ((data.items ?? []) as Record<string, unknown>[]).map(c => ({
+      uid: (c.uid as string) ?? '',
+      title: (c.title as string) ?? '',
+      ClientID: (c.ClientID as string) ?? '',
+    }))
+  } catch { return [] }
+}
+
 /** List all active clients with their primary contact merged in (one bulk Contact fetch). */
 export async function fetchSenaiteClientsFull(token: string): Promise<SenaiteClientFull[]> {
   const headers = { Authorization: `Basic ${token}`, Accept: 'application/json' }
@@ -617,6 +643,31 @@ async function fetchRestapiSampleTypeExtras(
   } catch { return null }
 }
 
+/**
+ * Lean sample-type list for dropdowns (e.g. New Sample) — uid/title only, no
+ * `complete=true` (title/uid are standard catalog metadata) and no per-item
+ * restapi extras call. `fetchSenaiteSampleTypes` below does both of those for
+ * every item (needed by the SampleTypes admin page, which renders
+ * retention_period/admitted_sticker_templates/etc.) — a dropdown that only
+ * renders uid+title doesn't need any of that.
+ */
+export async function fetchSenaiteSampleTypesForDropdown(
+  token: string,
+): Promise<{ uid: string; title: string }[]> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/SampleType?limit=1000`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return ((data.items ?? []) as Record<string, unknown>[]).map(t => ({
+      uid: (t.uid as string) ?? '',
+      title: (t.title as string) ?? '',
+    }))
+  } catch { return [] }
+}
+
 export async function fetchSenaiteSampleTypes(token: string): Promise<SenaiteSampleType[]> {
   try {
     const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/SampleType?complete=true&limit=1000`, {
@@ -720,7 +771,10 @@ export async function updateSenaiteContainerType(
     const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update`, {
       method: 'POST',
       headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify([{ uid, title: payload.title, description: payload.description ?? '' }]),
+      // v1/update rejects a list-wrapped body ("'list' object has no
+      // attribute 'update'") — must be a single bare object, confirmed live
+      // 2026-07-20 (same bug independently found/fixed in updateSenaiteSampleType).
+      body: JSON.stringify({ uid, title: payload.title, description: payload.description ?? '' }),
       cache: 'no-store',
     })
     const data = await res.json().catch(() => ({})) as Record<string, unknown>
@@ -1528,17 +1582,12 @@ function sampleTypeApiBody(payload: SampleTypePayload): Record<string, unknown> 
 }
 
 // Patches retention_period + admitted_sticker_templates via plone.restapi —
-// the only API path that persists retention_period at all (see
-// sampleTypeApiBody above). These used to be sent in ONE bundled PATCH; if
-// either field failed validation, the WHOLE request 400'd and neither field
-// saved — confirmed live: retention_period alone always succeeds, but
-// admitted_sticker_templates (a DataGridField) is rejected by plone.restapi's
-// deserializer with "Object is of wrong type" for ANY non-empty row content,
-// regardless of payload shape tried (only a bare empty list is accepted) —
-// this looks like a genuine plone.restapi/DataGridField incompatibility in
-// this SENAITE version, not a fixable payload-formatting mistake. Splitting
-// into two independent calls so retention_period reliably saves even though
-// sticker templates structurally cannot be set through this API.
+// the only API path that persists either field at all (see sampleTypeApiBody
+// above). Split into two independent calls (rather than one bundled PATCH) so
+// a validation failure on one field doesn't 400 the whole request and block
+// the other from saving. Both fields persist correctly via this path — the
+// custom sampletype_stickers_deserializer.py adapter (see CLAUDE.md §16b)
+// handles admitted_sticker_templates, including multi-item rows.
 async function patchSampleTypeExtras(
   token: string, url: string, payload: SampleTypePayload
 ): Promise<{ success: boolean; error?: string }> {
@@ -1631,7 +1680,7 @@ export async function updateSenaiteSampleType(
     const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update`, {
       method: 'POST',
       headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify([{ uid, ...sampleTypeApiBody(payload) }]),
+      body: JSON.stringify({ uid, ...sampleTypeApiBody(payload) }),
       cache: 'no-store',
     })
     const data = await res.json().catch(() => ({})) as Record<string, unknown>
@@ -1926,6 +1975,35 @@ function mapSenaiteAnalysisService(s: Record<string, unknown>): SenaiteAnalysisS
     })),
     review_state: (s.review_state as string) ?? 'active',
   }
+}
+
+/**
+ * Lean analysis-service list for dropdowns (e.g. New Sample) — uid/title only,
+ * no `complete=true` (both are standard catalog metadata; the full
+ * `fetchSenaiteAnalysisServices` below needs complete=true for price/category/
+ * unit/etc. rendered on the Analyses admin page).
+ */
+export async function fetchSenaiteAnalysisServicesForDropdown(
+  token: string,
+): Promise<{ uid: string; title: string }[]> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/AnalysisService?limit=1000`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    const seen = new Set<string>()
+    const cleaned: { uid: string; title: string }[] = []
+    for (const s of (data.items ?? []) as Record<string, unknown>[]) {
+      const title = ((s.title as string) ?? '').trim()
+      const key = title.toLowerCase()
+      if (!key || seen.has(key)) continue
+      seen.add(key)
+      cleaned.push({ uid: (s.uid as string) ?? '', title })
+    }
+    return cleaned
+  } catch { return [] }
 }
 
 export async function fetchSenaiteAnalysisServices(token: string): Promise<SenaiteAnalysisService[]> {
@@ -2364,11 +2442,61 @@ export async function fetchSenaiteSample(token: string, uid: string): Promise<Se
   } catch { return null }
 }
 
+/** Finds an existing Contact by full-name match under the given client path,
+ * or creates one. Mirrors the same resolve-or-create pattern already used
+ * server-side in core/senaite_service.py's _ensure_client_contact — this
+ * flow talks to SENAITE directly from the Next.js server action instead, so
+ * it needs its own copy of the same logic. Filters client-side rather than
+ * trusting a server-side query filter, per this build's confirmed unreliable
+ * list-filter params (see other _find_by_title-style lookups in this repo). */
+async function resolveOrCreateContactUid(token: string, clientPath: string, fullName: string): Promise<string | null> {
+  const name = fullName.trim()
+  if (!name) return null
+  const headers = { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Contact?complete=true&limit=1000`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (res.ok) {
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>
+      const items = (data.items as Record<string, unknown>[]) ?? []
+      const needle = name.toLowerCase()
+      const match = items.find(it =>
+        it.parent_path === clientPath && (String(it.title ?? '').toLowerCase() === needle)
+      )
+      if (match?.uid) return match.uid as string
+    }
+  } catch { /* fall through to create */ }
+
+  const [firstName, ...rest] = name.split(/\s+/)
+  const surname = rest.join(' ') || firstName
+  try {
+    const createRes = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        portal_type: 'Contact',
+        parent_path: clientPath,
+        Firstname: firstName,
+        Surname: surname,
+      }),
+      cache: 'no-store',
+    })
+    const data = await createRes.json().catch(() => ({})) as Record<string, unknown>
+    if (!createRes.ok || data.success === false) return null
+    const items = (data.items as Record<string, unknown>[]) ?? []
+    return (items[0]?.uid as string) ?? null
+  } catch { return null }
+}
+
 export async function createSenaiteSample(
   token: string,
   payload: {
     Client: string        // client UID — used to look up parent_path
-    Contact?: string      // contact UID (optional)
+    ContactName?: string  // free-text contact name — resolved/created against SENAITE Contact
+    CCContactNames?: string // comma-separated free-text names — resolved/created the same way
+    CCEmails?: string      // comma-separated emails
     SampleType: string    // sample type UID
     DateSampled: string   // ISO date string
     Analyses?: string[]   // analysis service UIDs
@@ -2377,6 +2505,12 @@ export async function createSenaiteSample(
     Batch?: string         // Batch UID — groups this sample under a Batch (optional)
     Composite?: boolean
     InternalUse?: boolean
+    ClientOrderNumber?: string
+    ClientReference?: string
+    Remarks?: string
+    Preservation?: string       // SamplePreservation UID (resolved by caller)
+    SamplePoint?: string        // SamplePoint UID (resolved by caller)
+    SamplingDeviation?: string  // SamplingDeviation UID (resolved by caller)
   }
 ): Promise<{ success: boolean; sample?: SenaiteSample; error?: string }> {
   const headers = {
@@ -2397,7 +2531,21 @@ export async function createSenaiteSample(
     const clientPath = (clientItems[0]?.path as string) ?? ''
     if (!clientPath) return { success: false, error: 'Could not determine client path in SENAITE' }
 
-    // Step 2: create the AnalysisRequest under the client
+    const contactUid = payload.ContactName ? await resolveOrCreateContactUid(token, clientPath, payload.ContactName) : null
+    const ccContactUids = payload.CCContactNames
+      ? (await Promise.all(
+          payload.CCContactNames.split(',').map(n => resolveOrCreateContactUid(token, clientPath, n))
+        )).filter((uid): uid is string => Boolean(uid))
+      : []
+
+    // Step 2: create the AnalysisRequest under the client — kept to ONLY the
+    // fields confirmed (2026-07-20, live probing + a real end-to-end test) to
+    // actually persist via v1/create: SampleType, DateSampled, Priority,
+    // Analyses. Every other field below returns success:true from `create`
+    // but is silently dropped server-side — same class of bug documented in
+    // CLAUDE.md §16b-16d for other content types. They must go through a
+    // SEPARATE v1/update call after the AR exists (verified reliable for AR
+    // fields, unlike restapi which crashes on this object's own serializer).
     const body: Record<string, unknown> = {
       portal_type: 'AnalysisRequest',
       parent_path: clientPath,
@@ -2405,15 +2553,7 @@ export async function createSenaiteSample(
       DateSampled: payload.DateSampled,
       Priority: payload.Priority ?? '3',
     }
-    if (payload.Analyses?.length)    body.Analyses       = payload.Analyses
-    if (payload.ClientSampleID)      body.ClientSampleID = payload.ClientSampleID
-    if (payload.Contact)             body.Contact        = payload.Contact
-    if (payload.Batch)               body.Batch          = payload.Batch
-    // Always sent (not gated on truthiness like the optional fields above) —
-    // these are real toggles the user can flip back to false, and SENAITE
-    // needs the explicit false to actually clear a previously-true value.
-    body.Composite   = payload.Composite ?? false
-    body.InternalUse = payload.InternalUse ?? false
+    if (payload.Analyses?.length) body.Analyses = payload.Analyses
 
     const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
       method: 'POST',
@@ -2431,7 +2571,58 @@ export async function createSenaiteSample(
     if (items.length === 0) {
       return { success: false, error: (data.message as string) ?? 'No sample returned from SENAITE' }
     }
-    return { success: true, sample: mapSample(items[0]) }
+    const created = items[0]
+    const uid = created.uid as string
+
+    // Step 3: push every other field via v1/update — same endpoint already
+    // confirmed reliable for AR reference/text fields via updateSenaiteSample.
+    const extras: Record<string, unknown> = {
+      // Always sent (not gated on truthiness) — these are real toggles the
+      // user can flip back to false, and SENAITE needs the explicit false
+      // to actually clear a previously-true value.
+      Composite: payload.Composite ?? false,
+      InternalUse: payload.InternalUse ?? false,
+    }
+    if (payload.ClientSampleID)    extras.ClientSampleID    = payload.ClientSampleID
+    if (contactUid)                extras.Contact           = contactUid
+    if (ccContactUids.length)      extras.CCContact         = ccContactUids
+    if (payload.CCEmails)          extras.CCEmails          = payload.CCEmails
+    if (payload.Batch)             extras.Batch             = payload.Batch
+    if (payload.ClientOrderNumber) extras.ClientOrderNumber = payload.ClientOrderNumber
+    if (payload.ClientReference)   extras.ClientReference   = payload.ClientReference
+    if (payload.Remarks)           extras.Remarks           = payload.Remarks
+    if (payload.Preservation)      extras.Preservation      = payload.Preservation
+    if (payload.SamplePoint)       extras.SamplePoint       = payload.SamplePoint
+    if (payload.SamplingDeviation) extras.SamplingDeviation = payload.SamplingDeviation
+
+    let finalItem = created
+    try {
+      const updateRes = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ uid, ...extras }),
+        cache: 'no-store',
+      })
+      await updateRes.json().catch(() => ({}))
+      // v1/update's response body is not trustworthy (see updateSenaiteSample's
+      // docstring — success:false can still mean the update landed) — always
+      // re-fetch the AR itself to return accurate data to the caller instead
+      // of trusting either response.
+      const verifyRes = await fetch(`${SENAITE_URL}/@@API/senaite/v1/AnalysisRequest/${uid}?complete=true`, {
+        headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+        cache: 'no-store',
+      })
+      if (verifyRes.ok) {
+        const verifyData = await verifyRes.json().catch(() => ({})) as Record<string, unknown>
+        const verifyItems = (verifyData.items as Record<string, unknown>[]) ?? []
+        if (verifyItems[0]) finalItem = verifyItems[0]
+      }
+    } catch {
+      // The AR itself was already created successfully — a failure pushing
+      // the extra fields must not fail the whole sample registration.
+    }
+
+    return { success: true, sample: mapSample(finalItem) }
   } catch (e) {
     return { success: false, error: String(e) }
   }
@@ -2773,7 +2964,9 @@ export async function assignAnalysesToWorksheet(
     const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update`, {
       method: 'POST',
       headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify([{ uid: worksheetUid, Analyses: analysisUids.map(uid => ({ uid })) }]),
+      // v1/update rejects a list-wrapped body — must be a single bare object
+      // (same bug independently found/fixed in updateSenaiteSampleType/updateSenaiteContainerType).
+      body: JSON.stringify({ uid: worksheetUid, Analyses: analysisUids.map(uid => ({ uid })) }),
       cache: 'no-store',
     })
     const data = await res.json().catch(() => ({})) as Record<string, unknown>

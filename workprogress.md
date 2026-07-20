@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-07-20
+
+- **Completed all 6 deferred worksheet backlog items** ("do all"):
+  1. **Blank/Control QC** — new Administration modules: **Suppliers**, **Reference Definitions** (with expected result/min/max grid + Blank/Hazardous), **Reference Samples** (picks a definition → copies its results; ExpiryDate required). Wired the worksheet detail's "Add Blank/Control QC" picker to the baked `@@add-worksheet-reference` view. No custom Zope views / no rebuild needed for the 3 types (Supplier is DX now; RefDef/RefSample write via restapi — RefSample via create-then-PATCH to dodge a response-serializer 500). See CLAUDE.md §16e.
+  2. **Reviewer test user** — documented in `docs/worksheet-testing.md` (self-verification off → enable it for testing or add a reviewer user).
+  3. **Analyst picker** — worksheet analyst is now a dropdown of lab members via new `@@lab-analysts` SENAITE view (empty in dev until real lab users exist; falls back to Unassigned + preserves current value).
+  4. **Clear Instrument/Method to None** — `@@update-worksheet` view now clears via `getField().set(ws, None)` (setInstrument("") crashed in api.get_object); frontend always sends the fields.
+  5. **Instrument results import** — worksheet detail "Import results" (CSV, matches Export format by Position) pre-fills result inputs → "Submit all". Frontend-only.
+  6. **Retired orphaned Django worksheet code** — deleted `LabWorksheetsShell.tsx`, `LabWorksheetDetail.tsx`, `app/actions/django-worksheets.ts`.
+- SENAITE image rebuilt (2 new views + 1 changed) and recreated. Verified end-to-end in a real browser (Playwright): supplier → definition → sample → QC picker → Control row added. `tsc` clean, no console errors. Test records deactivated (one blank test worksheet WS-014 has no clean REST delete — harmless dev leftover).
+
 ## 2026-07-17
 
 - Client → New Sample client pre-fill: clicking "Client ID" on a Client row now carries the client through to Samples Overview's "New Sample" button (`?client=<senaite_uid>`), which pre-selects that same Client on the New Sample form (mirrors the existing `?batch=` pre-fill pattern) — also cascades contact name + CC emails via the existing `handleClientChange()` logic. Verified live via Playwright (Client select pre-filled with real client name, not blank).

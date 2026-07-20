@@ -175,8 +175,8 @@ export function InfoTooltip({ icon, color, text }: { icon: string; color: string
   )
 }
 
-export function LinkTile({ href, icon, label, description, dependsOn }: {
-  href: string; icon: string; label: string; description?: string; dependsOn?: string[]
+export function LinkTile({ href, icon, label, description, dependsOn, count }: {
+  href: string; icon: string; label: string; description?: string; dependsOn?: string[]; count?: number
 }) {
   return (
     <a
@@ -194,6 +194,16 @@ export function LinkTile({ href, icon, label, description, dependsOn }: {
         <MI name={icon} size={20} color={T.primary} />
       </div>
       <span className="flex-1" style={{ fontSize: 13, fontWeight: 700, color: T.primary }}>{label}</span>
+      {!!count && (
+        <span
+          style={{
+            fontSize: 11, fontWeight: 700, color: T.muted, backgroundColor: '#F3F4F6',
+            borderRadius: 999, padding: '2px 8px', lineHeight: '16px',
+          }}
+        >
+          {count}
+        </span>
+      )}
       {dependsOn && dependsOn.length > 0 && (
         <InfoTooltip icon="account_tree" color={T.muted} text={`Interlinked with: ${dependsOn.join(', ')}`} />
       )}

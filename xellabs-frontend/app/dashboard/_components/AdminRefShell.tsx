@@ -32,6 +32,10 @@ export type FieldConfig = {
   // slide-over (e.g. a multi-tab form) when the related entity needs richer
   // fields than a flat list of text inputs supports.
   customCreateSlide?: (props: { open: boolean; onClose: () => void; onCreated: (option: RefOption) => void }) => React.ReactNode
+  // Optional heading rendered before this field when it differs from the
+  // previous field's section — purely a display grouping, no behavior change
+  // for existing configs that never set it.
+  section?: string
 }
 
 export type AdminRow = { uid: string; title: string;[k: string]: unknown }
@@ -164,17 +168,21 @@ export default function AdminRefShell({
             )}
 
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
-              {fields.map(f => (
-                <FieldInput
-                  key={f.name}
-                  field={f}
-                  value={vals[f.name]}
-                  options={optionsFor(f)}
-                  error={state.errors?.[f.name]?.[0]}
-                  onChange={v => setVal(f.name, v)}
-                  onToggleMulti={uid => toggleMulti(f.name, uid)}
-                  onOpenAdd={() => setAddFieldOpen(f.name)}
-                />
+              {fields.map((f, i) => (
+                <div key={f.name}>
+                  {f.section && f.section !== fields[i - 1]?.section && (
+                    <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#9CA3AF', marginTop: i === 0 ? 0 : 14 }}>{f.section}</h3>
+                  )}
+                  <FieldInput
+                    field={f}
+                    value={vals[f.name]}
+                    options={optionsFor(f)}
+                    error={state.errors?.[f.name]?.[0]}
+                    onChange={v => setVal(f.name, v)}
+                    onToggleMulti={uid => toggleMulti(f.name, uid)}
+                    onOpenAdd={() => setAddFieldOpen(f.name)}
+                  />
+                </div>
               ))}
               {state.message && !state.success && (
                 <p className="text-xs" style={{ color: '#DC2626' }}>{state.message}</p>

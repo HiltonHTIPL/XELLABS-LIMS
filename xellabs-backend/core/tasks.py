@@ -71,6 +71,11 @@ def activate_client_in_senaite(self, client_id: int):
     result = activate_object(client.senaite_uid)
     if result["ok"]:
         logger.info("Client %s reactivated in SENAITE (uid=%s).", client_id, client.senaite_uid)
+    elif "invalid transition" in str(result.get("error", "")).lower():
+        # The client is already active in SENAITE (e.g. this task was queued from
+        # a save that didn't actually change is_active, or a prior attempt already
+        # succeeded) — retrying can never make this succeed, only burn retries.
+        logger.info("Client %s already active in SENAITE (uid=%s) — no transition needed.", client_id, client.senaite_uid)
     else:
         logger.error("Client %s SENAITE reactivation failed: %s — will retry.", client_id, result.get("error"))
         raise self.retry()
@@ -143,4 +148,37 @@ def sync_analysis_request_to_senaite(self, ar_id: int, schema_name: str):
             logger.info("AR %s synced to SENAITE: uid=%s", ar_id, uid)
         else:
             logger.error("AR %s SENAITE sync failed — will retry.", ar_id)
+            raise self.retry()
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def sync_sample_attachment_to_senaite(self, sample_id: int, schema_name: str):
+    """Push a Sample's uploaded attachment file to SENAITE and link it to the
+    Sample's AnalysisRequest. See core/senaite_service.py push_sample_attachment
+    for why this needs its own object-create call (SENAITE has no field on the
+    AR itself that accepts a file directly)."""
+    from django_tenants.utils import schema_context
+    from lims.models import Sample
+    from core.senaite_service import push_sample_attachment
+
+    with schema_context(schema_name):
+        try:
+            sample = Sample.objects.select_related("client").get(pk=sample_id)
+        except Sample.DoesNotExist:
+            logger.warning("sync_sample_attachment_to_senaite: Sample %s not found in schema %s.", sample_id, schema_name)
+            return
+
+        if not sample.senaite_uid:
+            # The AR sync itself hasn't landed yet — retry later rather than
+            # failing permanently, since the AR is usually created moments
+            # before this task is even queued.
+            raise self.retry(countdown=30)
+
+        uid = push_sample_attachment(sample)
+        if uid:
+            sample.senaite_attachment_uid = uid
+            sample.save(update_fields=["senaite_attachment_uid"])
+            logger.info("Sample %s attachment synced to SENAITE: uid=%s", sample_id, uid)
+        else:
+            logger.error("Sample %s attachment SENAITE sync failed — will retry.", sample_id)
             raise self.retry()

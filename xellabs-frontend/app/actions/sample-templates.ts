@@ -41,6 +41,24 @@ export async function getSampleTemplatesPageData(): Promise<SampleTemplatesPageD
   return { sampleTemplates, sampleTypes, samplePoints, sampleContainers, preservations, analysisServices }
 }
 
+/**
+ * Lean variant for callers that only need sampleTemplates + sampleContainers
+ * (both New Sample pages, and the Samples list) — the full
+ * `getSampleTemplatesPageData` above also fetches the FULL sampleTypes list
+ * (fetchSenaiteSampleTypes does one extra restapi round-trip PER sample type)
+ * and the FULL analysisServices list (complete=true), purely for the Sample
+ * Templates admin page's own edit form. Those three callers threw both away
+ * unused — this skips fetching them at all.
+ */
+export async function getSampleTemplatesForNewSample(): Promise<Pick<SampleTemplatesPageData, 'sampleTemplates' | 'sampleContainers'>> {
+  const token = serverToken()
+  const [sampleTemplates, sampleContainers] = await Promise.all([
+    fetchSenaiteSampleTemplates(token),
+    getSampleContainers(),
+  ])
+  return { sampleTemplates, sampleContainers }
+}
+
 export type SampleTemplateFormState = {
   success?: boolean
   message?: string

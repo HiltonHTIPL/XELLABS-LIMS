@@ -1,11 +1,36 @@
 'use server'
 import { revalidatePath } from 'next/cache'
 import { serverToken } from '@/app/lib/senaite-auth'
+import { djangoFetch } from '@/app/lib/django'
 import {
-  fetchSenaiteClientsFull, fetchSenaiteClientByUid,
+  fetchSenaiteClientsFull, fetchSenaiteClientByUid, fetchSenaiteClientsForDropdown,
   createSenaiteClientObj, updateSenaiteClientObj, setSenaiteClientActive,
   type SenaiteClientFull, type SenaiteClientPayload, type SenaiteContactPayload,
 } from '@/app/lib/senaite'
+
+// Best-effort — the Clients list toggles SENAITE directly (this file), which
+// is the source of truth for review_state, but Django's own Client.is_active
+// column would otherwise go stale and later desync a completely unrelated
+// Django-side save into firing an invalid activate/deactivate transition back
+// at SENAITE (confirmed live). Keep it in sync via a signal-free endpoint —
+// never let this fail the user-facing toggle if Django is briefly unreachable.
+async function syncDjangoClientActive(senaiteUid: string, isActive: boolean) {
+  try {
+    const listRes = await djangoFetch(`/api/clients/?senaite_uid=${encodeURIComponent(senaiteUid)}`)
+    if (!listRes.ok) return
+    const data = await listRes.json()
+    const match = (data.results ?? data ?? [])[0]
+    if (!match?.id) return
+    await djangoFetch(`/api/clients/${match.id}/sync-active/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_active: isActive }),
+    })
+  } catch {
+    // Non-fatal — SENAITE (the source of truth for this toggle) already
+    // succeeded; a missed Django sync just risks the same desync this
+    // function exists to prevent, not a broken toggle for the user.
+  }
+}
 
 export type ClientFormState = {
   success?: boolean
@@ -21,6 +46,11 @@ export type ClientFormState = {
 
 export async function getSenaiteClients(): Promise<SenaiteClientFull[]> {
   return fetchSenaiteClientsFull(serverToken())
+}
+
+/** Active-only, uid/title/ClientID — for pick-a-client dropdowns (e.g. New Sample). */
+export async function getActiveSenaiteClientsForDropdown() {
+  return fetchSenaiteClientsForDropdown(serverToken())
 }
 
 export async function getSenaiteClient(uid: string): Promise<SenaiteClientFull | null> {
@@ -126,6 +156,7 @@ export async function toggleSenaiteClientActive(
 ): Promise<{ success: boolean; message: string }> {
   const res = await setSenaiteClientActive(serverToken(), uid, active)
   if (!res.success) return { success: false, message: res.error ?? 'Failed to update status.' }
+  await syncDjangoClientActive(uid, active)
   revalidatePath('/dashboard/clients')
   revalidatePath(`/dashboard/clients/${uid}`)
   return { success: true, message: active ? 'Client activated.' : 'Client deactivated.' }

@@ -134,6 +134,10 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
   const [search, setSearch] = useState('')
   const [filterSampleType, setFilterSampleType] = useState('')
   const [filterClient, setFilterClient] = useState(initialClientId)
+  // Arrived via a Client's "Client ID" link — lock the client filter to a
+  // permanent read-only chip instead of a switchable dropdown, since the
+  // whole point of that link is "this client's samples only".
+  const [clientLocked] = useState(Boolean(initialClientId))
   const [filterStatus, setFilterStatus] = useState('')
   const [filterPriority, setFilterPriority] = useState('')
   const [filterFrom, setFilterFrom] = useState('')
@@ -191,7 +195,10 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   function clearFilters() {
-    setSearch(''); setFilterSampleType(''); setFilterClient('')
+    setSearch(''); setFilterSampleType('')
+    // Client filter is intentionally left alone when locked (arrived via a
+    // Client ID link) — "Clear" resets the other filters, not the client scope.
+    if (!clientLocked) setFilterClient('')
     setFilterStatus(''); setFilterPriority(''); setFilterFrom(''); setFilterTo('')
     setFilterOverdue(false)
     setPage(1)
@@ -422,10 +429,18 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
               <option value="">All Types</option>
               {sampleTypes.map(st => <option key={st.id} value={String(st.id)}>{st.name}</option>)}
             </select>
-            <select value={filterClient} onChange={e => { setFilterClient(e.target.value); setPage(1) }} style={sel}>
-              <option value="">All Clients</option>
-              {clients.map(c => <option key={c.uid} value={c.uid}>{c.title}</option>)}
-            </select>
+            {clientLocked ? (
+              <div style={{ ...sel, display: 'flex', alignItems: 'center', background: '#F9FAFB', cursor: 'default' }}>
+                <span style={{ fontWeight: 600, color: '#111827' }}>
+                  {clients.find(c => c.uid === filterClient)?.title ?? 'Client'}
+                </span>
+              </div>
+            ) : (
+              <select value={filterClient} onChange={e => { setFilterClient(e.target.value); setPage(1) }} style={sel}>
+                <option value="">All Clients</option>
+                {clients.map(c => <option key={c.uid} value={c.uid}>{c.title}</option>)}
+              </select>
+            )}
             <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(1) }} style={sel}>
               {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>

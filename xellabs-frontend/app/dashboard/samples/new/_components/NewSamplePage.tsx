@@ -2,15 +2,16 @@
 import { useActionState, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createSample, SampleFormState } from '@/app/actions/samples'
-import { SenaiteSampleType, SenaiteAnalysisService, SenaiteSampleTemplate, SenaiteRefOption } from '@/app/lib/senaite'
+import { SenaiteSampleTemplate, SenaiteRefOption } from '@/app/lib/senaite'
 import { AnalysisProfile } from '@/app/actions/analysis-profiles'
 import { T, MI, Breadcrumb, Btn, SectionCard, Field, inputStyle, selectStyle, textareaStyle, TagChip } from '../../../_components/ui'
 
 type ClientOption = { uid: string; name: string; client_id: string }
+type DropdownOption = { uid: string; title: string }
 type Props = {
   clients: ClientOption[]
-  sampleTypes: SenaiteSampleType[]
-  analysisServices: SenaiteAnalysisService[]
+  sampleTypes: DropdownOption[]
+  analysisServices: DropdownOption[]
   sampleTemplates: SenaiteSampleTemplate[]
   sampleContainers: SenaiteRefOption[]
   analysisProfiles: AnalysisProfile[]

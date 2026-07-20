@@ -114,6 +114,13 @@ export type NewSamplePayload = {
   client_senaite_uid?: string
   sample_type_senaite_uid?: string
   batch_senaite_uid?: string
+  // SENAITE UIDs for reference fields whose UI value is a title/name, not a
+  // UID — resolved client-side (NewSampleShell already holds the live lists
+  // these titles came from) since the SENAITE-facing lookup happens in
+  // createSenaiteSample(), not here.
+  preservation_senaite_uid?: string
+  sample_point_senaite_uid?: string
+  sampling_deviation_senaite_uid?: string
 }
 
 function senaitePriority(priority: string): string {
@@ -152,6 +159,15 @@ export async function createSampleWithAnalyses(
       ...(payload.batch_senaite_uid ? { Batch: payload.batch_senaite_uid } : {}),
       Composite: payload.composite ?? false,
       InternalUse: payload.internal_use ?? false,
+      ...(payload.contact_name ? { ContactName: payload.contact_name } : {}),
+      ...(payload.cc_contact ? { CCContactNames: payload.cc_contact } : {}),
+      ...(payload.cc_emails ? { CCEmails: payload.cc_emails } : {}),
+      ...(payload.client_order_number ? { ClientOrderNumber: payload.client_order_number } : {}),
+      ...(payload.client_reference ? { ClientReference: payload.client_reference } : {}),
+      ...(payload.description ? { Remarks: payload.description } : {}),
+      ...(payload.preservation_senaite_uid ? { Preservation: payload.preservation_senaite_uid } : {}),
+      ...(payload.sample_point_senaite_uid ? { SamplePoint: payload.sample_point_senaite_uid } : {}),
+      ...(payload.sampling_deviation_senaite_uid ? { SamplingDeviation: payload.sampling_deviation_senaite_uid } : {}),
     })
     if (!senaiteResult.success || !senaiteResult.sample) {
       return { success: false, message: `The lab system rejected the sample: ${senaiteResult.error ?? 'unknown error'}` }
@@ -280,6 +296,24 @@ export async function getLabSamples(): Promise<LabSample[]> {
       url = next ? next.replace(/^https?:\/\/[^/]+/, '') : null
     }
     return all
+  } catch { return [] }
+}
+
+/**
+ * Recent-samples-only variant for the New Sample page's duplicate-warning
+ * check (findLikelyDuplicate in NewSampleShell.tsx only looks within a
+ * 24-hour window) — the full getLabSamples() above pages through the ENTIRE
+ * samples table ever logged, which only gets slower as the lab accumulates
+ * history. A single bounded page (most-recent-first) is enough: any real
+ * duplicate within the last 24h will be in the newest samples, not buried
+ * deep in history.
+ */
+export async function getRecentLabSamplesForDuplicateCheck(): Promise<LabSample[]> {
+  try {
+    const res = await djangoFetch('/api/lims/samples/?ordering=-created_at&page_size=200')
+    if (!res.ok) return []
+    const data = await res.json()
+    return data.results ?? []
   } catch { return [] }
 }
 

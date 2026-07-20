@@ -273,7 +273,7 @@ class ClientViewSet(ModelViewSet):
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ['is_active', 'tenant']
+    filterset_fields = ['is_active', 'tenant', 'senaite_uid']
     search_fields = ['name', 'client_id', 'email', 'contact_person']
     ordering_fields = ['name', 'created_at']
     ordering = ['name']
@@ -283,6 +283,21 @@ class ClientViewSet(ModelViewSet):
         if user.tenant_id:
             return Client.objects.filter(tenant=user.tenant)
         return Client.objects.all()
+
+    @action(detail=True, methods=['patch'], url_path='sync-active')
+    def sync_active(self, request, pk=None):
+        """Sync is_active from a SENAITE-side activate/deactivate that already
+        happened (frontend's Clients list toggles SENAITE directly, not this
+        field) — WITHOUT re-triggering the post_save signal that would fire a
+        redundant, now-invalid activate/deactivate transition back at SENAITE
+        for a state that's already correct there. QuerySet.update() bypasses
+        .save()/post_save entirely, unlike the normal PATCH on this ViewSet."""
+        is_active = request.data.get('is_active')
+        if not isinstance(is_active, bool):
+            return Response({'detail': 'is_active (boolean) is required.'}, status=400)
+        client = self.get_object()
+        Client.objects.filter(pk=client.pk).update(is_active=is_active)
+        return Response({'id': client.pk, 'is_active': is_active})
 
     def perform_create(self, serializer):
         from rest_framework.exceptions import ValidationError as DRFValidationError

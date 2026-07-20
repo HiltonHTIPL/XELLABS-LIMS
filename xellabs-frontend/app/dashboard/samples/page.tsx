@@ -1,6 +1,6 @@
 import { getSamples, getSampleTypes, getAnalysisServices } from '@/app/actions/samples'
 import { getClients } from '@/app/actions/clients'
-import { getSampleTemplatesPageData } from '@/app/actions/sample-templates'
+import { getSampleTemplatesForNewSample } from '@/app/actions/sample-templates'
 import { getAnalysisProfiles } from '@/app/actions/analysis-profiles'
 import SamplesShell from './_components/SamplesShell'
 
@@ -10,7 +10,7 @@ export default async function SamplesPage() {
     getClients(),
     getSampleTypes(),
     getAnalysisServices(),
-    getSampleTemplatesPageData(),
+    getSampleTemplatesForNewSample(),
     getAnalysisProfiles(),
   ])
 

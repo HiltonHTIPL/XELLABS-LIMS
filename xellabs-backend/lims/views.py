@@ -75,24 +75,34 @@ class SampleTypeViewSet(viewsets.ModelViewSet):
 
         created_names = []
         skipped = []
+        # Bulk-load existing rows once instead of a filter() + get_or_create()
+        # (2 queries) per SENAITE item — most items on a repeat sync are
+        # already-synced and need no DB write at all, so skip those entirely
+        # via a plain dict lookup before touching the database.
+        existing_by_uid = {st.senaite_uid: st for st in SampleType.objects.exclude(senaite_uid="").exclude(senaite_uid__isnull=True)}
+        existing_by_name = {st.name: st for st in SampleType.objects.all()}
         for st in senaite_types:
             uid = st.get("uid", "")
             name = (st.get("title") or st.get("Title") or "").strip()
             prefix = (st.get("Prefix") or name[:4].upper() or "XX").strip()
             if not name:
                 continue
+            if uid and uid in existing_by_uid:
+                continue  # already synced by uid — nothing to do
+            if not uid and name in existing_by_name:
+                continue  # already synced by name (no-uid fallback path) — nothing to do
             # One bad row must never abort the whole sync: SampleType.name is
             # unique, so a SENAITE type re-created under a new UID with the same
             # title used to raise IntegrityError here and silently drop every
             # remaining type — the "dropdown shows 2 of 3 types" bug.
             try:
                 if uid:
-                    existing_by_name = SampleType.objects.filter(name=name).first()
-                    if existing_by_name and existing_by_name.senaite_uid != uid:
+                    name_match = existing_by_name.get(name)
+                    if name_match and name_match.senaite_uid != uid:
                         # Same title, different (or blank) UID — adopt the new UID
                         # instead of colliding on the unique name.
-                        existing_by_name.senaite_uid = uid
-                        existing_by_name.save(update_fields=["senaite_uid"])
+                        name_match.senaite_uid = uid
+                        name_match.save(update_fields=["senaite_uid"])
                         continue
                     obj, created = SampleType.objects.get_or_create(
                         senaite_uid=uid,
@@ -307,10 +317,16 @@ class SampleViewSet(viewsets.ModelViewSet):
         old_attachment = sample.attachment if sample.attachment else None
         old_name = old_attachment.name if old_attachment else None
         sample.attachment = file
-        sample.save(update_fields=["attachment"])
+        sample.senaite_attachment_uid = ""
+        sample.save(update_fields=["attachment", "senaite_attachment_uid"])
         if old_name and old_name != sample.attachment.name:
             sample.attachment.storage.delete(old_name)
         url = request.build_absolute_uri(sample.attachment.url) if sample.attachment else None
+
+        from django.db import connection
+        from core.tasks import sync_sample_attachment_to_senaite
+        sync_sample_attachment_to_senaite.delay(sample.pk, connection.schema_name)
+
         return Response({"attachment_url": url})
 
     @action(

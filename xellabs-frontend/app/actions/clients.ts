@@ -181,13 +181,13 @@ export async function syncClientsFromSenaite(): Promise<SyncResult> {
   const session = await getSession()
   if (!session) return { success: false, message: 'Not authenticated. Please sign in again.', created: 0, updated: 0, total: 0 }
 
-  // 1. Fetch all Django clients to build uid→id map (uses djangoFetch — tenant-aware)
+  // 1. Fetch all Django clients to build a uid→client map (uses djangoFetch — tenant-aware)
   const existingRes = await djangoFetch('/api/clients/?page_size=1000').catch(() => null)
   const existingData = existingRes?.ok ? await existingRes.json() : { results: [] }
   const existingList: DjangoClient[] = existingData.results ?? existingData
-  const byUid = new Map<string, number>()
+  const byUid = new Map<string, DjangoClient>()
   for (const c of existingList) {
-    if (c.senaite_uid) byUid.set(c.senaite_uid, c.id)
+    if (c.senaite_uid) byUid.set(c.senaite_uid, c)
   }
 
   // 2. Fetch all clients from SENAITE (raw fetch — not a Django endpoint)
@@ -197,12 +197,16 @@ export async function syncClientsFromSenaite(): Promise<SyncResult> {
     return { success: false, message: 'No clients found in XelLabs. Verify XelLabs is running and you are logged in as a XelLabs user.', created: 0, updated: 0, total: 0 }
   }
 
-  let created = 0
-  let updated = 0
-  let failed = 0
+  const sameAddr = (a: SenaiteAddress | Record<string, never> | null, b: unknown) =>
+    JSON.stringify(a ?? {}) === JSON.stringify(b ?? {})
 
-  // 3. Upsert each SENAITE client into Django
-  for (const sc of senaiteClients) {
+  // 3. Upsert each SENAITE client into Django, in parallel — this used to be a
+  // sequential for-loop awaiting one Django round-trip per client (the
+  // dominant cost on the New Sample page, which calls this sync on every
+  // load), and it PATCHed every client every time even when nothing changed.
+  // Now: skip the write entirely when the mirrored row already matches, and
+  // run every remaining create/update concurrently.
+  const results = await Promise.all(senaiteClients.map(async sc => {
     const contact = sc.contact
     const payload = {
       name:                 sc.title,
@@ -229,22 +233,54 @@ export async function syncClientsFromSenaite(): Promise<SyncResult> {
       contact_department:   contact?.Department || '',
     }
 
-    const existingId = byUid.get(sc.uid)
-    try {
-      const res = existingId
-        ? await djangoFetch(`/api/clients/${existingId}/`, { method: 'PATCH', body: JSON.stringify(payload) })
-        : await djangoFetch('/api/clients/', { method: 'POST', body: JSON.stringify({ ...payload, is_active: true }) })
-
-      if (!res.ok) {
-        failed++
-      } else if (existingId) {
-        updated++
-      } else {
-        created++
+    const existing = byUid.get(sc.uid)
+    if (existing) {
+      const unchanged =
+        existing.name === payload.name &&
+        existing.client_id === payload.client_id &&
+        existing.email === payload.email &&
+        existing.phone === payload.phone &&
+        existing.fax === payload.fax &&
+        existing.tax_number === payload.tax_number &&
+        existing.bank_name === payload.bank_name &&
+        existing.bank_branch === payload.bank_branch &&
+        existing.is_active === payload.is_active &&
+        existing.cc_emails === payload.cc_emails &&
+        existing.salutation === payload.salutation &&
+        existing.contact_first_name === payload.contact_first_name &&
+        existing.contact_last_name === payload.contact_last_name &&
+        existing.contact_person === payload.contact_person &&
+        existing.contact_email === payload.contact_email &&
+        existing.contact_phone === payload.contact_phone &&
+        existing.contact_job_title === payload.contact_job_title &&
+        existing.contact_department === payload.contact_department &&
+        sameAddr(payload.physical_address, existing.physical_address) &&
+        sameAddr(payload.postal_address, existing.postal_address) &&
+        sameAddr(payload.billing_address, existing.billing_address)
+      if (unchanged) return 'unchanged' as const
+      try {
+        const res = await djangoFetch(`/api/clients/${existing.id}/`, { method: 'PATCH', body: JSON.stringify(payload) })
+        return res.ok ? ('updated' as const) : ('failed' as const)
+      } catch {
+        return 'failed' as const
       }
-    } catch {
-      failed++
     }
+
+    try {
+      const res = await djangoFetch('/api/clients/', { method: 'POST', body: JSON.stringify({ ...payload, is_active: true }) })
+      return res.ok ? ('created' as const) : ('failed' as const)
+    } catch {
+      return 'failed' as const
+    }
+  }))
+
+  let created = 0
+  let updated = 0
+  let failed = 0
+  for (const r of results) {
+    if (r === 'created') created++
+    else if (r === 'updated') updated++
+    else if (r === 'failed') failed++
   }
 
   // No revalidatePath here — this is called during a Server Component's own

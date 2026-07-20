@@ -1,7 +1,15 @@
-import { getDjangoWorksheets } from '@/app/actions/django-worksheets'
-import LabWorksheetsShell from './_components/LabWorksheetsShell'
+import {
+  getSenaiteWorksheets, getWorksheetTemplateOptions, getWorksheetInstrumentOptions,
+} from '@/app/actions/senaite-worksheets'
+import WorksheetsShell from './_components/WorksheetsShell'
+
+export const dynamic = 'force-dynamic'
 
 export default async function WorksheetsPage() {
-  const worksheets = await getDjangoWorksheets()
-  return <LabWorksheetsShell initialWorksheets={worksheets} />
+  const [worksheets, templates, instruments] = await Promise.all([
+    getSenaiteWorksheets(),
+    getWorksheetTemplateOptions(),
+    getWorksheetInstrumentOptions(),
+  ])
+  return <WorksheetsShell initialWorksheets={worksheets} templates={templates} instruments={instruments} />
 }

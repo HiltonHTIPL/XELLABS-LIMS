@@ -1,15 +1,15 @@
-import { getSampleTypes, getAnalysisServices } from '@/app/actions/samples'
-import { getSenaiteClients } from '@/app/actions/senaite-clients'
-import { getSampleTemplatesPageData } from '@/app/actions/sample-templates'
+import { getSampleTypesForDropdown, getAnalysisServicesForDropdown } from '@/app/actions/samples'
+import { getActiveSenaiteClientsForDropdown } from '@/app/actions/senaite-clients'
+import { getSampleTemplatesForNewSample } from '@/app/actions/sample-templates'
 import { getAnalysisProfiles } from '@/app/actions/analysis-profiles'
 import NewSamplePage from './_components/NewSamplePage'
 
 export default async function NewSamplePageServer() {
   const [clients, sampleTypes, analysisServices, templateData, analysisProfiles] = await Promise.all([
-    getSenaiteClients(),
-    getSampleTypes(),
-    getAnalysisServices(),
-    getSampleTemplatesPageData(),
+    getActiveSenaiteClientsForDropdown(),
+    getSampleTypesForDropdown(),
+    getAnalysisServicesForDropdown(),
+    getSampleTemplatesForNewSample(),
     getAnalysisProfiles(),
   ])
 
@@ -17,7 +17,8 @@ export default async function NewSamplePageServer() {
   // read the dropdown straight from there instead of Django's own Client
   // model, whose senaite_uid only gets populated for clients created through
   // an older sync path. That mismatch silently hid any client created/edited
-  // via the Clients page from this dropdown.
+  // via the Clients page from this dropdown. Active clients only — a
+  // deactivated client shouldn't be pickable for a new sample.
   const clientOptions = clients.map(c => ({ uid: c.uid, name: c.title, client_id: c.ClientID }))
 
   return (

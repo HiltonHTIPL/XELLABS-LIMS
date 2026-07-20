@@ -64,6 +64,17 @@ RUN chown senaite:senaite \
     ${CORE}/adapters/labcontact_lab_views.py \
     ${CORE}/adapters/configure.zcml
 
+# Worksheet flow: the AT Worksheet marks `Analyses` required, so generic REST
+# create fails ("Analyses is required"). These custom views replicate SENAITE's
+# native empty-create + applyWorksheetTemplate flow (auto-fills routine/QC/
+# duplicate slots) and return JSON — see worksheet_views.py docstring.
+COPY worksheet_views.py ${CORE}/adapters/worksheet_views.py
+COPY patch_worksheet_zcml.py /tmp/patch_worksheet_zcml.py
+RUN python2.7 /tmp/patch_worksheet_zcml.py
+RUN chown senaite:senaite \
+    ${CORE}/adapters/worksheet_views.py \
+    ${CORE}/adapters/configure.zcml
+
 # Replace branding templates
 COPY logo.pt          ${BASE}/viewlets/templates/logo.pt
 COPY toolbar.pt       ${BASE}/viewlets/templates/toolbar.pt

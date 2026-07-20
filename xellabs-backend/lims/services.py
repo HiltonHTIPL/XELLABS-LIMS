@@ -2,9 +2,12 @@
 Pure business logic for the LIMS workflow.
 No HTTP concerns here — called from views and serializers.
 """
+import logging
 import re
 from django.db import transaction
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 # NOTE: Sample, Result, AnalysisRequest, and Worksheet already get automatic
 # AuditEvent + field-level DataChangeLog + RecordVersion logging on every
@@ -149,6 +152,24 @@ def receive_sample(sample, user, location="", notes="", **receipt_fields):
         transferred_by=user,
         notes=notes,
     )
+
+    # Drive SENAITE's native `receive` so the sample's analyses become
+    # assignable to Worksheets (SENAITE cascades registered -> unassigned on
+    # receive; without this they stay `registered` forever and no Worksheet can
+    # ever pull them). Best-effort: a lab-system hiccup must not roll back the
+    # Django receipt — matches the forward-only sync philosophy used elsewhere.
+    if sample.senaite_uid:
+        try:
+            from core.senaite_service import receive_analysis_request
+            result = receive_analysis_request(sample.senaite_uid)
+            if not result.get("ok"):
+                logger.warning(
+                    "SENAITE receive not completed for sample %s: %s",
+                    sample.pk, result.get("error"),
+                )
+        except Exception as exc:  # noqa: BLE001 - never block Django receipt
+            logger.warning("SENAITE receive call errored for sample %s: %s", sample.pk, exc)
+
     return sample
 
 

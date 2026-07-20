@@ -8,6 +8,8 @@ import {
   senaiteWorkflowAction,
   fetchSenaiteSampleTypes,
   fetchSenaiteAnalysisServices,
+  fetchSenaiteSampleTypesForDropdown,
+  fetchSenaiteAnalysisServicesForDropdown,
   SenaiteSample,
   SenaiteSampleType,
   SenaiteAnalysisService,
@@ -35,6 +37,17 @@ export async function getSampleTypes(): Promise<SenaiteSampleType[]> {
 
 export async function getAnalysisServices(): Promise<SenaiteAnalysisService[]> {
   return fetchSenaiteAnalysisServices(serverToken())
+}
+
+// Lean uid/title-only variants for dropdowns (New Sample pages) — skip the
+// complete=true full-object resolution (and, for sample types, the per-item
+// restapi extras call) that the admin pages above need but a dropdown doesn't.
+export async function getSampleTypesForDropdown(): Promise<{ uid: string; title: string }[]> {
+  return fetchSenaiteSampleTypesForDropdown(serverToken())
+}
+
+export async function getAnalysisServicesForDropdown(): Promise<{ uid: string; title: string }[]> {
+  return fetchSenaiteAnalysisServicesForDropdown(serverToken())
 }
 
 // ─── Create ───────────────────────────────────────────────────────────────────

@@ -1,7 +1,15 @@
 'use server'
-import { createEntity, updateEntity, listEntity, listOptions, str, strList, type EntityConfig } from '@/app/lib/admin-crud'
-import type { SetupRecord } from '@/app/lib/senaite-setup'
+import { createEntity, updateEntity, listOptions, str, strList, type EntityConfig } from '@/app/lib/admin-crud'
+import { serverToken } from '@/app/lib/senaite-auth'
+import { fetchSetupList, fetchRestapiOverlay, type SetupRecord } from '@/app/lib/senaite-setup'
 import type { AdminFormState } from '@/app/dashboard/_components/AdminRefShell'
+
+// v1's list serialization omits text/sample_types/analysis_templates entirely
+// for InterpretationTemplate, even though restapi confirms all three persist
+// correctly on write — same read/write split as Suppliers (§16d). Without this
+// overlay, AdminRefShell.openEdit() pre-fills the edit form from the (empty)
+// row data and a save-without-changes wipes out the real text/refs via PATCH.
+const OVERLAY_FIELDS = ['text', 'sample_types', 'analysis_templates']
 
 function refUids(v: unknown): string[] {
   if (!v) return []
@@ -34,16 +42,28 @@ export type InterpretationTemplateRow = {
   sample_types: string[]; analysis_templates: string[]
 }
 
+function textValue(v: unknown): string {
+  if (typeof v === 'string') return v
+  if (v && typeof v === 'object') return String((v as Record<string, unknown>).data ?? '')
+  return ''
+}
+
 export async function listInterpretationTemplates(): Promise<InterpretationTemplateRow[]> {
-  return listEntity('InterpretationTemplate', d => ({
-    uid: d.uid as string,
-    path: (d.path as string) ?? '',
-    title: d.title as string,
-    text: (d.text as string) ?? '',
-    description: (d.description as string) ?? '',
-    sample_types: refUids(d.sample_types),
-    analysis_templates: refUids(d.analysis_templates),
-  }))
+  const token = serverToken()
+  const items = await fetchSetupList(token, 'InterpretationTemplate')
+  const overlays = await Promise.all(items.map(d => fetchRestapiOverlay(token, (d.url as string) ?? '', OVERLAY_FIELDS)))
+  return items.map((d, i) => {
+    const merged = { ...d, ...overlays[i] }
+    return {
+      uid: merged.uid as string,
+      path: (merged.path as string) ?? '',
+      title: merged.title as string,
+      text: textValue(merged.text),
+      description: (merged.description as string) ?? '',
+      sample_types: refUids(merged.sample_types),
+      analysis_templates: refUids(merged.analysis_templates),
+    }
+  })
 }
 export async function listSampleTypeOptions() { return listOptions('SampleType') }
 // The analysis_templates field only accepts objects of portal_type "ARTemplate"

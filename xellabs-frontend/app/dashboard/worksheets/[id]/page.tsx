@@ -1,27 +1,15 @@
-import { getDjangoWorksheet, getAssignableUsers } from '@/app/actions/django-worksheets'
-import { getAnalysisRequests } from '@/app/actions/analysis-requests'
-import { getAnalysisServices } from '@/app/actions/samples'
-import { getInstrumentOptions } from '@/app/actions/instrument-maintenance'
-import { getMethods } from '@/app/actions/methods'
-import { getInstrumentTypes, getInstrumentLocations, getManufacturers, getSuppliers } from '@/app/actions/instrument-workflows'
-import { getCalculations } from '@/app/actions/calculations'
-import LabWorksheetDetail from './_components/LabWorksheetDetail'
+import {
+  getSenaiteWorksheetDetailById, getUnassignedAnalyses,
+  getWorksheetInstrumentOptions, getWorksheetMethodOptions,
+  getReferenceSampleOptions, getLabAnalysts,
+} from '@/app/actions/senaite-worksheets'
+import WorksheetDetailShell from './_components/WorksheetDetailShell'
 
-export default async function LabWorksheetDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export const dynamic = 'force-dynamic'
+
+export default async function WorksheetDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const [worksheet, ars, services, users, instruments, methods, instrumentTypes, instrumentLocations, manufacturers, suppliers, calculations] = await Promise.all([
-    getDjangoWorksheet(Number(id)),
-    getAnalysisRequests(),
-    getAnalysisServices(),
-    getAssignableUsers(),
-    getInstrumentOptions(),
-    getMethods(),
-    getInstrumentTypes(),
-    getInstrumentLocations(),
-    getManufacturers(),
-    getSuppliers(),
-    getCalculations(),
-  ])
+  const worksheet = await getSenaiteWorksheetDetailById(id)
 
   if (!worksheet) {
     return (
@@ -31,11 +19,22 @@ export default async function LabWorksheetDetailPage({ params }: { params: Promi
     )
   }
 
+  const [unassigned, instruments, methods, references, analysts] = await Promise.all([
+    getUnassignedAnalyses(),
+    getWorksheetInstrumentOptions(),
+    getWorksheetMethodOptions(),
+    getReferenceSampleOptions(),
+    getLabAnalysts(),
+  ])
+
   return (
-    <LabWorksheetDetail
-      worksheet={worksheet} ars={ars} services={services} users={users} instruments={instruments} methods={methods}
-      instrumentTypes={instrumentTypes} instrumentLocations={instrumentLocations} manufacturers={manufacturers}
-      suppliers={suppliers} calculations={calculations}
+    <WorksheetDetailShell
+      worksheet={worksheet}
+      unassigned={unassigned}
+      instruments={instruments}
+      methods={methods}
+      references={references}
+      analysts={analysts}
     />
   )
 }

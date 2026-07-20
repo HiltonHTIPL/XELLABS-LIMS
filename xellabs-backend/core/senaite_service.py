@@ -12,6 +12,14 @@ SENAITE_URL      = settings.SENAITE_URL.rstrip("/")
 SENAITE_USER     = settings.SENAITE_USER
 SENAITE_PASSWORD = settings.SENAITE_PASSWORD
 
+# Protocol+host only, no site path — object `path` values returned by SENAITE
+# (e.g. "/senaite/clients/client-8") already include the site path, so a
+# restapi call on an object/folder's own path must be built as
+# f"{SENAITE_ORIGIN}{path}", never f"{SENAITE_URL}{path}" (doubles the segment).
+from urllib.parse import urlsplit as _urlsplit
+_parsed = _urlsplit(SENAITE_URL)
+SENAITE_ORIGIN = f"{_parsed.scheme}://{_parsed.netloc}"
+
 
 def _session() -> requests.Session:
     s = requests.Session()
@@ -347,6 +355,150 @@ def push_analysis_request(ar) -> str | None:
     except requests.RequestException as exc:
         logger.error("SENAITE AR sync failed for '%s': %s", ar.ar_id, exc)
         return None
+
+
+# ── Sample attachment sync ────────────────────────────────────────────────────
+
+def push_sample_attachment(sample) -> str | None:
+    """
+    Create a SENAITE Attachment from the Django Sample's uploaded file and link
+    it to the Sample's own AnalysisRequest. Returns the Attachment UID on success,
+    None on failure.
+
+    Confirmed via live probing against this build (2026-07-20) that the AR
+    (AnalysisRequest) content type never accepted a file directly — SENAITE
+    needs a separate Attachment object, created via plone.restapi (not the v1
+    JSON API used elsewhere in this module) POSTed to the CLIENT folder — never
+    the AR's own path, which 403s. AttachmentType must be omitted from the
+    create body (including it crashes the restapi response serializer), and
+    the Attachment is linked back via a v1 update on the AR's own multi-valued
+    `Attachment` field — which must be read first and appended to, never
+    blind-overwritten, or it would silently drop any attachment already linked
+    by an earlier upload.
+    """
+    if not sample.senaite_uid:
+        logger.warning("push_sample_attachment: Sample %s has no senaite_uid — AR not yet synced.", sample.sample_id)
+        return None
+    if not sample.attachment:
+        logger.warning("push_sample_attachment: Sample %s has no attachment file.", sample.sample_id)
+        return None
+
+    client = sample.client
+    client_item = _find_by_title("client", client.name) or {}
+    client_path = client_item.get("path")
+    if not client_path:
+        logger.error("push_sample_attachment: could not resolve client path for '%s'.", client.name)
+        return None
+
+    import base64
+    import os
+
+    try:
+        with sample.attachment.open("rb") as fh:
+            file_bytes = fh.read()
+    except (OSError, ValueError) as exc:
+        logger.error("push_sample_attachment: could not read attachment file for sample %s: %s", sample.sample_id, exc)
+        return None
+
+    filename = os.path.basename(sample.attachment.name)
+    ext = os.path.splitext(filename)[1].lower()
+    content_type = {
+        ".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".gif": "image/gif", ".txt": "text/plain", ".csv": "text/csv",
+        ".xls": "application/vnd.ms-excel", ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ".doc": "application/msword", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }.get(ext, "application/octet-stream")
+
+    s = _session()
+
+    # Read the AR's current Attachment list FIRST — both to avoid ever
+    # dropping an attachment already linked by an earlier upload, and (on a
+    # retried task run) to skip re-creating a duplicate Attachment object if
+    # this exact file was already created and linked by a prior attempt whose
+    # link step merely *reported* failure without actually failing (see below).
+    try:
+        ar_resp = s.get(_api(f"AnalysisRequest/{sample.senaite_uid}"), params={"complete": "true"}, timeout=15)
+        ar_resp.raise_for_status()
+        ar_items = ar_resp.json().get("items") or []
+        existing = ar_items[0].get("Attachment") if ar_items else None
+        existing_uids = [a.get("uid") for a in (existing or []) if isinstance(a, dict) and a.get("uid")]
+        existing_filenames = {
+            (a.get("AttachmentFile") or {}).get("filename"): a.get("uid")
+            for a in (existing or []) if isinstance(a, dict)
+        }
+    except requests.RequestException as exc:
+        logger.warning("push_sample_attachment: could not read existing AR attachments for sample %s: %s", sample.sample_id, exc)
+        existing_uids, existing_filenames = [], {}
+
+    already_linked_uid = existing_filenames.get(filename)
+    if already_linked_uid:
+        logger.info(
+            "push_sample_attachment: '%s' already linked to AR %s (uid=%s) — skipping re-create.",
+            filename, sample.senaite_uid, already_linked_uid,
+        )
+        return already_linked_uid
+
+    try:
+        create_resp = s.post(
+            f"{SENAITE_ORIGIN}{client_path}",
+            headers={"Accept": "application/json"},
+            json={
+                "@type": "Attachment",
+                "AttachmentFile": {
+                    "data": base64.b64encode(file_bytes).decode("ascii"),
+                    "encoding": "base64",
+                    "filename": filename,
+                    "content-type": content_type,
+                },
+            },
+            timeout=30,
+        )
+        if create_resp.status_code not in (200, 201):
+            logger.error(
+                "push_sample_attachment: Attachment create failed for sample %s: HTTP %s %s",
+                sample.sample_id, create_resp.status_code, create_resp.text[:500],
+            )
+            return None
+        attachment_uid = create_resp.json().get("UID")
+        if not attachment_uid:
+            logger.error("push_sample_attachment: Attachment create returned no UID for sample %s.", sample.sample_id)
+            return None
+    except requests.RequestException as exc:
+        logger.error("push_sample_attachment: Attachment create request failed for sample %s: %s", sample.sample_id, exc)
+        return None
+
+    # Link to the AR. v1/update on AnalysisRequest is confirmed (2026-07-20) to
+    # sometimes return HTTP 400 / success:false even though the update is
+    # actually applied server-side (the same "reports failure, still lands"
+    # quirk documented on updateSenaiteSample in senaite.ts) — so the outcome
+    # is decided by reading the AR back, never by the response status/body.
+    try:
+        s.post(
+            _api("update"),
+            json={"uid": sample.senaite_uid, "Attachment": [*existing_uids, attachment_uid]},
+            timeout=15,
+        )
+    except requests.RequestException as exc:
+        logger.warning("push_sample_attachment: link request for %s raised %s — verifying anyway.", attachment_uid, exc)
+
+    try:
+        verify_resp = s.get(_api(f"AnalysisRequest/{sample.senaite_uid}"), params={"complete": "true"}, timeout=15)
+        verify_resp.raise_for_status()
+        verify_items = verify_resp.json().get("items") or []
+        linked = verify_items[0].get("Attachment") if verify_items else None
+        linked_uids = [a.get("uid") for a in (linked or []) if isinstance(a, dict)]
+        if attachment_uid not in linked_uids:
+            logger.error(
+                "push_sample_attachment: Attachment %s created but not linked to AR %s after update.",
+                attachment_uid, sample.senaite_uid,
+            )
+            return None
+    except requests.RequestException as exc:
+        logger.error("push_sample_attachment: could not verify link for Attachment %s: %s", attachment_uid, exc)
+        return None
+
+    logger.info("Sample %s attachment synced to SENAITE: uid=%s", sample.sample_id, attachment_uid)
+    return attachment_uid
 
 
 def _build_storage_path(location) -> str:
@@ -805,6 +957,67 @@ def resolve_analysis_request_uid_by_client_sample_id(client_sample_id: str) -> s
             exc,
         )
         return None
+
+
+def receive_analysis_request(senaite_uid: str) -> dict:
+    """
+    Fire SENAITE's native `receive` transition on the AR (sample_due →
+    sample_received). Critically, receiving in SENAITE cascades the `initialize`
+    transition onto the sample's analyses (registered → unassigned) — which is
+    what makes them assignable to Worksheets. Without this, analyses stay
+    `registered` forever and no Worksheet (or Worksheet Template) can ever pull
+    them (confirmed live). Uses content_status_modify, the same proven mechanism
+    as dispatch_sample. Idempotent: a no-op if the AR is already past receipt.
+    Returns {"ok": True} or {"ok": False, "error": "<sanitized>"}.
+    """
+    uid = (senaite_uid or "").strip()
+    if not uid:
+        return {"ok": False, "error": "Sample is not linked to the lab system record."}
+
+    s = _session()
+    try:
+        item = _get_analysis_request_by_uid(s, uid)
+        if not item:
+            return {"ok": False, "error": "Sample not found in the lab system."}
+
+        path = item.get("path")
+        if not path:
+            return {"ok": False, "error": "Could not resolve sample path in the lab system."}
+
+        state_before = item.get("review_state")
+        # Already received (or further along) — nothing to do.
+        if state_before and state_before != "sample_due":
+            return {"ok": True, "already_received": True, "state": state_before}
+
+        mod_resp = requests.post(
+            f"{SENAITE_URL}{path}/content_status_modify",
+            auth=(SENAITE_USER, SENAITE_PASSWORD),
+            data={"workflow_action": "receive"},
+            headers={"Accept": "text/html,application/json"},
+            timeout=20,
+        )
+        if not mod_resp.ok:
+            return {
+                "ok": False,
+                "error": _sanitize_error(
+                    f"Lab system receive failed (HTTP {mod_resp.status_code})."
+                ),
+            }
+
+        after = _get_analysis_request_by_uid(s, uid)
+        state_after = (after or {}).get("review_state")
+        if state_after == "sample_received":
+            return {"ok": True}
+
+        return {
+            "ok": False,
+            "error": _sanitize_error(
+                f"Receive transition not completed (state: {state_after or state_before})."
+            ),
+        }
+    except requests.RequestException as exc:
+        logger.error("receive_analysis_request failed uid=%s: %s", uid, exc)
+        return {"ok": False, "error": _sanitize_error(str(exc))}
 
 
 def dispatch_sample(senaite_uid: str, comment: str) -> dict:

@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react'
 import { LinkTile } from '../../_components/ui'
 import type { AdminSection } from '../../_components/adminNav'
 
-export default function AdminGridShell({ sections }: { sections: AdminSection[] }) {
+export default function AdminGridShell({ sections, counts }: { sections: AdminSection[]; counts?: Record<string, number> }) {
   const [query, setQuery] = useState('')
 
   const visible = useMemo(() => {
@@ -40,6 +40,7 @@ export default function AdminGridShell({ sections }: { sections: AdminSection[] 
               label={section.label}
               description={section.description}
               dependsOn={section.dependsOn}
+              count={counts?.[section.label]}
             />
           ))}
         </div>
