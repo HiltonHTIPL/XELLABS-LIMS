@@ -8,6 +8,7 @@ export default async function AuditTrailPage() {
     getSecurityEvents(),
     getRecordVersions(),
   ])
+  
   return (
     <AuditTrailShell
       initialAuditEvents={auditEvents}

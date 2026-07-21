@@ -13,6 +13,10 @@ export default function InstrumentLocationsShell({ rows }: { rows: AdminRow[] })
         { key: 'title', label: 'Name', width: '32%' },
         { key: 'description', label: 'Description', width: '60%' },
       ]}
+      exportColumns={[
+        { key: 'title', label: 'Location' },
+        { key: 'description', label: 'Description' },
+      ]}
       fields={[
         { name: 'title', label: 'Name', kind: 'text', required: true, placeholder: 'e.g. Lab Room 1' },
         { name: 'description', label: 'Description', kind: 'textarea', placeholder: 'Optional description' },

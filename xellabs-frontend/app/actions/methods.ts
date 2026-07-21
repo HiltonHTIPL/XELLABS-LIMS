@@ -47,6 +47,9 @@ function buildMethodFormData(formData: FormData): FormData {
 }
 
 export async function createMethod(_state: MethodFormState, formData: FormData): Promise<MethodFormState> {
+  const isImport = formData.get('_is_import') === 'true'
+  formData.delete('_is_import')
+
   const name = (formData.get('name') as string)?.trim()
   const code = (formData.get('code') as string)?.trim()
 
@@ -60,6 +63,7 @@ export async function createMethod(_state: MethodFormState, formData: FormData):
     fd.append('is_active', 'true')
     const res = await djangoFetch('/api/lims/methods/', {
       method: 'POST',
+      auditSource: isImport ? 'import' : undefined,
       body: fd,
     })
     const data = await res.json().catch(() => ({}))

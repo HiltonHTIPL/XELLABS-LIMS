@@ -1,4 +1,5 @@
 'use client'
+import { exportRowsToCsv } from '@/app/lib/exportCsv'
 import { useState, useActionState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -8,6 +9,19 @@ import {
   type SampleContainerFormState, type CreateRefOptionState,
 } from '@/app/actions/sample-containers'
 import type { SenaiteSampleContainer, SenaiteRefOption } from '@/app/lib/senaite'
+import ImportButton, { type ParsedRow } from '../../_components/ImportButton'
+
+function getExportColumns(containerTypeOptions: SenaiteRefOption[], preservationOptions: SenaiteRefOption[]) {
+  return [
+    { key: 'title', label: 'Container' },
+    { key: 'description', label: 'Description' },
+    { key: 'containerTypeUid', label: 'Container Type', render: (c: SenaiteSampleContainer) => containerTypeOptions.find(o => o.uid === c.containerTypeUid)?.title || c.containerTypeTitle || '' },
+    { key: 'capacity', label: 'Capacity' },
+    { key: 'prePreserved', label: 'Pre-preserved', render: (c: SenaiteSampleContainer) => c.prePreserved ? 'Yes' : 'No' },
+    { key: 'preservationUid', label: 'Preservation', render: (c: SenaiteSampleContainer) => preservationOptions.find(o => o.uid === c.preservationUid)?.title || c.preservationTitle || '' },
+    { key: 'securitySealIntact', label: 'Security seal intact', render: (c: SenaiteSampleContainer) => c.securitySealIntact ? 'Yes' : 'No' },
+  ]
+}
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -175,6 +189,35 @@ export default function SampleContainersShell({
   function openEdit(c: SenaiteSampleContainer) { setEditing(c); setVals(containerToFV(c)); setShowForm(true) }
   function closeForm() { setShowForm(false); setEditing(null) }
 
+  async function handleImportRow(row: ParsedRow) {
+    const fd = new FormData()
+    if (row.title) fd.append('title', row.title)
+    if (row.description) fd.append('description', row.description)
+    if (row.capacity) fd.append('capacity', row.capacity)
+    
+    if (row.prePreserved?.toLowerCase() === 'yes') {
+      fd.append('prePreserved', 'on')
+    }
+    if (row.securitySealIntact?.toLowerCase() === 'yes') {
+      fd.append('securitySealIntact', 'on')
+    }
+
+    if (row.containerTypeUid) {
+      const c = containerTypes.find(x => x.title.toLowerCase() === row.containerTypeUid.toLowerCase())
+      if (!c) return { success: false, message: `Container Type not found: ${row.containerTypeUid}` }
+      fd.append('containerTypeUid', c.uid)
+    }
+
+    if (row.preservationUid) {
+      const p = preservations.find(x => x.title.toLowerCase() === row.preservationUid.toLowerCase())
+      if (!p) return { success: false, message: `Preservation not found: ${row.preservationUid}` }
+      fd.append('preservationUid', p.uid)
+    }
+
+    const res = await createSampleContainerFull({}, fd)
+    return { success: res.success, message: res.message, errors: res.errors }
+  }
+
   const fieldErrors = state.errors ?? {}
 
   return (
@@ -190,9 +233,24 @@ export default function SampleContainersShell({
             <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Manage physical sample containers</p>
           </div>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
-          <MI name="add" size={15} color="#fff" /> New Sample Container
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => exportRowsToCsv(getExportColumns(containerTypeOptions, preservationOptions), [], 'sample-containers-template')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ color: '#374151', border: '1px solid #D1D5DB', backgroundColor: '#fff' }}>
+            <MI name="download" size={15} color="#374151" /> Template
+          </button>
+          <button onClick={() => exportRowsToCsv(getExportColumns(containerTypeOptions, preservationOptions), initialSampleContainers, 'sample-containers')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ color: '#0154FC', border: '1px solid #0154FC', backgroundColor: '#fff' }}>
+            <MI name="file_download" size={15} color="#0154FC" /> Export
+          </button>
+          <ImportButton 
+            columns={getExportColumns(containerTypeOptions, preservationOptions)}
+            existingTitles={initialSampleContainers.map(c => c.title)}
+            entityName="Sample Containers"
+            onImportRow={handleImportRow}
+            onRefresh={() => router.refresh()}
+          />
+          <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
+            <MI name="add" size={15} color="#fff" /> New Sample Container
+          </button>
+        </div>
       </div>
 
       {toast && (
@@ -347,7 +405,7 @@ export default function SampleContainersShell({
               })}
             </tbody>
           </table>
-          <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
+          <div className="px-3 py-2 flex items-center justify-between" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
             <p style={{ fontSize: 10, color: '#9CA3AF' }}>{initialSampleContainers.length} sample container{initialSampleContainers.length !== 1 ? 's' : ''}</p>
           </div>
         </div>

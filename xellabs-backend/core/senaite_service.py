@@ -1073,8 +1073,6 @@ def dispatch_sample(senaite_uid: str, comment: str) -> dict:
     except requests.RequestException as exc:
         logger.error("dispatch_sample failed uid=%s: %s", uid, exc)
         return {"ok": False, "error": _sanitize_error(str(exc))}
-
-
 # In local dev, SENAITE_URL already includes the site path (e.g.
 # "http://senaite:8080/senaite"), so the parent path must NOT repeat "/senaite"
 # or it 404s ("...senaite/senaite/setup/..." — confirmed live). In production,

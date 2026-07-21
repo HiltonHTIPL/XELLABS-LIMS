@@ -16,6 +16,20 @@ export default function LabProductsShell({ rows }: { rows: AdminRow[] }) {
         { key: 'labproduct_unit', label: 'Unit', width: '14%' },
         { key: 'labproduct_volume', label: 'Volume', width: '14%' },
       ]}
+      exportColumns={[
+        { key: 'title', label: 'Product' },
+        { key: 'labproduct_volume', label: 'Volume' },
+        { key: 'labproduct_unit', label: 'Unit' },
+        { key: 'labproduct_price', label: 'Price' },
+        { key: 'labproduct_vat', label: 'VAT Amount', render: r => {
+          const p = Number(r.labproduct_price ?? 0), v = Number(r.labproduct_vat ?? 0)
+          return (p * v / 100).toFixed(2)
+        } },
+        { key: 'labproduct_total', label: 'Total Price', render: r => {
+          const p = Number(r.labproduct_price ?? 0), v = Number(r.labproduct_vat ?? 0)
+          return (p + p * v / 100).toFixed(2)
+        } },
+      ]}
       fields={[
         { name: 'title', label: 'Name', kind: 'text', required: true, placeholder: 'e.g. Sampling Kit' },
         { name: 'labproduct_price', label: 'Price (excluding VAT)', kind: 'number', required: true, placeholder: 'e.g. 25.00' },

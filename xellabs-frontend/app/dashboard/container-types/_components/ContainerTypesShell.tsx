@@ -1,9 +1,16 @@
 'use client'
+import { exportRowsToCsv } from '@/app/lib/exportCsv'
 import { useState, useActionState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createContainerType, updateContainerType, type ContainerTypeFormState } from '@/app/actions/container-types'
 import type { SenaiteContainerType } from '@/app/lib/senaite'
+import ImportButton, { type ParsedRow } from '../../_components/ImportButton'
+
+const exportColumns = [
+  { key: 'title', label: 'Title' }, 
+  { key: 'description', label: 'Description' }
+]
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -61,6 +68,15 @@ export default function ContainerTypesShell({ initialContainerTypes }: { initial
   function openEdit(ct: SenaiteContainerType) { setEditing(ct); setTitle(ct.title); setDescription(ct.description); setShowForm(true) }
   function closeForm() { setShowForm(false); setEditing(null) }
 
+  async function handleImportRow(row: ParsedRow) {
+    const fd = new FormData()
+    if (row.title) fd.append('title', row.title)
+    if (row.description) fd.append('description', row.description)
+    
+    const res = await createContainerType({}, fd)
+    return { success: res.success, message: res.message, errors: res.errors }
+  }
+
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
@@ -74,9 +90,24 @@ export default function ContainerTypesShell({ initialContainerTypes }: { initial
             <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Manage sample container types</p>
           </div>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
-          <MI name="add" size={15} color="#fff" /> New Container Type
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => exportRowsToCsv(exportColumns, [], 'container-types-template')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ color: '#374151', border: '1px solid #D1D5DB', backgroundColor: '#fff' }}>
+            <MI name="download" size={15} color="#374151" /> Template
+          </button>
+          <button onClick={() => exportRowsToCsv(exportColumns, initialContainerTypes, 'container-types')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ color: '#0154FC', border: '1px solid #0154FC', backgroundColor: '#fff' }}>
+            <MI name="file_download" size={15} color="#0154FC" /> Export
+          </button>
+          <ImportButton 
+            columns={exportColumns}
+            existingTitles={initialContainerTypes.map(c => c.title)}
+            entityName="Container Types"
+            onImportRow={handleImportRow}
+            onRefresh={() => router.refresh()}
+          />
+          <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
+            <MI name="add" size={15} color="#fff" /> New Container Type
+          </button>
+        </div>
       </div>
 
       {/* Drawer */}
@@ -172,7 +203,7 @@ export default function ContainerTypesShell({ initialContainerTypes }: { initial
               ))}
             </tbody>
           </table>
-          <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
+          <div className="px-3 py-2 flex items-center justify-between" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
             <p style={{ fontSize: 10, color: '#9CA3AF' }}>{initialContainerTypes.length} container type{initialContainerTypes.length !== 1 ? 's' : ''}</p>
           </div>
         </div>

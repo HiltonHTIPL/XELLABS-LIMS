@@ -1,9 +1,9 @@
 'use client'
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { SenaiteSample, mapSenaiteState, mapSenaitePriority } from '@/app/lib/senaite'
-import { receiveSample, verifySample, publishSample } from '@/app/actions/samples'
+import { receiveSample, verifySample, publishSample, getSampleReviewHistory } from '@/app/actions/samples'
 import { T, MI, Breadcrumb, Btn, Card, Chip, StatusChip, thStyle, tdStyle, EmptyState } from '../../../_components/ui'
 
 function fmtDate(d: string | null): string {
@@ -16,13 +16,19 @@ const ANALYSIS_TONE: Record<string, 'gray'|'blue'|'orange'|'green'|'red'> = {
   unassigned: 'gray', assigned: 'blue', to_be_verified: 'orange', verified: 'green', published: 'green', retracted: 'red',
 }
 
-type Props = { sample: SenaiteSample | null; uid: string }
+type Props = { sample: SenaiteSample | null; uid: string; onClose?: () => void }
 
 export default function SampleDetailClient({ sample, uid }: Props) {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState('Overview')
+  const [showAuditTrail, setShowAuditTrail] = useState(false)
   const [actionMsg, setActionMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const [isPending, startTransition] = useTransition()
+  const [auditHistory, setAuditHistory] = useState<any[]>([])
+
+  useEffect(() => {
+    if (sample?.uid) getSampleReviewHistory(sample.uid).then(res => setAuditHistory(res || []))
+  }, [sample?.uid])
 
   function doAction(fn: (uid: string) => Promise<{ success: boolean; message: string }>) {
     startTransition(async () => {
@@ -49,8 +55,8 @@ export default function SampleDetailClient({ sample, uid }: Props) {
   const canReceive = sample.review_state === 'registered' || sample.review_state === 'sample_due'
   const canVerify  = sample.review_state === 'to_be_verified'
   const canPublish = sample.review_state === 'verified'
-  const TABS = ['Overview', 'Analyses', 'Audit Trail']
-  const TAB_ICONS: Record<string, string> = { Overview: 'grid_view', Analyses: 'biotech', 'Audit Trail': 'history' }
+  const TABS = ['Overview', 'Analyses']
+  const TAB_ICONS: Record<string, string> = { Overview: 'grid_view', Analyses: 'biotech' }
 
   return (
     <div style={{ padding: 20, minHeight: '100%', backgroundColor: T.pageBg }}>
@@ -71,7 +77,7 @@ export default function SampleDetailClient({ sample, uid }: Props) {
       <div className="flex items-center justify-between gap-4 mb-5 flex-wrap">
         <h1 style={{ fontSize: 26, fontWeight: 800, color: T.heading, letterSpacing: '-0.02em', margin: 0 }}>Sample Detail</h1>
         <div className="flex items-center gap-2">
-          <Btn variant="outline" icon="shield" onClick={() => setActiveTab('Audit Trail')}>Audit Trail</Btn>
+          <Btn variant="outline" icon="shield" onClick={() => setShowAuditTrail(true)}>Audit Trail</Btn>
           <Btn variant="outline" icon="print" onClick={() => window.print()}>Print</Btn>
           {canReceive && <Btn variant="success" icon="move_to_inbox" onClick={() => doAction(receiveSample)} disabled={isPending}>Receive</Btn>}
           {canVerify  && <Btn style={{ backgroundColor: '#6366F1', color: '#fff' }} icon="verified" onClick={() => doAction(verifySample)} disabled={isPending}>Verify</Btn>}
@@ -243,12 +249,66 @@ export default function SampleDetailClient({ sample, uid }: Props) {
         </Card>
       )}
 
-      {/* Audit Trail tab */}
-      {activeTab === 'Audit Trail' && (
-        <Card title="Audit Trail" icon="history">
-          <EmptyState icon="history" title="Audit trail coming soon" sub="A complete history of all actions will be shown here." />
-        </Card>
-      )}
+      {/* Audit Trail Drawer */}
+      <div style={{ position: 'fixed', top: 0, bottom: 0, left: 0, right: 0, zIndex: 300, pointerEvents: showAuditTrail ? 'auto' : 'none' }}>
+        <div
+          style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', opacity: showAuditTrail ? 1 : 0, transition: 'opacity 0.2s ease-in-out' }}
+          onClick={() => setShowAuditTrail(false)}
+        />
+        <div style={{
+          position: 'absolute', top: 0, right: 0, bottom: 0, width: 'min(560px, 92%)', backgroundColor: '#fff',
+          boxShadow: '-6px 0 32px rgba(0,0,0,0.15)', display: 'flex', flexDirection: 'column',
+          transform: showAuditTrail ? 'translateX(0)' : 'translateX(100%)', transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)' 
+        }}>
+          <div className="px-6 py-5 flex items-center justify-between" style={{ borderBottom: '1px solid #E5E7EB', backgroundColor: '#F9FAFB' }}>
+            <div className="flex items-center gap-2 text-[#14265E]">
+              <MI name="shield" size={20} />
+              <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Audit Trail</h2>
+            </div>
+            <button onClick={() => setShowAuditTrail(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#6B7280' }}>
+              <MI name="close" size={20} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-6 bg-white">
+            {auditHistory.length === 0 ? (
+              <div className="text-center py-10">
+                <MI name="history" size={48} color="#D1D5DB" />
+                <p className="text-sm font-medium text-gray-900 mt-4">No History</p>
+                <p className="text-xs text-gray-500 mt-1">There are no audit events recorded for this sample.</p>
+              </div>
+            ) : (
+              <div className="flex flex-col">
+                {auditHistory.map((entry, idx) => (
+                  <div key={idx} className="flex gap-4 group">
+                    <div className="flex flex-col items-center">
+                      <div className="w-3 h-3 rounded-full border-2 border-white box-content z-10 mt-1" style={{ backgroundColor: '#0154FC' }} />
+                      {idx < auditHistory.length - 1 && (
+                        <div className="w-[2px] flex-1 bg-gray-200 my-1" />
+                      )}
+                    </div>
+                    <div className="pb-6 flex-1">
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', marginBottom: 2, textTransform: 'capitalize' }}>
+                        {entry.action ? `Transition: ${entry.action}` : 'Created'}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 4 }}>
+                        {fmtDate(entry.time)} by <span style={{ fontWeight: 500 }}>{entry.actor}</span>
+                      </div>
+                      <div style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 12, fontSize: 11, backgroundColor: '#EFF6FF', color: T.primary, fontWeight: 500 }}>
+                        Status: {mapSenaiteState(entry.review_state)}
+                      </div>
+                      {entry.comments && (
+                        <div style={{ marginTop: 6, fontSize: 12, color: T.text, backgroundColor: '#F9FAFB', padding: '6px 10px', borderRadius: 6, fontStyle: 'italic' }}>
+                          "{entry.comments}"
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
