@@ -173,12 +173,14 @@ def receive_sample(sample, user, location="", notes="", **receipt_fields):
     return sample
 
 
-# Disposal-eligible statuses mirror lab dispatch exit-transitions:
-# received / to_be_verified / verified / published (Django names below).
+# A registered sample has not entered physical custody; rejected and already
+# disposed samples are terminal. All other retained samples may be disposed
+# once their retention date has passed.
 DISPOSAL_ELIGIBLE_STATUSES = frozenset({
     "received",
-    "results_pending",   # to_be_verified
-    "reviewed",          # verified
+    "in_progress",
+    "results_pending",
+    "reviewed",
     "published",
 })
 
@@ -196,10 +198,13 @@ def dispose_sample(sample, user, basis, notes="", certificate=None):
     if not basis:
         raise ValueError("Regulatory basis is required (e.g. 40 CFR / state disposal rule).")
 
+    if not sample.expiry_date or sample.expiry_date >= timezone.now():
+        raise ValueError("Sample cannot be disposed before its retention date has passed.")
+
     if sample.status not in DISPOSAL_ELIGIBLE_STATUSES:
         raise ValueError(
             f"Cannot dispose a sample with status '{sample.status}'. "
-            "Dispose is allowed from received, to be verified, reviewed, or published."
+            "Only retained samples in an active or completed laboratory state can be disposed."
         )
 
     extra_notes = (notes or "").strip()
@@ -407,45 +412,3 @@ def complete_analysis_request(ar):
         ar.status = "completed"
         ar.save(update_fields=["status", "updated_at"])
     return ar
-
-
-# ── Sample dispose → lab system dispatch (OPTIONAL — not wired; see tc9 plan §6) ─
-
-def schedule_lab_dispatch_after_dispose(sample, regulatory_basis: str, schema_name: str) -> str:
-    """
-    After Django dispose: resolve/link senaite_uid, set sync status, enqueue Celery dispatch.
-    Returns senaite_sync_status for the API response.
-    """
-    from django.db import transaction
-
-    from core.senaite_service import resolve_analysis_request_uid_by_client_sample_id
-    from lims.tasks import dispatch_sample_to_lab
-
-    uid = (sample.senaite_uid or "").strip()
-    update_fields = ["senaite_sync_status", "senaite_sync_error"]
-
-    if not uid:
-        resolved = resolve_analysis_request_uid_by_client_sample_id(sample.sample_id)
-        if resolved:
-            uid = resolved
-            sample.senaite_uid = uid
-            update_fields.append("senaite_uid")
-
-    if not uid:
-        sample.senaite_sync_status = "not_linked"
-        sample.senaite_sync_error = ""
-        sample.save(update_fields=update_fields)
-        return "not_linked"
-
-    sample.senaite_sync_status = "pending"
-    sample.senaite_sync_error = ""
-    sample.save(update_fields=update_fields)
-
-    sample_pk = sample.pk
-    transaction.on_commit(
-        lambda: dispatch_sample_to_lab.apply_async(
-            args=[schema_name, sample_pk, regulatory_basis],
-            countdown=1,
-        )
-    )
-    return "pending"

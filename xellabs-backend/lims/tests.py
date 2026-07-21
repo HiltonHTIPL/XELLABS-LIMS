@@ -2,7 +2,10 @@
 Functional tests for the Core LIMS workflow.
 Covers: sample registration, analysis request, worksheet, result entry, review/approval, ID generation.
 """
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from core.tenant_test import TenantAPITestCase
@@ -190,11 +193,12 @@ class SampleDisposeWorkflowTest(TenantAPITestCase):
             created_by=self.manager,
             status="reviewed",
             description="Past retention sample",
+            expiry_date=timezone.now() - timedelta(days=1),
         )
 
     def test_dispose_from_eligible_state(self):
         from lims.models import ChainOfCustody
-        from audittrail.models import AuditEvent
+        from audittrail.models import AuditEvent, DataChangeLog
 
         r = self.client.post(
             f"/api/lims/samples/{self.sample.pk}/dispose/",
@@ -214,6 +218,15 @@ class SampleDisposeWorkflowTest(TenantAPITestCase):
             AuditEvent.objects.filter(
                 object_id=str(self.sample.pk),
                 content_type__model="sample",
+            ).exists()
+        )
+        self.assertTrue(
+            DataChangeLog.objects.filter(
+                audit_event__object_id=str(self.sample.pk),
+                audit_event__content_type__model="sample",
+                field_name="status",
+                old_value="reviewed",
+                new_value="disposed",
             ).exists()
         )
 
@@ -239,6 +252,18 @@ class SampleDisposeWorkflowTest(TenantAPITestCase):
         )
         self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_dispose_before_retention_date_returns_400(self):
+        self.sample.expiry_date = timezone.now() + timedelta(days=1)
+        self.sample.save(update_fields=["expiry_date"])
+        r = self.client.post(
+            f"/api/lims/samples/{self.sample.pk}/dispose/",
+            {"regulatory_basis": "40 CFR Part 261"},
+            format="multipart",
+        )
+        self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
+        self.sample.refresh_from_db()
+        self.assertEqual(self.sample.status, "reviewed")
+
     def test_disposed_sample_leaves_analysis_active_list(self):
         from lims.models import AnalysisRequest
 
@@ -257,6 +282,11 @@ class SampleDisposeWorkflowTest(TenantAPITestCase):
         rows = active.data if isinstance(active.data, list) else active.data.get("results", [])
         ids = [row["id"] for row in rows]
         self.assertNotIn(ar.id, ids)
+
+        default_samples = self.client.get("/api/lims/samples/")
+        self.assertEqual(default_samples.status_code, status.HTTP_200_OK)
+        rows = default_samples.data if isinstance(default_samples.data, list) else default_samples.data.get("results", [])
+        self.assertNotIn("GW-DISP-001", [s["sample_id"] for s in rows])
 
         disposed_filter = self.client.get("/api/lims/samples/?status=disposed")
         self.assertEqual(disposed_filter.status_code, status.HTTP_200_OK)

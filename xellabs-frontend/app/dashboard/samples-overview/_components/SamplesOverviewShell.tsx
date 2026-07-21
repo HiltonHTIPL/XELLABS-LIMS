@@ -2,8 +2,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { type LabSample, type DjangoSampleType, patchLabSample } from '@/app/actions/lab-samples'
+import { type SenaiteClientFull, type SenaiteSample } from '@/app/lib/senaite'
+import { getSample } from '@/app/actions/samples'
 import { sampleDisplayId as displayId } from '@/app/lib/sampleDisplay'
 import DisposeSampleModal from './DisposeSampleModal'
+import SampleDetailClient from '../../samples/[id]/_components/SampleDetailClient'
+import SampleOverviewDetailWrapper from './SampleOverviewDetailWrapper'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -26,19 +30,6 @@ type ColKey = typeof ALL_COLUMNS[number]['key']
 const DEFAULT_VISIBLE = new Set(ALL_COLUMNS.filter(c => c.defaultVisible).map(c => c.key))
 const LS_KEY = 'xl_samples_cols'
 const SAVED_FILTERS_LS_KEY = 'xl_samples_saved_filters'
-const FREEZE_LS_KEY = 'xl_samples_freeze_count'
-
-// Structural (non-data) column widths — checkbox/actions/menu never resize.
-const CHECKBOX_WIDTH = 36
-const ACTIONS_WIDTH = 100
-const MENU_WIDTH = 36
-// Up to this many data columns stretch evenly to fill the table area exactly
-// (no dead space). Beyond it, every column keeps the width it had AT 8 columns
-// (no shrinking) and the extra ones only become reachable by scrolling.
-const TARGET_FILL_COLUMNS = 8
-const MIN_COL_WIDTH = 120
-const FALLBACK_COL_WIDTH = 140 // used only before the container is first measured client-side
-type SortKey = ColKey | 'sample_id'
 
 type FilterSnapshot = {
   search: string; sampleType: string; client: string; status: string
@@ -107,7 +98,7 @@ function tatDays(receivedDate: string | null, nowMs: number | null): number | nu
 }
 
 function isOverdueSample(s: LabSample): boolean {
-  return Boolean(s.expiry_date && new Date(s.expiry_date) < new Date() && !['published', 'disposed', 'rejected'].includes(s.status))
+  return Boolean(s.expiry_date && new Date(s.expiry_date) < new Date() && !['registered', 'disposed', 'rejected'].includes(s.status))
 }
 
 // Maps a stat card key to the status filter value it represents (or 'overdue' as a special case)
@@ -126,7 +117,7 @@ function fmt(dateStr: string | null): string {
 }
 
 // ── Main Shell ────────────────────────────────────────────────────────────────
-type Props = { initialSamples: LabSample[]; sampleTypes: DjangoSampleType[]; clients: { uid: string; title: string; ClientID: string }[] }
+type Props = { initialSamples: LabSample[]; sampleTypes: DjangoSampleType[]; clients: SenaiteClientFull[] }
 
 export default function SamplesOverviewShell({ initialSamples, sampleTypes, clients }: Props) {
   const router = useRouter()
@@ -160,32 +151,6 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
   const [page, setPage] = useState(1)
   const [actionMenu, setActionMenu] = useState<{ id: number; top: number; right: number } | null>(null)
   const PAGE_SIZE = 25
-
-  // Sorting — click a header to toggle asc/desc; one shared accessor covers every column.
-  const [sortKey, setSortKey] = useState<SortKey | null>(null)
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
-
-  function sortAccessor(s: LabSample, key: SortKey): string | number {
-    switch (key) {
-      case 'sample_id':     return displayId(s)
-      case 'client':        return s.client_name ?? ''
-      case 'sample_type':   return s.sample_type_name ?? ''
-      case 'condition':     return s.condition ?? ''
-      case 'status':        return getSampleStatusDisplay(s).label
-      case 'priority':      return s.priority ?? ''
-      case 'received_date': return s.received_date ? new Date(s.received_date).getTime() : -Infinity
-      case 'due_date':      return s.expiry_date ? new Date(s.expiry_date).getTime() : -Infinity
-      case 'tat':           return tatDays(s.received_date, nowMs) ?? -Infinity
-      case 'analyst':       return s.received_by_name ?? ''
-      case 'storage':       return s.storage_location ?? ''
-      default:              return ''
-    }
-  }
-  function toggleSort(key: SortKey) {
-    if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
-    else { setSortKey(key); setSortDir('asc') }
-    setPage(1)
-  }
 
   // Base filters exclude the status/overdue toggle so the stat cards (which ARE
   // the status buckets) don't collapse when one status is selected. The client
@@ -229,17 +194,8 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
     overdue: statScope.filter(isOverdueSample).length,
   }
 
-  const sorted = sortKey
-    ? [...filtered].sort((a, b) => {
-        const va = sortAccessor(a, sortKey)
-        const vb = sortAccessor(b, sortKey)
-        const cmp = va < vb ? -1 : va > vb ? 1 : 0
-        return sortDir === 'asc' ? cmp : -cmp
-      })
-    : filtered
-
-  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE))
-  const paginated = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   function clearFilters() {
     setSearch(''); setFilterSampleType('')
@@ -315,6 +271,29 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
   const [saveFilterModalOpen, setSaveFilterModalOpen] = useState(false)
   const [newFilterName, setNewFilterName] = useState('')
 
+  // ── Detail Drawer ──
+  const [selectedSenaiteUid, setSelectedSenaiteUid] = useState<string | null>(null)
+  const [selectedSenaiteSample, setSelectedSenaiteSample] = useState<SenaiteSample | null>(null)
+  const [selectedDjangoId, setSelectedDjangoId] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (selectedSenaiteUid) {
+      getSample(selectedSenaiteUid).then(s => setSelectedSenaiteSample(s))
+    } else {
+      setSelectedSenaiteSample(null)
+    }
+  }, [selectedSenaiteUid])
+
+  function openDetail(senaiteUid: string | undefined, djangoId: number) {
+    setSelectedSenaiteUid(senaiteUid ?? null)
+    setSelectedDjangoId(djangoId)
+  }
+
+  function closeDetail() {
+    setSelectedSenaiteUid(null)
+    setSelectedDjangoId(null)
+  }
+
   function currentFilterSnapshot(): FilterSnapshot {
     return { search, sampleType: filterSampleType, client: filterClient, status: filterStatus, priority: filterPriority, from: filterFrom, to: filterTo, overdue: filterOverdue }
   }
@@ -377,6 +356,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
 
   // ── Dispose (regulatory basis + optional certificate) ──
   const [disposeTarget, setDisposeTarget] = useState<LabSample | null>(null)
+  const [disposeModalOpen, setDisposeModalOpen] = useState(false)
 
   const sel ={ border: '1px solid #D1D5DB', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: '#374151', background: '#fff', outline: 'none', cursor: 'pointer' as const }
   const [now, setNow] = useState('')
@@ -388,14 +368,14 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
   }, [])
 
   // Column chooser
-  const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(DEFAULT_VISIBLE)
-  useEffect(() => {
+  const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(() => {
+    if (typeof window === 'undefined') return DEFAULT_VISIBLE
     try {
       const saved = localStorage.getItem(LS_KEY)
-      if (saved) setVisibleCols(new Set(JSON.parse(saved) as ColKey[]))
+      if (saved) return new Set(JSON.parse(saved) as ColKey[])
     } catch { /* ignore */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    return DEFAULT_VISIBLE
+  })
   const [colMenuOpen, setColMenuOpen] = useState(false)
   const [colMenuPos, setColMenuPos] = useState<{ top: number; right: number } | null>(null)
   const colBtnRef = useRef<HTMLButtonElement>(null)
@@ -415,62 +395,12 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
   }
   const vis = (key: ColKey) => visibleCols.has(key)
 
-  // Freeze columns — user enters how many columns (from the left, after the
-  // checkbox) stay pinned while the rest scroll horizontally. Persisted like
-  // column visibility so it survives a reload.
-  const [freezeCount, setFreezeCount] = useState<number>(1)
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(FREEZE_LS_KEY)
-      if (saved) setFreezeCount(Math.max(0, parseInt(saved, 10) || 0))
-    } catch { /* ignore */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-  function updateFreezeCount(n: number) {
-    setFreezeCount(n)
-    try { localStorage.setItem(FREEZE_LS_KEY, String(n)) } catch { /* ignore */ }
-  }
-
-  const orderedVisibleCols = ALL_COLUMNS.filter(c => vis(c.key))
-  const tableCols: { key: SortKey; label: string }[] = [
-    { key: 'sample_id', label: 'Sample ID' },
-    ...orderedVisibleCols,
-  ]
-  const freezeClamped = Math.max(0, Math.min(freezeCount, tableCols.length))
-
-  // Measure the scroll container's real width so up to TARGET_FILL_COLUMNS
-  // columns can stretch to fill it exactly (no dead space). Beyond that count,
-  // every column keeps the width it had at exactly 8 (no shrinking) — the
-  // table simply grows past the container and the wrapper's own scrollbar
-  // (overflow: auto below) is what reveals the extra columns.
-  const scrollWrapRef = useRef<HTMLDivElement>(null)
-  const [containerWidth, setContainerWidth] = useState(0)
-  useEffect(() => {
-    const el = scrollWrapRef.current
-    if (!el) return
-    const update = () => setContainerWidth(el.clientWidth)
-    update()
-    const ro = new ResizeObserver(update)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-
-  const dataAreaWidth = Math.max(0, containerWidth - CHECKBOX_WIDTH - ACTIONS_WIDTH - MENU_WIDTH)
-  const colWidth = containerWidth > 0
-    ? Math.max(MIN_COL_WIDTH, dataAreaWidth / Math.min(tableCols.length || 1, TARGET_FILL_COLUMNS))
-    : FALLBACK_COL_WIDTH
-
-  function colLeft(index: number): number {
-    return CHECKBOX_WIDTH + index * colWidth
-  }
-  const totalTableWidth = CHECKBOX_WIDTH + tableCols.length * colWidth + ACTIONS_WIDTH + MENU_WIDTH
-
   return (
     // Outer: flex row, full height, no overflow — nothing scrolls here
-    <div style={{ display: 'flex', height: '100%', minHeight: 0, background: '#F9FAFB', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', height: '100%', background: '#F9FAFB', overflow: 'hidden' }}>
 
       {/* ── Main column: flex column, full height ── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, overflow: 'hidden', padding: '24px 24px 0 24px' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden', padding: '24px 24px 0 24px' }}>
 
         {/* ── STATIC: header ── */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexShrink: 0 }}>
@@ -568,19 +498,6 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 7, border: '1px solid #D1D5DB', background: colMenuOpen ? '#F3F4F6' : '#fff', color: '#374151', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
               <MI name="view_column" size={16} /><span>Columns</span>
             </button>
-            <div title="How many columns (from the left, after the checkbox) stay pinned while the rest scroll"
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 7, border: '1px solid #D1D5DB', background: '#fff' }}>
-              <MI name="push_pin" size={15} color="#6B7280" />
-              <span style={{ fontSize: 13, color: '#374151' }}>Freeze</span>
-              <input
-                type="number"
-                min={0}
-                max={tableCols.length}
-                value={freezeClamped}
-                onChange={e => updateFreezeCount(Math.max(0, Math.min(tableCols.length, parseInt(e.target.value, 10) || 0)))}
-                style={{ width: 36, border: '1px solid #D1D5DB', borderRadius: 5, padding: '3px 4px', fontSize: 12, textAlign: 'center', color: '#111827' }}
-              />
-            </div>
             <button ref={bulkBtnRef} onClick={openBulkMenu} disabled={selected.size === 0 || bulkPending}
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 7, border: '1px solid #D1D5DB', background: bulkMenuOpen ? '#F3F4F6' : '#fff', color: selected.size === 0 ? '#9CA3AF' : '#374151', fontSize: 13, fontWeight: 500, cursor: selected.size === 0 ? 'default' : 'pointer', opacity: bulkPending ? 0.6 : 1 }}>
               <MI name="checklist" size={16} color={selected.size === 0 ? '#9CA3AF' : undefined} /><span>Bulk Actions{selected.size > 0 ? ` (${selected.size})` : ''}</span>
@@ -613,42 +530,34 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
           </div>
         </div>
 
-        {/* ── Table area fills remaining space; only this scrolls, with its own visible scrollbar. Pagination below stays fixed, never scrolls away. ── */}
-        <div ref={scrollWrapRef} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+        {/* ── SCROLLABLE: table + pagination + footer ── */}
+        <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 24 }}>
 
-          <div className="xl-visible-scrollbar" style={{ flex: '1 1 auto', width: 'fit-content', maxWidth: '100%', minHeight: 0, overflow: 'auto', background: '#fff', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.07)', border: '1px solid #E5E7EB' }}>
-            <table style={{ width: totalTableWidth, tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: 12 }}>
+          <div style={{ background: '#fff', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.07)', border: '1px solid #E5E7EB', overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
-                <tr style={{ borderBottom: '2px solid #D8DEEA', background: '#F9FAFB' }}>
-                  <th style={{ padding: '13px 12px', width: CHECKBOX_WIDTH, position: 'sticky', left: 0, zIndex: 11, background: '#DBEAFE' }}>
+                <tr style={{ borderBottom: '1px solid #E5E7EB', background: '#F9FAFB' }}>
+                  <th style={{ padding: '10px 12px', width: 36 }}>
                     <input type="checkbox" checked={paginated.length > 0 && selected.size === paginated.length} onChange={toggleAll} />
                   </th>
-                  {tableCols.map((col, i) => {
-                    const frozen = i < freezeClamped
-                    const isLastFrozen = i === freezeClamped - 1
-                    return (
-                      <th key={col.key} onClick={() => toggleSort(col.key)}
-                        style={{
-                          padding: '13px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap',
-                          width: colWidth, maxWidth: colWidth, overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer', userSelect: 'none',
-                          ...(frozen ? { position: 'sticky' as const, left: colLeft(i), zIndex: 10, background: '#DBEAFE' } : {}),
-                          ...(isLastFrozen ? { boxShadow: '2px 0 4px -2px rgba(0,0,0,0.15)' } : {}),
-                        }}>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{col.label}</span>
-                          <MI name={sortKey === col.key ? (sortDir === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more'}
-                            size={13} color={sortKey === col.key ? '#2563EB' : '#9CA3AF'} />
-                        </span>
-                      </th>
-                    )
-                  })}
-                  <th style={{ padding: '13px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap', width: ACTIONS_WIDTH }}>Actions</th>
-                  <th style={{ padding: '13px 12px', width: MENU_WIDTH }} />
+                  <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>Sample ID</th>
+                  {vis('client')        && <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>Client</th>}
+                  {vis('sample_type')   && <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>Sample Type</th>}
+                  {vis('condition')     && <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>Condition</th>}
+                  {vis('status')        && <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>Status</th>}
+                  {vis('priority')      && <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>Priority</th>}
+                  {vis('received_date') && <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>Received Date</th>}
+                  {vis('due_date')      && <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>Due Date</th>}
+                  {vis('tat')           && <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>TAT (Days)</th>}
+                  {vis('analyst')       && <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>Assigned Analyst</th>}
+                  {vis('storage')       && <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>Storage</th>}
+                  <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>Actions</th>
+                  <th style={{ padding: '10px 12px', width: 36 }} />
                 </tr>
               </thead>
               <tbody>
                 {paginated.length === 0 ? (
-                  <tr><td colSpan={tableCols.length + 3} style={{ padding: '40px', textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>No samples found.</td></tr>
+                  <tr><td colSpan={14} style={{ padding: '40px', textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>No samples found.</td></tr>
                 ) : paginated.map((s, idx) => {
                   const badge = getSampleStatusDisplay(s)
                   const pBadge = PRIORITY_BADGE[s.priority] ?? { bg: '#F3F4F6', color: '#374151' }
@@ -656,69 +565,51 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
                   const tat = tatDays(s.received_date, nowMs)
                   const isOverdue = isOverdueSample(s)
                   const canReceive = s.status === 'registered'
-                  const rowBg = idx % 2 === 0 ? '#fff' : '#FAFAFA'
-
-                  function cellContent(key: SortKey) {
-                    switch (key) {
-                      case 'sample_id':
-                        return (
-                          <span style={{ color: '#2563EB', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', whiteSpace: 'nowrap', display: 'inline-block' }}
-                            onClick={() => router.push(`/dashboard/samples-overview/${s.id}`)}>
-                            {displayId(s)}
-                          </span>
-                        )
-                      case 'client':        return <span style={{ color: '#374151' }}>{s.client_name}</span>
-                      case 'sample_type':   return <span style={{ color: '#374151' }}>{s.sample_type_name}</span>
-                      case 'condition':
-                        return s.condition ? (
+                  return (
+                    <tr key={s.id} style={{ borderBottom: '1px solid #F3F4F6', background: idx % 2 === 0 ? '#fff' : '#FAFAFA' }}>
+                      <td style={{ padding: '10px 12px' }}>
+                        <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleRow(s.id)} />
+                      </td>
+                      <td style={{ padding: '10px 12px', whiteSpace: 'nowrap', minWidth: 120 }}>
+                        <span style={{ color: '#2563EB', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', whiteSpace: 'nowrap', display: 'inline-block' }}
+                          onClick={() => openDetail(s.senaite_uid, s.id)}>
+                          {displayId(s)}
+                        </span>
+                      </td>
+                      {vis('client')        && <td style={{ padding: '10px 12px', color: '#374151' }}>{s.client_name}</td>}
+                      {vis('sample_type')   && <td style={{ padding: '10px 12px', color: '#374151' }}>{s.sample_type_name}</td>}
+                      {vis('condition')     && <td style={{ padding: '10px 12px' }}>
+                        {s.condition ? (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                             <span style={{ width: 6, height: 6, borderRadius: '50%', background: condColor, flexShrink: 0 }} />
                             <span style={{ color: condColor, textTransform: 'capitalize', fontWeight: 500 }}>{s.condition.replace('_', ' ')}</span>
                           </span>
-                        ) : <span style={{ color: '#9CA3AF' }}>—</span>
-                      case 'status':
-                        return (
-                          <span style={{ background: badge.bg, color: badge.color, borderRadius: 20, padding: '3px 9px', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>
-                            {badge.label}
-                          </span>
-                        )
-                      case 'priority':
-                        return s.priority ? (
+                        ) : <span style={{ color: '#9CA3AF' }}>—</span>}
+                      </td>}
+                      {vis('status')        && <td style={{ padding: '10px 12px' }}>
+                        <span style={{ background: badge.bg, color: badge.color, borderRadius: 20, padding: '3px 9px', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>
+                          {badge.label}
+                        </span>
+                      </td>}
+                      {vis('priority')      && <td style={{ padding: '10px 12px' }}>
+                        {s.priority ? (
                           <span style={{ background: pBadge.bg, color: pBadge.color, borderRadius: 20, padding: '3px 9px', fontWeight: 600, fontSize: 11, textTransform: 'capitalize' }}>
                             {s.priority}
                           </span>
-                        ) : <span style={{ color: '#9CA3AF' }}>—</span>
-                      case 'received_date': return <span style={{ color: '#374151', whiteSpace: 'nowrap' }}>{fmt(s.received_date)}</span>
-                      case 'due_date':
-                        return <span style={{ color: isOverdue ? '#EF4444' : '#374151', fontWeight: isOverdue ? 600 : 400, whiteSpace: 'nowrap' }}>{fmt(s.expiry_date)}</span>
-                      case 'tat':
-                        return tat !== null ? <span style={{ fontWeight: 600, color: tat > 7 ? '#EF4444' : '#374151' }}>{tat}</span> : <span style={{ color: '#9CA3AF' }}>—</span>
-                      case 'analyst':       return s.received_by_name || <span style={{ color: '#9CA3AF' }}>—</span>
-                      case 'storage':       return s.storage_location || <span style={{ color: '#9CA3AF' }}>—</span>
-                      default: return null
-                    }
-                  }
-
-                  return (
-                    <tr key={s.id} style={{ borderBottom: '1px solid #F3F4F6', background: rowBg }}>
-                      <td style={{ padding: '11px 12px', position: 'sticky', left: 0, zIndex: 2, background: '#EFF6FF' }}>
-                        <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleRow(s.id)} />
-                      </td>
-                      {tableCols.map((col, i) => {
-                        const frozen = i < freezeClamped
-                        const isLastFrozen = i === freezeClamped - 1
-                        return (
-                          <td key={col.key}
-                            style={{
-                              padding: '11px 12px', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: colWidth,
-                              ...(frozen ? { position: 'sticky' as const, left: colLeft(i), zIndex: 2, background: '#EFF6FF' } : {}),
-                              ...(isLastFrozen ? { boxShadow: '2px 0 4px -2px rgba(0,0,0,0.15)' } : {}),
-                            }}>
-                            {cellContent(col.key)}
-                          </td>
-                        )
-                      })}
-                      <td style={{ padding: '11px 12px', width: ACTIONS_WIDTH, whiteSpace: 'nowrap' }}>
+                        ) : <span style={{ color: '#9CA3AF' }}>—</span>}
+                      </td>}
+                      {vis('received_date') && <td style={{ padding: '10px 12px', color: '#374151', whiteSpace: 'nowrap' }}>{fmt(s.received_date)}</td>}
+                      {vis('due_date')      && <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
+                        <span style={{ color: isOverdue ? '#EF4444' : '#374151', fontWeight: isOverdue ? 600 : 400 }}>{fmt(s.expiry_date)}</span>
+                      </td>}
+                      {vis('tat')           && <td style={{ padding: '10px 12px', color: '#374151', textAlign: 'center' }}>
+                        {tat !== null ? <span style={{ fontWeight: 600, color: tat > 7 ? '#EF4444' : '#374151' }}>{tat}</span> : <span style={{ color: '#9CA3AF' }}>—</span>}
+                      </td>}
+                      {vis('analyst')       && <td style={{ padding: '10px 12px', color: '#374151' }}>{s.received_by_name || <span style={{ color: '#9CA3AF' }}>—</span>}</td>}
+                      {vis('storage')       && <td style={{ padding: '10px 12px', color: '#374151', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {s.storage_location || <span style={{ color: '#9CA3AF' }}>—</span>}
+                      </td>}
+                      <td style={{ padding: '10px 12px', width: 100, whiteSpace: 'nowrap' }}>
                         {canReceive ? (
                           <button
                             onClick={() => router.push(`/dashboard/sample-receipts?id=${s.id}`)}
@@ -729,7 +620,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
                           </button>
                         ) : null}
                       </td>
-                      <td style={{ padding: '11px 12px', width: MENU_WIDTH, textAlign: 'center' }}>
+                      <td style={{ padding: '10px 12px', width: 36, textAlign: 'center' }}>
                         <button onClick={e => openActionMenu(e, s.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', borderRadius: 4, color: '#6B7280' }}>
                           <MI name="more_vert" size={16} />
                         </button>
@@ -741,8 +632,8 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
             </table>
           </div>
 
-          {/* Bottom pagination — fixed below the scrollable table, never scrolls away */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingBottom: 24, flexShrink: 0 }}>
+          {/* Bottom pagination */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
             <span style={{ fontSize: 12, color: '#6B7280' }}>
               Showing {filtered.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1} to {Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length} results
             </span>
@@ -764,7 +655,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
             </div>
           </div>
         </div>
-        {/* end table area */}
+        {/* end scrollable */}
       </div>
 
       {/* ── Column chooser dropdown ── */}
@@ -881,18 +772,20 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
         <>
           <div style={{ position: 'fixed', inset: 0, zIndex: 9990 }} onClick={() => setActionMenu(null)} />
           <div style={{ position: 'fixed', top: actionMenu.top, right: actionMenu.right, zIndex: 9999, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 160, overflow: 'hidden' }}>
-            {[
-              { icon: 'visibility',     label: 'View Details',   action: () => router.push(`/dashboard/samples-overview/${actionMenu.id}`) },
-              { icon: 'move_to_inbox',  label: 'Receive Sample', action: () => { router.push(`/dashboard/sample-receipts?id=${actionMenu.id}`); setActionMenu(null) } },
-              { icon: 'edit',           label: 'Edit Sample',    action: () => router.push(`/dashboard/samples-overview/new?edit=${actionMenu.id}`) },
-              { icon: 'delete_outline', label: 'Dispose', action: () => setDisposeTarget(samples.find(s => s.id === actionMenu.id) ?? null), danger: true },
-            ].map(item => (
-              <button key={item.label} onClick={() => { item.action(); setActionMenu(null) }}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: (item as { danger?: boolean }).danger ? '#EF4444' : '#374151', textAlign: 'left' }}>
-                <MI name={item.icon} size={15} color={(item as { danger?: boolean }).danger ? '#EF4444' : '#6B7280'} />
-                {item.label}
+            <button onClick={() => { openDetail(paginated.find(s => s.id === actionMenu.id)?.senaite_uid, actionMenu.id); setActionMenu(null) }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', fontSize: 13, color: '#374151', background: 'none', border: 'none', cursor: 'pointer', width: '100%', textAlign: 'left' }}>
+              <MI name="visibility" size={15} color="#6B7280" /> View Detail
+            </button>
+            <button onClick={() => { router.push(`/dashboard/sample-receipts?id=${actionMenu.id}`); setActionMenu(null) }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', fontSize: 13, color: '#374151', background: 'none', border: 'none', cursor: 'pointer', width: '100%', textAlign: 'left' }}>
+              <MI name="move_to_inbox" size={15} color="#6B7280" /> Receive Sample
+            </button>
+            <button onClick={() => { router.push(`/dashboard/samples-overview/${actionMenu.id}?edit=1`); setActionMenu(null) }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', fontSize: 13, color: '#374151', background: 'none', border: 'none', cursor: 'pointer', width: '100%', textAlign: 'left' }}>
+              <MI name="edit" size={15} color="#6B7280" /> Edit Sample
+            </button>
+            {isOverdueSample(samples.find(s => s.id === actionMenu.id)!) && (
+              <button onClick={() => { setDisposeTarget(samples.find(s => s.id === actionMenu.id) ?? null); setActionMenu(null) }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', fontSize: 13, color: '#EF4444', background: 'none', border: 'none', cursor: 'pointer', width: '100%', textAlign: 'left' }}>
+                <MI name="delete_outline" size={15} color="#EF4444" /> Dispose
               </button>
-            ))}
+            )}
           </div>
         </>
       )}
@@ -911,6 +804,26 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
           }}
         />
       )}
+
+      {/* ── Sample Detail drawer ── */}
+      <div style={{ position: 'fixed', top: 56, bottom: 0, left: 0, right: 0, zIndex: 200, pointerEvents: (selectedSenaiteUid || selectedDjangoId) ? 'auto' : 'none' }}>
+        <div onClick={closeDetail} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.30)', opacity: (selectedSenaiteUid || selectedDjangoId) ? 1 : 0, transition: 'opacity 0.25s ease' }} />
+        <div style={{ position: 'absolute', top: 0, bottom: 0, width: '75%', minWidth: 720, maxWidth: 1040, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.12)', right: (selectedSenaiteUid || selectedDjangoId) ? 0 : '-100%', transition: 'right 0.28s cubic-bezier(0.4,0,0.2,1)', overflowY: 'auto' }}>
+          {(selectedSenaiteUid && selectedSenaiteSample) ? (
+            <SampleDetailClient
+              uid={selectedSenaiteUid}
+              sample={selectedSenaiteSample}
+              onClose={closeDetail}
+            />
+          ) : selectedDjangoId && !selectedSenaiteUid ? (
+            <SampleOverviewDetailWrapper djangoId={selectedDjangoId} onClose={closeDetail} />
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', backgroundColor: '#F9FAFB' }}>
+              <div style={{ fontSize: 13, color: '#6B7280' }}>Loading sample details...</div>
+            </div>
+          )}
+        </div>
+      </div>
 
     </div>
   )

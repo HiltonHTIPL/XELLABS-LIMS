@@ -83,6 +83,7 @@ def wire_signals(model):
             object_id=instance.pk,
             object_repr=str(instance)[:300],
             ip_address=ip,
+            extra_data={"source": request.META.get("HTTP_X_AUDIT_SOURCE")} if request and request.META.get("HTTP_X_AUDIT_SOURCE") else None,
         )
 
         if not created:

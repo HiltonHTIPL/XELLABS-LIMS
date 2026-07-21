@@ -17,7 +17,7 @@ const DJANGO_API = process.env.DJANGO_API_URL ?? 'http://django:8001'
 
 export async function djangoFetch(
   path: string,
-  init: RequestInit & { skipAuth?: boolean } = {}
+  init: RequestInit & { skipAuth?: boolean; auditSource?: 'import' } = {}
 ): Promise<Response> {
   const [session, headerStore] = await Promise.all([getSession(), headers()])
 
@@ -41,6 +41,10 @@ export async function djangoFetch(
     tenantHeaders['X-Tenant-Schema'] = tenantSubdomain
   }
 
+  if (init.auditSource) {
+    tenantHeaders['X-Audit-Source'] = init.auditSource
+  }
+
   const token =
     session?.djangoToken ||
     process.env.DJANGO_SERVICE_TOKEN ||
@@ -52,7 +56,7 @@ export async function djangoFetch(
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { skipAuth: _omit, ...fetchInit } = init
+  const { skipAuth: _omit, auditSource: _omit2, ...fetchInit } = init
 
   // Don't set Content-Type for FormData bodies — fetch must set its own
   // multipart boundary, and a forced 'application/json' here would break uploads.

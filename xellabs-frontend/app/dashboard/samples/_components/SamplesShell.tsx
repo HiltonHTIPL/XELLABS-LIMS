@@ -8,6 +8,7 @@ import { DjangoClient } from '@/app/actions/clients'
 import { AnalysisProfile } from '@/app/actions/analysis-profiles'
 import { T, MI, PageHeader, StatCard, Chip, StatusChip, Btn, IconBtn, Card, thStyle, tdStyle, linkStyle, Pagination, EmptyState } from '../../_components/ui'
 import NewSamplePage from '../new/_components/NewSamplePage'
+import SampleDetailClient from '../[id]/_components/SampleDetailClient'
 
 type Props = {
   initialSamples: SenaiteSample[]
@@ -35,6 +36,7 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
   const router = useRouter()
   const [samples] = useState(initialSamples)
   const [showNewSample, setShowNewSample] = useState(false)
+  const [selectedSampleUid, setSelectedSampleUid] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [filterPriority, setFilterPriority] = useState('')
@@ -79,6 +81,14 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
 
   const pages = Math.ceil(filtered.length / PAGE_SIZE)
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  function openDetail(uid: string) {
+    setSelectedSampleUid(uid)
+  }
+
+  function closeDetail() {
+    setSelectedSampleUid(null)
+  }
 
   function clearFilters() {
     setSearch(''); setFilterStatus(''); setFilterPriority(''); setFilterClient(''); setFilterSampleType(''); setPage(1)
@@ -215,9 +225,9 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
           style={{ position: 'fixed', top: kebabPos.top, left: kebabPos.left, zIndex: 9999, backgroundColor: '#fff', border: `1px solid ${T.cardBorder}`, borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 160 }}
           onMouseLeave={() => setKebabOpen(null)}
         >
-          <Link href={`/dashboard/samples/${kebabOpen}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', fontSize: 13, color: T.text, textDecoration: 'none' }}>
+          <button onClick={() => { openDetail(kebabOpen); setKebabOpen(null) }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', fontSize: 13, color: T.text, background: 'none', border: 'none', cursor: 'pointer', width: '100%', textAlign: 'left' }}>
             <MI name="visibility" size={15} color={T.muted} /> View Detail
-          </Link>
+          </button>
           <button onClick={() => { handleReceive(kebabOpen); setKebabOpen(null) }}
             style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', fontSize: 13, color: T.text, width: '100%', background: 'none', border: 'none', cursor: 'pointer' }}>
             <MI name="move_to_inbox" size={15} color={T.muted} /> Receive
@@ -349,9 +359,9 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
                           onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}>
                           <td style={tdStyle}><input type="checkbox" checked={selected.has(s.uid)} onChange={() => toggleRow(s.uid)} style={{ accentColor: T.primary }} /></td>
                           <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                            <Link href={`/dashboard/samples/${s.uid}`} style={linkStyle}>
+                            <button onClick={() => openDetail(s.uid)} style={{ ...linkStyle, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
                               {s.id || s.uid.slice(0, 8)}
-                            </Link>
+                            </button>
                           </td>
                           <td style={tdStyle}>
                             <div style={{ fontSize: 13, color: T.text }}>{s.ClientTitle || '—'}</div>
@@ -483,6 +493,20 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
               analysisProfiles={analysisProfiles}
               onClose={() => setShowNewSample(false)}
               onCreated={() => { setShowNewSample(false); router.refresh() }}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* ── Sample Detail drawer ── */}
+      <div style={{ position: 'fixed', top: 56, bottom: 0, left: 0, right: 0, zIndex: 200, pointerEvents: selectedSampleUid ? 'auto' : 'none' }}>
+        <div onClick={closeDetail} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.30)', opacity: selectedSampleUid ? 1 : 0, transition: 'opacity 0.25s ease' }} />
+        <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: '75%', minWidth: 720, maxWidth: 1040, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.12)', transform: selectedSampleUid ? 'translateX(0)' : 'translateX(100%)', transition: 'transform 0.28s cubic-bezier(0.4,0,0.2,1)', overflowY: 'auto' }}>
+          {selectedSampleUid && (
+            <SampleDetailClient
+              uid={selectedSampleUid}
+              sample={samples.find(s => s.uid === selectedSampleUid) || null}
+              onClose={closeDetail}
             />
           )}
         </div>

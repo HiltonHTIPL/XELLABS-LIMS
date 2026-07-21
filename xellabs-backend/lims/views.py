@@ -10,13 +10,13 @@ from core.permissions import (
     ReadOnlyOrLabManager, ReadOnlyOrAnalystOrAbove, ReadOnlyOrSampleHandler,
 )
 from .models import (
-    SampleType, SampleTemplate, AnalysisProfile, Method, Calculation, Specification,
+    SampleType, SampleTemplate, Method, Calculation, Specification,
     DynamicAnalysisSpecification, AnalysisSpecification,
     Sample, AnalysisRequest, Worksheet, WorksheetAssignment,
     Result, QCSample, ChainOfCustody,
 )
 from .serializers import (
-    SampleTypeSerializer, SampleTemplateSerializer, AnalysisProfileSerializer, MethodSerializer, CalculationSerializer, SpecificationSerializer,
+    SampleTypeSerializer, SampleTemplateSerializer, MethodSerializer, CalculationSerializer, SpecificationSerializer,
     DynamicAnalysisSpecificationSerializer, AnalysisSpecificationSerializer,
     SampleSerializer, AnalysisRequestSerializer, WorksheetSerializer,
     WorksheetAssignmentSerializer, ResultSerializer, QCSampleSerializer,
@@ -133,16 +133,6 @@ class SampleTemplateViewSet(viewsets.ModelViewSet):
     ordering_fields = ["name", "created_at"]
 
 
-class AnalysisProfileViewSet(viewsets.ModelViewSet):
-    queryset = AnalysisProfile.objects.all()
-    serializer_class = AnalysisProfileSerializer
-    permission_classes = [ReadOnlyOrLabManager]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["is_active"]
-    search_fields = ["name"]
-    ordering_fields = ["name", "created_at"]
-
-
 class MethodViewSet(viewsets.ModelViewSet):
     queryset = Method.objects.all()
     serializer_class = MethodSerializer
@@ -237,6 +227,12 @@ class SampleViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if getattr(user, "role", None) == "client":
             qs = qs.filter(client__client_id__iexact=user.username)
+        if (
+            self.action == "list"
+            and self.request.query_params.get("status") != "disposed"
+            and self.request.query_params.get("include_disposed") != "1"
+        ):
+            qs = qs.exclude(status="disposed")
         return qs
 
     @action(detail=False, methods=["get"])
@@ -253,7 +249,7 @@ class SampleViewSet(viewsets.ModelViewSet):
             to_be_verified=Count("pk", filter=Q(status="results_pending")),
             on_hold_for_qa=Count("pk", filter=Q(hold_for_qa=True)),
             completed=Count("pk", filter=Q(status="published")),
-            overdue=Count("pk", filter=Q(expiry_date__lt=now) & ~Q(status__in=["published", "disposed", "rejected"])),
+            overdue=Count("pk", filter=Q(expiry_date__lt=now) & ~Q(status__in=["registered", "disposed", "rejected"])),
         )
         return Response(agg)
 
@@ -337,7 +333,7 @@ class SampleViewSet(viewsets.ModelViewSet):
         permission_classes=[IsLabManagerOrAbove],
     )
     def dispose(self, request, pk=None):
-        """Dispose sample via service layer (TC-9). Dual-write to lab SoR is optional/not wired."""
+        """Dispose a past-retention sample in XELLABS (TC-9)."""
         from .services import dispose_sample
         sample = self.get_object()
         basis = request.data.get("regulatory_basis") or ""

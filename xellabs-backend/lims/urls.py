@@ -1,6 +1,6 @@
 from rest_framework.routers import DefaultRouter
 from .views import (
-    SampleTypeViewSet, SampleTemplateViewSet, AnalysisProfileViewSet, MethodViewSet, CalculationViewSet, SpecificationViewSet,
+    SampleTypeViewSet, SampleTemplateViewSet, MethodViewSet, CalculationViewSet, SpecificationViewSet,
     DynamicAnalysisSpecificationViewSet, AnalysisSpecificationViewSet,
     SampleViewSet, AnalysisRequestViewSet, WorksheetViewSet,
     WorksheetAssignmentViewSet, ResultViewSet, QCSampleViewSet,
@@ -12,7 +12,6 @@ router.register("dynamic-analysis-specifications", DynamicAnalysisSpecificationV
 router.register("analysis-specifications", AnalysisSpecificationViewSet)
 router.register("sample-types", SampleTypeViewSet)
 router.register("sample-templates", SampleTemplateViewSet)
-router.register("analysis-profiles", AnalysisProfileViewSet)
 router.register("methods", MethodViewSet)
 router.register("calculations", CalculationViewSet)
 # specification-rows: read-only-in-practice per-test rows, primarily for

@@ -48,7 +48,7 @@ export default function NewSamplePage({ clients, sampleTypes, analysisServices, 
 
   function handleProfileChange(profileId: string) {
     setSelectedProfileId(profileId)
-    const profile = analysisProfiles.find(p => String(p.id) === profileId)
+    const profile = analysisProfiles.find(p => p.uid === profileId)
     if (!profile) return
     // Analysis profiles don't set sample type/container — they only add analyses on top of the current selection.
     setSelectedAnalyses(prev => [...new Set([...prev, ...profile.analysis_services.map(a => a.uid)])])
@@ -136,7 +136,7 @@ export default function NewSamplePage({ clients, sampleTypes, analysisServices, 
                   <select value={selectedProfileId} onChange={e => handleProfileChange(e.target.value)}
                     style={selectStyle} className="w-full outline-none">
                     <option value="">None — select analyses manually</option>
-                    {analysisProfiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    {analysisProfiles.map(p => <option key={p.uid} value={p.uid}>{p.name}</option>)}
                   </select>
                 </Field>
                 <Field label="Client" required>

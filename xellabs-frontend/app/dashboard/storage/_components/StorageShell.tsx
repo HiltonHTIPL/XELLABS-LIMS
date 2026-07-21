@@ -1,11 +1,13 @@
 'use client'
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import QRCode from 'qrcode'
 import {
   getStorageLocations, lookupChainOfCustody, assignSampleToSlot,
   releaseSampleFromSlot, resolveStorageLabel,
   type StorageLocation, type ChainOfCustodyResult,
 } from '@/app/actions/storage'
+import { getClients, type DjangoClient } from '@/app/actions/clients'
+import { getLabSamples, type LabSample } from '@/app/actions/lab-samples'
 import StorageTree from './StorageTree'
 import SlotGrid from './SlotGrid'
 import StorageModal from './StorageModal'
@@ -49,6 +51,11 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
   const [cameraScanOpen, setCameraScanOpen] = useState(false)
   const [showHistory, setShowHistory]       = useState(false)
   const [showBulkStore, setShowBulkStore]   = useState(false)
+  const [clients, setClients]               = useState<DjangoClient[]>([])
+  const [selectedSlotIds, setSelectedSlotIds] = useState<Set<number>>(new Set())
+  const [targetSlotIds, setTargetSlotIds]   = useState<number[] | null>(null)
+  const targetQueueRef = useRef<number[]>([])
+  const multiSelectEnabled = mode === 'store'
 
   const selected    = locations.find(l => l.id === selectedId) ?? null
   const selectedBox = selected?.location_type === 'box' ? selected : null
@@ -203,6 +210,69 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
     return { success: res.success, message: res.success ? `Stored in slot ${freeSlot.slot_id}` : res.message }
   }
 
+  // Eligible = belongs to the chosen client AND isn't already occupying a slot
+  // anywhere — checked against live StorageLocation rows (findSlotForSample),
+  // never the denormalized Sample.storage_location text field (CLAUDE.md).
+  async function getEligibleSamplesForClient(clientId: number): Promise<LabSample[]> {
+    const all = await getLabSamples()
+    return all.filter(s => s.client === clientId && !findSlotForSample(s.sample_id))
+  }
+
+  // Fills the grid-multi-selected slots in order (rather than "next free slot
+  // in the whole box") — used when Bulk Store is launched from the "N slots
+  // selected" action bar instead of the toolbar button.
+  async function handleBulkAssignTargeted(sampleId: string): Promise<{ success: boolean; message: string }> {
+    const nextId = targetQueueRef.current[0]
+    if (nextId === undefined) return { success: false, message: 'All selected slots are filled.' }
+    const slot = locations.find(l => l.id === nextId)
+    if (!slot || slot.is_occupied) {
+      targetQueueRef.current = targetQueueRef.current.slice(1)
+      return handleBulkAssignTargeted(sampleId)
+    }
+    const res = await assignSampleToSlot(slot.id, sampleId)
+    if (res.success) {
+      targetQueueRef.current = targetQueueRef.current.slice(1)
+      await refreshLocations()
+    }
+    return { success: res.success, message: res.success ? `Stored in slot ${slot.slot_id}` : res.message }
+  }
+
+  function openBulkStoreForSelection() {
+    const sorted = boxSlots
+      .filter(s => selectedSlotIds.has(s.id))
+      .sort((a, b) => a.slot_id.localeCompare(b.slot_id, undefined, { numeric: true }))
+      .map(s => s.id)
+    targetQueueRef.current = sorted
+    setTargetSlotIds(sorted)
+    setShowBulkStore(true)
+  }
+
+  // Multi-select only applies in Store mode — clear it whenever the mode or
+  // the selected box changes so a stale selection can't linger into Move/Retrieve.
+  useEffect(() => {
+    setSelectedSlotIds(new Set())
+  }, [mode, selectedBox?.id])
+
+  // In Store mode, a plain click on an empty slot now goes through the
+  // multi-select set (SlotGrid's onMouseDown), not the legacy single-slot
+  // onSlotSelect callback — so the single-slot "Store Sample" action bar
+  // (which reads selectedSlotId) needs it mirrored back whenever exactly one
+  // slot ends up selected. 2+ selected clears it — that case uses "Bulk Store
+  // Here" instead, not the single-slot primary action.
+  useEffect(() => {
+    if (!multiSelectEnabled) return
+    setSelectedSlotId(selectedSlotIds.size === 1 ? Array.from(selectedSlotIds)[0] : null)
+  }, [selectedSlotIds, multiSelectEnabled])
+
+  useEffect(() => {
+    if (!multiSelectEnabled) return
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setSelectedSlotIds(new Set())
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [multiSelectEnabled])
+
   async function handlePrintLabel() {
     // Slot selected → slot label; otherwise the selected box. The QR encodes the
     // hidden system label_code (BX-0001 / BX-0001-A1) — never the user-editable name.
@@ -279,6 +349,7 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
             { icon: 'inventory',  label: 'Bulk Store',  onClick: () => {
                 if (!selectedBox) { showToast(false, 'Select a box first.'); return }
                 setShowBulkStore(true)
+                if (clients.length === 0) getClients().then(setClients)
               }, active: showBulkStore },
             { icon: 'upload',     label: 'Retrieve', onClick: () => setMode('retrieve'), active: mode === 'retrieve' },
           ] as const).map(btn => (
@@ -401,14 +472,34 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
 
           <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
             {selectedBox ? (
-              <SlotGrid
-                box={selectedBox}
-                allLocations={locations}
-                selectedSlotId={selectedSlotId}
-                onAssigned={async (msg) => { showToast(true, msg); await refreshLocations() }}
-                onSlotClick={handleSlotClick}
-                onSlotSelect={setSelectedSlotId}
-              />
+              <>
+                {multiSelectEnabled && selectedSlotIds.size >= 2 && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 8, backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE', marginBottom: 12 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#1D4ED8' }}>{selectedSlotIds.size} slots selected</span>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button type="button" onClick={() => setSelectedSlotIds(new Set())}
+                        style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', borderRadius: 7, border: '1px solid #D1D5DB', background: '#fff', color: '#6B7280', cursor: 'pointer' }}>
+                        Clear
+                      </button>
+                      <button type="button" onClick={openBulkStoreForSelection}
+                        style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', borderRadius: 7, border: 'none', background: '#0154FC', color: '#fff', cursor: 'pointer' }}>
+                        Bulk Store Here
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <SlotGrid
+                  box={selectedBox}
+                  allLocations={locations}
+                  selectedSlotId={selectedSlotId}
+                  onAssigned={async (msg) => { showToast(true, msg); await refreshLocations() }}
+                  onSlotClick={handleSlotClick}
+                  onSlotSelect={setSelectedSlotId}
+                  multiSelectEnabled={multiSelectEnabled}
+                  selectedSlotIds={selectedSlotIds}
+                  onMultiSelectChange={setSelectedSlotIds}
+                />
+              </>
             ) : selected ? (
               children.length > 0 ? (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
@@ -516,8 +607,15 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
       {showBulkStore && selectedBox && (
         <BulkStoreModal
           box={selectedBox}
-          onAssign={handleBulkAssign}
-          onClose={() => setShowBulkStore(false)}
+          clients={clients}
+          onAssign={targetSlotIds ? handleBulkAssignTargeted : handleBulkAssign}
+          onFetchClientSamples={getEligibleSamplesForClient}
+          targetSlotCount={targetSlotIds?.length}
+          onClose={() => {
+            setShowBulkStore(false)
+            setTargetSlotIds(null)
+            setSelectedSlotIds(new Set())
+          }}
         />
       )}
       {cameraScanOpen && (

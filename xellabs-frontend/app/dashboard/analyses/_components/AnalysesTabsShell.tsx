@@ -19,7 +19,7 @@ function MI({ name, size = 16, color }: { name: string; size?: number; color?: s
 type Tab = 'analyses' | 'profiles'
 
 export default function AnalysesTabsShell({
-  initialServices, categories, departments, labContacts, methods, instruments, initialProfiles,
+  initialServices, categories, departments, labContacts, methods, instruments, initialProfiles, sampleTypeOptions,
 }: {
   initialServices: SenaiteAnalysisService[]
   categories: SenaiteAnalysisCategory[]
@@ -28,6 +28,7 @@ export default function AnalysesTabsShell({
   methods: SenaiteRefOption[]
   instruments: SenaiteInstrument[]
   initialProfiles: AnalysisProfile[]
+  sampleTypeOptions: { uid: string; title: string }[]
 }) {
   const [tab, setTab] = useState<Tab>('analyses')
 
@@ -70,6 +71,7 @@ export default function AnalysesTabsShell({
         <AnalysisProfilesShell
           initialProfiles={initialProfiles}
           analysisServices={initialServices}
+          sampleTypeOptions={sampleTypeOptions}
         />
       )}
     </div>
