@@ -1,7 +1,10 @@
 'use server'
 import { revalidatePath } from 'next/cache'
 import { djangoFetch } from '@/app/lib/django'
-import { createSenaiteSample, updateSenaiteSample, senaiteWorkflowAction } from '@/app/lib/senaite'
+import {
+  createSenaiteSample, updateSenaiteSample, updateSenaiteSampleAnalyses, senaiteWorkflowAction,
+  resolveOrCreateContactUid, resolveSenaiteClientPathByUid,
+} from '@/app/lib/senaite'
 import { getSession } from '@/app/lib/session'
 
 const SENAITE_USER = process.env.SENAITE_ADMIN_USER
@@ -83,6 +86,7 @@ export type LabSample = {
   attachment_url?: string | null
   senaite_sync_status?: string
   senaite_sync_error?: string
+  sampling_deviation?: string
 }
 
 export type NewSamplePayload = {
@@ -242,6 +246,136 @@ export async function createSampleWithAnalyses(
   } catch (e) {
     console.error('[SAMPLE_CREATE_ERROR]', e)
     return { success: false, message: 'An unexpected error occurred. Please try again.' }
+  }
+}
+
+/** Edits an existing sample end-to-end — the update-mode counterpart to
+ * createSampleWithAnalyses(). Pushes the editable AR fields to SENAITE
+ * (source of truth), optionally replaces the analyses list there too, then
+ * PATCHes the Django mirror row and its linked AnalysisRequest. Individual
+ * sub-steps report warnings rather than failing the whole save, matching
+ * this project's documented SENAITE update quirks (CLAUDE.md §16f) — a
+ * partial failure here still leaves the sample in a usable, re-editable
+ * state instead of erroring out with nothing saved. */
+export async function updateSampleWithAnalyses(
+  sampleId: number,
+  currentSenaiteUid: string,
+  currentArId: number | null,
+  payload: NewSamplePayload,
+  analyses: SelectedAnalysis[],
+  canEditAnalyses: boolean,
+): Promise<{ success: boolean; message: string }> {
+  try {
+    const token = await senaiteToken()
+    const warnings: string[] = []
+
+    // Step 1: resolve Contact/CC Contact names to SENAITE uids (needs the
+    // client's folder path, same as createSenaiteSample's own internal step).
+    let contactUid: string | null = null
+    let ccContactUids: string[] = []
+    if (payload.client_senaite_uid && (payload.contact_name || payload.cc_contact)) {
+      const clientPath = await resolveSenaiteClientPathByUid(token, payload.client_senaite_uid)
+      if (clientPath) {
+        if (payload.contact_name) contactUid = await resolveOrCreateContactUid(token, clientPath, payload.contact_name)
+        if (payload.cc_contact) {
+          ccContactUids = (await Promise.all(
+            payload.cc_contact.split(',').map(n => resolveOrCreateContactUid(token, clientPath, n.trim()))
+          )).filter((u): u is string => Boolean(u))
+        }
+      }
+    }
+
+    // Step 2: push editable AR-level fields to SENAITE.
+    const senaitePush = await updateSenaiteSample(token, currentSenaiteUid, {
+      ...(payload.collection_date ? { DateSampled: payload.collection_date } : {}),
+      Priority: senaitePriority(payload.priority),
+      ...(payload.client_sample_id ? { ClientSampleID: payload.client_sample_id } : {}),
+      ...(payload.batch_senaite_uid ? { Batch: payload.batch_senaite_uid } : {}),
+      Composite: payload.composite ?? false,
+      InternalUse: payload.internal_use ?? false,
+      ...(contactUid ? { Contact: contactUid } : {}),
+      ...(ccContactUids.length ? { CCContact: ccContactUids } : {}),
+      ...(payload.cc_emails ? { CCEmails: payload.cc_emails } : {}),
+      ...(payload.client_order_number ? { ClientOrderNumber: payload.client_order_number } : {}),
+      ...(payload.client_reference ? { ClientReference: payload.client_reference } : {}),
+      ...(payload.description ? { Remarks: payload.description } : {}),
+      ...(payload.preservation_senaite_uid ? { Preservation: payload.preservation_senaite_uid } : {}),
+      ...(payload.sample_point_senaite_uid ? { SamplePoint: payload.sample_point_senaite_uid } : {}),
+      ...(payload.sampling_deviation_senaite_uid ? { SamplingDeviation: payload.sampling_deviation_senaite_uid } : {}),
+    })
+    if (!senaitePush.success) warnings.push(`Some fields could not be saved to the lab system: ${senaitePush.error}`)
+
+    // Step 3: analyses — only attempted while the sample is still editable
+    // (mirrors the Django AnalysisRequest serializer's own guard below, kept
+    // in sync here so the UI doesn't promise an edit the backend will reject).
+    if (canEditAnalyses) {
+      const testUids = analyses.map(a => a.uid).filter(Boolean)
+      const arSenaitePush = await updateSenaiteSampleAnalyses(token, currentSenaiteUid, testUids)
+      if (!arSenaitePush.success) warnings.push(`Analyses could not be updated in the lab system: ${arSenaitePush.error}`)
+    }
+
+    // Step 4: PATCH the Django mirror row.
+    const patch: Record<string, unknown> = {
+      priority: payload.priority, condition: payload.condition,
+      collection_date: payload.collection_date, description: payload.description ?? '',
+      preferred_storage_location: payload.preferred_storage_location ?? '',
+      preferred_storage_label_code: payload.preferred_storage_label_code ?? '',
+      contact_name: payload.contact_name ?? '', cc_contact: payload.cc_contact ?? '',
+      cc_emails: payload.cc_emails ?? '', batch_id: payload.batch_id ?? '',
+      batch_sub_group: payload.batch_sub_group ?? '', container_type: payload.container_type ?? '',
+      preservation: payload.preservation ?? '', analysis_specification: payload.analysis_specification ?? '',
+      sampling_deviation: payload.sampling_deviation ?? 'none', sample_point: payload.sample_point ?? '',
+      environmental_conditions: payload.environmental_conditions ?? '',
+      composite: payload.composite ?? false, internal_use: payload.internal_use ?? false,
+      client_order_number: payload.client_order_number ?? '', client_reference: payload.client_reference ?? '',
+      client_sample_id: payload.client_sample_id ?? '',
+    }
+    const sampleRes = await djangoFetch(`/api/lims/samples/${sampleId}/`, { method: 'PATCH', body: JSON.stringify(patch) })
+    if (!sampleRes.ok) {
+      const d = await sampleRes.json().catch(() => ({})) as Record<string, unknown>
+      return { success: false, message: (d.detail as string) ?? 'Failed to update the sample record.' }
+    }
+
+    // Step 5: sync the Django AnalysisRequest's analyses list — its own
+    // serializer independently guards against editing analyses once the
+    // sample is no longer 'registered' (lims/serializers.py), so this is safe
+    // to attempt unconditionally; a rejection there is surfaced, not swallowed.
+    if (currentArId) {
+      const arRes = await djangoFetch(`/api/lims/analysis-requests/${currentArId}/`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          analyses: analyses.map(a => ({ senaite_service_uid: a.uid, senaite_service_name: a.name })),
+          priority: payload.priority === 'high' ? 'high' : payload.priority === 'low' ? 'low' : 'normal',
+        }),
+      })
+      if (!arRes.ok) {
+        const arData = await arRes.json().catch(() => ({})) as Record<string, unknown>
+        const arMsg = (arData.detail as string) ?? (Array.isArray(arData) ? String(arData[0]) : undefined) ?? 'Analysis request could not be updated.'
+        warnings.push(arMsg)
+      }
+    } else if (analyses.length > 0) {
+      const arRes = await djangoFetch('/api/lims/analysis-requests/', {
+        method: 'POST',
+        body: JSON.stringify({
+          sample: sampleId,
+          analyses: analyses.map(a => ({ senaite_service_uid: a.uid, senaite_service_name: a.name })),
+          status: 'pending',
+          priority: payload.priority === 'high' ? 'high' : payload.priority === 'low' ? 'low' : 'normal',
+        }),
+      })
+      if (!arRes.ok) warnings.push('Failed to create an analysis request for the newly added analyses.')
+    }
+
+    revalidatePath('/dashboard/samples-overview')
+    revalidatePath(`/dashboard/samples-overview/${sampleId}`)
+    revalidatePath('/dashboard/analysis-requests')
+    return {
+      success: true,
+      message: warnings.length ? `Sample updated with warnings: ${warnings.join(' | ')}` : 'Sample updated successfully.',
+    }
+  } catch (e) {
+    console.error('[SAMPLE_UPDATE_ERROR]', e)
+    return { success: false, message: 'An unexpected error occurred while saving changes.' }
   }
 }
 
@@ -512,9 +646,19 @@ export async function disposeSample(id: number, formData: FormData): Promise<Dis
   }
 }
 
+// New Sample page loads await this sync before rendering (see page.tsx), and
+// it's a real Django→SENAITE round trip each time — on a slow network this was
+// the dominant cost of every single page load. Sample types are rarely added
+// mid-session, so skip repeat syncs within a short TTL (same tradeoff already
+// accepted for fetchSenaiteTitleMap's 5-min cache).
+const SAMPLE_TYPE_SYNC_TTL_MS = 60 * 1000
+let lastSampleTypeSync = 0
+
 export async function syncSampleTypesFromSenaite(): Promise<void> {
+  if (Date.now() - lastSampleTypeSync < SAMPLE_TYPE_SYNC_TTL_MS) return
   try {
     await djangoFetch('/api/lims/sample-types/sync-from-senaite/', { method: 'POST' })
+    lastSampleTypeSync = Date.now()
   } catch { /* non-fatal — new sample page still loads */ }
 }
 

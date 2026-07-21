@@ -3,8 +3,18 @@ import { getSession } from '@/app/lib/session'
 import { getSampleStats, getLabSamples, getTatTrend } from '@/app/actions/lab-samples'
 import { getOpenTasks } from '@/app/actions/tasks'
 import { TrendChart, StatusDonut } from './_components/DashboardCharts'
-import { T, MI, PageHeader, StatCard, Card, Chip, thStyle, tdStyle, linkStyle } from './_components/ui'
+import { T, MI, PageHeader, StatCard, Card, Chip, linkStyle } from './_components/ui'
 import { sampleDisplayId } from '@/app/lib/sampleDisplay'
+import type { CSSProperties } from 'react'
+
+const recentThStyle: CSSProperties = {
+  padding: '8px 10px', textAlign: 'left', fontWeight: 600, fontSize: 13, color: '#374151',
+  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+}
+const recentTdStyle: CSSProperties = {
+  padding: '6px 10px', fontSize: 12, color: '#111827', borderBottom: '1px solid #E5E7EB',
+  verticalAlign: 'middle', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+}
 
 const PRIORITY_LABEL: Record<string, 'High' | 'Medium' | 'Low'> = {
   urgent: 'High', high: 'High', normal: 'Medium', low: 'Low',
@@ -132,30 +142,39 @@ export default async function DashboardPage() {
           </Link>}
         >
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <table style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: 13 }}>
+              <colgroup>
+                <col style={{ width: '16%' }} />
+                <col style={{ width: '20%' }} />
+                <col style={{ width: '16%' }} />
+                <col style={{ width: '14%' }} />
+                <col style={{ width: '14%' }} />
+                <col style={{ width: '12%' }} />
+                <col style={{ width: '8%' }} />
+              </colgroup>
               <thead>
-                <tr>
+                <tr style={{ borderBottom: '2px solid #D8DEEA', background: '#F9FAFB' }}>
                   {['Sample ID','Client','Sample Type','Status','Received Date','Expiry Date','TAT (Days)'].map(h => (
-                    <th key={h} style={thStyle}>{h}</th>
+                    <th key={h} style={recentThStyle}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {recentSamples.length === 0 && (
-                  <tr><td colSpan={7} style={{ ...tdStyle, textAlign: 'center', color: T.faint }}>No samples yet.</td></tr>
+                  <tr><td colSpan={7} style={{ ...recentTdStyle, textAlign: 'center', color: T.faint }}>No samples yet.</td></tr>
                 )}
                 {recentSamples.map((s) => {
                   const statusLabel = STATUS_DISPLAY[s.status] ?? s.status
                   const tone = STATUS_TONE[statusLabel] ?? 'gray'
                   return (
                     <tr key={s.id} className="hover:bg-slate-50">
-                      <td style={tdStyle}><Link href={`/dashboard/samples/${s.id}`} style={linkStyle}>{sampleDisplayId(s)}</Link></td>
-                      <td style={tdStyle}>{s.client_name || '—'}</td>
-                      <td style={tdStyle}>{s.sample_type_name || '—'}</td>
-                      <td style={tdStyle}><Chip tone={tone}>{statusLabel}</Chip></td>
-                      <td style={{ ...tdStyle, color: T.muted }}>{fmtDate(s.received_date)}</td>
-                      <td style={{ ...tdStyle, color: T.muted }}>{fmtDate(s.expiry_date)}</td>
-                      <td style={{ ...tdStyle, textAlign: 'center' }}>{tatDays(s.received_date) ?? '—'}</td>
+                      <td style={recentTdStyle}><Link href={`/dashboard/samples/${s.id}`} style={linkStyle}>{sampleDisplayId(s)}</Link></td>
+                      <td style={recentTdStyle}>{s.client_name || '—'}</td>
+                      <td style={recentTdStyle}>{s.sample_type_name || '—'}</td>
+                      <td style={recentTdStyle}><Chip tone={tone}>{statusLabel}</Chip></td>
+                      <td style={{ ...recentTdStyle, color: T.muted }}>{fmtDate(s.received_date)}</td>
+                      <td style={{ ...recentTdStyle, color: T.muted }}>{fmtDate(s.expiry_date)}</td>
+                      <td style={{ ...recentTdStyle, textAlign: 'center' }}>{tatDays(s.received_date) ?? '—'}</td>
                     </tr>
                   )
                 })}
