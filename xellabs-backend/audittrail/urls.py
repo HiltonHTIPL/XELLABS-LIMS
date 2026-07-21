@@ -1,10 +1,11 @@
 from rest_framework.routers import DefaultRouter
-from .views import AuditEventViewSet, LoginEventViewSet, SecurityEventViewSet, RecordVersionViewSet
+from .views import AuditEventViewSet, LoginEventViewSet, SecurityEventViewSet, RecordVersionViewSet, ImportLogViewSet
 
 router = DefaultRouter()
 router.register("events", AuditEventViewSet)
 router.register("login-events", LoginEventViewSet)
 router.register("security-events", SecurityEventViewSet)
 router.register("versions", RecordVersionViewSet)
+router.register("import-logs", ImportLogViewSet, basename="import-logs")
 
 urlpatterns = router.urls

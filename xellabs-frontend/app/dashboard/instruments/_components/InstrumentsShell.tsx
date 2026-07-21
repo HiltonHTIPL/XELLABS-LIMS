@@ -84,9 +84,14 @@ export default function InstrumentsShell(
             <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Manage lab instruments used for calibration, maintenance, and result imports</p>
           </div>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
-          <MI name="add" size={15} color="#fff" /> New Instrument
-        </button>
+        <div className="flex items-center gap-2">
+          <Link href="/dashboard/master-data-import" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ backgroundColor: '#fff', color: '#0154FC', border: '1px solid #0154FC' }}>
+            <MI name="upload_file" size={15} color="#0154FC" /> Import
+          </Link>
+          <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
+            <MI name="add" size={15} color="#fff" /> New Instrument
+          </button>
+        </div>
       </div>
 
       <div className="flex items-center gap-2 mb-3 flex-wrap">

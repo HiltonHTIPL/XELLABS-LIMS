@@ -1,9 +1,25 @@
 'use client'
+import { exportRowsToCsv } from '@/app/lib/exportCsv'
 import { useState, useActionState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createSampleType, updateSampleType, createContainerType, createSampleMatrix, type SampleTypeFormState, type CreateRefOptionState } from '@/app/actions/sample-types'
 import { type SenaiteSampleType, type SenaiteRefOption, STICKER_TEMPLATES } from '@/app/lib/senaite'
+import ImportButton, { type ParsedRow } from '../../_components/ImportButton'
+
+const exportColumns = [
+  { key: 'title', label: 'Sample Type' },
+  { key: 'description', label: 'Description' },
+  { key: 'Hazardous', label: 'Hazardous', render: (st: SenaiteSampleType) => st.Hazardous ? 'Yes' : 'No' },
+  { key: 'Prefix', label: 'Prefix' },
+  { key: 'MinimumVolume', label: 'Minimum Volume' },
+  { key: 'RetentionPeriod', label: 'Retention Period', render: (st: SenaiteSampleType) => {
+    const r = st.RetentionPeriod
+    return r && (r.days || r.hours || r.minutes) ? `${r.days}d ${r.hours}h ${r.minutes}m` : ''
+  } },
+  { key: 'SampleMatrixTitle', label: 'SampleMatrix' },
+  { key: 'ContainerTypeTitle', label: 'Default Container' },
+]
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -185,6 +201,47 @@ export default function SampleTypesShell({
   }
   function closeDrawer() { setShowDrawer(false) }
 
+  async function handleImportRow(row: ParsedRow) {
+    const fd = new FormData()
+    fd.append('_is_import', 'true')
+    if (row.title) fd.append('title', row.title)
+    if (row.description) fd.append('description', row.description)
+    if (row.Prefix) fd.append('Prefix', row.Prefix)
+    if (row.MinimumVolume) fd.append('MinimumVolume', row.MinimumVolume)
+    
+    if (row.Hazardous && row.Hazardous.toLowerCase() === 'yes') {
+      fd.append('hazardous', 'on')
+    }
+
+    if (row.RetentionPeriod) {
+      const match = row.RetentionPeriod.match(/(\d+)d\s+(\d+)h\s+(\d+)m/)
+      if (match) {
+        fd.append('retentionDays', match[1])
+        fd.append('retentionHours', match[2])
+        fd.append('retentionMinutes', match[3])
+      }
+    } else {
+      fd.append('retentionDays', '30')
+      fd.append('retentionHours', '0')
+      fd.append('retentionMinutes', '0')
+    }
+
+    if (row.SampleMatrixTitle) {
+      const matrix = sampleMatrices.find(m => m.title.toLowerCase() === row.SampleMatrixTitle.toLowerCase())
+      if (!matrix) return { success: false, message: `Sample Matrix not found: ${row.SampleMatrixTitle}` }
+      fd.append('sampleMatrixUid', matrix.uid)
+    }
+
+    if (row.ContainerTypeTitle) {
+      const c = containerTypes.find(c => c.title.toLowerCase() === row.ContainerTypeTitle.toLowerCase())
+      if (!c) return { success: false, message: `Container Type not found: ${row.ContainerTypeTitle}` }
+      fd.append('containerTypeUid', c.uid)
+    }
+
+    const res = await createSampleType({}, fd)
+    return { success: res.success, message: res.message, errors: res.errors }
+  }
+
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
@@ -199,9 +256,25 @@ export default function SampleTypesShell({
             <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Manage sample types used across the laboratory</p>
           </div>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
-          <MI name="add" size={15} color="#fff" /> New Sample Type
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => exportRowsToCsv(exportColumns, [], 'sample-types-template')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ color: '#374151', border: '1px solid #D1D5DB', backgroundColor: '#fff' }}>
+            <MI name="download" size={15} color="#374151" /> Template
+          </button>
+          <button onClick={() => exportRowsToCsv(exportColumns, initialSampleTypes, 'sample-types')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ color: '#0154FC', border: '1px solid #0154FC', backgroundColor: '#fff' }}>
+            <MI name="file_download" size={15} color="#0154FC" /> Export
+          </button>
+          <ImportButton 
+            columns={exportColumns}
+            existingTitles={initialSampleTypes.map(s => s.title)}
+            templateFilename="sample-types-template"
+            entityName="Sample Types"
+            onImportRow={handleImportRow}
+            onRefresh={() => router.refresh()}
+          />
+          <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
+            <MI name="add" size={15} color="#fff" /> New Sample Type
+          </button>
+        </div>
       </div>
 
       {/* Toast */}
@@ -503,7 +576,7 @@ export default function SampleTypesShell({
               ))}
             </tbody>
           </table>
-          <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
+          <div className="px-3 py-2 flex items-center justify-between" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
             <p style={{ fontSize: 10, color: '#9CA3AF' }}>{initialSampleTypes.length} sample type{initialSampleTypes.length !== 1 ? 's' : ''}</p>
           </div>
         </div>

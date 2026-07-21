@@ -29,6 +29,32 @@ export async function getSample(uid: string): Promise<SenaiteSample | null> {
   return fetchSenaiteSample(sessionToken(session), uid)
 }
 
+export type ReviewHistoryEntry = {
+  action: string | null
+  actor: string
+  comments: string
+  review_state: string
+  time: string
+}
+
+export async function getSampleReviewHistory(uid: string): Promise<ReviewHistoryEntry[]> {
+  const session = await getSession()
+  const token = sessionToken(session)
+  const sample = await fetchSenaiteSample(token, uid)
+  if (!sample || !sample.url) return []
+  try {
+    const res = await fetch(sample.url, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return (data.review_history as ReviewHistoryEntry[]) || []
+  } catch {
+    return []
+  }
+}
+
 // ─── Reference data ───────────────────────────────────────────────────────────
 
 export async function getSampleTypes(): Promise<SenaiteSampleType[]> {

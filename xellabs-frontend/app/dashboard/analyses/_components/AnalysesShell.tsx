@@ -1,4 +1,5 @@
 'use client'
+import { exportRowsToCsv } from '@/app/lib/exportCsv'
 import { useState, useActionState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -14,6 +15,21 @@ import {
   type SenaiteInterimFieldRow,
   type SenaiteConditionRow,
 } from '@/app/lib/senaite'
+import ImportButton, { type ParsedRow } from '../../_components/ImportButton'
+
+const exportColumns = [
+  { key: 'title', label: 'Service' },
+  { key: 'Keyword', label: 'Keyword' },
+  { key: 'Category', label: 'Category' },
+  { key: 'Unit', label: 'Unit' },
+  { key: 'Price', label: 'Price' },
+  { key: 'MaxTimeAllowed', label: 'Max Time', render: (s: SenaiteAnalysisService) => {
+    const d = s.MaxTimeAllowedDays || 0, h = s.MaxTimeAllowedHours || 0, m = s.MaxTimeAllowedMinutes || 0
+    return (d || h || m) ? `${d}d ${h}h ${m}m` : ''
+  } },
+  { key: 'DuplicateVariation', label: 'Dup Var' },
+  { key: 'SortKey', label: 'Sort Key' },
+]
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -243,6 +259,34 @@ export default function AnalysesShell({
   function openEdit(s: SenaiteAnalysisService) { setEditing(s); setVals(serviceToFV(s)); setFieldErrors({}); setActiveTab('Description'); setShowDrawer(true) }
   function closeDrawer() { setShowDrawer(false); setEditing(null) }
 
+  async function handleImportRow(row: ParsedRow) {
+    const fd = new FormData()
+    if (row.title) fd.append('title', row.title)
+    if (row.Keyword) fd.append('Keyword', row.Keyword)
+    if (row.Unit) fd.append('Unit', row.Unit)
+    if (row.Price) fd.append('Price', row.Price)
+    if (row.DuplicateVariation) fd.append('DuplicateVariation', row.DuplicateVariation)
+    if (row.SortKey) fd.append('SortKey', row.SortKey)
+
+    if (row.MaxTimeAllowed) {
+      const match = row.MaxTimeAllowed.match(/(\d+)d\s+(\d+)h\s+(\d+)m/)
+      if (match) {
+        fd.append('MaxTimeAllowedDays', match[1])
+        fd.append('MaxTimeAllowedHours', match[2])
+        fd.append('MaxTimeAllowedMinutes', match[3])
+      }
+    }
+
+    if (row.Category) {
+      const cat = categories.find(c => c.title.toLowerCase() === row.Category.toLowerCase())
+      if (!cat) return { success: false, message: `Category not found: ${row.Category}` }
+      fd.append('Category', cat.uid)
+    }
+
+    const res = await createAnalysis({}, fd)
+    return { success: res.success, message: res.message, errors: res.errors }
+  }
+
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     const set = (name: string, value: unknown) => {
       const el = e.currentTarget.querySelector(`input[name="${name}"]`) as HTMLInputElement
@@ -276,9 +320,24 @@ export default function AnalysesShell({
             <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Manage the analyses (test services) available for samples and analysis profiles</p>
           </div>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
-          <MI name="add" size={15} color="#fff" /> New Analysis
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => exportRowsToCsv(exportColumns, [], 'analyses-template')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ color: '#374151', border: '1px solid #D1D5DB', backgroundColor: '#fff' }}>
+            <MI name="download" size={15} color="#374151" /> Template
+          </button>
+          <button onClick={() => exportRowsToCsv(exportColumns, filtered, 'analyses')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ color: '#0154FC', border: '1px solid #0154FC', backgroundColor: '#fff' }}>
+            <MI name="file_download" size={15} color="#0154FC" /> Export
+          </button>
+          <ImportButton 
+            columns={exportColumns}
+            existingTitles={initialServices.map(s => s.title)}
+            entityName="Analyses"
+            onImportRow={handleImportRow}
+            onRefresh={() => router.refresh()}
+          />
+          <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
+            <MI name="add" size={15} color="#fff" /> New Analysis
+          </button>
+        </div>
       </div>
 
       {/* Toast */}
@@ -612,7 +671,7 @@ export default function AnalysesShell({
               ))}
             </tbody>
           </table>
-          <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
+          <div className="px-3 py-2 flex items-center justify-between" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
             <p style={{ fontSize: 10, color: '#9CA3AF' }}>{filtered.length} analys{filtered.length !== 1 ? 'es' : 'is'}</p>
           </div>
         </div>

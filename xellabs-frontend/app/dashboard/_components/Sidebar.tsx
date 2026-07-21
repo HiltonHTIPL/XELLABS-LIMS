@@ -4,6 +4,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { T } from './tokens'
+import { ADMIN_SECTIONS } from './adminNav'
 
 function MI({ name, size = 16 }: { name: string; size?: number }) {
   return <span className="material-icons" style={{ fontSize: size, lineHeight: 1 }}>{name}</span>
@@ -83,6 +84,8 @@ export default function Sidebar({ onToggle, role, reportDraftCount, isSuperuser 
     return open
   })
 
+  const [adminQuery, setAdminQuery] = useState('')
+
   function toggleGroup(name: string) {
     setOpenGroups(prev => {
       const next = new Set(prev)
@@ -106,6 +109,20 @@ export default function Sidebar({ onToggle, role, reportDraftCount, isSuperuser 
       : { color: 'rgba(255,255,255,0.72)' }),
   })
 
+  // Once you open an admin SECTION (a tile), the primary sidebar swaps its whole
+  // nav to the admin sections (single source: ADMIN_SECTIONS) instead of the global
+  // NAV, with a "Main Menu" link to get back. The Administration GRID page itself
+  // (/dashboard/admin) keeps the global menu — the swap is a tile-click, not the
+  // Administration entry. Role-filtered by the same isVisible rule.
+  const adminSections = ADMIN_SECTIONS.filter(s => isVisible(s.roles))
+  const inAdmin = pathname.startsWith('/dashboard/admin/')
+    || adminSections.some(s => pathname === s.href || pathname.startsWith(s.href + '/'))
+
+  const adminQ = adminQuery.trim().toLowerCase()
+  const shownAdminSections = adminQ
+    ? adminSections.filter(s => s.label.toLowerCase().includes(adminQ))
+    : adminSections
+
   return (
     <div className="flex flex-col h-full" style={{ width: 210, backgroundColor: T.navy }}>
 
@@ -114,9 +131,49 @@ export default function Sidebar({ onToggle, role, reportDraftCount, isSuperuser 
         <Image src="/xellabs-logo.png" alt="XelLabs LIMS" width={110} height={32} style={{ objectFit: 'contain' }} />
       </div>
 
-      {/* Nav */}
+      {/* Nav — global menu, OR the Administration sections when inside admin */}
       <nav className="flex-1 min-h-0 overflow-y-auto py-3 px-2">
-        {NAV.map(entry => {
+        {inAdmin ? (
+          <>
+            {/* Back link: if the search has text, first press just clears it (no
+                navigation); once empty it goes to the Administration grid. */}
+            <Link
+              href="/dashboard/admin"
+              style={linkStyle(false)}
+              onClick={e => { if (adminQuery) { e.preventDefault(); setAdminQuery('') } }}
+            >
+              <MI name="arrow_back" size={16} />
+              <span>Administration</span>
+            </Link>
+            {/* Filter the admin sections by name */}
+            <div style={{ position: 'relative', margin: '10px 4px' }}>
+              <span className="material-icons" style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 16, color: 'rgba(255,255,255,0.5)', pointerEvents: 'none' }}>search</span>
+              <input
+                value={adminQuery}
+                onChange={e => setAdminQuery(e.target.value)}
+                placeholder="Search settings"
+                aria-label="Search administration settings"
+                style={{
+                  width: '100%', padding: '7px 10px 7px 30px', borderRadius: 8,
+                  fontSize: 12.5, color: '#fff', outline: 'none',
+                  backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.16)',
+                }}
+              />
+            </div>
+            {shownAdminSections.map(s => {
+              const active = pathname === s.href || pathname.startsWith(s.href + '/')
+              return (
+                <Link key={s.href} href={s.href} style={linkStyle(active)} title={s.description}>
+                  <MI name={s.icon} size={16} />
+                  <span>{s.label}</span>
+                </Link>
+              )
+            })}
+            {shownAdminSections.length === 0 && (
+              <div style={{ padding: '8px 12px', fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>No settings match.</div>
+            )}
+          </>
+        ) : NAV.map(entry => {
           if (!isVisible(entry.roles)) return null
 
           if (isGroup(entry)) {

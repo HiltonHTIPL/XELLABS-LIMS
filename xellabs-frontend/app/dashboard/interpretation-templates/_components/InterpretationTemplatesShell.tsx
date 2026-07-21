@@ -21,6 +21,11 @@ export default function InterpretationTemplatesShell({
         { key: 'analysis_templates', label: 'Sample Templates', width: '20%', render: r => countLabel(r.analysis_templates) },
         { key: 'description', label: 'Description', width: '22%' },
       ]}
+      exportColumns={[
+        { key: 'title', label: 'Title' },
+        { key: 'description', label: 'Description' },
+        { key: 'sample_types', label: 'Sample Types', render: r => countLabel(r.sample_types) },
+      ]}
       fields={[
         { name: 'title', label: 'Name', kind: 'text', required: true, placeholder: 'e.g. Potable Water Interpretation' },
         { name: 'sample_types', label: 'Sample Types', kind: 'multiselect', options: sampleTypes, help: 'Limit this template to samples of these types (optional)' },

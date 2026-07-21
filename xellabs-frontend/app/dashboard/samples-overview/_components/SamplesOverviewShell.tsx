@@ -2,9 +2,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { type LabSample, type DjangoSampleType, patchLabSample } from '@/app/actions/lab-samples'
-import { type SenaiteClientFull } from '@/app/lib/senaite'
+import { type SenaiteClientFull, type SenaiteSample } from '@/app/lib/senaite'
+import { getSample } from '@/app/actions/samples'
 import { sampleDisplayId as displayId } from '@/app/lib/sampleDisplay'
 import DisposeSampleModal from './DisposeSampleModal'
+import SampleDetailClient from '../../samples/[id]/_components/SampleDetailClient'
+import SampleOverviewDetailWrapper from './SampleOverviewDetailWrapper'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -95,7 +98,7 @@ function tatDays(receivedDate: string | null, nowMs: number | null): number | nu
 }
 
 function isOverdueSample(s: LabSample): boolean {
-  return Boolean(s.expiry_date && new Date(s.expiry_date) < new Date() && !['published', 'disposed', 'rejected'].includes(s.status))
+  return Boolean(s.expiry_date && new Date(s.expiry_date) < new Date() && !['registered', 'disposed', 'rejected'].includes(s.status))
 }
 
 // Maps a stat card key to the status filter value it represents (or 'overdue' as a special case)
@@ -268,6 +271,29 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
   const [saveFilterModalOpen, setSaveFilterModalOpen] = useState(false)
   const [newFilterName, setNewFilterName] = useState('')
 
+  // ── Detail Drawer ──
+  const [selectedSenaiteUid, setSelectedSenaiteUid] = useState<string | null>(null)
+  const [selectedSenaiteSample, setSelectedSenaiteSample] = useState<SenaiteSample | null>(null)
+  const [selectedDjangoId, setSelectedDjangoId] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (selectedSenaiteUid) {
+      getSample(selectedSenaiteUid).then(s => setSelectedSenaiteSample(s))
+    } else {
+      setSelectedSenaiteSample(null)
+    }
+  }, [selectedSenaiteUid])
+
+  function openDetail(senaiteUid: string | undefined, djangoId: number) {
+    setSelectedSenaiteUid(senaiteUid ?? null)
+    setSelectedDjangoId(djangoId)
+  }
+
+  function closeDetail() {
+    setSelectedSenaiteUid(null)
+    setSelectedDjangoId(null)
+  }
+
   function currentFilterSnapshot(): FilterSnapshot {
     return { search, sampleType: filterSampleType, client: filterClient, status: filterStatus, priority: filterPriority, from: filterFrom, to: filterTo, overdue: filterOverdue }
   }
@@ -330,6 +356,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
 
   // ── Dispose (regulatory basis + optional certificate) ──
   const [disposeTarget, setDisposeTarget] = useState<LabSample | null>(null)
+  const [disposeModalOpen, setDisposeModalOpen] = useState(false)
 
   const sel ={ border: '1px solid #D1D5DB', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: '#374151', background: '#fff', outline: 'none', cursor: 'pointer' as const }
   const [now, setNow] = useState('')
@@ -545,7 +572,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
                       </td>
                       <td style={{ padding: '10px 12px', whiteSpace: 'nowrap', minWidth: 120 }}>
                         <span style={{ color: '#2563EB', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', whiteSpace: 'nowrap', display: 'inline-block' }}
-                          onClick={() => router.push(`/dashboard/samples-overview/${s.id}`)}>
+                          onClick={() => openDetail(s.senaite_uid, s.id)}>
                           {displayId(s)}
                         </span>
                       </td>
@@ -745,18 +772,20 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
         <>
           <div style={{ position: 'fixed', inset: 0, zIndex: 9990 }} onClick={() => setActionMenu(null)} />
           <div style={{ position: 'fixed', top: actionMenu.top, right: actionMenu.right, zIndex: 9999, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 160, overflow: 'hidden' }}>
-            {[
-              { icon: 'visibility',     label: 'View Details',   action: () => router.push(`/dashboard/samples-overview/${actionMenu.id}`) },
-              { icon: 'move_to_inbox',  label: 'Receive Sample', action: () => { router.push(`/dashboard/sample-receipts?id=${actionMenu.id}`); setActionMenu(null) } },
-              { icon: 'edit',           label: 'Edit Sample',    action: () => router.push(`/dashboard/samples-overview/${actionMenu.id}?edit=1`) },
-              { icon: 'delete_outline', label: 'Dispose', action: () => setDisposeTarget(samples.find(s => s.id === actionMenu.id) ?? null), danger: true },
-            ].map(item => (
-              <button key={item.label} onClick={() => { item.action(); setActionMenu(null) }}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: (item as { danger?: boolean }).danger ? '#EF4444' : '#374151', textAlign: 'left' }}>
-                <MI name={item.icon} size={15} color={(item as { danger?: boolean }).danger ? '#EF4444' : '#6B7280'} />
-                {item.label}
+            <button onClick={() => { openDetail(paginated.find(s => s.id === actionMenu.id)?.senaite_uid, actionMenu.id); setActionMenu(null) }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', fontSize: 13, color: '#374151', background: 'none', border: 'none', cursor: 'pointer', width: '100%', textAlign: 'left' }}>
+              <MI name="visibility" size={15} color="#6B7280" /> View Detail
+            </button>
+            <button onClick={() => { router.push(`/dashboard/sample-receipts?id=${actionMenu.id}`); setActionMenu(null) }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', fontSize: 13, color: '#374151', background: 'none', border: 'none', cursor: 'pointer', width: '100%', textAlign: 'left' }}>
+              <MI name="move_to_inbox" size={15} color="#6B7280" /> Receive Sample
+            </button>
+            <button onClick={() => { router.push(`/dashboard/samples-overview/${actionMenu.id}?edit=1`); setActionMenu(null) }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', fontSize: 13, color: '#374151', background: 'none', border: 'none', cursor: 'pointer', width: '100%', textAlign: 'left' }}>
+              <MI name="edit" size={15} color="#6B7280" /> Edit Sample
+            </button>
+            {isOverdueSample(samples.find(s => s.id === actionMenu.id)!) && (
+              <button onClick={() => { setDisposeTarget(samples.find(s => s.id === actionMenu.id) ?? null); setActionMenu(null) }} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', fontSize: 13, color: '#EF4444', background: 'none', border: 'none', cursor: 'pointer', width: '100%', textAlign: 'left' }}>
+                <MI name="delete_outline" size={15} color="#EF4444" /> Dispose
               </button>
-            ))}
+            )}
           </div>
         </>
       )}
@@ -775,6 +804,26 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
           }}
         />
       )}
+
+      {/* ── Sample Detail drawer ── */}
+      <div style={{ position: 'fixed', top: 56, bottom: 0, left: 0, right: 0, zIndex: 200, pointerEvents: (selectedSenaiteUid || selectedDjangoId) ? 'auto' : 'none' }}>
+        <div onClick={closeDetail} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.30)', opacity: (selectedSenaiteUid || selectedDjangoId) ? 1 : 0, transition: 'opacity 0.25s ease' }} />
+        <div style={{ position: 'absolute', top: 0, bottom: 0, width: '75%', minWidth: 720, maxWidth: 1040, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.12)', right: (selectedSenaiteUid || selectedDjangoId) ? 0 : '-100%', transition: 'right 0.28s cubic-bezier(0.4,0,0.2,1)', overflowY: 'auto' }}>
+          {(selectedSenaiteUid && selectedSenaiteSample) ? (
+            <SampleDetailClient
+              uid={selectedSenaiteUid}
+              sample={selectedSenaiteSample}
+              onClose={closeDetail}
+            />
+          ) : selectedDjangoId && !selectedSenaiteUid ? (
+            <SampleOverviewDetailWrapper djangoId={selectedDjangoId} onClose={closeDetail} />
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', backgroundColor: '#F9FAFB' }}>
+              <div style={{ fontSize: 13, color: '#6B7280' }}>Loading sample details...</div>
+            </div>
+          )}
+        </div>
+      </div>
 
     </div>
   )

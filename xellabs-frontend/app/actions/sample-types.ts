@@ -89,6 +89,9 @@ export async function createSampleType(
   _state: SampleTypeFormState,
   formData: FormData
 ): Promise<SampleTypeFormState> {
+  const isImport = formData.get('_is_import') === 'true'
+  formData.delete('_is_import')
+
   const { payload, errors } = parseFormPayload(formData)
   if (Object.keys(errors).length) return { errors }
 
@@ -105,6 +108,7 @@ export async function createSampleType(
   // only carries what Django's own Sample-registration flow reads.
   await djangoFetch('/api/lims/sample-types/', {
     method: 'POST',
+    auditSource: isImport ? 'import' : undefined,
     body: JSON.stringify({ name: payload.title, prefix: payload.Prefix, description: payload.description ?? '' }),
   }).catch(() => null) // non-fatal — SENAITE is the source of truth
 

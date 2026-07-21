@@ -1,10 +1,11 @@
 from rest_framework import viewsets, filters
 from django_filters.rest_framework import DjangoFilterBackend
 from core.permissions import AuditReadOnly
-from .models import AuditEvent, LoginEvent, SecurityEvent, RecordVersion
+from .models import AuditEvent, LoginEvent, SecurityEvent, RecordVersion, ImportLog
 from .serializers import (
     AuditEventSerializer, LoginEventSerializer,
     SecurityEventSerializer, RecordVersionSerializer,
+    ImportLogSerializer
 )
 
 
@@ -41,3 +42,23 @@ class RecordVersionViewSet(viewsets.ReadOnlyModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ["content_type", "object_id"]
     ordering_fields = ["version_number", "created_at"]
+
+
+class ImportLogViewSet(viewsets.ModelViewSet):
+    queryset = ImportLog.objects.select_related("user").all()
+    serializer_class = ImportLogSerializer
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ["entity_name", "user"]
+    ordering_fields = ["timestamp"]
+    
+    def get_permissions(self):
+        # Create is allowed for any authenticated user (who can import).
+        # List/Retrieve could be AuditReadOnly or just IsAuthenticated.
+        # But to allow users to see their own history or any history in the drawer,
+        # we'll use default IsAuthenticated which is already set globally in REST_FRAMEWORK.
+        # If we wanted only Audit readers to see it, we'd add AuditReadOnly for list actions.
+        # Given it's in the import drawer for the person importing, IsAuthenticated is fine.
+        return super().get_permissions()
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
