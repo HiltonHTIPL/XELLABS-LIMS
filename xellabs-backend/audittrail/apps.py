@@ -10,6 +10,7 @@ class AudittrailConfig(AppConfig):
         from instruments.models import (
             Instrument, Calibration, Certification, Validation,
             InstrumentType, InstrumentLocation, ScheduledTask, InstrumentResultImport,
+            InstrumentManufacturer, InstrumentSupplier,
         )
 
         for model in (
@@ -17,5 +18,6 @@ class AudittrailConfig(AppConfig):
             SampleType, Method, AnalysisSpecification, Specification, DynamicAnalysisSpecification,
             Instrument, Calibration, Certification, Validation,
             InstrumentType, InstrumentLocation, ScheduledTask, InstrumentResultImport,
+            InstrumentManufacturer, InstrumentSupplier,
         ):
             wire_signals(model)

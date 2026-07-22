@@ -18,6 +18,11 @@ export default function LabDepartmentsShell({ rows, managers, contactDepartments
         { key: 'department_id', label: 'Department ID', width: '22%' },
         { key: 'manager', label: 'Manager', width: '26%', render: r => mgrTitle(String(r.manager ?? '')) },
       ]}
+      exportColumns={[
+        { key: 'title', label: 'Department' },
+        { key: 'department_id', label: 'Department ID' },
+        { key: 'manager', label: 'Manager', render: r => mgrTitle(String(r.manager ?? '')) },
+      ]}
       fields={[
         { name: 'title', label: 'Name', kind: 'text', required: true, placeholder: 'e.g. Microbiology' },
         { name: 'department_id', label: 'Department ID', kind: 'text', required: true, placeholder: 'e.g. MICRO' },

@@ -16,6 +16,12 @@ export default function AnalysisCategoriesShell({ rows, departments }: { rows: A
         { key: 'sort_key', label: 'Sort Key', width: '14%' },
         { key: 'description', label: 'Description', width: '28%' },
       ]}
+      exportColumns={[
+        { key: 'title', label: 'Category' },
+        { key: 'description', label: 'Description' },
+        { key: 'department', label: 'Department', render: r => deptTitle(String(r.department ?? '')) },
+        { key: 'sort_key', label: 'Sort Key' },
+      ]}
       fields={[
         { name: 'title', label: 'Name', kind: 'text', required: true, placeholder: 'e.g. Metals' },
         { name: 'department', label: 'Department', kind: 'select', required: true, options: departments },

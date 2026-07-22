@@ -10,6 +10,7 @@ export default function BatchLabelsShell({ rows }: { rows: AdminRow[] }) {
       singularLabel="Batch Label"
       icon="label"
       columns={[{ key: 'title', label: 'Name', width: '92%' }]}
+      exportColumns={[{ key: 'title', label: 'Title' }]}
       fields={[
         { name: 'title', label: 'Name', kind: 'text', required: true, placeholder: 'e.g. Priority' },
       ]}
