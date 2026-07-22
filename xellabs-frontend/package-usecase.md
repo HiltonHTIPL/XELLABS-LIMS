@@ -1,7 +1,7 @@
 # Package Use Cases — xellabs
 
 > **Project:** xellabs (HIPAA / Healthcare Compliance — Next.js 16)
-> **Last updated:** 2026-06-29
+> **Last updated:** 2026-07-22
 
 ---
 
@@ -13,6 +13,14 @@
 | `react` | 19.2.4 | Framework | UI component model |
 | `react-dom` | 19.2.4 | Framework | React DOM renderer |
 | `jsqr` | 1.4.0 | Barcode/QR | Client-side QR code decoding from device camera frames (getUserMedia + canvas) — storage location label scanning in New Sample / Sample Receipt |
+| `@liji-table/core` | 0.0.8-beta.0 | Data Table | Headless table engine (sort/global search/pagination/row selection/column pin/reorder/resize) — the logic layer behind the app's single shared `DataTable` component (`app/dashboard/_components/DataTable.tsx`), used by every list page instead of a hand-rolled `<table>` |
+| `@liji-table/react` | 0.0.8-beta.0 | Data Table | React binding (`useLijiTable` hook) for `@liji-table/core` |
+| `jsbarcode` | 3.12.3 | Barcode/QR | Renders Code128/Code39 barcodes onto `<canvas>`/`<svg>` — sample and storage-label sticker printing (`LiveBarcode.tsx`, `stickerTemplates.ts`) |
+| `qrcode` | 1.5.4 | Barcode/QR | Generates QR codes (as data URLs) for storage location/slot labels and sticker templates (`StorageShell.tsx`, `stickerTemplates.ts`) |
+| `recharts` | 3.9.0 | Charts | Dashboard analytics charts (`DashboardCharts.tsx`) |
+| `sharp` | 0.34.5 | Image Processing | Next.js's own image-optimization pipeline (`next/image`) — not imported directly in app code |
+| `xlsx` | 0.18.5 | Data Import | Parses `.xlsx`/`.xls` instrument-result files (in addition to CSV) for the Worksheet result-import flow (`WorksheetDetailShell.tsx`) |
+| `@superset-ui/embedded-sdk` | 0.4.0 | Analytics | Embeds Apache Superset dashboards in an iframe with signed-guest-token auth (`SupersetDashboard.tsx`) |
 
 ---
 
@@ -41,6 +49,8 @@
 | `@types/node` | ^20 | Types | Node.js TypeScript definitions |
 | `@types/react` | ^19 | Types | React TypeScript definitions |
 | `@types/react-dom` | ^19 | Types | React DOM TypeScript definitions |
+| `@types/jsbarcode` | ^3.11.4 | Types | TypeScript definitions for `jsbarcode` |
+| `@types/qrcode` | ^1.5.6 | Types | TypeScript definitions for `qrcode` |
 
 ---
 

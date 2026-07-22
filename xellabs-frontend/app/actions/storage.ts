@@ -230,6 +230,12 @@ export type CocEvent = {
   user: string
   event_type: 'sample_registered' | 'sample_received' | 'status_change' | 'update' | 'stored' | 'released'
     | 'result_submitted' | 'result_verified' | 'result_rejected' | 'ar_completed'
+    // Rows sourced from the lims.ChainOfCustody ledger (inventory/views.py's
+    // `custody_${action}` prefix) — `disposed` is the only action written in
+    // production today; the union stays open-ended (`custody_${string}`) so
+    // any other ACTION value the model already defines (transferred/stored/
+    // retrieved/analysed/collected) renders too if it's ever written.
+    | `custody_${string}`
   label: string
   details: Record<string, unknown>
 }

@@ -1,7 +1,7 @@
 'use client'
 import { useState, useMemo, useTransition } from 'react'
 import Link from 'next/link'
-import { getResults, type EnrichedResult, type ResultFilters, type ResultStatus } from '@/app/actions/results'
+import { getResults, type EnrichedResult, type ResultFilters } from '@/app/actions/results'
 import {
   PageHeader, Card, StatCard, Btn, Field, StatusChip, EmptyState,
   inputCls, inputStyle, selectStyle, T,
@@ -18,11 +18,15 @@ function fmtDate(v: string | null): string {
 export default function ResultsShell({ initialResults }: { initialResults: EnrichedResult[] }) {
   const [results, setResults] = useState<EnrichedResult[]>(initialResults)
   const [search, setSearch] = useState('')
-  const [status, setStatus] = useState<ResultStatus | ''>('')
+  const [status, setStatus] = useState('')
   const [outOfRange, setOutOfRange] = useState<'' | 'true' | 'false'>('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [pending, startTransition] = useTransition()
+
+  // SENAITE review_states actually present in the data — no fixed Django
+  // status enum anymore, so the dropdown reflects whatever's really there.
+  const statuses = useMemo(() => Array.from(new Set(initialResults.map(r => r.status))).sort(), [initialResults])
 
   function runSearch() {
     const filters: ResultFilters = {
@@ -48,42 +52,34 @@ export default function ResultsShell({ initialResults }: { initialResults: Enric
 
   const stats = useMemo(() => {
     const total = results.length
-    const pendingCount = results.filter(r => r.status === 'pending').length
-    const verified = results.filter(r => r.status === 'verified').length
+    const awaitingResult = results.filter(r => r.status === 'assigned').length
+    const verified = results.filter(r => r.status === 'verified' || r.status === 'published').length
     const outRange = results.filter(r => r.is_out_of_range).length
-    return { total, pendingCount, verified, outRange }
+    return { total, awaitingResult, verified, outRange }
   }, [results])
 
-  // Submitted/Verified are nullable dates — expose epoch sort fields; renders keep
-  // reading the original ISO values (and their by-name sub-lines) unchanged.
-  type Row = EnrichedResult & { submitted_sort: number; verified_sort: number }
+  // Submitted is a nullable date — expose an epoch sort field; render keeps
+  // reading the original ISO value (and its by-name sub-line) unchanged.
+  type Row = EnrichedResult & { submitted_sort: number }
   const rows: Row[] = results.map(r => ({
     ...r,
     submitted_sort: r.submitted_at ? new Date(r.submitted_at).getTime() : 0,
-    verified_sort: r.verified_at ? new Date(r.verified_at).getTime() : 0,
   }))
 
   const columns: DataTableColumn<Row>[] = [
     { id: 'test_name', label: 'Test', sortable: true, minWidth: 140, render: r => r.test_name || '—' },
-    {
-      id: 'sample_id', label: 'Sample', sortable: true, minWidth: 140,
-      render: r => (
-        <div>
-          <div>{r.sample_id || '—'}</div>
-          {r.sample_barcode && <div style={{ fontSize: 11, color: T.faint }}>{r.sample_barcode}</div>}
-        </div>
-      ),
-    },
-    { id: 'ar_id', label: 'AR ID', sortable: true, minWidth: 110, render: r => r.ar_id || '—' },
+    { id: 'sample_id', label: 'Sample', sortable: true, minWidth: 140, render: r => r.sample_id || '—' },
     {
       id: 'ws_id', label: 'Worksheet', sortable: true, minWidth: 120,
+      // The worksheet detail route resolves its `[id]` param as the
+      // worksheet's own id (e.g. "WS-011"), not its SENAITE uid — confirmed
+      // in senaite-worksheets.ts's getSenaiteWorksheetDetailById, which builds
+      // the SENAITE path directly from it. Linking by uid 404s.
       render: r => (
         r.ws_id ? (
-          r.worksheet_id ? (
-            <Link href={`/dashboard/worksheets/${r.worksheet_id}`} style={{ color: T.primary, fontWeight: 600, textDecoration: 'none' }}>
-              {r.ws_id}
-            </Link>
-          ) : r.ws_id
+          <Link href={`/dashboard/worksheets/${r.ws_id}`} style={{ color: T.primary, fontWeight: 600, textDecoration: 'none' }}>
+            {r.ws_id}
+          </Link>
         ) : '—'
       ),
     },
@@ -106,13 +102,11 @@ export default function ResultsShell({ initialResults }: { initialResults: Enric
       ),
     },
     {
-      id: 'verified_sort', label: 'Verified', sortable: true, minWidth: 150,
-      render: r => (
-        <div>
-          <div>{fmtDate(r.verified_at)}</div>
-          {r.verified_by_name && <div style={{ fontSize: 11, color: T.faint }}>{r.verified_by_name}</div>}
-        </div>
-      ),
+      // SENAITE exposes no "date verified" field anywhere on Analysis (only
+      // who — getLastVerificator) — see app/actions/results.ts docstring.
+      // Showing an exact-looking date we don't actually have would be worse
+      // than showing none, so this column is name-only, not a fabricated date.
+      id: 'verified_by_name', label: 'Verified By', sortable: true, minWidth: 130, render: r => r.verified_by_name || '—',
     },
   ]
 
@@ -127,30 +121,27 @@ export default function ResultsShell({ initialResults }: { initialResults: Enric
 
       <div className="grid grid-cols-4 gap-4 mb-5">
         <StatCard icon="fact_check" label="Total Results" value={stats.total} />
-        <StatCard icon="hourglass_top" iconColor={T.warning} iconBg="#FFF7ED" label="Pending" value={stats.pendingCount} />
+        <StatCard icon="hourglass_top" iconColor={T.warning} iconBg="#FFF7ED" label="Awaiting Result" value={stats.awaitingResult} />
         <StatCard icon="verified" iconColor={T.success} iconBg="#DBEAFE" label="Verified" value={stats.verified} />
         <StatCard icon="warning" iconColor={T.danger} iconBg="#FEF2F2" label="Out of Range" value={stats.outRange} />
       </div>
 
       <Card className="mb-5">
-        <div className="grid grid-cols-5 gap-3 items-end">
-          <Field label="Search" className="col-span-2">
+        <div className="flex items-end gap-3 flex-wrap">
+          <Field label="Search" className="flex-1" style={{ maxWidth: 320, minWidth: 220 }}>
             <input
               className={inputCls}
               style={inputStyle}
-              placeholder="Sample ID, barcode, AR ID, worksheet, or test name…"
+              placeholder="Sample ID, worksheet, or test name…"
               value={search}
               onChange={e => setSearch(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') runSearch() }}
             />
           </Field>
           <Field label="Status">
-            <select className={inputCls} style={selectStyle} value={status} onChange={e => setStatus(e.target.value as ResultStatus | '')}>
+            <select className={inputCls} style={selectStyle} value={status} onChange={e => setStatus(e.target.value)}>
               <option value="">All statuses</option>
-              <option value="pending">Pending</option>
-              <option value="submitted">Submitted</option>
-              <option value="verified">Verified</option>
-              <option value="rejected">Rejected</option>
+              {statuses.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
             </select>
           </Field>
           <Field label="Range">
@@ -160,6 +151,12 @@ export default function ResultsShell({ initialResults }: { initialResults: Enric
               <option value="false">In range only</option>
             </select>
           </Field>
+          <Field label="Submitted from">
+            <input type="date" className={inputCls} style={inputStyle} value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+          </Field>
+          <Field label="Submitted to">
+            <input type="date" className={inputCls} style={inputStyle} value={dateTo} onChange={e => setDateTo(e.target.value)} />
+          </Field>
           <div className="flex items-center gap-2">
             <Btn variant="primary" icon="search" onClick={runSearch} disabled={pending}>
               {pending ? 'Searching…' : 'Search'}
@@ -167,18 +164,10 @@ export default function ResultsShell({ initialResults }: { initialResults: Enric
             <Btn variant="outline" icon="refresh" onClick={resetFilters} disabled={pending}>Reset</Btn>
           </div>
         </div>
-        <div className="grid grid-cols-5 gap-3 items-end mt-3">
-          <Field label="Submitted from">
-            <input type="date" className={inputCls} style={inputStyle} value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
-          </Field>
-          <Field label="Submitted to">
-            <input type="date" className={inputCls} style={inputStyle} value={dateTo} onChange={e => setDateTo(e.target.value)} />
-          </Field>
-        </div>
       </Card>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
       <Card title="Results" icon="science" pad={false}>
         {results.length === 0 ? (
           <div className="p-4">

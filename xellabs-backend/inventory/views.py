@@ -317,6 +317,44 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
                     "details": extra,
                 })
 
+        # 3b. Chain-of-custody ledger (lims.ChainOfCustody) — a dedicated
+        # custody-transfer model (from/to location, temperature, condition,
+        # regulatory-basis/notes) that this endpoint never read at all, even
+        # though receive_sample()/dispose_sample() (lims/services.py) already
+        # write to it on every receive and every disposal. "received" is
+        # skipped here — section 2 above already synthesizes an equally
+        # detailed event straight from Sample fields, so including both would
+        # just duplicate the same moment twice in the timeline.
+        from lims.models import ChainOfCustody
+        custody_records = (
+            ChainOfCustody.objects.filter(sample=sample_obj)
+            .exclude(action="received")
+            .select_related("transferred_by", "received_by")
+            .order_by("timestamp")
+        )
+        for c in custody_records:
+            actor = (c.transferred_by.get_full_name() or c.transferred_by.username) if c.transferred_by else "System"
+            history.append({
+                "id": f"custody-{c.pk}",
+                "timestamp": c.timestamp.isoformat(),
+                "user": actor,
+                "event_type": f"custody_{c.action}",
+                "label": c.get_action_display(),
+                "details": {
+                    "from_location": c.from_location,
+                    "to_location": c.to_location,
+                    "temperature_c": str(c.temperature_c) if c.temperature_c is not None else None,
+                    "condition": c.condition,
+                    "notes": c.notes,
+                    "received_by": (c.received_by.get_full_name() or c.received_by.username) if c.received_by else None,
+                },
+            })
+        # Every action the ChainOfCustody ledger records natively (disposed,
+        # and — if ever written — transferred/stored/retrieved/analysed) now
+        # has its own detailed event above, so the generic status_change line
+        # below would only ever be redundant for those transitions.
+        custody_covered_statuses = {"disposed"}
+
         # 4. Status change events — read from DataChangeLog rather than
         # AuditEvent.extra_data: the generic audit signal (audittrail/signals.py)
         # never actually populates extra_data with a "status" key, so the old
@@ -333,6 +371,8 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
         ).select_related("audit_event", "audit_event__user").order_by("audit_event__timestamp")
 
         for c in status_changes:
+            if c.new_value in custody_covered_statuses:
+                continue
             e = c.audit_event
             history.append({
                 "id": e.pk,

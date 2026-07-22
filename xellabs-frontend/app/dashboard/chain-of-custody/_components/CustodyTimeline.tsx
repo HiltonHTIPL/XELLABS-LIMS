@@ -33,7 +33,14 @@ export function eventMeta(ev: CocEvent): { label: string; icon: string; color: s
     case 'result_verified':  return { label: ev.label, icon: 'verified',     color: '#0891B2' }
     case 'result_rejected':  return { label: ev.label, icon: 'cancel',       color: '#EF4444' }
     case 'ar_completed':     return { label: ev.label, icon: 'task_alt',     color: '#22C55E' }
-    default: return { label: ev.label, icon: 'edit', color: '#F59E0B' }
+    default:
+      // lims.ChainOfCustody-sourced rows (event_type "custody_<action>") —
+      // give the one action actually written in production (disposal) its
+      // own distinct look instead of falling into the generic pencil icon;
+      // any other custody action still renders (via ev.label), just without
+      // a bespoke icon/color until it's actually used.
+      if (ev.event_type === 'custody_disposed') return { label: ev.label, icon: 'delete_forever', color: '#991B1B' }
+      return { label: ev.label, icon: 'edit', color: '#F59E0B' }
   }
 }
 
@@ -61,6 +68,13 @@ export function eventRows(ev: CocEvent, sample: CocSample | null): Array<{ key: 
   }
   if (ev.event_type === 'ar_completed' && ev.details?.ar_id) {
     rows.push({ key: 'Analysis Request', value: ev.details.ar_id as string })
+  }
+  if (ev.event_type.startsWith('custody_')) {
+    if (ev.details?.from_location) rows.push({ key: 'From', value: ev.details.from_location as string })
+    if (ev.details?.to_location)   rows.push({ key: 'To', value: ev.details.to_location as string })
+    if (ev.details?.condition)     rows.push({ key: 'Condition', value: ev.details.condition as string })
+    if (ev.details?.temperature_c) rows.push({ key: 'Temp', value: `${ev.details.temperature_c as string}°C` })
+    if (ev.details?.notes)         rows.push({ key: 'Notes', value: ev.details.notes as string })
   }
   return rows
 }

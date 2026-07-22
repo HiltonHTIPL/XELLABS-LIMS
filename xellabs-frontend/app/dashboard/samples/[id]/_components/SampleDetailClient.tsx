@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { SenaiteSample, mapSenaiteState, mapSenaitePriority } from '@/app/lib/senaite'
 import { receiveSample, verifySample, publishSample, getSampleReviewHistory } from '@/app/actions/samples'
+import { getAuditEvents } from '@/app/actions/audit-trail'
 import { getLabSample, type LabSample } from '@/app/actions/lab-samples'
 import { EditDrawer } from '../../../samples-overview/[id]/_components/SampleOverviewDetail'
 import ChainOfCustodyDrawer from '../../../samples-overview/[id]/_components/ChainOfCustodyDrawer'
@@ -19,6 +20,30 @@ const ANALYSIS_TONE: Record<string, 'gray'|'blue'|'orange'|'green'|'red'> = {
   unassigned: 'gray', assigned: 'blue', to_be_verified: 'orange', verified: 'green', published: 'green', retracted: 'red',
 }
 
+// Friendly labels for the Django-bridged action names (see
+// logExternalAuditEvent call sites in app/actions/samples.ts and
+// senaite-worksheets.ts) — shown in place of the raw "Transition: <action>"
+// SENAITE's own review-history entries get.
+const BRIDGED_ACTION_LABEL: Record<string, string> = {
+  assign_to_worksheet: 'Analysis Assigned to Worksheet',
+  remove_from_worksheet: 'Analysis Removed from Worksheet',
+  receive: 'Sample Received',
+  verify: 'Sample Verified',
+  publish: 'Sample Published',
+  cancel: 'Sample Cancelled',
+  create: 'Sample Created',
+  submit: 'Result Submitted',
+}
+
+function bridgedEventComment(ev: { extra_data: Record<string, unknown> | null }): string {
+  const extra = ev.extra_data ?? {}
+  const title = extra.title as string | undefined
+  const worksheetId = extra.worksheetId as string | undefined
+  if (title && worksheetId) return `${title} — Worksheet ${worksheetId}`
+  if (worksheetId) return `Worksheet ${worksheetId}`
+  return ''
+}
+
 type Props = { sample: SenaiteSample | null; uid: string; loading?: boolean; djangoId?: number; onClose?: () => void }
 
 export default function SampleDetailClient({ sample, uid, loading, djangoId }: Props) {
@@ -30,8 +55,29 @@ export default function SampleDetailClient({ sample, uid, loading, djangoId }: P
   const [auditHistory, setAuditHistory] = useState<any[]>([])
 
   useEffect(() => {
-    if (sample?.uid) getSampleReviewHistory(sample.uid).then(res => setAuditHistory(res || []))
-  }, [sample?.uid])
+    if (!sample?.uid) return
+    // Two sources, merged: SENAITE's own @history (workflow transitions —
+    // receive/verify/publish/etc. driven through the AR itself) and Django's
+    // AuditEvent table (bridged log_external rows — actions like assigning
+    // this sample's analysis to a Worksheet happen entirely against
+    // SENAITE's REST API and never touch the AR's own history at all, so
+    // without this second source they'd never show up here).
+    Promise.all([
+      getSampleReviewHistory(sample.uid),
+      sample.id ? getAuditEvents({ object_repr_contains: sample.id }) : Promise.resolve([]),
+    ]).then(([reviewHistory, bridgedEvents]) => {
+      const bridged = bridgedEvents.map(ev => ({
+        action: ev.action,
+        actor: ev.user_display ?? 'System',
+        comments: bridgedEventComment(ev),
+        review_state: '',
+        time: ev.timestamp,
+      }))
+      const merged = [...(reviewHistory || []), ...bridged]
+      merged.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
+      setAuditHistory(merged)
+    })
+  }, [sample?.uid, sample?.id])
 
   // The Django-mirrored LabSample (same record this SENAITE sample syncs
   // with) — only fetched when a djangoId is known, so Edit Sample / Storage
@@ -295,7 +341,7 @@ export default function SampleDetailClient({ sample, uid, loading, djangoId }: P
       )}
 
       {/* Audit Trail Drawer */}
-      <div style={{ position: 'fixed', top: 0, bottom: 0, left: 0, right: 0, zIndex: 300, pointerEvents: showAuditTrail ? 'auto' : 'none' }}>
+      <div style={{ position: 'fixed', top: 'var(--dashboard-header-h)', bottom: 'var(--dashboard-footer-h)', left: 0, right: 0, zIndex: 300, pointerEvents: showAuditTrail ? 'auto' : 'none' }}>
         <div
           style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', opacity: showAuditTrail ? 1 : 0, transition: 'opacity 0.2s ease-in-out' }}
           onClick={() => setShowAuditTrail(false)}
@@ -332,15 +378,23 @@ export default function SampleDetailClient({ sample, uid, loading, djangoId }: P
                       )}
                     </div>
                     <div className="pb-6 flex-1">
-                      <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', marginBottom: 2, textTransform: 'capitalize' }}>
-                        {entry.action ? `Transition: ${entry.action}` : 'Created'}
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', marginBottom: 2 }}>
+                        {BRIDGED_ACTION_LABEL[entry.action] ?? entry.transition_title
+                          ?? (entry.action ? `Transition: ${entry.action}` : 'Created')}
                       </div>
                       <div style={{ fontSize: 12, color: '#374151', marginBottom: 4 }}>
                         {fmtDate(entry.time)} by <span style={{ fontWeight: 500 }}>{entry.actor}</span>
                       </div>
-                      <div style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 12, fontSize: 11, backgroundColor: '#EFF6FF', color: T.primary, fontWeight: 500 }}>
-                        Status: {mapSenaiteState(entry.review_state)}
-                      </div>
+                      {(entry.state_title || entry.review_state) && (
+                        <div style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 12, fontSize: 11, backgroundColor: '#EFF6FF', color: T.primary, fontWeight: 500 }}>
+                          Status: {entry.state_title || mapSenaiteState(entry.review_state)}
+                        </div>
+                      )}
+                      {entry.detail && (
+                        <div style={{ marginTop: 6, fontSize: 12, color: T.text }}>
+                          {entry.detail}
+                        </div>
+                      )}
                       {entry.comments && (
                         <div style={{ marginTop: 6, fontSize: 12, color: T.text, backgroundColor: '#F9FAFB', padding: '6px 10px', borderRadius: 6, fontStyle: 'italic' }}>
                           "{entry.comments}"

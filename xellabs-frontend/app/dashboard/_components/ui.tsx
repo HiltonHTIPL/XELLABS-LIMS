@@ -300,11 +300,11 @@ export const inputStyle: React.CSSProperties = {
 export const textareaStyle: React.CSSProperties = { ...inputStyle, height: 'auto', padding: '10px 12px', resize: 'vertical' }
 export const selectStyle: React.CSSProperties = { ...inputStyle, paddingRight: 28 }
 
-export function Field({ label, required, hint, children, className }: {
-  label: string; required?: boolean; hint?: string; children: React.ReactNode; className?: string
+export function Field({ label, required, hint, children, className, style }: {
+  label: string; required?: boolean; hint?: string; children: React.ReactNode; className?: string; style?: React.CSSProperties
 }) {
   return (
-    <div className={className}>
+    <div className={className} style={style}>
       <label className="block mb-1.5" style={{ fontSize: 12, fontWeight: 600, color: T.text }}>
         {label} {required && <span style={{ color: T.danger }}>*</span>}
       </label>

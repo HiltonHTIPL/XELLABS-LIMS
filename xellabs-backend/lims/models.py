@@ -285,7 +285,16 @@ class Sample(models.Model):
         ]
 
     def __str__(self):
-        return self.sample_id
+        # `sample_id` is Django's own locally-generated id (e.g.
+        # "TEST-20260722-0019") — cosmetically similar to but NOT the real
+        # SENAITE-assigned id (e.g. "HP-0011"), stored separately in
+        # senaite_ar_id. Every other page in the app shows the SENAITE id
+        # when one exists (see xellabs-frontend/app/lib/sampleDisplay.ts's
+        # sampleDisplayId()) — __str__ feeds AuditEvent.object_repr via the
+        # generic save signal (audittrail/signals.py), so without this same
+        # preference the Audit Trail's Object column showed a different,
+        # unfamiliar id for the same sample than every other screen does.
+        return self.senaite_ar_id or self.sample_id
 
 
 class AnalysisRequest(models.Model):

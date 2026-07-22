@@ -16,6 +16,7 @@ import {
 import { listReferenceSamples } from '@/app/actions/reference-samples'
 import { SENAITE_SITE_PATH } from '@/app/lib/senaite'
 import type { RefOption } from '@/app/dashboard/_components/AdminRefShell'
+import { logExternalAuditEvent } from '@/app/actions/audit-trail'
 
 // A QC material selectable on a worksheet. `serviceUids` are the analysis
 // services the sample carries expected results for — the services QC gets
@@ -104,6 +105,11 @@ export async function applyWorksheetTemplate(
 // guard checks the acting SENAITE user) — use the logged-in user's own
 // SENAITE token, not the shared service account, or SENAITE would see every
 // transition as coming from the same identity regardless of who's logged in.
+// These three call SENAITE's REST API directly — no Django model is ever
+// saved, so the normal TRACKED_MODELS save-signal audit logging never fires.
+// logExternalAuditEvent() bridges the gap; fire-and-forget so a logging
+// hiccup can never block or fail the actual transition it's recording.
+
 export async function transitionWorksheet(
   path: string,
   id: string,
@@ -114,6 +120,7 @@ export async function transitionWorksheet(
   if (!r.success) return { success: false, error: r.error ?? `Failed to ${transition}.` }
   revalidatePath('/dashboard/worksheets')
   revalidatePath(`/dashboard/worksheets/${id}`)
+  logExternalAuditEvent(transition, id, undefined, 'worksheet')
   return { success: true }
 }
 
@@ -129,6 +136,7 @@ export async function submitWorksheetResult(
   const r = await submitAnalysisResult(sessionToken(session), analysisUid, trimmed)
   if (!r.success) return { success: false, error: r.error ?? 'Failed to submit result.' }
   revalidatePath(`/dashboard/worksheets/${id}`)
+  logExternalAuditEvent('submit', id, { analysisUid, result: trimmed }, 'worksheet')
   return { success: true }
 }
 
@@ -141,6 +149,7 @@ export async function verifyWorksheetAnalysis(
   const r = await transitionAnalysis(sessionToken(session), analysisUid, 'verify')
   if (!r.success) return { success: false, error: r.error ?? 'Failed to verify.' }
   revalidatePath(`/dashboard/worksheets/${id}`)
+  logExternalAuditEvent('verify', id, { analysisUid }, 'worksheet')
   return { success: true }
 }
 
@@ -150,23 +159,38 @@ function revalidateWs(id: string) {
   revalidatePath(`/dashboard/worksheets/${id}`)
 }
 
+// `analysisMeta` (sampleId/title per uid) is optional and used only for
+// logging — the actual SENAITE call only needs the uids. Without it (no
+// caller currently omits it, but the param stays optional so this can't
+// become a hard breaking change later), assignment is simply not attributed
+// to a sample in the audit trail.
+type AnalysisLogMeta = { uid: string; sampleId: string; title: string }
+
 export async function addAnalysesToWorksheet(
-  path: string, id: string, analysisUids: string[],
+  path: string, id: string, analysisUids: string[], analysisMeta?: AnalysisLogMeta[],
 ): Promise<WorksheetActionResult> {
   if (!analysisUids.length) return { success: false, error: 'Select at least one analysis.' }
   const r = await addWorksheetAnalyses(serverToken(), path, analysisUids)
   if (!r.success) return { success: false, error: r.error ?? 'Failed to add analyses.' }
   revalidateWs(id)
+  for (const uid of analysisUids) {
+    const meta = analysisMeta?.find(m => m.uid === uid)
+    if (meta) logExternalAuditEvent('assign_to_worksheet', meta.sampleId, { title: meta.title, worksheetId: id, analysisUid: uid }, 'sample')
+  }
   return { success: true }
 }
 
 export async function removeAnalysesFromWorksheet(
-  path: string, id: string, analysisUids: string[],
+  path: string, id: string, analysisUids: string[], analysisMeta?: AnalysisLogMeta[],
 ): Promise<WorksheetActionResult> {
   if (!analysisUids.length) return { success: false, error: 'Nothing to remove.' }
   const r = await removeWorksheetAnalyses(serverToken(), path, analysisUids)
   if (!r.success) return { success: false, error: r.error ?? 'Failed to remove analyses.' }
   revalidateWs(id)
+  for (const uid of analysisUids) {
+    const meta = analysisMeta?.find(m => m.uid === uid)
+    if (meta) logExternalAuditEvent('remove_from_worksheet', meta.sampleId, { title: meta.title, worksheetId: id, analysisUid: uid }, 'sample')
+  }
   return { success: true }
 }
 

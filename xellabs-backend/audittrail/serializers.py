@@ -59,3 +59,20 @@ class ImportLogSerializer(serializers.ModelSerializer):
 
     def get_user_display(self, obj):
         return str(obj.user) if obj.user else "System"
+
+
+class LogExternalEventSerializer(serializers.Serializer):
+    """Input shape for AuditEventViewSet.log_external — plain CharField (not a
+    ChoiceField against AuditEvent.ACTION) since this bridges arbitrary SENAITE
+    workflow transition names (e.g. 'retract') that don't all have a matching
+    internal action choice.
+
+    `record_type` is optional and only ever a key into RECORD_TYPE_CONTENT_TYPES
+    (never an arbitrary app_label/model string from the client) — it lets the
+    Audit Trail table's "Record Type" column show "Sample"/"Worksheet" for
+    these bridged rows the same way it already does for normal TRACKED_MODELS
+    rows, without requiring (or trusting) a real Django object_id to exist."""
+    action = serializers.CharField(max_length=30)
+    object_repr = serializers.CharField(max_length=300, required=False, allow_blank=True)
+    record_type = serializers.ChoiceField(choices=["sample", "worksheet"], required=False)
+    extra_data = serializers.JSONField(required=False)

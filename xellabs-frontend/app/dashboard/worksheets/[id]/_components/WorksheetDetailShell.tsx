@@ -2,6 +2,7 @@
 import { useState, useMemo, useRef, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import * as XLSX from 'xlsx'
 import {
   transitionWorksheet, submitWorksheetResult, verifyWorksheetAnalysis,
   addAnalysesToWorksheet, removeAnalysesFromWorksheet, addDuplicateToWorksheet,
@@ -10,6 +11,7 @@ import {
 } from '@/app/actions/senaite-worksheets'
 import type { WorksheetInfo, UnassignedAnalysis, LabAnalyst } from '@/app/lib/senaite-worksheets'
 import type { RefOption } from '@/app/dashboard/_components/AdminRefShell'
+import DataTable, { type DataTableColumn } from '../../../_components/DataTable'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -65,6 +67,9 @@ export default function WorksheetDetailShell({
     [slots],
   )
 
+  type SlotRow = (typeof slots)[number] & { id: string }
+  const slotRows: SlotRow[] = slots.map((s, i) => ({ ...s, id: `${s.position}-${s.analysisUid || i}` }))
+
   const [results, setResults] = useState<Record<string, string>>({})
   const [showAdd, setShowAdd] = useState(false)
   const [picked, setPicked] = useState<Record<string, boolean>>({})
@@ -116,7 +121,11 @@ export default function WorksheetDetailShell({
   }
 
   function addSelected() {
-    run(() => addAnalysesToWorksheet(worksheet.path, worksheet.id, pickedUids), 'Analyses added.')
+    const meta = pickedUids
+      .map(uid => unassigned.find(u => u.uid === uid))
+      .filter((u): u is UnassignedAnalysis => !!u)
+      .map(u => ({ uid: u.uid, sampleId: u.sampleId, title: u.title }))
+    run(() => addAnalysesToWorksheet(worksheet.path, worksheet.id, pickedUids, meta), 'Analyses added.')
     setPicked({}); setShowAdd(false)
   }
 
@@ -139,26 +148,41 @@ export default function WorksheetDetailShell({
     return out
   }
 
-  // Import an instrument/results CSV and pre-fill the editable result inputs.
-  // Accepts the file this page's "Export CSV" produces (Position + Result
-  // columns) — fill in the Result column, re-import, review, then Submit.
-  // Matches rows to worksheet positions; only staged onto `assigned` rows.
-  async function importCsv(file: File) {
+  // Read a CSV or Excel (.xlsx/.xls) file into plain rows-of-cells, so the
+  // matching logic below (header lookup + Position/Result mapping) is shared
+  // by both formats instead of duplicated per-format.
+  async function fileToRows(file: File): Promise<string[][]> {
+    const isExcel = /\.xlsx?$/i.test(file.name)
+    if (isExcel) {
+      const buf = await file.arrayBuffer()
+      const wb = XLSX.read(buf, { type: 'array' })
+      const sheet = wb.Sheets[wb.SheetNames[0]]
+      const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: false, defval: '' })
+      return rows.map(r => r.map(c => String(c ?? '')))
+    }
     const text = await file.text()
-    const lines = text.split(/\r?\n/).filter(l => l.trim() !== '')
-    if (lines.length < 2) { setToast({ ok: false, msg: 'CSV has no data rows.' }); return }
-    const header = parseCsvLine(lines[0]).map(h => h.trim().toLowerCase())
+    return text.split(/\r?\n/).filter(l => l.trim() !== '').map(parseCsvLine)
+  }
+
+  // Import an instrument/results CSV or Excel file and pre-fill the editable
+  // result inputs. Accepts the file this page's Export/Template downloads
+  // produce (Position + Result columns) — fill in Result, re-import, review,
+  // then Submit. Matches rows to worksheet positions; only staged onto
+  // `assigned` rows.
+  async function importFile(file: File) {
+    const lines = await fileToRows(file)
+    if (lines.length < 2) { setToast({ ok: false, msg: 'File has no data rows.' }); return }
+    const header = lines[0].map(h => h.trim().toLowerCase())
     const posIdx = header.indexOf('position')
     const resIdx = header.indexOf('result')
     if (posIdx === -1 || resIdx === -1) {
-      setToast({ ok: false, msg: 'CSV needs "Position" and "Result" columns (use the Export CSV format).' })
+      setToast({ ok: false, msg: 'File needs "Position" and "Result" columns (use Export or Download Template).' })
       return
     }
     const byPos = new Map(slots.filter(s => s.analysis?.reviewState === 'assigned').map(s => [s.position, s.analysisUid]))
     const staged: Record<string, string> = {}
     let matched = 0
-    for (const line of lines.slice(1)) {
-      const cells = parseCsvLine(line)
+    for (const cells of lines.slice(1)) {
       const pos = Number((cells[posIdx] ?? '').trim())
       const val = (cells[resIdx] ?? '').trim()
       const uid = byPos.get(pos)
@@ -186,27 +210,119 @@ export default function WorksheetDetailShell({
     })
   }
 
-  function exportCsv() {
-    const rows = [['Position', 'Type', 'Analysis', 'Sample', 'Result', 'State']]
+  // Shared row shape for CSV export, Excel export, and the result-entry
+  // template — one column layout, one place it's defined (DRY), reused by all
+  // three actions below. `blankResult`: the template is meant to be filled in
+  // fresh, so it always clears Result even if the worksheet already has one.
+  function buildExportRows(blankResult: boolean): string[][] {
+    const rows = [['Position', 'Type', 'Analysis', 'Sample', 'Result', 'Unit', 'State']]
     for (const s of slots) {
       rows.push([
         String(s.position), TYPE_LABEL[s.type] ?? s.type,
         s.analysis?.title ?? '', s.analysis?.sampleId ?? '',
-        s.analysis?.result ?? '', s.analysis?.reviewState ?? '',
+        blankResult ? '' : (s.analysis?.result ?? ''),
+        '', s.analysis?.reviewState ?? '',
       ])
     }
+    return rows
+  }
+
+  function downloadCsv(rows: string[][], filename: string) {
     const csv = rows.map(r => r.map(c => `"${(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url; a.download = `${worksheet.id}.csv`; a.click()
+    a.href = url; a.download = filename; a.click()
     URL.revokeObjectURL(url)
   }
+
+  function downloadXlsx(rows: string[][], filename: string, sheetName: string) {
+    const ws = XLSX.utils.aoa_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, sheetName)
+    XLSX.writeFile(wb, filename)
+  }
+
+  function exportCsv() { downloadCsv(buildExportRows(false), `${worksheet.id}.csv`) }
+  function exportXlsx() { downloadXlsx(buildExportRows(false), `${worksheet.id}.xlsx`, 'Results') }
+
+  // Generic (same shape for every instrument, per design decision) result-entry
+  // template — Position/Analysis/Sample/Unit pre-filled, Result left blank for
+  // the lab tech or instrument export to fill in, then re-import above.
+  function downloadTemplate() { downloadXlsx(buildExportRows(true), `${worksheet.id}-result-template.xlsx`, 'Template') }
 
   function btnStyle(kind: 'primary' | 'danger' | 'neutral') {
     if (kind === 'primary') return { backgroundColor: '#0154FC', color: '#fff', border: 'none' }
     if (kind === 'danger') return { backgroundColor: '#fff', color: '#DC2626', border: '1px solid #FCA5A5' }
     return { backgroundColor: '#fff', color: '#374151', border: '1px solid #E8EAF2' }
+  }
+
+  // Columns reproduce the previous hand-rolled cells exactly (same badges /
+  // editable result input / action buttons), migrated to the shared <DataTable>.
+  const slotColumns: DataTableColumn<SlotRow>[] = [
+    {
+      id: 'position', label: 'Pos', sortable: true, minWidth: 70,
+      render: s => <span className="inline-block w-7 text-center text-xs font-semibold rounded" style={{ color: '#0154FC', backgroundColor: '#EFF6FF', padding: '3px 0' }}>{s.position}</span>,
+    },
+    {
+      id: 'type', label: 'Type', sortable: true, minWidth: 100,
+      render: s => <span className="text-xs font-medium" style={{ color: TYPE_COLOR[s.type] ?? '#374151' }}>{TYPE_LABEL[s.type] ?? s.type}</span>,
+    },
+    {
+      id: 'analysis', label: 'Analysis', sortable: true, minWidth: 200,
+      render: s => <span className="text-xs" style={{ color: '#111827' }}>{s.analysis?.title ?? '—'}</span>,
+    },
+    {
+      id: 'sample', label: 'Sample', sortable: true, minWidth: 120,
+      render: s => <span className="text-xs" style={{ color: '#374151' }}>{s.analysis?.sampleId || '—'}</span>,
+    },
+    {
+      id: 'result', label: 'Result', minWidth: 140,
+      render: s => {
+        const editable = (s.analysis?.reviewState ?? '') === 'assigned'
+        return editable ? (
+          <input value={results[s.analysisUid] ?? ''} onChange={e => setResult(s.analysisUid, e.target.value)} placeholder="Enter result…" className="px-2 py-1 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827', width: 110 }} />
+        ) : <span className="text-xs font-medium" style={{ color: '#111827' }}>{s.analysis?.result || '—'}</span>
+      },
+    },
+    {
+      id: 'state', label: 'State', sortable: true, minWidth: 120,
+      render: s => {
+        const state = s.analysis?.reviewState ?? ''
+        return <span className="text-xs" style={{ color: state === 'verified' ? '#166534' : state === 'to_be_verified' ? '#92400E' : '#374151' }}>{state || '—'}</span>
+      },
+    },
+  ]
+
+  function slotRowActions(s: SlotRow) {
+    const a = s.analysis
+    const state = a?.reviewState ?? ''
+    const editable = state === 'assigned'
+    return (
+      <div className="whitespace-nowrap">
+        {editable && a && (
+          <>
+            <button onClick={() => run(() => submitWorksheetResult(worksheet.id, s.analysisUid, results[s.analysisUid] ?? ''), 'Result submitted.')} disabled={busy || !(results[s.analysisUid] ?? '').trim()}
+              className="inline-flex items-center gap-1 mr-1" style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', borderRadius: 6, backgroundColor: '#0154FC', color: '#fff', border: 'none', cursor: 'pointer', opacity: busy || !(results[s.analysisUid] ?? '').trim() ? 0.5 : 1 }}>
+              <MI name="send" size={12} color="#fff" /> Submit
+            </button>
+            {isOpen && (
+              <button onClick={() => run(() => removeAnalysesFromWorksheet(worksheet.path, worksheet.id, [s.analysisUid], a.sampleId ? [{ uid: s.analysisUid, sampleId: a.sampleId, title: a.title }] : undefined), 'Analysis removed.')} disabled={busy} title="Remove from worksheet"
+                className="inline-flex items-center p-1 rounded" style={{ border: '1px solid #FECACA', background: '#fff', cursor: 'pointer' }}>
+                <MI name="close" size={12} color="#DC2626" />
+              </button>
+            )}
+          </>
+        )}
+        {state === 'to_be_verified' && a && (
+          <button onClick={() => run(() => verifyWorksheetAnalysis(worksheet.id, s.analysisUid), 'Analysis verified.')} disabled={busy}
+            className="inline-flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', borderRadius: 6, backgroundColor: '#fff', color: '#166534', border: '1px solid #86EFAC', cursor: 'pointer', opacity: busy ? 0.5 : 1 }}>
+            <MI name="verified" size={12} color="#166534" /> Verify
+          </button>
+        )}
+        {state === 'verified' && <MI name="check_circle" size={16} color="#22C55E" />}
+      </div>
+    )
   }
 
   return (
@@ -248,11 +364,18 @@ export default function WorksheetDetailShell({
           <button onClick={exportCsv} className="flex items-center gap-1.5" style={{ fontSize: 12, fontWeight: 600, padding: '8px 12px', borderRadius: 8, backgroundColor: '#fff', color: '#374151', border: '1px solid #E8EAF2', cursor: 'pointer' }}>
             <MI name="download" size={14} color="#374151" /> Export CSV
           </button>
+          <button onClick={exportXlsx} className="flex items-center gap-1.5" style={{ fontSize: 12, fontWeight: 600, padding: '8px 12px', borderRadius: 8, backgroundColor: '#fff', color: '#374151', border: '1px solid #E8EAF2', cursor: 'pointer' }}>
+            <MI name="download" size={14} color="#374151" /> Export Excel
+          </button>
           {hasEditable && (
             <>
-              <input ref={importRef} type="file" accept=".csv,text/csv" style={{ display: 'none' }}
-                onChange={e => { const f = e.target.files?.[0]; if (f) importCsv(f); e.target.value = '' }} />
-              <button onClick={() => importRef.current?.click()} disabled={busy} title="Import results from an instrument/export CSV"
+              <button onClick={downloadTemplate} title="Download a blank result-entry template for this worksheet"
+                className="flex items-center gap-1.5" style={{ fontSize: 12, fontWeight: 600, padding: '8px 12px', borderRadius: 8, backgroundColor: '#fff', color: '#374151', border: '1px solid #E8EAF2', cursor: 'pointer' }}>
+                <MI name="description" size={14} color="#374151" /> Download Template
+              </button>
+              <input ref={importRef} type="file" accept=".csv,text/csv,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style={{ display: 'none' }}
+                onChange={e => { const f = e.target.files?.[0]; if (f) importFile(f); e.target.value = '' }} />
+              <button onClick={() => importRef.current?.click()} disabled={busy} title="Import results from an instrument export (CSV or Excel)"
                 className="flex items-center gap-1.5" style={{ fontSize: 12, fontWeight: 600, padding: '8px 12px', borderRadius: 8, backgroundColor: '#fff', color: '#374151', border: '1px solid #E8EAF2', cursor: 'pointer' }}>
                 <MI name="upload" size={14} color="#374151" /> Import results
               </button>
@@ -409,61 +532,14 @@ export default function WorksheetDetailShell({
             <p className="text-xs mt-0.5" style={{ color: '#374151' }}>Use “Add analyses” above, or apply a template</p>
           </div>
         ) : (
-          <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                {['Pos', 'Type', 'Analysis', 'Sample', 'Result', 'State', ''].map((h, hi) => (
-                  <th key={hi} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#374151', letterSpacing: '0.05em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {slots.map((s, i) => {
-                const a = s.analysis
-                const state = a?.reviewState ?? ''
-                const editable = state === 'assigned'
-                return (
-                  <tr key={`${s.position}-${s.analysisUid || i}`} style={{ borderBottom: i < slots.length - 1 ? '1px solid #F9FAFB' : 'none' }}>
-                    <td className="px-3 py-2.5">
-                      <span className="inline-block w-7 text-center text-xs font-semibold rounded" style={{ color: '#0154FC', backgroundColor: '#EFF6FF', padding: '3px 0' }}>{s.position}</span>
-                    </td>
-                    <td className="px-3 py-2.5"><span className="text-xs font-medium" style={{ color: TYPE_COLOR[s.type] ?? '#374151' }}>{TYPE_LABEL[s.type] ?? s.type}</span></td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#111827' }}>{a?.title ?? '—'}</td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#374151' }}>{a?.sampleId || '—'}</td>
-                    <td className="px-3 py-2.5">
-                      {editable ? (
-                        <input value={results[s.analysisUid] ?? ''} onChange={e => setResult(s.analysisUid, e.target.value)} placeholder="Enter result…" className="px-2 py-1 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827', width: 110 }} />
-                      ) : <span className="text-xs font-medium" style={{ color: '#111827' }}>{a?.result || '—'}</span>}
-                    </td>
-                    <td className="px-3 py-2.5"><span className="text-xs" style={{ color: state === 'verified' ? '#166534' : state === 'to_be_verified' ? '#92400E' : '#374151' }}>{state || '—'}</span></td>
-                    <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                      {editable && a && (
-                        <>
-                          <button onClick={() => run(() => submitWorksheetResult(worksheet.id, s.analysisUid, results[s.analysisUid] ?? ''), 'Result submitted.')} disabled={busy || !(results[s.analysisUid] ?? '').trim()}
-                            className="inline-flex items-center gap-1 mr-1" style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', borderRadius: 6, backgroundColor: '#0154FC', color: '#fff', border: 'none', cursor: 'pointer', opacity: busy || !(results[s.analysisUid] ?? '').trim() ? 0.5 : 1 }}>
-                            <MI name="send" size={12} color="#fff" /> Submit
-                          </button>
-                          {isOpen && (
-                            <button onClick={() => run(() => removeAnalysesFromWorksheet(worksheet.path, worksheet.id, [s.analysisUid]), 'Analysis removed.')} disabled={busy} title="Remove from worksheet"
-                              className="inline-flex items-center p-1 rounded" style={{ border: '1px solid #FECACA', background: '#fff', cursor: 'pointer' }}>
-                              <MI name="close" size={12} color="#DC2626" />
-                            </button>
-                          )}
-                        </>
-                      )}
-                      {state === 'to_be_verified' && a && (
-                        <button onClick={() => run(() => verifyWorksheetAnalysis(worksheet.id, s.analysisUid), 'Analysis verified.')} disabled={busy}
-                          className="inline-flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', borderRadius: 6, backgroundColor: '#fff', color: '#166534', border: '1px solid #86EFAC', cursor: 'pointer', opacity: busy ? 0.5 : 1 }}>
-                          <MI name="verified" size={12} color="#166534" /> Verify
-                        </button>
-                      )}
-                      {state === 'verified' && <MI name="check_circle" size={16} color="#22C55E" />}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          <DataTable<SlotRow>
+            data={slotRows}
+            columns={slotColumns}
+            searchable
+            persistKey="worksheet-layout"
+            emptyMessage="No positions assigned."
+            rowActions={slotRowActions}
+          />
         )}
       </div>
     </div>

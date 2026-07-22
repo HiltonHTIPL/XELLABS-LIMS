@@ -277,8 +277,12 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests, isD
       {showEdit && <EditDrawer sample={sample} onClose={() => setShowEdit(false)} onSaved={() => router.refresh()} />}
 
       {showAuditTrail && (
+        // Django's AuditEvent.object_repr is always the Django sample_id field
+        // (str(Sample) — see lims/models.py), never the SENAITE-preferring
+        // displayId() shown elsewhere on this page. Must match sample_id exactly
+        // or the audit trail always looks empty.
         <SampleAuditDrawer
-          sampleId={displayId(sample)}
+          sampleId={sample.sample_id}
           open={showAuditTrail}
           onClose={() => setShowAuditTrail(false)}
         />

@@ -1,16 +1,14 @@
 'use client'
-import { Fragment, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
-  PageHeader, Card, StatCard, Field, StatusChip, Pagination, EmptyState, MI, Btn,
-  thStyle, tdStyle, inputStyle, selectStyle, T,
+  PageHeader, Card, Field, StatusChip, EmptyState, MI, Btn,
+  inputStyle, selectStyle, T,
 } from '../../_components/ui'
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
 import type { AuditEvent, LoginEvent, SecurityEvent, RecordVersion } from '@/app/actions/audit-trail'
 import { recordTypeLabel, downloadAuditCsv } from './auditCsv'
 
-const stickyThStyle = { ...thStyle, position: 'sticky' as const, top: 0, zIndex: 1 }
-
 type Tab = 'events' | 'logins' | 'security' | 'versions'
-const PAGE_SIZE = 15
 
 /* ------------------------- Audit Events: per-action color pill ------------------------- */
 // Distinct, muted/professional color per AuditEvent.action — used only in this table,
@@ -85,6 +83,79 @@ function TabBtn({ active, onClick, icon, label, count }: { active: boolean; onCl
 
 /* --------------------------------- Audit Events --------------------------------- */
 
+/** Slide-over showing one event's field-level Changes + its record's own History
+ *  — DataTable has no row-expansion feature, so this replaces the old inline
+ *  expandable table rows. */
+function EventDetailsDrawer({ event, history, onClose }: { event: AuditEvent; history: AuditEvent[]; onClose: () => void }) {
+  return (
+    <div style={{ position: 'fixed', top: 0, bottom: 0, left: 0, right: 0, zIndex: 300 }}>
+      <div onClick={onClose} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)' }} />
+      <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 'min(640px, 92%)', backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.12)', display: 'flex', flexDirection: 'column' }}>
+        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${T.cardBorder}` }}>
+          <div>
+            <p style={{ fontSize: 15, fontWeight: 700, color: T.heading, margin: 0 }}>{recordTypeLabel(event.content_type_label)} — {event.object_repr || event.object_id}</p>
+            <p style={{ fontSize: 12, color: T.muted, margin: '2px 0 0' }}>{fmt(event.timestamp)}</p>
+          </div>
+          <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', color: T.muted }}>
+            <MI name="close" size={20} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-5">
+          {event.changes && event.changes.length > 0 && (
+            <>
+              <p style={{ fontSize: 12, fontWeight: 700, color: T.heading, marginBottom: 8 }}>Field Changes</p>
+              <table className="w-full mb-6" style={{ borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={{ ...thStyleLocal }}>Field</th>
+                    <th style={{ ...thStyleLocal }}>Old Value</th>
+                    <th style={{ ...thStyleLocal }}>New Value</th>
+                    <th style={{ ...thStyleLocal }}>Reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {event.changes.map(c => (
+                    <tr key={c.id}>
+                      <td style={tdStyleLocal}>{c.field_name}</td>
+                      <td style={{ ...tdStyleLocal, color: T.danger }}>{c.old_value ?? '—'}</td>
+                      <td style={{ ...tdStyleLocal, color: T.success }}>{c.new_value ?? '—'}</td>
+                      <td style={tdStyleLocal}>{c.reason || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+          <p style={{ fontSize: 12, fontWeight: 700, color: T.heading, marginBottom: 8 }}>Record History</p>
+          <table className="w-full" style={{ borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={thStyleLocal}>Timestamp</th>
+                <th style={thStyleLocal}>Action</th>
+                <th style={thStyleLocal}>User</th>
+                <th style={thStyleLocal}>Source</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map(h => (
+                <tr key={h.id}>
+                  <td style={tdStyleLocal}>{fmt(h.timestamp)}</td>
+                  <td style={tdStyleLocal}><StatusChip status={h.action} /></td>
+                  <td style={tdStyleLocal}>{h.user_display ?? '—'}</td>
+                  <td style={tdStyleLocal}>{h.source || 'manual'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const thStyleLocal = { textAlign: 'left' as const, fontSize: 11, fontWeight: 700, color: T.muted, padding: '6px 10px', borderBottom: `1px solid ${T.cardBorder}` }
+const tdStyleLocal = { fontSize: 12, color: T.text, padding: '6px 10px', borderBottom: `1px solid ${T.rowBorder}` }
+
 function AuditEventsTable({ events }: { events: AuditEvent[] }) {
   const [search, setSearch] = useState('')
   const [action, setAction] = useState('')
@@ -92,10 +163,7 @@ function AuditEventsTable({ events }: { events: AuditEvent[] }) {
   const [dateTo, setDateTo] = useState('')
   const [userFilter, setUserFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
-  const [page, setPage] = useState(1)
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
-  const [expandedChanges, setExpandedChanges] = useState<number | null>(null)
-  const [expandedHistory, setExpandedHistory] = useState<number | null>(null)
+  const [detailsFor, setDetailsFor] = useState<AuditEvent | null>(null)
 
   const actions = useMemo(() => Array.from(new Set(events.map(e => e.action))).sort(), [events])
   const users = useMemo(
@@ -126,15 +194,9 @@ function AuditEventsTable({ events }: { events: AuditEvent[] }) {
       }
       return true
     })
-    rows.sort((a, b) => {
-      const diff = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-      return sortDir === 'asc' ? diff : -diff
-    })
+    rows.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     return rows
-  }, [events, search, action, dateFrom, dateTo, userFilter, typeFilter, sortDir])
-
-  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  }, [events, search, action, dateFrom, dateTo, userFilter, typeFilter])
 
   const historyFor = (e: AuditEvent) =>
     events
@@ -145,6 +207,16 @@ function AuditEventsTable({ events }: { events: AuditEvent[] }) {
     return <EmptyState icon="fact_check" title="No audit events" sub="Sample, result, and approval activity will appear here." />
   }
 
+  const columns: DataTableColumn<AuditEvent>[] = [
+    { id: 'timestamp', label: 'Timestamp', sortable: true, minWidth: 170, render: e => fmt(e.timestamp) },
+    { id: 'user_display', label: 'User', sortable: true, minWidth: 120, render: e => e.user_display ?? '—' },
+    { id: 'action', label: 'Action', sortable: true, minWidth: 120, render: e => <ActionPill action={e.action} /> },
+    { id: 'source', label: 'Source', sortable: true, minWidth: 100, render: e => e.source || 'manual' },
+    { id: 'content_type_label', label: 'Record Type', sortable: true, minWidth: 140, render: e => recordTypeLabel(e.content_type_label) },
+    { id: 'object_repr', label: 'Object', sortable: true, minWidth: 160, render: e => e.object_repr || (e.object_id ?? '—') },
+    { id: 'ip_address', label: 'IP Address', sortable: true, minWidth: 120, render: e => e.ip_address ?? '—' },
+  ]
+
   return (
     <div>
       <div className="flex items-end gap-2 mb-3 flex-wrap">
@@ -153,165 +225,50 @@ function AuditEventsTable({ events }: { events: AuditEvent[] }) {
             style={inputStyle} className="w-full outline-none bg-white"
             placeholder="Search user, record, type…"
             value={search}
-            onChange={e => { setSearch(e.target.value); setPage(1) }}
+            onChange={e => setSearch(e.target.value)}
           />
         </Field>
         <Field label="Action">
-          <select style={selectStyle} value={action} onChange={e => { setAction(e.target.value); setPage(1) }}>
+          <select style={selectStyle} value={action} onChange={e => setAction(e.target.value)}>
             <option value="">All actions</option>
             {actions.map(a => <option key={a} value={a}>{a}</option>)}
           </select>
         </Field>
         <Field label="User">
-          <select style={selectStyle} value={userFilter} onChange={e => { setUserFilter(e.target.value); setPage(1) }}>
+          <select style={selectStyle} value={userFilter} onChange={e => setUserFilter(e.target.value)}>
             <option value="">All users</option>
             {users.map(u => <option key={u} value={u}>{u}</option>)}
           </select>
         </Field>
         <Field label="Record Type">
-          <select style={selectStyle} value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(1) }}>
+          <select style={selectStyle} value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
             <option value="">All types</option>
             {types.map(t => <option key={t} value={t}>{recordTypeLabel(t)}</option>)}
           </select>
         </Field>
         <Field label="From">
-          <input type="date" style={inputStyle} value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1) }} />
+          <input type="date" style={inputStyle} value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
         </Field>
         <Field label="To">
-          <input type="date" style={inputStyle} value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1) }} />
+          <input type="date" style={inputStyle} value={dateTo} onChange={e => setDateTo(e.target.value)} />
         </Field>
         <Btn variant="outline" icon="download" onClick={() => downloadAuditCsv(filtered)} disabled={filtered.length === 0}>
           Export CSV
         </Btn>
       </div>
-      {filtered.length === 0 ? (
-        <EmptyState icon="search_off" title="No matching events" sub="Try adjusting your search or filters." />
-      ) : (
-        <>
-          <div className="overflow-x-auto">
-            <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  <th
-                    style={{ ...stickyThStyle, cursor: 'pointer', userSelect: 'none' }}
-                    onClick={() => setSortDir(sortDir === 'asc' ? 'desc' : 'asc')}
-                  >
-                    Timestamp {sortDir === 'asc' ? '▲' : '▼'}
-                  </th>
-                  <th style={stickyThStyle}>User</th>
-                  <th style={stickyThStyle}>Action</th>
-                  <th style={stickyThStyle}>Source</th>
-                  <th style={stickyThStyle}>Record Type</th>
-                  <th style={stickyThStyle}>Object</th>
-                  <th style={stickyThStyle}>IP Address</th>
-                  <th style={stickyThStyle}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {pageItems.map(e => {
-                  const isChangesOpen = expandedChanges === e.id
-                  const isHistoryOpen = expandedHistory === e.id
-                  const hasChanges = e.changes && e.changes.length > 0
-                  return (
-                    <Fragment key={e.id}>
-                      <tr>
-                        <td style={tdStyle}>{fmt(e.timestamp)}</td>
-                        <td style={tdStyle}>{e.user_display ?? '—'}</td>
-                        <td style={tdStyle}><ActionPill action={e.action} /></td>
-                        <td style={tdStyle}>{e.source || 'manual'}</td>
-                        <td style={tdStyle}>{recordTypeLabel(e.content_type_label)}</td>
-                        <td style={tdStyle}>{e.object_repr || (e.object_id ?? '—')}</td>
-                        <td style={tdStyle}>{e.ip_address ?? '—'}</td>
-                        <td style={tdStyle}>
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              title="Record history"
-                              className="p-1 rounded hover:bg-gray-100"
-                              style={{ cursor: 'pointer' }}
-                              onClick={() => setExpandedHistory(isHistoryOpen ? null : e.id)}
-                            >
-                              <MI name="history" size={17} color={isHistoryOpen ? T.primary : T.muted} />
-                            </button>
-                            {hasChanges && (
-                              <button
-                                type="button"
-                                title="Field changes"
-                                className="p-1 rounded hover:bg-gray-100"
-                                style={{ cursor: 'pointer' }}
-                                onClick={() => setExpandedChanges(isChangesOpen ? null : e.id)}
-                              >
-                                <MI name={isChangesOpen ? 'expand_less' : 'expand_more'} size={18} color={T.muted} />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                      {isChangesOpen && hasChanges && (
-                        <tr>
-                          <td colSpan={8} style={{ ...tdStyle, backgroundColor: T.tableHeadBg, padding: 12 }}>
-                            <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-                              <thead>
-                                <tr>
-                                  <th style={{ ...thStyle, backgroundColor: 'transparent' }}>Field</th>
-                                  <th style={{ ...thStyle, backgroundColor: 'transparent' }}>Old Value</th>
-                                  <th style={{ ...thStyle, backgroundColor: 'transparent' }}>New Value</th>
-                                  <th style={{ ...thStyle, backgroundColor: 'transparent' }}>Reason</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {e.changes.map(c => (
-                                  <tr key={c.id}>
-                                    <td style={tdStyle}>{c.field_name}</td>
-                                    <td style={{ ...tdStyle, color: T.danger }}>{c.old_value ?? '—'}</td>
-                                    <td style={{ ...tdStyle, color: T.success }}>{c.new_value ?? '—'}</td>
-                                    <td style={tdStyle}>{c.reason || '—'}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </td>
-                        </tr>
-                      )}
-                      {isHistoryOpen && (
-                        <tr>
-                          <td colSpan={8} style={{ ...tdStyle, backgroundColor: T.tableHeadBg, padding: 12 }}>
-                            <p style={{ fontSize: 12, fontWeight: 700, color: T.heading, marginBottom: 8 }}>
-                              History for {recordTypeLabel(e.content_type_label)} — {e.object_repr || e.object_id}
-                            </p>
-                            <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-                              <thead>
-                                <tr>
-                                  <th style={{ ...thStyle, backgroundColor: 'transparent' }}>Timestamp</th>
-                                  <th style={{ ...thStyle, backgroundColor: 'transparent' }}>Action</th>
-                                  <th style={{ ...thStyle, backgroundColor: 'transparent' }}>User</th>
-                                  <th style={{ ...thStyle, backgroundColor: 'transparent' }}>Source</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {historyFor(e).map(h => (
-                                  <tr key={h.id}>
-                                    <td style={tdStyle}>{fmt(h.timestamp)}</td>
-                                    <td style={tdStyle}><StatusChip status={h.action} /></td>
-                                    <td style={tdStyle}>{h.user_display ?? '—'}</td>
-                                    <td style={tdStyle}>{h.source || 'manual'}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div className="flex justify-end pt-3">
-            <Pagination page={page} pages={pages} onPage={setPage} showTotal totalItems={filtered.length} />
-          </div>
-        </>
+      <DataTable
+        data={filtered}
+        columns={columns}
+        persistKey="audit-trail-events"
+        rowActions={e => (
+          <button type="button" title="View changes / history" className="p-1 rounded hover:bg-gray-100" style={{ cursor: 'pointer' }} onClick={() => setDetailsFor(e)}>
+            <MI name="visibility" size={17} color={T.muted} />
+          </button>
+        )}
+        emptyMessage="No matching events."
+      />
+      {detailsFor && (
+        <EventDetailsDrawer event={detailsFor} history={historyFor(detailsFor)} onClose={() => setDetailsFor(null)} />
       )}
     </div>
   )
@@ -322,7 +279,6 @@ function AuditEventsTable({ events }: { events: AuditEvent[] }) {
 function LoginEventsTable({ events }: { events: LoginEvent[] }) {
   const [search, setSearch] = useState('')
   const [result, setResult] = useState('')
-  const [page, setPage] = useState(1)
 
   const filtered = useMemo(() => {
     return events.filter(e => {
@@ -337,12 +293,18 @@ function LoginEventsTable({ events }: { events: LoginEvent[] }) {
     })
   }, [events, search, result])
 
-  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-
   if (events.length === 0) {
     return <EmptyState icon="login" title="No login events" sub="Login attempts will appear here." />
   }
+
+  const columns: DataTableColumn<LoginEvent>[] = [
+    { id: 'timestamp', label: 'Timestamp', sortable: true, minWidth: 170, render: e => fmt(e.timestamp) },
+    { id: 'username_attempted', label: 'Username Attempted', sortable: true, minWidth: 160 },
+    { id: 'user', label: 'User', sortable: true, minWidth: 100, render: e => e.user ?? '—' },
+    { id: 'success', label: 'Result', sortable: true, minWidth: 100, render: e => <StatusChip status={e.success ? 'success' : 'failed'} /> },
+    { id: 'ip_address', label: 'IP Address', sortable: true, minWidth: 120, render: e => e.ip_address ?? '—' },
+    { id: 'user_agent', label: 'User Agent', minWidth: 260, render: e => <span title={e.user_agent}>{e.user_agent || '—'}</span> },
+  ]
 
   return (
     <div>
@@ -352,52 +314,18 @@ function LoginEventsTable({ events }: { events: LoginEvent[] }) {
             style={inputStyle} className="w-full outline-none bg-white"
             placeholder="Search username, IP, user agent…"
             value={search}
-            onChange={e => { setSearch(e.target.value); setPage(1) }}
+            onChange={e => setSearch(e.target.value)}
           />
         </Field>
         <Field label="Result">
-          <select style={selectStyle} value={result} onChange={e => { setResult(e.target.value); setPage(1) }}>
+          <select style={selectStyle} value={result} onChange={e => setResult(e.target.value)}>
             <option value="">All</option>
             <option value="success">Success</option>
             <option value="failed">Failed</option>
           </select>
         </Field>
       </div>
-      {filtered.length === 0 ? (
-        <EmptyState icon="search_off" title="No matching login events" />
-      ) : (
-        <>
-          <div className="overflow-x-auto">
-            <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>Timestamp</th>
-                  <th style={thStyle}>Username Attempted</th>
-                  <th style={thStyle}>User</th>
-                  <th style={thStyle}>Result</th>
-                  <th style={thStyle}>IP Address</th>
-                  <th style={thStyle}>User Agent</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pageItems.map(e => (
-                  <tr key={e.id}>
-                    <td style={tdStyle}>{fmt(e.timestamp)}</td>
-                    <td style={tdStyle}>{e.username_attempted}</td>
-                    <td style={tdStyle}>{e.user ?? '—'}</td>
-                    <td style={tdStyle}><StatusChip status={e.success ? 'success' : 'failed'} /></td>
-                    <td style={tdStyle}>{e.ip_address ?? '—'}</td>
-                    <td style={{ ...tdStyle, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={e.user_agent}>{e.user_agent || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="flex justify-end pt-3">
-            <Pagination page={page} pages={pages} onPage={setPage} showTotal totalItems={filtered.length} />
-          </div>
-        </>
-      )}
+      <DataTable data={filtered} columns={columns} persistKey="audit-trail-logins" emptyMessage="No matching login events." />
     </div>
   )
 }
@@ -407,7 +335,6 @@ function LoginEventsTable({ events }: { events: LoginEvent[] }) {
 function SecurityEventsTable({ events }: { events: SecurityEvent[] }) {
   const [search, setSearch] = useState('')
   const [severity, setSeverity] = useState('')
-  const [page, setPage] = useState(1)
 
   const filtered = useMemo(() => {
     return events.filter(e => {
@@ -421,12 +348,18 @@ function SecurityEventsTable({ events }: { events: SecurityEvent[] }) {
     })
   }, [events, search, severity])
 
-  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-
   if (events.length === 0) {
     return <EmptyState icon="gpp_maybe" title="No security events" sub="Permission-denied and unauthorized access attempts will appear here." />
   }
+
+  const columns: DataTableColumn<SecurityEvent>[] = [
+    { id: 'timestamp', label: 'Timestamp', sortable: true, minWidth: 170, render: e => fmt(e.timestamp) },
+    { id: 'user', label: 'User', sortable: true, minWidth: 100, render: e => e.user ?? '—' },
+    { id: 'event_type', label: 'Event Type', sortable: true, minWidth: 140 },
+    { id: 'severity', label: 'Severity', sortable: true, minWidth: 110, render: e => <StatusChip status={e.severity} /> },
+    { id: 'description', label: 'Description', minWidth: 300 },
+    { id: 'ip_address', label: 'IP Address', sortable: true, minWidth: 120, render: e => e.ip_address ?? '—' },
+  ]
 
   return (
     <div>
@@ -436,11 +369,11 @@ function SecurityEventsTable({ events }: { events: SecurityEvent[] }) {
             style={inputStyle} className="w-full outline-none bg-white"
             placeholder="Search type, description, IP…"
             value={search}
-            onChange={e => { setSearch(e.target.value); setPage(1) }}
+            onChange={e => setSearch(e.target.value)}
           />
         </Field>
         <Field label="Severity">
-          <select style={selectStyle} value={severity} onChange={e => { setSeverity(e.target.value); setPage(1) }}>
+          <select style={selectStyle} value={severity} onChange={e => setSeverity(e.target.value)}>
             <option value="">All</option>
             <option value="low">Low</option>
             <option value="medium">Medium</option>
@@ -449,51 +382,41 @@ function SecurityEventsTable({ events }: { events: SecurityEvent[] }) {
           </select>
         </Field>
       </div>
-      {filtered.length === 0 ? (
-        <EmptyState icon="search_off" title="No matching security events" />
-      ) : (
-        <>
-          <div className="overflow-x-auto">
-            <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>Timestamp</th>
-                  <th style={thStyle}>User</th>
-                  <th style={thStyle}>Event Type</th>
-                  <th style={thStyle}>Severity</th>
-                  <th style={thStyle}>Description</th>
-                  <th style={thStyle}>IP Address</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pageItems.map(e => (
-                  <tr key={e.id}>
-                    <td style={tdStyle}>{fmt(e.timestamp)}</td>
-                    <td style={tdStyle}>{e.user ?? '—'}</td>
-                    <td style={tdStyle}>{e.event_type}</td>
-                    <td style={tdStyle}><StatusChip status={e.severity} /></td>
-                    <td style={{ ...tdStyle, maxWidth: 340 }}>{e.description}</td>
-                    <td style={tdStyle}>{e.ip_address ?? '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="flex justify-end pt-3">
-            <Pagination page={page} pages={pages} onPage={setPage} showTotal totalItems={filtered.length} />
-          </div>
-        </>
-      )}
+      <DataTable data={filtered} columns={columns} persistKey="audit-trail-security" emptyMessage="No matching security events." />
     </div>
   )
 }
 
 /* -------------------------------- Record Versions --------------------------------- */
 
+/** Small centered modal showing one version's immutable JSON snapshot — replaces
+ *  the old inline expandable row (DataTable has no row-expansion feature). */
+function VersionSnapshotModal({ version, onClose }: { version: RecordVersion; onClose: () => void }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div onClick={onClose} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)' }} />
+      <div style={{ position: 'relative', width: 'min(640px, 92%)', maxHeight: '80vh', display: 'flex', flexDirection: 'column', backgroundColor: '#fff', borderRadius: 12, boxShadow: '0 12px 40px rgba(0,0,0,0.2)' }}>
+        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${T.cardBorder}` }}>
+          <p style={{ fontSize: 14, fontWeight: 700, color: T.heading, margin: 0 }}>
+            {version.content_type} #{version.object_id} — v{version.version_number}
+          </p>
+          <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', color: T.muted }}>
+            <MI name="close" size={20} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-5">
+          <pre style={{ fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: T.text, margin: 0 }}>
+            {JSON.stringify(version.data, null, 2)}
+          </pre>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function RecordVersionsTable({ versions }: { versions: RecordVersion[] }) {
   const [search, setSearch] = useState('')
-  const [page, setPage] = useState(1)
-  const [expanded, setExpanded] = useState<number | null>(null)
+  const [viewing, setViewing] = useState<RecordVersion | null>(null)
 
   const filtered = useMemo(() => {
     if (!search) return versions
@@ -501,12 +424,18 @@ function RecordVersionsTable({ versions }: { versions: RecordVersion[] }) {
     return versions.filter(v => `${v.changed_by_display ?? ''} ${v.object_id} ${v.reason ?? ''}`.toLowerCase().includes(s))
   }, [versions, search])
 
-  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-
   if (versions.length === 0) {
     return <EmptyState icon="history" title="No record versions" sub="Immutable field-level snapshots will appear here." />
   }
+
+  const columns: DataTableColumn<RecordVersion>[] = [
+    { id: 'created_at', label: 'Created At', sortable: true, minWidth: 170, render: v => fmt(v.created_at) },
+    { id: 'content_type', label: 'Content Type', sortable: true, minWidth: 140 },
+    { id: 'object_id', label: 'Object ID', sortable: true, minWidth: 100 },
+    { id: 'version_number', label: 'Version', sortable: true, minWidth: 90, render: v => `v${v.version_number}` },
+    { id: 'changed_by_display', label: 'Changed By', sortable: true, minWidth: 140, render: v => v.changed_by_display ?? '—' },
+    { id: 'reason', label: 'Reason', minWidth: 200, render: v => v.reason || '—' },
+  ]
 
   return (
     <div>
@@ -516,62 +445,22 @@ function RecordVersionsTable({ versions }: { versions: RecordVersion[] }) {
             style={inputStyle} className="w-full outline-none bg-white"
             placeholder="Search changed by, object id, reason…"
             value={search}
-            onChange={e => { setSearch(e.target.value); setPage(1) }}
+            onChange={e => setSearch(e.target.value)}
           />
         </Field>
       </div>
-      {filtered.length === 0 ? (
-        <EmptyState icon="search_off" title="No matching record versions" />
-      ) : (
-        <>
-          <div className="overflow-x-auto">
-            <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>Created At</th>
-                  <th style={thStyle}>Content Type</th>
-                  <th style={thStyle}>Object ID</th>
-                  <th style={thStyle}>Version</th>
-                  <th style={thStyle}>Changed By</th>
-                  <th style={thStyle}>Reason</th>
-                  <th style={thStyle}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {pageItems.map(v => {
-                  const key = `${v.content_type}-${v.object_id}-${v.version_number}`
-                  const isOpen = expanded === v.id
-                  return (
-                    <Fragment key={key}>
-                      <tr style={{ cursor: 'pointer' }} onClick={() => setExpanded(isOpen ? null : v.id)}>
-                        <td style={tdStyle}>{fmt(v.created_at)}</td>
-                        <td style={tdStyle}>{v.content_type}</td>
-                        <td style={tdStyle}>{v.object_id}</td>
-                        <td style={tdStyle}>v{v.version_number}</td>
-                        <td style={tdStyle}>{v.changed_by_display ?? '—'}</td>
-                        <td style={tdStyle}>{v.reason || '—'}</td>
-                        <td style={tdStyle}><MI name={isOpen ? 'expand_less' : 'expand_more'} size={18} color={T.muted} /></td>
-                      </tr>
-                      {isOpen && (
-                        <tr>
-                          <td colSpan={7} style={{ ...tdStyle, backgroundColor: T.tableHeadBg }}>
-                            <pre style={{ fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: T.text, margin: 0 }}>
-                              {JSON.stringify(v.data, null, 2)}
-                            </pre>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div className="flex justify-end pt-3">
-            <Pagination page={page} pages={pages} onPage={setPage} showTotal totalItems={filtered.length} />
-          </div>
-        </>
-      )}
+      <DataTable
+        data={filtered}
+        columns={columns}
+        persistKey="audit-trail-versions"
+        rowActions={v => (
+          <button type="button" title="View snapshot" className="p-1 rounded hover:bg-gray-100" style={{ cursor: 'pointer' }} onClick={() => setViewing(v)}>
+            <MI name="visibility" size={17} color={T.muted} />
+          </button>
+        )}
+        emptyMessage="No matching record versions."
+      />
+      {viewing && <VersionSnapshotModal version={viewing} onClose={() => setViewing(null)} />}
     </div>
   )
 }
@@ -587,20 +476,11 @@ export default function AuditTrailShell({
   initialRecordVersions: RecordVersion[]
 }) {
   const [tab, setTab] = useState<Tab>('events')
-  const failedLogins = initialLoginEvents.filter(e => !e.success).length
-  const criticalSecurity = initialSecurityEvents.filter(e => e.severity === 'critical' || e.severity === 'high').length
 
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ flexShrink: 0 }}>
       <PageHeader title="Audit Trail" subtitle="Read-only compliance log of system activity, logins, security events, and record history" backHref="/dashboard/admin" />
-
-      <div className="grid grid-cols-4 gap-3 mb-5">
-        <StatCard icon="fact_check" label="Audit Events" value={initialAuditEvents.length} />
-        <StatCard icon="login" label="Login Events" value={initialLoginEvents.length} sub={failedLogins ? `${failedLogins} failed` : undefined} iconColor={failedLogins ? T.danger : T.primary} iconBg={failedLogins ? '#FEF2F2' : undefined} />
-        <StatCard icon="gpp_maybe" label="Security Events" value={initialSecurityEvents.length} sub={criticalSecurity ? `${criticalSecurity} high/critical` : undefined} iconColor={criticalSecurity ? T.danger : T.primary} iconBg={criticalSecurity ? '#FEF2F2' : undefined} />
-        <StatCard icon="history" label="Record Versions" value={initialRecordVersions.length} />
-      </div>
 
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <TabBtn active={tab === 'events'} onClick={() => setTab('events')} icon="fact_check" label="Audit Events" count={initialAuditEvents.length} />

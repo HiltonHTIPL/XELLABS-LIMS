@@ -2448,12 +2448,24 @@ export type SenaiteSample = {
   BatchUID: string
   Analyses: { uid: string; title: string; Keyword: string; review_state: string }[]
   url: string
+  // Display-only context for the Audit Trail drawer's per-event detail (e.g.
+  // "storage location for Stored, condition for Received") — SENAITE's own
+  // @history entries carry no such detail themselves, only the AR's current
+  // snapshot does, so these are attached to whichever history entry they're
+  // relevant for as a best-effort "what it looked like as of now" annotation,
+  // not a true historical value at that point in time.
+  StorageLocationTitle: string
+  SampleConditionTitle: string
+  EnvironmentalConditionsTitle: string
 }
 
 function mapSample(s: Record<string, unknown>): SenaiteSample {
   const client = (s.Client as Record<string, unknown>) ?? {}
   const sampleType = (s.SampleType as Record<string, unknown>) ?? {}
   const batch = (s.Batch as Record<string, unknown>) ?? {}
+  const storageLocation = (s.StorageLocation as Record<string, unknown>) ?? {}
+  const sampleCondition = (s.SampleCondition as Record<string, unknown>) ?? {}
+  const environmentalConditions = (s.EnvironmentalConditions as Record<string, unknown>) ?? {}
   return {
     uid:             (s.uid as string) ?? '',
     id:              (s.id as string) ?? '',
@@ -2479,6 +2491,9 @@ function mapSample(s: Record<string, unknown>): SenaiteSample {
         }))
       : [],
     url: (s.url as string) ?? '',
+    StorageLocationTitle: (s.getStorageLocationTitle as string) || (storageLocation.title as string) || '',
+    SampleConditionTitle: (sampleCondition.title as string) || '',
+    EnvironmentalConditionsTitle: (environmentalConditions.title as string) || '',
   }
 }
 
@@ -2504,7 +2519,39 @@ export async function fetchSenaiteSample(token: string, uid: string): Promise<Se
     if (!res.ok) return null
     const data = await res.json()
     const items = data.items ?? []
-    return items.length > 0 ? mapSample(items[0]) : null
+    if (items.length === 0) return null
+    const sample = mapSample(items[0])
+    // The AR's own `Analyses` array is a list of bare reference objects
+    // ({url, uid, api_url} only) even with `?complete=true` on the AR itself —
+    // confirmed live: title/Keyword/review_state are never present there,
+    // regardless of the AR's own resolution. Only the singular
+    // `@@API/senaite/v1/Analysis/<uid>?complete=true` endpoint actually
+    // resolves those fields, so the Sample Detail page (the one place these
+    // per-analysis fields are rendered) needs one follow-up fetch per
+    // analysis. Cheap here — a handful of analyses per sample, one sample at
+    // a time — unlike the list endpoint (fetchSenaiteSamples), which is left
+    // reading the bare refs since nothing there renders per-analysis detail.
+    if (sample.Analyses.length > 0) {
+      const resolved = await Promise.all(sample.Analyses.map(async a => {
+        try {
+          const r = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Analysis/${a.uid}?complete=true`, {
+            headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+            cache: 'no-store',
+          })
+          if (!r.ok) return a
+          const full = ((await r.json()).items ?? [])[0] as Record<string, unknown> | undefined
+          if (!full) return a
+          return {
+            uid: a.uid,
+            title: (full.title as string) ?? a.title,
+            Keyword: (full.Keyword as string) ?? a.Keyword,
+            review_state: (full.review_state as string) ?? a.review_state,
+          }
+        } catch { return a }
+      }))
+      sample.Analyses = resolved
+    }
+    return sample
   } catch { return null }
 }
 
@@ -3219,6 +3266,14 @@ export type SenaiteAnalysisFull = {
   Unit: string
   review_state: string
   sampleId: string
+  // Added for the Results admin page (app/actions/results.ts) — kept on the
+  // shared type rather than a parallel fetch so every caller reads from the
+  // one already-proven `v1/Analysis?complete=true` call (DRY).
+  submittedBy: string
+  verifiedBy: string
+  resultCaptureDate: string | null
+  resultsRangeMin: number | null
+  resultsRangeMax: number | null
 }
 
 /**
@@ -3238,15 +3293,33 @@ export async function fetchAllAnalyses(token: string): Promise<SenaiteAnalysisFu
     })
     if (!res.ok) return []
     const data = await res.json()
-    return (data.items ?? []).map((a: Record<string, unknown>) => ({
-      uid:          (a.uid as string) ?? '',
-      title:        (a.title as string) ?? '',
-      Keyword:      (a.Keyword as string) ?? (a.getKeyword as string) ?? '',
-      Result:       (a.Result as string) ?? '',
-      Unit:         (a.Unit as string) ?? '',
-      review_state: (a.review_state as string) ?? '',
-      sampleId:     (a.getRequestID as string) ?? '',
-    }))
+    return (data.items ?? []).map((a: Record<string, unknown>) => {
+      // ResultsRange (bika.lims.content.abstractroutineanalysis.getResultsRange)
+      // is a {min, max, warn_min, warn_max} dict per-Analysis, or null/empty
+      // when no Specification applies — never an AR-level join, confirmed by
+      // reading the SENAITE source directly (not guessed).
+      const range = (a.ResultsRange && typeof a.ResultsRange === 'object') ? a.ResultsRange as Record<string, unknown> : null
+      const toNum = (v: unknown): number | null => {
+        if (v === null || v === undefined || v === '') return null
+        const n = Number(v)
+        return Number.isFinite(n) ? n : null
+      }
+      const verificators = Array.isArray(a.getVerificators) ? (a.getVerificators as unknown[]) : []
+      return {
+        uid:          (a.uid as string) ?? '',
+        title:        (a.title as string) ?? '',
+        Keyword:      (a.Keyword as string) ?? (a.getKeyword as string) ?? '',
+        Result:       (a.Result as string) ?? '',
+        Unit:         (a.Unit as string) ?? (a.getUnit as string) ?? '',
+        review_state: (a.review_state as string) ?? '',
+        sampleId:     (a.getRequestID as string) ?? '',
+        submittedBy:  (a.getSubmittedBy as string) ?? '',
+        verifiedBy:   (a.getLastVerificator as string) ?? (verificators[verificators.length - 1] as string) ?? '',
+        resultCaptureDate: (a.getResultCaptureDate as string) ?? (a.ResultCaptureDate as string) ?? null,
+        resultsRangeMin: toNum(range?.min),
+        resultsRangeMax: toNum(range?.max),
+      }
+    })
   } catch { return [] }
 }
 
