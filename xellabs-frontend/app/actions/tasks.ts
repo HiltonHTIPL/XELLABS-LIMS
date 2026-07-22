@@ -12,6 +12,12 @@ export type WorkflowTask = {
 
 export async function getOpenTasks(): Promise<WorkflowTask[]> {
   try {
+    const myRes = await djangoFetch('/api/compliance/workflow/tasks/my-tasks/?status=open')
+    if (myRes.ok) {
+      const myData = await myRes.json()
+      const myTasks = myData.results ?? myData ?? []
+      if (Array.isArray(myTasks) && myTasks.length > 0) return myTasks
+    }
     const res = await djangoFetch('/api/compliance/workflow/tasks/?status=open')
     if (!res.ok) return []
     const data = await res.json()
