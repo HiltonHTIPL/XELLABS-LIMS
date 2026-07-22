@@ -18,7 +18,7 @@ export default function AdminGridShell({ sections, counts }: { sections: AdminSe
         className="flex items-center gap-2 px-3 py-2 rounded-lg mb-5"
         style={{ backgroundColor: '#F3F4F6', border: '1px solid #E5E7EB', maxWidth: 360 }}
       >
-        <span className="material-icons" style={{ fontSize: 16, color: '#9CA3AF' }}>search</span>
+        <span className="material-icons" style={{ fontSize: 16, color: '#374151' }}>search</span>
         <input
           type="text"
           value={query}
@@ -29,7 +29,7 @@ export default function AdminGridShell({ sections, counts }: { sections: AdminSe
         />
       </div>
       {visible.length === 0 ? (
-        <p className="text-sm" style={{ color: '#9CA3AF' }}>No sections match &ldquo;{query}&rdquo;.</p>
+        <p className="text-sm" style={{ color: '#374151' }}>No sections match &ldquo;{query}&rdquo;.</p>
       ) : (
         <div className="grid grid-cols-4 gap-4">
           {visible.map(section => (

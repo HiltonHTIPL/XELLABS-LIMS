@@ -102,14 +102,14 @@ export function NamedRefSlide({
         <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ borderBottom: '1px solid #F3F4F6' }}>
           <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>{entityLabel}</h2>
           <button type="button" onClick={handleClose} className="p-1.5 rounded-lg hover:bg-gray-100">
-            <MI name="close" size={16} color="#9CA3AF" />
+            <MI name="close" size={16} color="#374151" />
           </button>
         </div>
         <div className="flex-1 overflow-y-auto px-5 py-4">
-          <p style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', letterSpacing: '0.03em', marginBottom: 6 }}>CHOOSE EXISTING</p>
+          <p style={{ fontSize: 11, fontWeight: 600, color: '#374151', letterSpacing: '0.03em', marginBottom: 6 }}>CHOOSE EXISTING</p>
           <div className="mb-5" style={{ border: '1px solid #F3F4F6', borderRadius: 8, maxHeight: 200, overflowY: 'auto' }}>
             {items.length === 0 && (
-              <div style={{ fontSize: 12, color: '#9CA3AF', padding: 12 }}>None yet. Add one below.</div>
+              <div style={{ fontSize: 12, color: '#374151', padding: 12 }}>None yet. Add one below.</div>
             )}
             {items.map(t => {
               const sel = selectedIds.includes(String(t.id))
@@ -130,11 +130,11 @@ export function NamedRefSlide({
               )
             })}
           </div>
-          <p style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', letterSpacing: '0.03em', marginBottom: 6 }}>ADD NEW</p>
+          <p style={{ fontSize: 11, fontWeight: 600, color: '#374151', letterSpacing: '0.03em', marginBottom: 6 }}>ADD NEW</p>
           {localError && (
             <p className="mb-2 text-xs" style={{ color: '#EF4444' }}>{localError}</p>
           )}
-          <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: '#374151', marginBottom: 4 }}>Name *</label>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: '#374151', marginBottom: 4 }}>Name <span style={{ color: '#EF4444' }}>*</span></label>
           <input
             value={newName}
             onChange={e => setNewName(e.target.value)}
@@ -146,7 +146,7 @@ export function NamedRefSlide({
           {extraFields.map(f => (
             <div key={f.key} className="mb-3">
               <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: '#374151', marginBottom: 4 }}>
-                {f.label}{f.required ? ' *' : ''}
+                {f.label}{f.required && <span style={{ color: '#EF4444' }}> *</span>}
               </label>
               <input
                 value={extras[f.key] ?? ''}
@@ -224,7 +224,7 @@ export default function SelectOrAddField({
           {label}{required && <span style={{ color: '#EF4444' }}> *</span>}
         </label>
       )}
-      {tip && <p style={{ fontSize: 10, color: '#9CA3AF', marginBottom: 4 }}>{tip}</p>}
+      {tip && <p style={{ fontSize: 10, color: '#374151', marginBottom: 4 }}>{tip}</p>}
       <select
         name={name}
         value={value}

@@ -1,4 +1,5 @@
 'use client'
+import { exportRowsToCsv } from '@/app/lib/exportCsv'
 import { useState, useActionState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -14,6 +15,22 @@ import {
   type SenaiteInterimFieldRow,
   type SenaiteConditionRow,
 } from '@/app/lib/senaite'
+import ImportButton, { type ParsedRow } from '../../_components/ImportButton'
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
+
+const exportColumns = [
+  { key: 'title', label: 'Service' },
+  { key: 'Keyword', label: 'Keyword' },
+  { key: 'Category', label: 'Category' },
+  { key: 'Unit', label: 'Unit' },
+  { key: 'Price', label: 'Price' },
+  { key: 'MaxTimeAllowed', label: 'Max Time', render: (s: SenaiteAnalysisService) => {
+    const d = s.MaxTimeAllowedDays || 0, h = s.MaxTimeAllowedHours || 0, m = s.MaxTimeAllowedMinutes || 0
+    return (d || h || m) ? `${d}d ${h}h ${m}m` : ''
+  } },
+  { key: 'DuplicateVariation', label: 'Dup Var' },
+  { key: 'SortKey', label: 'Sort Key' },
+]
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -29,7 +46,7 @@ function Field({
     <div>
       <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
         {label}{required && <span style={{ color: '#EF4444' }}> *</span>}
-        {hint && <span className="ml-1 font-normal" style={{ color: '#9CA3AF' }}>{hint}</span>}
+        {hint && <span className="ml-1 font-normal" style={{ color: '#374151' }}>{hint}</span>}
       </label>
       <input
         type={type}
@@ -49,7 +66,7 @@ function TextAreaField({ label, name, value, onChange, hint }: { label: string; 
   return (
     <div>
       <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
-        {label}{hint && <span className="ml-1 font-normal" style={{ color: '#9CA3AF' }}>{hint}</span>}
+        {label}{hint && <span className="ml-1 font-normal" style={{ color: '#374151' }}>{hint}</span>}
       </label>
       <textarea name={name} rows={3} value={value} onChange={e => onChange(e.target.value)}
         className="w-full px-3 py-2 text-xs rounded-lg outline-none resize-none"
@@ -89,7 +106,7 @@ function CheckboxToggle({ label, hint, checked, onChange }: { label: string; hin
       <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="mt-0.5" />
       <div>
         <span className="text-xs font-medium" style={{ color: '#374151' }}>{label}</span>
-        {hint && <p style={{ fontSize: 10, color: '#9CA3AF' }}>{hint}</p>}
+        {hint && <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>{hint}</p>}
       </div>
     </label>
   )
@@ -106,7 +123,7 @@ function CheckboxList({ options, selected, onChange }: {
   return (
     <div className="rounded-lg overflow-y-auto" style={{ border: '1px solid #D1D5DB', maxHeight: 120 }}>
       {options.length === 0
-        ? <p className="px-3 py-2 text-xs" style={{ color: '#9CA3AF' }}>None available</p>
+        ? <p className="px-3 py-2 text-xs" style={{ color: '#374151' }}>None available</p>
         : options.map(o => (
             <label key={o.uid} className="flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer hover:bg-gray-50" style={{ color: '#374151' }}>
               <input type="checkbox" checked={selected.includes(o.uid)} onChange={() => toggle(o.uid)} />
@@ -243,6 +260,34 @@ export default function AnalysesShell({
   function openEdit(s: SenaiteAnalysisService) { setEditing(s); setVals(serviceToFV(s)); setFieldErrors({}); setActiveTab('Description'); setShowDrawer(true) }
   function closeDrawer() { setShowDrawer(false); setEditing(null) }
 
+  async function handleImportRow(row: ParsedRow) {
+    const fd = new FormData()
+    if (row.title) fd.append('title', row.title)
+    if (row.Keyword) fd.append('Keyword', row.Keyword)
+    if (row.Unit) fd.append('Unit', row.Unit)
+    if (row.Price) fd.append('Price', row.Price)
+    if (row.DuplicateVariation) fd.append('DuplicateVariation', row.DuplicateVariation)
+    if (row.SortKey) fd.append('SortKey', row.SortKey)
+
+    if (row.MaxTimeAllowed) {
+      const match = row.MaxTimeAllowed.match(/(\d+)d\s+(\d+)h\s+(\d+)m/)
+      if (match) {
+        fd.append('MaxTimeAllowedDays', match[1])
+        fd.append('MaxTimeAllowedHours', match[2])
+        fd.append('MaxTimeAllowedMinutes', match[3])
+      }
+    }
+
+    if (row.Category) {
+      const cat = categories.find(c => c.title.toLowerCase() === row.Category.toLowerCase())
+      if (!cat) return { success: false, message: `Category not found: ${row.Category}` }
+      fd.append('Category', cat.uid)
+    }
+
+    const res = await createAnalysis({}, fd)
+    return { success: res.success, message: res.message, errors: res.errors }
+  }
+
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     const set = (name: string, value: unknown) => {
       const el = e.currentTarget.querySelector(`input[name="${name}"]`) as HTMLInputElement
@@ -262,6 +307,44 @@ export default function AnalysesShell({
         s.Category.toLowerCase().includes(search.trim().toLowerCase()))
     : initialServices
 
+  // SenaiteAnalysisService has no `id`, so key rows by uid for the shared table.
+  type Row = SenaiteAnalysisService & { id: string }
+  const rows: Row[] = filtered.map(s => ({ ...s, id: s.uid }))
+  // Columns reproduce the previous hand-rolled cells exactly; sort by each row field.
+  const columns: DataTableColumn<Row>[] = [
+    {
+      id: 'title', label: 'Name', sortable: true, minWidth: 220,
+      render: s => (
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: '#DBEAFE' }}>
+            <MI name="biotech" size={13} color="#0154FC" />
+          </div>
+          <span className="text-xs font-medium" style={{ color: '#111827' }}>{s.title}</span>
+        </div>
+      ),
+    },
+    {
+      id: 'Keyword', label: 'Keyword', sortable: true, minWidth: 140,
+      render: s => (
+        <span className="text-xs font-mono px-2 py-0.5 rounded-full" style={{ backgroundColor: '#EFF6FF', color: '#2563EB', fontWeight: 600 }}>
+          {s.Keyword || '—'}
+        </span>
+      ),
+    },
+    {
+      id: 'Category', label: 'Category', sortable: true, minWidth: 150,
+      render: s => <span className="text-xs" style={{ color: '#374151' }}>{s.Category || '—'}</span>,
+    },
+    {
+      id: 'Unit', label: 'Unit', sortable: true, minWidth: 100,
+      render: s => <span className="text-xs" style={{ color: '#374151' }}>{s.Unit || '—'}</span>,
+    },
+    {
+      id: 'Price', label: 'Price', sortable: true, minWidth: 100,
+      render: s => <span className="text-xs" style={{ color: '#374151' }}>{s.Price && s.Price !== '0.00' ? s.Price : '—'}</span>,
+    },
+  ]
+
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
@@ -269,16 +352,32 @@ export default function AnalysesShell({
       <div className="flex items-center justify-between mb-3" style={{ flexShrink: 0 }}>
         <div className="flex items-center gap-3">
           <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
-            <MI name="arrow_back" size={16} color="#6B7280" />
+            <MI name="arrow_back" size={16} color="#374151" />
           </Link>
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Analyses</h1>
-            <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Manage the analyses (test services) available for samples and analysis profiles</p>
+            <p className="text-sm mt-0.5" style={{ color: '#374151' }}>Manage the analyses (test services) available for samples and analysis profiles</p>
           </div>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
-          <MI name="add" size={15} color="#fff" /> New Analysis
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => exportRowsToCsv(exportColumns, [], 'analyses-template')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ color: '#374151', border: '1px solid #D1D5DB', backgroundColor: '#fff' }}>
+            <MI name="download" size={15} color="#374151" /> Template
+          </button>
+          <button onClick={() => exportRowsToCsv(exportColumns, filtered, 'analyses')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ color: '#0154FC', border: '1px solid #0154FC', backgroundColor: '#fff' }}>
+            <MI name="file_download" size={15} color="#0154FC" /> Export
+          </button>
+          <ImportButton
+            columns={exportColumns}
+            existingTitles={initialServices.map(s => s.title)}
+            templateFilename="analyses-template"
+            entityName="Analyses"
+            onImportRow={handleImportRow}
+            onRefresh={() => router.refresh()}
+          />
+          <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
+            <MI name="add" size={15} color="#fff" /> New Analysis
+          </button>
+        </div>
       </div>
 
       {/* Toast */}
@@ -293,7 +392,7 @@ export default function AnalysesShell({
       {/* Search */}
       {initialServices.length > 0 && (
         <div className="mb-3 flex items-center gap-2 px-3 py-2 bg-white rounded-lg" style={{ border: '1px solid #E8EAF2', maxWidth: 340, flexShrink: 0 }}>
-          <MI name="search" size={15} color="#9CA3AF" />
+          <MI name="search" size={15} color="#374151" />
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -317,10 +416,10 @@ export default function AnalysesShell({
                 </div>
                 <div>
                   <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>{isEdit ? `Edit — ${editing.title}` : 'New Analysis'}</h2>
-                  <p style={{ fontSize: 10, color: '#9CA3AF' }}>{isEdit ? 'Update this analysis (test service)' : 'Create a new analysis (test service)'}</p>
+                  <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>{isEdit ? 'Update this analysis (test service)' : 'Create a new analysis (test service)'}</p>
                 </div>
               </div>
-              <button onClick={closeDrawer} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
+              <button onClick={closeDrawer} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#374151" /></button>
             </div>
 
             {/* Tab bar */}
@@ -330,7 +429,7 @@ export default function AnalysesShell({
                   className="px-3 py-2 text-xs font-medium whitespace-nowrap"
                   style={{
                     border: 'none', background: 'none', cursor: 'pointer',
-                    color: activeTab === t ? '#0154FC' : '#6B7280',
+                    color: activeTab === t ? '#0154FC' : '#374151',
                     borderBottom: activeTab === t ? '2px solid #0154FC' : '2px solid transparent',
                   }}>
                   {t}
@@ -528,7 +627,7 @@ export default function AnalysesShell({
 
                 <div style={{ display: activeTab === 'Advanced' ? 'flex' : 'none', flexDirection: 'column', gap: 12 }}>
                     <label className="block text-xs font-medium" style={{ color: '#374151' }}>Analysis Conditions</label>
-                    <p style={{ fontSize: 10, color: '#9CA3AF', marginTop: -6 }}>
+                    <p style={{ fontSize: 10, color: '#374151', marginTop: -6 }}>
                       Conditions to ask for this analysis on sample registration
                     </p>
                     <ConditionsTable rows={vals.Conditions} onChange={rows => setVal('Conditions', rows)} />
@@ -553,16 +652,16 @@ export default function AnalysesShell({
       )}
 
       {/* Table / empty state */}
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {filtered.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="biotech" size={36} color="#D1D5DB" />
-          <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>
+          <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>
             {initialServices.length === 0 ? 'No analyses yet' : 'No analyses match your search'}
           </p>
           {initialServices.length === 0 && (
             <>
-              <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>Create your first analysis to get started</p>
+              <p className="text-xs mt-0.5" style={{ color: '#374151' }}>Create your first analysis to get started</p>
               <button onClick={openCreate} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
                 <MI name="add" size={13} color="#fff" /> New Analysis
               </button>
@@ -570,52 +669,20 @@ export default function AnalysesShell({
           )}
         </div>
       ) : (
-        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
-          <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-            <colgroup>
-              <col style={{ width: '28%' }} /><col style={{ width: '16%' }} /><col style={{ width: '18%' }} /><col style={{ width: '10%' }} /><col style={{ width: '10%' }} /><col style={{ width: '90px' }} />
-            </colgroup>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                {['Name', 'Keyword', 'Category', 'Unit', 'Price', ''].map(h => (
-                  <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((s, i) => (
-                <tr key={s.uid} style={{ borderBottom: i < filtered.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
-                  <td className="px-3 py-2.5">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: '#DBEAFE' }}>
-                        <MI name="biotech" size={13} color="#0154FC" />
-                      </div>
-                      <span className="text-xs font-medium" style={{ color: '#111827' }}>{s.title}</span>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <span className="text-xs font-mono px-2 py-0.5 rounded-full" style={{ backgroundColor: '#EFF6FF', color: '#2563EB', fontWeight: 600 }}>
-                      {s.Keyword || '—'}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{s.Category || '—'}</td>
-                  <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{s.Unit || '—'}</td>
-                  <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{s.Price && s.Price !== '0.00' ? s.Price : '—'}</td>
-                  <td className="px-3 py-2.5 text-right">
-                    <button onClick={() => openEdit(s)} title="Edit"
-                      className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium hover:bg-gray-50"
-                      style={{ border: '1px solid #E8EAF2', background: '#fff', color: '#374151', cursor: 'pointer' }}>
-                      <MI name="edit" size={13} color="#6B7280" /> Edit
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-            <p style={{ fontSize: 10, color: '#9CA3AF' }}>{filtered.length} analys{filtered.length !== 1 ? 'es' : 'is'}</p>
-          </div>
-        </div>
+        <DataTable<Row>
+          data={rows}
+          columns={columns}
+          searchable
+          persistKey="analyses"
+          emptyMessage="No analyses found."
+          rowActions={s => (
+            <button onClick={() => openEdit(s)} title="Edit"
+              className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium hover:bg-gray-50"
+              style={{ border: '1px solid #E8EAF2', background: '#fff', color: '#374151', cursor: 'pointer' }}>
+              <MI name="edit" size={13} color="#6B7280" /> Edit
+            </button>
+          )}
+        />
       )}
       </div>
     </div>
@@ -639,7 +706,7 @@ function RowsTable<T extends Record<string, string>>({
       <table className="w-full" style={{ borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ backgroundColor: '#FAFAFA' }}>
-            {columns.map(c => <th key={c} className="px-2 py-1.5 text-left" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF' }}>{c}</th>)}
+            {columns.map(c => <th key={c} className="px-2 py-1.5 text-left" style={{ fontSize: 10, fontWeight: 600, color: '#374151' }}>{c}</th>)}
             <th style={{ width: 32 }}></th>
           </tr>
         </thead>
@@ -680,7 +747,7 @@ function InterimFieldsTable({ rows, onChange }: { rows: SenaiteInterimFieldRow[]
         <thead>
           <tr style={{ backgroundColor: '#FAFAFA' }}>
             {['Keyword', 'Field Title', 'Default value', 'Choices', 'Control type', 'Unit', ''].map(c => (
-              <th key={c} className="px-2 py-1.5 text-left" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF' }}>{c}</th>
+              <th key={c} className="px-2 py-1.5 text-left" style={{ fontSize: 10, fontWeight: 600, color: '#374151' }}>{c}</th>
             ))}
           </tr>
         </thead>
@@ -725,7 +792,7 @@ function ConditionsTable({ rows, onChange }: { rows: SenaiteConditionRow[]; onCh
         <thead>
           <tr style={{ backgroundColor: '#FAFAFA' }}>
             {['Title', 'Description', 'Control type', 'Default value', 'Required', ''].map(c => (
-              <th key={c} className="px-2 py-1.5 text-left" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF' }}>{c}</th>
+              <th key={c} className="px-2 py-1.5 text-left" style={{ fontSize: 10, fontWeight: 600, color: '#374151' }}>{c}</th>
             ))}
           </tr>
         </thead>

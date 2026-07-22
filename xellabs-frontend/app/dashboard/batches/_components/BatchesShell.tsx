@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createBatch, setBatchState, type BatchFormState } from '@/app/actions/batches'
 import { type SenaiteBatch } from '@/app/lib/senaite'
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -20,7 +21,7 @@ function Field({
     <div>
       <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
         {label}{required && <span style={{ color: '#EF4444' }}> *</span>}
-        {hint && <span className="ml-1 font-normal" style={{ color: '#9CA3AF' }}>{hint}</span>}
+        {hint && <span className="ml-1 font-normal" style={{ color: '#374151' }}>{hint}</span>}
       </label>
       {as === 'textarea' ? (
         <textarea
@@ -134,13 +135,91 @@ export default function BatchesShell({
     color: '#374151', backgroundColor: '#fff', outline: 'none',
   }
 
+  // Row id = uid (unique); keep the original business id as `batchId` for the
+  // Batch ID column. Derived primitive fields expose the computed/nested/array
+  // columns to the table engine's sorter (labels → string, dates → epoch).
+  type Row = SenaiteBatch & { id: string; batchId: string; labelsText: string; batchDateSort: number; createdSort: number }
+  const rows: Row[] = batches.map(b => ({
+    ...b,
+    id: b.uid,
+    batchId: b.id,
+    labelsText: b.BatchLabels.length ? b.BatchLabels.join(', ') : '',
+    batchDateSort: b.BatchDate ? (new Date(b.BatchDate).getTime() || 0) : 0,
+    createdSort: b.created ? (new Date(b.created).getTime() || 0) : 0,
+  }))
+
+  const columns: DataTableColumn<Row>[] = [
+    {
+      id: 'batchId', label: 'Batch ID', sortable: true, minWidth: 120,
+      render: b => (
+        <Link href={`/dashboard/batches/${b.uid}`} className="text-xs font-mono px-2 py-0.5 rounded-full hover:underline" style={{ backgroundColor: '#EFF6FF', color: '#2563EB', fontWeight: 600, textDecoration: 'none' }}>
+          {b.batchId || '—'}
+        </Link>
+      ),
+    },
+    {
+      id: 'title', label: 'Title', sortable: true, minWidth: 200,
+      render: b => (
+        <Link href={`/dashboard/batches/${b.uid}`} className="flex items-center gap-2 hover:underline" style={{ textDecoration: 'none', width: 'fit-content' }}>
+          <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: '#DBEAFE' }}>
+            <MI name="layers" size={13} color="#0154FC" />
+          </div>
+          <span className="text-xs font-medium" style={{ color: '#111827' }}>{b.title}</span>
+        </Link>
+      ),
+    },
+    {
+      id: 'getProgress', label: 'Progress', sortable: true, minWidth: 130,
+      render: b => (
+        <div className="flex items-center gap-2">
+          <div style={{ flex: 1, height: 6, borderRadius: 999, backgroundColor: '#F3F4F6', overflow: 'hidden' }}>
+            <div style={{ width: `${b.getProgress}%`, height: '100%', backgroundColor: '#0154FC' }} />
+          </div>
+          <span style={{ fontSize: 11, color: '#374151', minWidth: 28 }}>{b.getProgress}%</span>
+        </div>
+      ),
+    },
+    {
+      id: 'labelsText', label: 'Batch Labels', sortable: true, minWidth: 140,
+      render: b => <span className="text-xs" style={{ color: '#374151' }}>{b.BatchLabels.length ? b.BatchLabels.join(', ') : '—'}</span>,
+    },
+    {
+      id: 'description', label: 'Description', sortable: true, minWidth: 160,
+      render: b => <span className="text-xs" style={{ color: '#374151' }}>{b.description || '—'}</span>,
+    },
+    {
+      id: 'batchDateSort', label: 'Date', sortable: true, minWidth: 120,
+      render: b => <span className="text-xs" style={{ color: '#374151' }}>{fmtDate(b.BatchDate)}</span>,
+    },
+    {
+      id: 'ClientTitle', label: 'Client', sortable: true, minWidth: 140,
+      render: b => <span className="text-xs" style={{ color: '#374151' }}>{b.ClientTitle || '—'}</span>,
+    },
+    {
+      id: 'ClientID', label: 'Client ID', sortable: true, minWidth: 110,
+      render: b => <span className="text-xs" style={{ color: '#374151' }}>{b.ClientID || '—'}</span>,
+    },
+    {
+      id: 'ClientBatchID', label: 'Client Batch ID', sortable: true, minWidth: 130,
+      render: b => <span className="text-xs" style={{ color: '#374151' }}>{b.ClientBatchID || '—'}</span>,
+    },
+    {
+      id: 'review_state', label: 'Status', sortable: true, minWidth: 110,
+      render: b => <StatusBadge state={b.review_state} />,
+    },
+    {
+      id: 'createdSort', label: 'Created', sortable: true, minWidth: 120,
+      render: b => <span className="text-xs" style={{ color: '#374151' }}>{fmtDate(b.created)}</span>,
+    },
+  ]
+
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
       <div className="flex items-center justify-between mb-3" style={{ flexShrink: 0 }}>
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Batches</h1>
-          <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Group samples into batches for tracking, billing, and reporting</p>
+          <p className="text-sm mt-0.5" style={{ color: '#374151' }}>Group samples into batches for tracking, billing, and reporting</p>
         </div>
         <div className="flex items-center gap-2">
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={selectStyle}>
@@ -179,11 +258,11 @@ export default function BatchesShell({
               </div>
               <div>
                 <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>New Batch</h2>
-                <p style={{ fontSize: 10, color: '#9CA3AF' }}>Group related samples together</p>
+                <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>Group related samples together</p>
               </div>
             </div>
             <button onClick={closeDrawer} className="p-1.5 rounded-lg hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-              <MI name="close" size={16} color="#9CA3AF" />
+              <MI name="close" size={16} color="#374151" />
             </button>
           </div>
 
@@ -194,7 +273,7 @@ export default function BatchesShell({
 
               <div>
                 <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
-                  Client <span className="font-normal" style={{ color: '#9CA3AF' }}>(optional)</span>
+                  Client <span className="font-normal" style={{ color: '#374151' }}>(optional)</span>
                 </label>
                 <select
                   name="client_uid"
@@ -217,7 +296,7 @@ export default function BatchesShell({
 
               <div>
                 <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
-                  Date <span className="font-normal" style={{ color: '#9CA3AF' }}>(optional)</span>
+                  Date <span className="font-normal" style={{ color: '#374151' }}>(optional)</span>
                 </label>
                 <input
                   type="date" name="batch_date" value={vals.batch_date}
@@ -251,14 +330,14 @@ export default function BatchesShell({
       </div>
 
       {/* Table / empty state */}
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {batches.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="layers" size={36} color="#D1D5DB" />
-          <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>
+          <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>
             {initialBatches.length === 0 ? 'No batches yet' : 'No batches match these filters'}
           </p>
-          <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>
+          <p className="text-xs mt-0.5" style={{ color: '#374151' }}>
             {initialBatches.length === 0 ? 'Create your first batch to group samples for tracking and reporting' : 'Try a different status or client filter'}
           </p>
           {initialBatches.length === 0 && (
@@ -268,94 +347,50 @@ export default function BatchesShell({
           )}
         </div>
       ) : (
-        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
-          <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', minWidth: 1200, borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                {['Batch ID', 'Title', 'Progress', 'Batch Labels', 'Description', 'Date', 'Client', 'Client ID', 'Client Batch ID', 'Status', 'Created', ''].map(h => (
-                  <th key={h} className="px-3 py-2 text-left uppercase tracking-wide whitespace-nowrap" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {batches.map((b, i) => (
-                <tr key={b.uid} style={{ borderBottom: i < batches.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
-                  <td className="px-3 py-2.5 whitespace-nowrap">
-                    <Link href={`/dashboard/batches/${b.uid}`} className="text-xs font-mono px-2 py-0.5 rounded-full hover:underline" style={{ backgroundColor: '#EFF6FF', color: '#2563EB', fontWeight: 600, textDecoration: 'none' }}>
-                      {b.id || '—'}
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2.5 whitespace-nowrap">
-                    <Link href={`/dashboard/batches/${b.uid}`} className="flex items-center gap-2 hover:underline" style={{ textDecoration: 'none', width: 'fit-content' }}>
-                      <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: '#DBEAFE' }}>
-                        <MI name="layers" size={13} color="#0154FC" />
-                      </div>
-                      <span className="text-xs font-medium" style={{ color: '#111827' }}>{b.title}</span>
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2.5" style={{ minWidth: 110 }}>
-                    <div className="flex items-center gap-2">
-                      <div style={{ flex: 1, height: 6, borderRadius: 999, backgroundColor: '#F3F4F6', overflow: 'hidden' }}>
-                        <div style={{ width: `${b.getProgress}%`, height: '100%', backgroundColor: '#0154FC' }} />
-                      </div>
-                      <span style={{ fontSize: 10, color: '#9CA3AF', minWidth: 28 }}>{b.getProgress}%</span>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2.5 text-xs whitespace-nowrap" style={{ color: '#6B7280' }}>{b.BatchLabels.length ? b.BatchLabels.join(', ') : '—'}</td>
-                  <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280', maxWidth: 160 }}>{b.description || '—'}</td>
-                  <td className="px-3 py-2.5 text-xs whitespace-nowrap" style={{ color: '#6B7280' }}>{fmtDate(b.BatchDate)}</td>
-                  <td className="px-3 py-2.5 text-xs whitespace-nowrap" style={{ color: '#6B7280' }}>{b.ClientTitle || '—'}</td>
-                  <td className="px-3 py-2.5 text-xs whitespace-nowrap" style={{ color: '#6B7280' }}>{b.ClientID || '—'}</td>
-                  <td className="px-3 py-2.5 text-xs whitespace-nowrap" style={{ color: '#6B7280' }}>{b.ClientBatchID || '—'}</td>
-                  <td className="px-3 py-2.5 whitespace-nowrap"><StatusBadge state={b.review_state} /></td>
-                  <td className="px-3 py-2.5 text-xs whitespace-nowrap" style={{ color: '#9CA3AF' }}>{fmtDate(b.created)}</td>
-                  <td className="px-3 py-2.5 whitespace-nowrap">
-                    <div className="flex items-center gap-1">
-                      {b.review_state === 'open' && (
-                        <>
-                          <button
-                            onClick={() => changeState(b, 'close')}
-                            disabled={busyUid === b.uid}
-                            className="px-2 py-1 rounded text-xs font-medium hover:bg-gray-100"
-                            style={{ border: '1px solid #E5E7EB', background: '#fff', cursor: busyUid === b.uid ? 'not-allowed' : 'pointer', color: '#374151' }}
-                            title="Close batch"
-                          >
-                            Close
-                          </button>
-                          <button
-                            onClick={() => changeState(b, 'cancel')}
-                            disabled={busyUid === b.uid}
-                            className="px-2 py-1 rounded text-xs font-medium hover:bg-red-50"
-                            style={{ border: '1px solid #FECACA', background: '#fff', cursor: busyUid === b.uid ? 'not-allowed' : 'pointer', color: '#DC2626' }}
-                            title="Cancel batch"
-                          >
-                            Cancel
-                          </button>
-                        </>
-                      )}
-                      {b.review_state === 'closed' && (
-                        <button
-                          onClick={() => changeState(b, 'open')}
-                          disabled={busyUid === b.uid}
-                          className="px-2 py-1 rounded text-xs font-medium hover:bg-gray-100"
-                          style={{ border: '1px solid #E5E7EB', background: '#fff', cursor: busyUid === b.uid ? 'not-allowed' : 'pointer', color: '#374151' }}
-                          title="Reopen batch"
-                        >
-                          Reopen
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
-          <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-            <p style={{ fontSize: 10, color: '#9CA3AF' }}>{batches.length} batch{batches.length !== 1 ? 'es' : ''}{batches.length !== initialBatches.length ? ` (of ${initialBatches.length})` : ''}</p>
-          </div>
-        </div>
+        <DataTable<Row>
+          data={rows}
+          columns={columns}
+          searchable
+          persistKey="batches"
+          emptyMessage="No batches found."
+          rowActions={b => (
+            <div className="flex items-center gap-1">
+              {b.review_state === 'open' && (
+                <>
+                  <button
+                    onClick={() => changeState(b, 'close')}
+                    disabled={busyUid === b.uid}
+                    className="px-2 py-1 rounded text-xs font-medium hover:bg-gray-100"
+                    style={{ border: '1px solid #E5E7EB', background: '#fff', cursor: busyUid === b.uid ? 'not-allowed' : 'pointer', color: '#374151' }}
+                    title="Close batch"
+                  >
+                    Close
+                  </button>
+                  <button
+                    onClick={() => changeState(b, 'cancel')}
+                    disabled={busyUid === b.uid}
+                    className="px-2 py-1 rounded text-xs font-medium hover:bg-red-50"
+                    style={{ border: '1px solid #FECACA', background: '#fff', cursor: busyUid === b.uid ? 'not-allowed' : 'pointer', color: '#DC2626' }}
+                    title="Cancel batch"
+                  >
+                    Cancel
+                  </button>
+                </>
+              )}
+              {b.review_state === 'closed' && (
+                <button
+                  onClick={() => changeState(b, 'open')}
+                  disabled={busyUid === b.uid}
+                  className="px-2 py-1 rounded text-xs font-medium hover:bg-gray-100"
+                  style={{ border: '1px solid #E5E7EB', background: '#fff', cursor: busyUid === b.uid ? 'not-allowed' : 'pointer', color: '#374151' }}
+                  title="Reopen batch"
+                >
+                  Reopen
+                </button>
+              )}
+            </div>
+          )}
+        />
       )}
       </div>
     </div>

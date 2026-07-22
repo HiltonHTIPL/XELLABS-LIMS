@@ -37,7 +37,7 @@ export default function SampleOverviewDetailWrapper({ djangoId, onClose }: { dja
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', backgroundColor: '#F9FAFB' }}>
-        <div style={{ fontSize: 13, color: '#6B7280' }}>Loading sample details...</div>
+        <div style={{ fontSize: 13, color: '#374151' }}>Loading sample details...</div>
       </div>
     )
   }
@@ -53,7 +53,7 @@ export default function SampleOverviewDetailWrapper({ djangoId, onClose }: { dja
   return (
     <div style={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
       <button onClick={onClose} style={{ position: 'absolute', top: 16, right: 16, background: '#fff', border: '1px solid #E5E7EB', borderRadius: '50%', width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 10 }}>
-        <span className="material-icons" style={{ fontSize: 18, color: '#6B7280' }}>close</span>
+        <span className="material-icons" style={{ fontSize: 18, color: '#374151' }}>close</span>
       </button>
       <div style={{ height: '100%', overflowY: 'auto' }}>
         <SampleOverviewDetail

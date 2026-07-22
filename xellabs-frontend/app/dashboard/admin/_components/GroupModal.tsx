@@ -32,7 +32,7 @@ export default function GroupModal({ onClose, onDone }: { onClose: () => void; o
       <div style={{ position: 'absolute', top: 'var(--dashboard-header-h)', right: 0, bottom: 'var(--dashboard-footer-h)', width: 380, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.12)', display: 'flex', flexDirection: 'column' }}>
         <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ borderBottom: '1px solid #F3F4F6' }}>
           <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>New Group</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#374151" /></button>
         </div>
         <form onSubmit={handleSubmit} className="px-5 py-4 flex flex-col gap-3">
           <div>

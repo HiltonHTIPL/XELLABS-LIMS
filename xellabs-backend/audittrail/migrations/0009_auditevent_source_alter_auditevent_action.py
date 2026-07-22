@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('audittrail', '0008_import_log'),
+        ('audittrail', '0007_add_store_action'),
     ]
 
     operations = [

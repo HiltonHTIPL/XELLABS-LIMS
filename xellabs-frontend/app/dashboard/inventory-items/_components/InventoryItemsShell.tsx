@@ -7,6 +7,7 @@ import {
   type Reagent, type Standard, type Solvent, type InventoryItemKind, type InventoryFormState,
 } from '@/app/actions/inventory'
 import { ConfirmModal } from '@/app/dashboard/_components/ui'
+import DataTable, { type DataTableColumn } from '@/app/dashboard/_components/DataTable'
 
 type AnyItem = Reagent | Standard | Solvent
 
@@ -96,10 +97,10 @@ function ItemModal({ kind, editing, onClose, onDone }: {
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>
                 {isEdit ? `Edit — ${editing!.name}` : `New ${KIND_LABEL[kind]}`}
               </h2>
-              <p style={{ fontSize: 10, color: '#9CA3AF' }}>{isEdit ? 'Update item details' : `Add a new ${KIND_LABEL[kind].toLowerCase()} to inventory`}</p>
+              <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>{isEdit ? 'Update item details' : `Add a new ${KIND_LABEL[kind].toLowerCase()} to inventory`}</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#374151" /></button>
         </div>
         <form action={action} className="px-5 py-4 flex flex-col gap-3">
           <Field label="Name" name="name" required error={fieldErrors.name} defaultValue={editing?.name}
@@ -196,12 +197,53 @@ export default function InventoryItemsShell({ initialReagents, initialStandards,
     solvents: [{ key: 'grade', label: 'Grade' }, { key: 'purity', label: 'Purity' }],
   }
 
+  // Columns reproduce the previous hand-rolled cells exactly. Extra columns are
+  // kind-specific (rebuilt per active tab). AnyItem already has a numeric `id`.
+  const columns: DataTableColumn<AnyItem>[] = [
+    {
+      id: 'name', label: 'Name', sortable: true, minWidth: 180,
+      render: item => <span className="text-xs font-medium" style={{ color: '#111827' }}>{item.name}</span>,
+    },
+    {
+      id: 'catalog_number', label: 'Catalog #', sortable: true, minWidth: 130,
+      render: item => <span className="text-xs" style={{ color: '#374151' }}>{item.catalog_number || '—'}</span>,
+    },
+    {
+      id: extraCols[tab][0].key, label: extraCols[tab][0].label, sortable: true, minWidth: 140,
+      render: item => {
+        const rec = item as unknown as Record<string, string>
+        return <span className="text-xs" style={{ color: '#374151' }}>{rec[extraCols[tab][0].key] || '—'}</span>
+      },
+    },
+    {
+      id: extraCols[tab][1].key, label: extraCols[tab][1].label, sortable: true, minWidth: 140,
+      render: item => {
+        const rec = item as unknown as Record<string, string>
+        return <span className="text-xs" style={{ color: '#374151' }}>{rec[extraCols[tab][1].key] || '—'}</span>
+      },
+    },
+    {
+      id: 'min_stock_level', label: 'Min Stock', sortable: true, minWidth: 110,
+      render: item => <span className="text-xs" style={{ color: '#374151' }}>{item.min_stock_level} {item.unit}</span>,
+    },
+    {
+      id: 'is_active', label: 'Status', sortable: true, minWidth: 110,
+      render: item => (
+        <button onClick={() => toggle(item)} disabled={busy}
+          className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, color: item.is_active ? '#0154FC' : '#374151', background: 'none', border: 'none', cursor: 'pointer' }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: item.is_active ? '#0154FC' : '#374151', display: 'inline-block' }} />
+          {item.is_active ? 'Active' : 'Inactive'}
+        </button>
+      ),
+    },
+  ]
+
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Inventory Items</h1>
-          <p className="mt-1" style={{ fontSize: 13, color: '#6B7280' }}>Manage reagents, standards, and solvents used in testing</p>
+          <p className="mt-1" style={{ fontSize: 13, color: '#374151' }}>Manage reagents, standards, and solvents used in testing</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Link href="/dashboard/inventory-dashboard" className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold" style={{ backgroundColor: '#fff', color: '#2563EB', border: '1px solid #D9DEEA', textDecoration: 'none' }}>
@@ -229,15 +271,15 @@ export default function InventoryItemsShell({ initialReagents, initialStandards,
           {(['reagents', 'standards', 'solvents'] as InventoryItemKind[]).map(k => (
             <button key={k} onClick={() => setTab(k)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
-              style={{ backgroundColor: tab === k ? '#fff' : 'transparent', color: tab === k ? '#14265E' : '#6B7280', border: 'none', cursor: 'pointer', boxShadow: tab === k ? '0 1px 2px rgba(16,24,40,0.08)' : 'none' }}>
-              <MI name={KIND_ICON[k]} size={14} color={tab === k ? '#2563EB' : '#9CA3AF'} />
+              style={{ backgroundColor: tab === k ? '#fff' : 'transparent', color: tab === k ? '#14265E' : '#374151', border: 'none', cursor: 'pointer', boxShadow: tab === k ? '0 1px 2px rgba(16,24,40,0.08)' : 'none' }}>
+              <MI name={KIND_ICON[k]} size={14} color={tab === k ? '#2563EB' : '#374151'} />
               {KIND_LABEL[k]}s
-              <span style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 700 }}>{dataByKind[k].length}</span>
+              <span style={{ fontSize: 10, color: '#374151', fontWeight: 700 }}>{dataByKind[k].length}</span>
             </button>
           ))}
         </div>
         <div className="relative" style={{ width: 260 }}>
-          <span className="absolute" style={{ left: 8, top: 8 }}><MI name="search" size={15} color="#9CA3AF" /></span>
+          <span className="absolute" style={{ left: 8, top: 8 }}><MI name="search" size={15} color="#374151" /></span>
           <input
             value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, catalog #, CAS…"
             className="w-full pl-7 pr-3 py-2 text-xs rounded-lg outline-none"
@@ -260,57 +302,29 @@ export default function InventoryItemsShell({ initialReagents, initialStandards,
       {filtered.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2', borderRadius: 14 }}>
           <MI name={KIND_ICON[tab]} size={36} color="#D1D5DB" />
-          <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No {KIND_LABEL[tab].toLowerCase()}s found</p>
+          <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>No {KIND_LABEL[tab].toLowerCase()}s found</p>
           <button onClick={openCreate} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
             <MI name="add" size={13} color="#fff" /> New {KIND_LABEL[tab]}
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2', borderRadius: 14, boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
-          <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                {['Name', 'Catalog #', extraCols[tab][0].label, extraCols[tab][1].label, 'Min Stock', 'Status', ''].map(h => (
-                  <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((item, i) => {
-                const rec = item as unknown as Record<string, string>
-                return (
-                  <tr key={item.id} style={{ borderBottom: i < filtered.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
-                    <td className="px-3 py-2.5 text-xs font-medium" style={{ color: '#111827' }}>{item.name}</td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{item.catalog_number || '—'}</td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{rec[extraCols[tab][0].key] || '—'}</td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{rec[extraCols[tab][1].key] || '—'}</td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{item.min_stock_level} {item.unit}</td>
-                    <td className="px-3 py-2.5">
-                      <button onClick={() => toggle(item)} disabled={busy}
-                        className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, color: item.is_active ? '#0154FC' : '#6B7280', background: 'none', border: 'none', cursor: 'pointer' }}>
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: item.is_active ? '#0154FC' : '#9CA3AF', display: 'inline-block' }} />
-                        {item.is_active ? 'Active' : 'Inactive'}
-                      </button>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => openEdit(item)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-                          <MI name="edit" size={14} color="#9CA3AF" />
-                        </button>
-                        <button onClick={() => setToDelete(item)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-                          <MI name="delete" size={14} color="#EF4444" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-          <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-            <p style={{ fontSize: 10, color: '#9CA3AF' }}>{filtered.length} {KIND_LABEL[tab].toLowerCase()}{filtered.length !== 1 ? 's' : ''}</p>
-          </div>
-        </div>
+        <DataTable<AnyItem>
+          data={filtered}
+          columns={columns}
+          searchable
+          persistKey={`inventory-items-${tab}`}
+          emptyMessage={`No ${KIND_LABEL[tab].toLowerCase()}s found.`}
+          rowActions={item => (
+            <div className="flex items-center gap-1">
+              <button onClick={() => openEdit(item)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
+                <MI name="edit" size={14} color="#6B7280" />
+              </button>
+              <button onClick={() => setToDelete(item)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
+                <MI name="delete" size={14} color="#EF4444" />
+              </button>
+            </div>
+          )}
+        />
       )}
     </div>
   )

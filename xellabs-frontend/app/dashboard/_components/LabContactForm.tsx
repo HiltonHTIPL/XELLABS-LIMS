@@ -77,7 +77,7 @@ export function LabContactTabBar({ activeTab, onChange }: { activeTab: LabContac
           className="px-3 py-2 text-xs font-medium whitespace-nowrap"
           style={{
             border: 'none', background: 'none', cursor: 'pointer',
-            color: activeTab === t ? '#0154FC' : '#6B7280',
+            color: activeTab === t ? '#0154FC' : '#374151',
             borderBottom: activeTab === t ? '2px solid #0154FC' : '2px solid transparent',
           }}>
           {t}
@@ -127,18 +127,18 @@ export function LabContactFormBody({
               style={{ border: '1px solid #D1D5DB', color: '#374151', backgroundColor: '#F9FAFB', cursor: 'pointer' }}>
               Choose Image
             </button>
-            <span className="text-xs truncate" style={{ color: sigName ? '#374151' : '#9CA3AF' }}>
+            <span className="text-xs truncate" style={{ color: sigName ? '#374151' : '#374151' }}>
               {sigName || existingSignatureNote || 'No file chosen'}
             </span>
           </div>
-          <p className="mt-1" style={{ fontSize: 10, color: '#9CA3AF' }}>Ideal size 250×150px, used on printed reports.</p>
+          <p className="mt-1" style={{ fontSize: 10, color: '#374151' }}>Ideal size 250×150px, used on printed reports.</p>
         </div>
 
         <div>
           <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Departments</label>
           <div className="rounded-lg p-2 space-y-1 max-h-32 overflow-y-auto" style={{ border: '1px solid #D1D5DB' }}>
             {departments.length === 0
-              ? <p style={{ fontSize: 11, color: '#9CA3AF' }}>No departments available</p>
+              ? <p style={{ fontSize: 11, color: '#374151' }}>No departments available</p>
               : departments.map(d => (
                 <label key={d.uid} className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: '#374151' }}>
                   <input type="checkbox" checked={vals.Departments.includes(d.uid)} onChange={() => toggleDept(d.uid)} />
@@ -156,7 +156,7 @@ export function LabContactFormBody({
             {defaultDeptOptions.map(d => <option key={d.uid} value={d.uid}>{d.title}</option>)}
           </select>
           {vals.DefaultDepartment && !vals.Departments.includes(vals.DefaultDepartment) && (
-            <p className="mt-0.5" style={{ fontSize: 10, color: '#9CA3AF' }}>Select the department above to keep it as default.</p>
+            <p className="mt-0.5" style={{ fontSize: 10, color: '#374151' }}>Select the department above to keep it as default.</p>
           )}
         </div>
       </div>
@@ -226,7 +226,7 @@ function AddressBlock({ title, addr, onChange, copyOptions }: {
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <p className="uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', letterSpacing: '0.06em' }}>{title}</p>
+        <p className="uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 700, color: '#374151', letterSpacing: '0.06em' }}>{title}</p>
         {copyOptions && <CopyFromMenu options={copyOptions} onCopy={copyFrom} />}
       </div>
       <div className="grid grid-cols-2 gap-3">

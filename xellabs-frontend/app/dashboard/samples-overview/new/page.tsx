@@ -9,18 +9,20 @@ import { getAnalysisRequestsForSample } from '@/app/actions/analysis-requests'
 import NewSampleShell from './_components/NewSampleShell'
 
 export default async function NewSamplePage({ searchParams }: { searchParams: Promise<{ edit?: string }> }) {
-  // Sync SENAITE sample types to Django silently before fetching — ensures all
-  // configured types are available for Sample Template auto-populate to match
-  // (by senaite_uid). Client sync happens inside getClients() itself below —
-  // do not also call syncClientsFromSenaite() here, it would run the same
-  // (expensive, sequential per-client) sync twice on every page load.
-  await syncSampleTypesFromSenaite()
-
   const { edit } = await searchParams
   const editId = edit ? Number(edit) : null
 
+  // Sync SENAITE sample types to Django before reading them — ensures all
+  // configured types are available for Sample Template auto-populate to match
+  // (by senaite_uid). Chained into its own promise (not a standalone `await`
+  // before the batch below) so it runs concurrently with every other fetch
+  // instead of blocking the whole page behind it first. Client sync happens
+  // inside getClients() itself below — do not also call
+  // syncClientsFromSenaite() here, it would run the same (expensive) sync twice.
+  const sampleTypesPromise = syncSampleTypesFromSenaite().then(() => getDjangoSampleTypes())
+
   const [sampleTypes, clients, services, templateData, batches, analysisSpecifications, preservations, samplingDeviations, samplePoints, existingSamples, editSample, editAnalysisRequests] = await Promise.all([
-    getDjangoSampleTypes(),
+    sampleTypesPromise,
     getClients(),
     getAnalysisServices(),
     getSampleTemplatesForNewSample(),

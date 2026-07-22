@@ -59,16 +59,16 @@ export default function AnalysisRequestModal({ samples, services, onClose, onDon
             </div>
             <div>
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>{isEdit ? `Edit — ${editing!.ar_id}` : 'New Analysis Request'}</h2>
-              <p style={{ fontSize: 10, color: '#9CA3AF' }}>{isEdit ? 'Update tests, priority and notes' : 'Link a sample to tests and set priority'}</p>
+              <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>{isEdit ? 'Update tests, priority and notes' : 'Link a sample to tests and set priority'}</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#374151" /></button>
         </div>
         <form action={action} className="px-5 py-4 flex flex-col gap-3">
           <div>
             <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Sample <span style={{ color: '#EF4444' }}>*</span></label>
             {isEdit ? (
-              <input readOnly value={editing!.sample_id || `#${editing!.sample}`} className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={{ ...inputStyle(), backgroundColor: '#FAFAFA', color: '#9CA3AF' }} />
+              <input readOnly value={editing!.sample_id || `#${editing!.sample}`} className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={{ ...inputStyle(), backgroundColor: '#FAFAFA', color: '#374151' }} />
             ) : (
               <select name="sample" required defaultValue={preselectedSampleId ?? ''} className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={inputStyle(state.errors?.sample?.[0])}>
                 <option value="">Select sample…</option>
@@ -78,17 +78,17 @@ export default function AnalysisRequestModal({ samples, services, onClose, onDon
             {state.errors?.sample && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{state.errors.sample[0]}</p>}
           </div>
           <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Tests <span style={{ color: '#EF4444' }}>*</span> <span style={{ color: '#9CA3AF', fontWeight: 400 }}>(select multiple)</span></label>
+            <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Tests <span style={{ color: '#EF4444' }}>*</span> <span style={{ color: '#374151', fontWeight: 400 }}>(select multiple)</span></label>
             <div style={{ border: `1px solid ${state.errors?.analyses?.[0] ? '#EF4444' : '#D1D5DB'}`, borderRadius: 8, backgroundColor: '#FAFAFA', maxHeight: 160, overflowY: 'auto', padding: '8px 12px' }}>
               {services.map(s => (
                 <label key={s.uid} className="flex items-center gap-2 py-1.5 cursor-pointer">
                   <input type="checkbox" checked={selectedUids.includes(s.uid)} onChange={e => toggleService(s.uid, e.target.checked)} style={{ accentColor: '#2563EB' }} />
                   <span style={{ fontSize: 12, color: '#374151' }}>{s.title}</span>
-                  <span style={{ fontSize: 10, color: '#9CA3AF' }}>({s.Keyword})</span>
-                  {s.Unit && <span style={{ fontSize: 10, color: '#9CA3AF' }}>— {s.Unit}</span>}
+                  <span style={{ fontSize: 10, color: '#374151' }}>({s.Keyword})</span>
+                  {s.Unit && <span style={{ fontSize: 10, color: '#374151' }}>— {s.Unit}</span>}
                 </label>
               ))}
-              {services.length === 0 && <p style={{ fontSize: 12, color: '#9CA3AF' }}>No analysis services — create one in Analyses first.</p>}
+              {services.length === 0 && <p style={{ fontSize: 12, color: '#374151' }}>No analysis services — create one in Analyses first.</p>}
             </div>
             {state.errors?.analyses && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{state.errors.analyses[0]}</p>}
           </div>

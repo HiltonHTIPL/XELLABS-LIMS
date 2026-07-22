@@ -82,7 +82,7 @@ export default function LabContactCreateSlide({
             <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>New Lab Contact</h2>
           </div>
           <button type="button" onClick={handleClose} className="p-1.5 rounded-lg hover:bg-gray-100">
-            <MI name="close" size={16} color="#9CA3AF" />
+            <MI name="close" size={16} color="#374151" />
           </button>
         </div>
 

@@ -6,6 +6,7 @@ import {
   type LabContactRow, type LabContactFormState, type Address,
 } from '@/app/actions/lab-contacts'
 import type { RefOption } from '../../_components/AdminRefShell'
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
 import {
   LAB_CONTACT_TABS, type LabContactTab, type LabContactFV,
   blankLabContactFV, labContactRowToFV, LabContactTabBar, LabContactFormBody,
@@ -57,12 +58,39 @@ export default function LabContactsShell({ rows, departments }: { rows: LabConta
 
   const deptTitle = (uid: string) => departments.find(d => d.uid === uid)?.title ?? ''
 
+  // LabContactRow has no `id` — key by uid for the shared table. Departments is a
+  // string[] of uids, so expose a joined label string as a sortable/renderable primitive.
+  type Row = LabContactRow & { id: string; departmentsLabel: string }
+  const tableRows: Row[] = rows.map(r => ({
+    ...r,
+    id: r.uid,
+    departmentsLabel: r.Departments.map(deptTitle).filter(Boolean).join(', '),
+  }))
+  const columns: DataTableColumn<Row>[] = [
+    {
+      id: 'title', label: 'Name', sortable: true, minWidth: 220,
+      render: r => <span className="text-xs font-medium" style={{ color: '#111827' }}>{r.title || '—'}</span>,
+    },
+    {
+      id: 'EmailAddress', label: 'Email', sortable: true, minWidth: 200,
+      render: r => <span className="text-xs" style={{ color: '#374151' }}>{r.EmailAddress || '—'}</span>,
+    },
+    {
+      id: 'JobTitle', label: 'Job Title', sortable: true, minWidth: 150,
+      render: r => <span className="text-xs" style={{ color: '#374151' }}>{r.JobTitle || '—'}</span>,
+    },
+    {
+      id: 'departmentsLabel', label: 'Departments', sortable: true, minWidth: 200,
+      render: r => <span className="text-xs" style={{ color: '#374151' }}>{r.departmentsLabel || '—'}</span>,
+    },
+  ]
+
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div className="flex items-center justify-between mb-3" style={{ flexShrink: 0 }}>
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Lab Contacts</h1>
-          <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Manage laboratory staff and their contact details</p>
+          <p className="text-sm mt-0.5" style={{ color: '#374151' }}>Manage laboratory staff and their contact details</p>
         </div>
         <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
           <MI name="add" size={15} color="#fff" /> New Lab Contact
@@ -79,7 +107,7 @@ export default function LabContactsShell({ rows, departments }: { rows: LabConta
               </div>
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>{isEditing ? `Edit — ${editing.title}` : 'New Lab Contact'}</h2>
             </div>
-            <button onClick={closeForm} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
+            <button onClick={closeForm} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#374151" /></button>
           </div>
 
           <LabContactTabBar activeTab={activeTab} onChange={setActiveTab} />
@@ -136,46 +164,28 @@ export default function LabContactsShell({ rows, departments }: { rows: LabConta
         </div>
       )}
 
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {rows.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="contact_page" size={36} color="#D1D5DB" />
-          <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No lab contacts yet</p>
+          <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>No lab contacts yet</p>
           <button onClick={openCreate} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
             <MI name="add" size={13} color="#fff" /> New Lab Contact
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
-          <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-            <colgroup><col style={{ width: '26%' }} /><col style={{ width: '24%' }} /><col style={{ width: '18%' }} /><col style={{ width: '24%' }} /><col style={{ width: '8%' }} /></colgroup>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                {['Name', 'Email', 'Job Title', 'Departments', ''].map(h => (
-                  <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr key={r.uid} style={{ borderBottom: i < rows.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
-                  <td className="px-3 py-2 text-xs font-medium truncate" style={{ color: '#111827' }}>{r.title || '—'}</td>
-                  <td className="px-3 py-2 text-xs truncate" style={{ color: '#6B7280' }}>{r.EmailAddress || '—'}</td>
-                  <td className="px-3 py-2 text-xs truncate" style={{ color: '#6B7280' }}>{r.JobTitle || '—'}</td>
-                  <td className="px-3 py-2 text-xs truncate" style={{ color: '#6B7280' }}>{r.Departments.map(deptTitle).filter(Boolean).join(', ') || '—'}</td>
-                  <td className="px-3 py-2">
-                    <button onClick={() => openEdit(r)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-                      <MI name="edit" size={14} color="#6B7280" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-            <p style={{ fontSize: 10, color: '#9CA3AF' }}>{rows.length} lab contact{rows.length !== 1 ? 's' : ''}</p>
-          </div>
-        </div>
+        <DataTable<Row>
+          data={tableRows}
+          columns={columns}
+          searchable
+          persistKey="lab-contacts"
+          emptyMessage="No lab contacts found."
+          rowActions={r => (
+            <button onClick={() => openEdit(r)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }} title="Edit">
+              <MI name="edit" size={14} color="#6B7280" />
+            </button>
+          )}
+        />
       )}
       </div>
     </div>

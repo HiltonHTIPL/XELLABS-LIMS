@@ -3,6 +3,7 @@ import { useState, useActionState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ReferenceResultsGrid, { type RefResultRow } from '../../_components/ReferenceResultsGrid'
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
 import type { RefOption } from '../../_components/AdminRefShell'
 import {
   createReferenceDefinition, updateReferenceDefinition, deactivateReferenceDefinition,
@@ -52,16 +53,40 @@ export default function ReferenceDefinitionsShell({
   const base = 'w-full px-3 py-2 text-xs rounded-lg outline-none'
   const bstyle = { border: '1px solid #D1D5DB', color: '#111827' } as const
 
+  // ReferenceDefinitionRow has only `uid`, so key rows by uid. `resultsCount`
+  // and `flags` are derived primitives so those columns are sortable.
+  type Row = ReferenceDefinitionRow & { id: string; resultsCount: number; flags: string }
+  const dataRows: Row[] = rows.map(r => ({
+    ...r,
+    id: r.uid,
+    resultsCount: r.results.length,
+    flags: [r.blank ? 'Blank' : '', r.hazardous ? 'Hazardous' : ''].filter(Boolean).join(', ') || '—',
+  }))
+  const columns: DataTableColumn<Row>[] = [
+    {
+      id: 'title', label: 'Name', sortable: true, minWidth: 220,
+      render: r => <span className="text-xs truncate" style={{ color: '#111827', fontWeight: 500 }}>{r.title}</span>,
+    },
+    {
+      id: 'resultsCount', label: 'Expected Results', sortable: true, minWidth: 150,
+      render: r => <span className="text-xs" style={{ color: '#374151' }}>{r.results.length} {r.results.length === 1 ? 'service' : 'services'}</span>,
+    },
+    {
+      id: 'flags', label: 'Flags', sortable: true, minWidth: 150,
+      render: r => <span className="text-xs" style={{ color: '#374151' }}>{[r.blank ? 'Blank' : '', r.hazardous ? 'Hazardous' : ''].filter(Boolean).join(', ') || '—'}</span>,
+    },
+  ]
+
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div className="flex items-center justify-between mb-3" style={{ flexShrink: 0 }}>
         <div className="flex items-center gap-3">
           <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
-            <MI name="arrow_back" size={16} color="#6B7280" />
+            <MI name="arrow_back" size={16} color="#374151" />
           </Link>
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Reference Definitions</h1>
-            <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Expected QC values (result / range) per analysis — templates for Reference Samples</p>
+            <p className="text-sm mt-0.5" style={{ color: '#374151' }}>Expected QC values (result / range) per analysis — templates for Reference Samples</p>
           </div>
         </div>
         <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
@@ -80,7 +105,7 @@ export default function ReferenceDefinitionsShell({
               </div>
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>{isEditing ? `Edit — ${editing.title}` : 'New Reference Definition'}</h2>
             </div>
-            <button onClick={closeForm} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
+            <button onClick={closeForm} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#374151" /></button>
           </div>
 
           <form action={action} className="flex flex-col flex-1 min-h-0">
@@ -138,47 +163,30 @@ export default function ReferenceDefinitionsShell({
         </div>
       )}
 
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {rows.length === 0 ? (
           <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
             <MI name="straighten" size={36} color="#D1D5DB" />
-            <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No reference definitions yet</p>
-            <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>Create one to define expected QC values</p>
+            <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>No reference definitions yet</p>
+            <p className="text-xs mt-0.5" style={{ color: '#374151' }}>Create one to define expected QC values</p>
             <button onClick={openCreate} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
               <MI name="add" size={13} color="#fff" /> New Definition
             </button>
           </div>
         ) : (
-          <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
-            <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-              <colgroup><col style={{ width: '42%' }} /><col style={{ width: '20%' }} /><col style={{ width: '22%' }} /><col style={{ width: '16%' }} /></colgroup>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                  {['Name', 'Expected Results', 'Flags', ''].map((h, i) => (
-                    <th key={i} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row, i) => (
-                  <tr key={row.uid} style={{ borderBottom: i < rows.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
-                    <td className="px-3 py-2 text-xs truncate" style={{ color: '#111827', fontWeight: 500 }}>{row.title}</td>
-                    <td className="px-3 py-2 text-xs" style={{ color: '#6B7280' }}>{row.results.length} {row.results.length === 1 ? 'service' : 'services'}</td>
-                    <td className="px-3 py-2 text-xs" style={{ color: '#6B7280' }}>{[row.blank ? 'Blank' : '', row.hazardous ? 'Hazardous' : ''].filter(Boolean).join(', ') || '—'}</td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => openEdit(row)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}><MI name="edit" size={14} color="#6B7280" /></button>
-                        <button onClick={() => remove(row)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}><MI name="delete_outline" size={14} color="#DC2626" /></button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-              <p style={{ fontSize: 10, color: '#9CA3AF' }}>{rows.length} definition{rows.length !== 1 ? 's' : ''}</p>
-            </div>
-          </div>
+          <DataTable<Row>
+            data={dataRows}
+            columns={columns}
+            searchable
+            persistKey="reference-definitions"
+            emptyMessage="No reference definitions found."
+            rowActions={row => (
+              <div className="flex items-center gap-1">
+                <button onClick={() => openEdit(row)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}><MI name="edit" size={14} color="#6B7280" /></button>
+                <button onClick={() => remove(row)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}><MI name="delete_outline" size={14} color="#DC2626" /></button>
+              </div>
+            )}
+          />
         )}
       </div>
     </div>

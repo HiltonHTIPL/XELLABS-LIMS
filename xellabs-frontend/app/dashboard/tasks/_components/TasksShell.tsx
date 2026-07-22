@@ -7,6 +7,7 @@ import {
   type Task, type TaskAssignment, type TaskFormState,
 } from '@/app/actions/tasks'
 import type { StaffUser } from '@/app/actions/users'
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -46,7 +47,7 @@ function StatCard({ icon, iconColor, iconBg, label, value }: { icon: string; ico
           <MI name={icon} size={20} color={iconColor} />
         </div>
         <div>
-          <p style={{ fontSize: 12, fontWeight: 600, color: '#6B7280' }}>{label}</p>
+          <p style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>{label}</p>
           <span style={{ fontSize: 22, fontWeight: 800, color: '#14265E' }}>{value}</span>
         </div>
       </div>
@@ -125,10 +126,10 @@ function TaskModal({ editing, users, onClose, onDone }: {
             </div>
             <div>
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>{isEdit ? `Edit — ${editing!.title}` : 'New Task'}</h2>
-              <p style={{ fontSize: 10, color: '#9CA3AF' }}>{isEdit ? 'Update task details' : 'Create and assign a new task'}</p>
+              <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>{isEdit ? 'Update task details' : 'Create and assign a new task'}</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#374151" /></button>
         </div>
         <form action={action} className="px-5 py-4 flex flex-col gap-3">
           <Field label="Title" name="title" placeholder="e.g. Calibrate HPLC-01" required error={fieldErrors.title} defaultValue={editing?.title}
@@ -168,7 +169,7 @@ function ConfirmModal({ title, message, onConfirm, onCancel }: { title: string; 
       <div style={{ backgroundColor: '#fff', borderRadius: 16, width: 400, boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
         <div className="px-5 pt-5 pb-4">
           <h3 style={{ fontSize: 16, fontWeight: 700, color: '#14265E' }}>{title}</h3>
-          <p className="mt-2" style={{ fontSize: 13.5, color: '#6B7280', lineHeight: 1.5 }}>{message}</p>
+          <p className="mt-2" style={{ fontSize: 13.5, color: '#374151', lineHeight: 1.5 }}>{message}</p>
         </div>
         <div className="flex items-center justify-end gap-2 px-5 pb-5">
           <button onClick={onCancel} style={{ fontSize: 13, fontWeight: 600, padding: '8px 16px', borderRadius: 10, border: '1px solid #D1D5DB', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>Cancel</button>
@@ -269,17 +270,95 @@ export default function TasksShell({ initialTasks, initialAssignments, users }: 
     })
   }
 
+  // Sortable rows: Due Date is a nullable ISO string and Assigned To is a list of
+  // assignments with no single primitive — expose an epoch and a joined-name string
+  // as derived sort fields; the renders keep reading the original task data.
+  type Row = Task & { due_sort: number; assignee_sort: string }
+  const rows: Row[] = filtered.map(t => {
+    const list = assignmentsByTask.get(t.id) ?? []
+    const names = list.map(a => {
+      const u = userById.get(a.assigned_to)
+      return u?.full_name || u?.username || `User #${a.assigned_to}`
+    }).join(', ')
+    return { ...t, due_sort: t.due_date ? new Date(t.due_date).getTime() : 0, assignee_sort: names }
+  })
+
+  const columns: DataTableColumn<Row>[] = [
+    {
+      id: 'title', label: 'Title', sortable: true, minWidth: 220,
+      render: t => (
+        <div style={{ maxWidth: 260 }}>
+          <p className="text-xs font-medium" style={{ color: '#111827' }}>{t.title}</p>
+          {t.description && <p className="text-xs truncate" style={{ color: '#374151' }}>{t.description}</p>}
+        </div>
+      ),
+    },
+    {
+      id: 'priority', label: 'Priority', sortable: true, minWidth: 100,
+      render: t => {
+        const pc = PRIORITY_COLOR[t.priority]
+        return <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: pc.bg, color: pc.text }}>{PRIORITY_LABEL[t.priority]}</span>
+      },
+    },
+    {
+      id: 'status', label: 'Status', sortable: true, minWidth: 130,
+      render: t => {
+        const sc = STATUS_COLOR[t.status]
+        return (
+          <select value={t.status} onChange={e => changeStatus(t, e.target.value as Task['status'])} disabled={busy}
+            className="text-xs px-2 py-1 rounded-full font-semibold outline-none" style={{ backgroundColor: sc.bg, color: sc.text, border: 'none', cursor: 'pointer' }}>
+            <option value="open">{STATUS_LABEL.open}</option>
+            <option value="in_progress">{STATUS_LABEL.in_progress}</option>
+            <option value="done">{STATUS_LABEL.done}</option>
+            <option value="cancelled">{STATUS_LABEL.cancelled}</option>
+          </select>
+        )
+      },
+    },
+    {
+      id: 'due_sort', label: 'Due Date', sortable: true, minWidth: 130,
+      render: t => {
+        const overdue = isOverdue(t)
+        return <span className="text-xs" style={{ color: overdue ? '#DC2626' : '#374151', fontWeight: overdue ? 700 : 400 }}>{fmtDate(t.due_date)}{overdue && ' (overdue)'}</span>
+      },
+    },
+    {
+      id: 'assignee_sort', label: 'Assigned To', sortable: true, minWidth: 160,
+      render: t => {
+        const assignments = assignmentsByTask.get(t.id) ?? []
+        return assignments.length === 0 ? (
+          <select defaultValue="" onChange={e => quickAssign(t, e.target.value)} disabled={busy}
+            className="text-xs px-2 py-1 rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#374151' }}>
+            <option value="">Assign…</option>
+            {users.map(u => <option key={u.id} value={String(u.id)}>{u.full_name || u.username}</option>)}
+          </select>
+        ) : (
+          <div className="flex flex-wrap gap-1">
+            {assignments.map(a => {
+              const u = userById.get(a.assigned_to)
+              return (
+                <span key={a.id} className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#F1F3F9', color: '#374151' }}>
+                  {u?.full_name || u?.username || `User #${a.assigned_to}`}
+                </span>
+              )
+            })}
+          </div>
+        )
+      },
+    },
+  ]
+
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ flexShrink: 0 }}>
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-3">
           <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
-            <MI name="arrow_back" size={16} color="#6B7280" />
+            <MI name="arrow_back" size={16} color="#374151" />
           </Link>
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Task Management</h1>
-            <p className="mt-1" style={{ fontSize: 13, color: '#6B7280' }}>Create, assign, and track laboratory tasks</p>
+            <p className="mt-1" style={{ fontSize: 13, color: '#374151' }}>Create, assign, and track laboratory tasks</p>
           </div>
         </div>
         <button onClick={openCreate} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#2563EB', border: 'none', cursor: 'pointer' }}>
@@ -334,101 +413,41 @@ export default function TasksShell({ initialTasks, initialAssignments, users }: 
         />
       )}
 
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {filtered.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2', borderRadius: 14 }}>
           <MI name="checklist" size={36} color="#D1D5DB" />
-          <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No tasks found</p>
+          <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>No tasks found</p>
           <button onClick={openCreate} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC', border: 'none', cursor: 'pointer' }}>
             <MI name="add" size={13} color="#fff" /> New Task
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2', borderRadius: 14, boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                  {['Title', 'Priority', 'Status', 'Due Date', 'Assigned To', ''].map(h => (
-                    <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((t, i) => {
-                  const pc = PRIORITY_COLOR[t.priority]
-                  const sc = STATUS_COLOR[t.status]
-                  const overdue = isOverdue(t)
-                  const assignments = assignmentsByTask.get(t.id) ?? []
-                  return (
-                    <tr key={t.id} style={{ borderBottom: i < filtered.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
-                      <td className="px-3 py-2.5" style={{ maxWidth: 260 }}>
-                        <p className="text-xs font-medium" style={{ color: '#111827' }}>{t.title}</p>
-                        {t.description && <p className="text-xs truncate" style={{ color: '#9CA3AF' }}>{t.description}</p>}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: pc.bg, color: pc.text }}>{PRIORITY_LABEL[t.priority]}</span>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <select value={t.status} onChange={e => changeStatus(t, e.target.value as Task['status'])} disabled={busy}
-                          className="text-xs px-2 py-1 rounded-full font-semibold outline-none" style={{ backgroundColor: sc.bg, color: sc.text, border: 'none', cursor: 'pointer' }}>
-                          <option value="open">{STATUS_LABEL.open}</option>
-                          <option value="in_progress">{STATUS_LABEL.in_progress}</option>
-                          <option value="done">{STATUS_LABEL.done}</option>
-                          <option value="cancelled">{STATUS_LABEL.cancelled}</option>
-                        </select>
-                      </td>
-                      <td className="px-3 py-2.5 text-xs" style={{ color: overdue ? '#DC2626' : '#6B7280', fontWeight: overdue ? 700 : 400 }}>
-                        {fmtDate(t.due_date)}{overdue && ' (overdue)'}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        {assignments.length === 0 ? (
-                          <select defaultValue="" onChange={e => quickAssign(t, e.target.value)} disabled={busy}
-                            className="text-xs px-2 py-1 rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#6B7280' }}>
-                            <option value="">Assign…</option>
-                            {users.map(u => <option key={u.id} value={String(u.id)}>{u.full_name || u.username}</option>)}
-                          </select>
-                        ) : (
-                          <div className="flex flex-wrap gap-1">
-                            {assignments.map(a => {
-                              const u = userById.get(a.assigned_to)
-                              return (
-                                <span key={a.id} className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#F1F3F9', color: '#374151' }}>
-                                  {u?.full_name || u?.username || `User #${a.assigned_to}`}
-                                </span>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex items-center gap-1">
-                          {t.status !== 'done' && (
-                            <button onClick={() => markComplete(t)} disabled={busy} title="Mark Complete"
-                              className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-                              <MI name="check_circle" size={16} color="#059669" />
-                            </button>
-                          )}
-                          <button onClick={() => openEdit(t)} title="Edit"
-                            className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-                            <MI name="edit" size={14} color="#9CA3AF" />
-                          </button>
-                          <button onClick={() => setDeleting(t)} title="Delete"
-                            className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-                            <MI name="delete" size={14} color="#DC2626" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-            <p style={{ fontSize: 10, color: '#9CA3AF' }}>{filtered.length} task{filtered.length !== 1 ? 's' : ''}</p>
-          </div>
-        </div>
+        <DataTable<Row>
+          data={rows}
+          columns={columns}
+          searchable
+          persistKey="tasks"
+          emptyMessage="No tasks found."
+          rowActions={t => (
+            <div className="flex items-center gap-1">
+              {t.status !== 'done' && (
+                <button onClick={() => markComplete(t)} disabled={busy} title="Mark Complete"
+                  className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
+                  <MI name="check_circle" size={16} color="#059669" />
+                </button>
+              )}
+              <button onClick={() => openEdit(t)} title="Edit"
+                className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
+                <MI name="edit" size={14} color="#6B7280" />
+              </button>
+              <button onClick={() => setDeleting(t)} title="Delete"
+                className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
+                <MI name="delete" size={14} color="#DC2626" />
+              </button>
+            </div>
+          )}
+        />
       )}
       </div>
     </div>

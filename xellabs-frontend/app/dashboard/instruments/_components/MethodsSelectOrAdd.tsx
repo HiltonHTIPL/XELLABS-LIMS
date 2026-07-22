@@ -29,10 +29,10 @@ export default function MethodsSelectOrAdd({
   return (
     <div>
       <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Supported methods</label>
-      {tip && <p style={{ fontSize: 10, color: '#9CA3AF', marginBottom: 4 }}>{tip}</p>}
+      {tip && <p style={{ fontSize: 10, color: '#374151', marginBottom: 4 }}>{tip}</p>}
       <div className="rounded-lg p-2 max-h-36 overflow-y-auto mb-2" style={{ border: `1px solid ${error ? '#EF4444' : '#D1D5DB'}` }}>
         {items.length === 0 && (
-          <p style={{ fontSize: 11, color: '#9CA3AF' }}>No methods yet. Add one below.</p>
+          <p style={{ fontSize: 11, color: '#374151' }}>No methods yet. Add one below.</p>
         )}
         {items.map(m => (
           <label key={m.id} className="flex items-center gap-2 py-1 text-xs" style={{ color: '#374151' }}>

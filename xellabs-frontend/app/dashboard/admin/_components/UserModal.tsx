@@ -86,11 +86,11 @@ export default function UserModal({
             </div>
             <div>
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>{editing ? `Edit ${editing.username}` : 'New Staff User'}</h2>
-              <p style={{ fontSize: 10, color: '#9CA3AF' }}>{editing ? 'Update role and profile details' : 'Create a staff account'}</p>
+              <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>{editing ? 'Update role and profile details' : 'Create a staff account'}</p>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100">
-            <MI name="close" size={16} color="#9CA3AF" />
+            <MI name="close" size={16} color="#374151" />
           </button>
         </div>
 
@@ -112,7 +112,7 @@ export default function UserModal({
                 <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
                   Username <span style={{ color: '#EF4444' }}>*</span>
                 </label>
-                <p className="mb-1" style={{ fontSize: 10.5, color: '#6B7280', lineHeight: 1.4 }}>
+                <p className="mb-1" style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.4 }}>
                   Usually something like &lsquo;jsmith&rsquo;. No spaces or special characters — this is the name used to log in.
                 </p>
                 <input
@@ -141,7 +141,7 @@ export default function UserModal({
 
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Email</label>
-              <p className="mb-1" style={{ fontSize: 10.5, color: '#6B7280', lineHeight: 1.4 }}>
+              <p className="mb-1" style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.4 }}>
                 Used for account recovery and notifications. Not shared with any third party.
               </p>
               <input name="email" type="email" defaultValue={editing?.email ?? ''} placeholder="jane@xellabs.com" className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827' }} />
@@ -152,7 +152,7 @@ export default function UserModal({
                 <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
                   Role <span style={{ color: '#EF4444' }}>*</span>
                 </label>
-                <p className="mb-1" style={{ fontSize: 10.5, color: '#6B7280', lineHeight: 1.4 }}>
+                <p className="mb-1" style={{ fontSize: 10.5, color: '#374151', lineHeight: 1.4 }}>
                   Sets this user&apos;s default permissions in XelLabs.
                 </p>
                 <select

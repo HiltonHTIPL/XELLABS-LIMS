@@ -101,7 +101,7 @@ export default function QrScanModal({ title = 'Scan Barcode / QR', hint, onClose
             <span style={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>{title}</span>
           </div>
           <button type="button" onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-            <MI name="close" size={18} color="#6B7280" />
+            <MI name="close" size={18} color="#374151" />
           </button>
         </div>
         <div style={{ padding: 14 }}>
@@ -112,7 +112,7 @@ export default function QrScanModal({ title = 'Scan Barcode / QR', hint, onClose
           ) : (
             <>
               <video ref={videoRef} muted playsInline style={{ width: '100%', borderRadius: 10, backgroundColor: '#111827', aspectRatio: '4 / 3', objectFit: 'cover' }} />
-              <p style={{ fontSize: 11, color: scanMsg ? '#2563EB' : '#6B7280', textAlign: 'center', marginTop: 8 }}>
+              <p style={{ fontSize: 11, color: scanMsg ? '#2563EB' : '#374151', textAlign: 'center', marginTop: 8 }}>
                 {scanMsg || hint || 'Point the camera at a barcode or QR label.'}
               </p>
             </>

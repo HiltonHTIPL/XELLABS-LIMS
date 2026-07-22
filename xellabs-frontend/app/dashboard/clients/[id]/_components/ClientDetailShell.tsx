@@ -12,7 +12,7 @@ function MI({ name, size = 16, color }: { name: string; size?: number; color?: s
 function InfoRow({ label, value }: { label: string; value?: string }) {
   return (
     <div className="flex items-start gap-3 py-1.5">
-      <span style={{ fontSize: 11, fontWeight: 600, color: '#9CA3AF', width: 150, flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: 11, fontWeight: 600, color: '#374151', width: 150, flexShrink: 0 }}>{label}</span>
       <span style={{ fontSize: 12, color: '#111827' }}>{value || '—'}</span>
     </div>
   )
@@ -66,7 +66,7 @@ export default function ClientDetailShell({ client }: { client: SenaiteClientFul
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <Link href="/dashboard/clients" className="p-1.5 rounded-lg hover:bg-gray-100" style={{ border: '1px solid #E8EAF2' }}>
-            <MI name="arrow_back" size={16} color="#6B7280" />
+            <MI name="arrow_back" size={16} color="#374151" />
           </Link>
           <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold" style={{ fontSize: 16, backgroundColor: '#0154FC' }}>
             {client.title.slice(0, 1).toUpperCase()}
@@ -74,7 +74,7 @@ export default function ClientDetailShell({ client }: { client: SenaiteClientFul
           <div>
             <h1 style={{ fontSize: 22, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>{client.title}</h1>
             <div className="flex items-center gap-2 mt-0.5">
-              {client.ClientID && <span className="font-mono" style={{ fontSize: 11, color: '#6B7280' }}>{client.ClientID}</span>}
+              {client.ClientID && <span className="font-mono" style={{ fontSize: 11, color: '#374151' }}>{client.ClientID}</span>}
               <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ backgroundColor: active ? '#ECFDF5' : '#FFFBEB', color: active ? '#059669' : '#D97706' }}>
                 {active ? 'Active' : 'Inactive'}
               </span>
@@ -110,7 +110,7 @@ export default function ClientDetailShell({ client }: { client: SenaiteClientFul
               <InfoRow label="Job Title" value={ct.JobTitle} />
               <InfoRow label="Department" value={ct.Department} />
             </>
-          ) : <p style={{ fontSize: 12, color: '#9CA3AF' }}>No primary contact on file.</p>}
+          ) : <p style={{ fontSize: 12, color: '#374151' }}>No primary contact on file.</p>}
         </Section>
 
         <Section title="Addresses" icon="location_on">

@@ -11,6 +11,7 @@ import type {
   SenaiteCalculation, SenaiteCalculationInterimField, SenaiteCalculationPythonImport,
   SenaiteCalculationTestParameter,
 } from '@/app/lib/senaite'
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
 
 // Exact vocabulary from SENAITE's own InterimFieldsField.result_type
 // subfield_vocabularies (bika/lims/browser/fields/interimfieldsfield.py).
@@ -38,7 +39,7 @@ function Field({ label, children, required, error, hint }: {
         {label}{required && <span style={{ color: '#EF4444' }}> *</span>}
       </label>
       {children}
-      {hint && !error && <p className="mt-0.5" style={{ fontSize: 10, color: '#9CA3AF' }}>{hint}</p>}
+      {hint && !error && <p className="mt-0.5" style={{ fontSize: 10, color: '#374151' }}>{hint}</p>}
       {error && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{error}</p>}
     </div>
   )
@@ -74,12 +75,12 @@ function InterimFieldsEditor({ rows, onChange }: {
   }
 
   const miniInput = { ...inputStyle(), padding: '5px 8px', fontSize: 11 }
-  const miniLabel = { fontSize: 9, fontWeight: 600, color: '#9CA3AF', marginBottom: 2, display: 'block' as const }
+  const miniLabel = { fontSize: 9, fontWeight: 600, color: '#374151', marginBottom: 2, display: 'block' as const }
 
   return (
     <div>
       <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Calculation Interim Fields</label>
-      <p className="mb-2" style={{ fontSize: 10, color: '#9CA3AF' }}>
+      <p className="mb-2" style={{ fontSize: 10, color: '#374151' }}>
         Define interim fields such as vessel mass or dilution factors, should your calculation require them. Reference them in the formula as [Keyword].
       </p>
 
@@ -87,7 +88,7 @@ function InterimFieldsEditor({ rows, onChange }: {
           the 560px drawer without clipping/hidden-scroll, which is exactly
           what happened the first time this was built as a <table>. */}
       {rows.length === 0 && (
-        <p className="mb-2 px-3 py-2 rounded-lg" style={{ fontSize: 11, color: '#9CA3AF', backgroundColor: '#FAFAFA', border: '1px dashed #E5E7EB' }}>
+        <p className="mb-2 px-3 py-2 rounded-lg" style={{ fontSize: 11, color: '#374151', backgroundColor: '#FAFAFA', border: '1px dashed #E5E7EB' }}>
           No interim fields defined yet.
         </p>
       )}
@@ -95,18 +96,18 @@ function InterimFieldsEditor({ rows, onChange }: {
         {rows.map((row, i) => (
           <div key={i} className="rounded-lg p-3" style={{ border: '1px solid #E5E7EB', backgroundColor: '#FAFAFA' }}>
             <div className="flex items-center justify-between mb-2">
-              <span style={{ fontSize: 10, fontWeight: 700, color: '#6B7280' }}>Interim Field {i + 1}</span>
+              <span style={{ fontSize: 10, fontWeight: 700, color: '#374151' }}>Interim Field {i + 1}</span>
               <button type="button" onClick={() => removeRow(i)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                <MI name="delete_outline" size={15} color="#9CA3AF" />
+                <MI name="delete_outline" size={15} color="#374151" />
               </button>
             </div>
             <div className="grid grid-cols-2 gap-2 mb-2">
               <div>
-                <span style={miniLabel}>Keyword *</span>
+                <span style={miniLabel}>Keyword <span style={{ color: '#EF4444' }}>*</span></span>
                 <input value={row.keyword} onChange={e => update(i, { keyword: e.target.value.trim() })} placeholder="e.g. FACTOR" className={inputCls} style={miniInput} />
               </div>
               <div>
-                <span style={miniLabel}>Field Title *</span>
+                <span style={miniLabel}>Field Title <span style={{ color: '#EF4444' }}>*</span></span>
                 <input value={row.title} onChange={e => update(i, { title: e.target.value })} placeholder="e.g. Dilution Factor" className={inputCls} style={miniInput} />
               </div>
             </div>
@@ -175,7 +176,7 @@ function PythonImportsEditor({ rows, onChange }: {
   return (
     <div>
       <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Additional Python Libraries</label>
-      <p className="mb-2" style={{ fontSize: 10, color: '#9CA3AF' }}>
+      <p className="mb-2" style={{ fontSize: 10, color: '#374151' }}>
         Import a function from a Python module for use in the formula, e.g. module <code>math</code>, function <code>floor</code> lets you write <code>floor([Ca] + [Mg])</code>.
       </p>
       {rows.length > 0 && (
@@ -184,7 +185,7 @@ function PythonImportsEditor({ rows, onChange }: {
             <thead>
               <tr style={{ backgroundColor: '#FAFAFA', borderBottom: '1px solid #E5E7EB' }}>
                 {['Module', 'Function', ''].map(h => (
-                  <th key={h} className="px-2 py-1.5 text-left" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', whiteSpace: 'nowrap' }}>{h}</th>
+                  <th key={h} className="px-2 py-1.5 text-left" style={{ fontSize: 10, fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -195,7 +196,7 @@ function PythonImportsEditor({ rows, onChange }: {
                   <td className="px-1 py-1"><input value={row.function} onChange={e => update(i, { function: e.target.value.trim() })} placeholder="e.g. floor" className={inputCls} style={{ width: 130, padding: '5px 8px', ...inputStyle() }} /></td>
                   <td className="px-1 py-1">
                     <button type="button" onClick={() => removeRow(i)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                      <MI name="delete_outline" size={15} color="#9CA3AF" />
+                      <MI name="delete_outline" size={15} color="#374151" />
                     </button>
                   </td>
                 </tr>
@@ -215,7 +216,7 @@ function PythonImportsEditor({ rows, onChange }: {
 // Result" section exactly, including that it's visible on the CREATE form
 // too (as a disabled placeholder row) — the first version here only rendered
 // once a calculation already existed, which read as "still missing".
-const testPanelLabel = { fontSize: 10, fontWeight: 600, color: '#9CA3AF' }
+const testPanelLabel = { fontSize: 10, fontWeight: 600, color: '#374151' }
 
 function TestCalculationPanel({ calculation, services, onUpdated }: {
   calculation: SenaiteCalculation | null; services: SenaiteAnalysisService[]
@@ -266,7 +267,7 @@ function TestCalculationPanel({ calculation, services, onUpdated }: {
   return (
     <div>
       <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Test Parameters</label>
-      <p className="mb-2" style={{ fontSize: 10, color: '#9CA3AF' }}>
+      <p className="mb-2" style={{ fontSize: 10, color: '#374151' }}>
         To test the calculation, enter values here for all calculation parameters. This includes interim fields defined above, as well as any services that this calculation depends on to calculate results.
       </p>
       <div className="overflow-x-auto rounded-lg mb-2" style={{ border: '1px solid #E5E7EB' }}>
@@ -296,7 +297,7 @@ function TestCalculationPanel({ calculation, services, onUpdated }: {
         </table>
       </div>
       {!calculation ? (
-        <p style={{ fontSize: 10, color: '#9CA3AF' }}>Save the calculation first to test it with sample values.</p>
+        <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>Save the calculation first to test it with sample values.</p>
       ) : (
         <button type="button" onClick={run} disabled={running || params.length === 0} className="flex items-center gap-1.5"
           style={{ fontSize: 11, fontWeight: 600, padding: '6px 12px', borderRadius: 6, backgroundColor: '#F3F4F6', color: '#374151', border: 'none', cursor: running ? 'not-allowed' : 'pointer' }}>
@@ -408,10 +409,10 @@ function CalculationDrawer({ editing, services, onClose, onSaved }: {
             </div>
             <div>
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>{isEdit ? `Edit — ${editing!.title}` : 'New Calculation'}</h2>
-              <p style={{ fontSize: 10, color: '#9CA3AF' }}>Define a formula used to derive a result from other analyses</p>
+              <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>Define a formula used to derive a result from other analyses</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#374151" /></button>
         </div>
         <form action={action} onSubmit={handleSubmit} className="px-5 py-4 flex flex-col gap-3">
           <input type="hidden" name="interim_fields_json" />
@@ -448,7 +449,7 @@ function CalculationDrawer({ editing, services, onClose, onSaved }: {
                   )
                 })}
               </div>
-              <p className="mt-1" style={{ fontSize: 10, color: '#9CA3AF' }}>Derived automatically from real analysis-service keywords in the formula above.</p>
+              <p className="mt-1" style={{ fontSize: 10, color: '#374151' }}>Derived automatically from real analysis-service keywords in the formula above.</p>
             </div>
           )}
 
@@ -513,16 +514,65 @@ export default function CalculationsShell({ initialCalculations, services }: {
     })
   }
 
+  // SenaiteCalculation is keyed by uid. Interim-field count and dependent-service
+  // list are computed, so expose derived primitive sort fields (interimCount,
+  // dependentServices) while renderers read the original objects.
+  type Row = SenaiteCalculation & { id: string; interimCount: number; dependentServices: string }
+  const rows: Row[] = initialCalculations.map(c => ({
+    ...c,
+    id: c.uid,
+    interimCount: c.interimFields.length,
+    dependentServices: c.dependentServiceUids.length === 0
+      ? '—'
+      : c.dependentServiceUids.map(uid => services.find(s => s.uid === uid)?.title ?? uid).join(', '),
+  }))
+  const columns: DataTableColumn<Row>[] = [
+    {
+      id: 'title', label: 'Title', sortable: true, minWidth: 160,
+      render: c => <span className="text-xs font-medium" style={{ color: '#111827' }}>{c.title}</span>,
+    },
+    {
+      id: 'formula', label: 'Formula', sortable: true, minWidth: 220,
+      render: c => <span className="text-xs font-mono truncate" style={{ color: '#374151' }}>{c.formula || '—'}</span>,
+    },
+    {
+      id: 'interimCount', label: 'Interim Fields', sortable: true, minWidth: 130,
+      render: c => (
+        <span className="font-mono text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#EFF6FF', color: '#2563EB', fontWeight: 600 }}>
+          {c.interimFields.length}
+        </span>
+      ),
+    },
+    {
+      id: 'dependentServices', label: 'Dependent Services', sortable: true, minWidth: 200,
+      render: c => (
+        <span className="text-xs truncate" style={{ color: '#374151' }}>
+          {c.dependentServiceUids.length === 0 ? '—' : c.dependentServiceUids.map(uid => services.find(s => s.uid === uid)?.title ?? uid).join(', ')}
+        </span>
+      ),
+    },
+    {
+      id: 'isActive', label: 'Status', sortable: true, minWidth: 120,
+      render: c => (
+        <button onClick={() => toggle(c)} disabled={togglingUid === c.uid}
+          className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, color: c.isActive ? '#0154FC' : '#374151', background: 'none', border: 'none', cursor: 'pointer' }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: c.isActive ? '#0154FC' : '#374151', display: 'inline-block' }} />
+          {c.isActive ? 'Active' : 'Inactive'}
+        </button>
+      ),
+    },
+  ]
+
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div className="flex items-center justify-between mb-5" style={{ flexShrink: 0 }}>
         <div className="flex items-center gap-3">
           <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
-            <MI name="arrow_back" size={16} color="#6B7280" />
+            <MI name="arrow_back" size={16} color="#374151" />
           </Link>
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Calculations</h1>
-            <p className="mt-1" style={{ fontSize: 13, color: '#6B7280' }}>Formulas used to derive results from other analyses</p>
+            <p className="mt-1" style={{ fontSize: 13, color: '#374151' }}>Formulas used to derive results from other analyses</p>
           </div>
         </div>
         <button onClick={openCreate} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#2563EB', border: 'none', cursor: 'pointer' }}>
@@ -540,61 +590,28 @@ export default function CalculationsShell({ initialCalculations, services }: {
 
       {showDrawer && <CalculationDrawer editing={editing} services={services} onClose={closeDrawer} onSaved={handleSaved} />}
 
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {initialCalculations.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2', borderRadius: 14 }}>
           <MI name="functions" size={36} color="#D1D5DB" />
-          <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No calculations yet</p>
+          <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>No calculations yet</p>
           <button onClick={openCreate} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
             <MI name="add" size={13} color="#fff" /> New Calculation
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2', borderRadius: 14, boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
-          <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-            <colgroup>
-              <col style={{ width: '20%' }} /><col style={{ width: '32%' }} /><col style={{ width: '16%' }} /><col style={{ width: '20%' }} /><col style={{ width: '12%' }} /><col style={{ width: '8%' }} />
-            </colgroup>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                {['Title', 'Formula', 'Interim Fields', 'Dependent Services', 'Status', ''].map(h => (
-                  <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {initialCalculations.map((c, i) => (
-                <tr key={c.uid} style={{ borderBottom: i < initialCalculations.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
-                  <td className="px-3 py-2.5 text-xs font-medium" style={{ color: '#111827' }}>{c.title}</td>
-                  <td className="px-3 py-2.5 text-xs font-mono truncate" style={{ color: '#6B7280' }}>{c.formula || '—'}</td>
-                  <td className="px-3 py-2.5">
-                    <span className="font-mono text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#EFF6FF', color: '#2563EB', fontWeight: 600 }}>
-                      {c.interimFields.length}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2.5 text-xs truncate" style={{ color: '#6B7280' }}>
-                    {c.dependentServiceUids.length === 0 ? '—' : c.dependentServiceUids.map(uid => services.find(s => s.uid === uid)?.title ?? uid).join(', ')}
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <button onClick={() => toggle(c)} disabled={togglingUid === c.uid}
-                      className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, color: c.isActive ? '#0154FC' : '#6B7280', background: 'none', border: 'none', cursor: 'pointer' }}>
-                      <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: c.isActive ? '#0154FC' : '#9CA3AF', display: 'inline-block' }} />
-                      {c.isActive ? 'Active' : 'Inactive'}
-                    </button>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <button onClick={() => openEdit(c)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-                      <MI name="edit" size={14} color="#9CA3AF" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-            <p style={{ fontSize: 10, color: '#9CA3AF' }}>{initialCalculations.length} calculation{initialCalculations.length !== 1 ? 's' : ''}</p>
-          </div>
-        </div>
+        <DataTable<Row>
+          data={rows}
+          columns={columns}
+          searchable
+          persistKey="calculations"
+          emptyMessage="No calculations found."
+          rowActions={c => (
+            <button onClick={() => openEdit(c)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }} title="Edit">
+              <MI name="edit" size={14} color="#6B7280" />
+            </button>
+          )}
+        />
       )}
       </div>
     </div>

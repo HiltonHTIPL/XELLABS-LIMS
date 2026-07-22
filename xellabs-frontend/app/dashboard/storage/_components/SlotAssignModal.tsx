@@ -57,11 +57,11 @@ export default function SlotAssignModal({
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>
                 Assign Sample to Slot {slot.slot_id}
               </h2>
-              <p style={{ fontSize: 10, color: '#9CA3AF' }}>Enter the sample ID to log it into this storage slot</p>
+              <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>Enter the sample ID to log it into this storage slot</p>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100">
-            <MI name="close" size={16} color="#9CA3AF" />
+            <MI name="close" size={16} color="#374151" />
           </button>
         </div>
 
@@ -84,9 +84,9 @@ export default function SlotAssignModal({
 
           <div className="px-3 py-2.5 rounded-lg" style={{ backgroundColor: '#F9FAFB', border: '1px solid #E5E7EB' }}>
             <div className="flex items-start gap-2 mb-1.5">
-              <MI name="location_on" size={13} color="#6B7280" />
+              <MI name="location_on" size={13} color="#374151" />
               <div>
-                <p style={{ fontSize: 10, color: '#9CA3AF', marginBottom: 2 }}>Storage Location</p>
+                <p style={{ fontSize: 10, color: '#374151', marginBottom: 2 }}>Storage Location</p>
                 <p style={{ fontSize: 11, color: '#111827', fontWeight: 500, wordBreak: 'break-word' }}>{storagePath}</p>
               </div>
             </div>

@@ -37,7 +37,7 @@ export default function ReferenceResultsGrid({
   return (
     <div>
       <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Expected Results</label>
-      <p className="mb-2" style={{ fontSize: 10, color: '#9CA3AF' }}>
+      <p className="mb-2" style={{ fontSize: 10, color: '#374151' }}>
         Expected value (and optional acceptable range) per analysis service.
       </p>
 
@@ -47,7 +47,7 @@ export default function ReferenceResultsGrid({
             <thead>
               <tr style={{ backgroundColor: '#FAFAFA', borderBottom: '1px solid #F3F4F6' }}>
                 {['Service', 'Result', 'Min', 'Max', ''].map((h, i) => (
-                  <th key={i} className="px-2 py-1.5 text-left uppercase" style={{ fontSize: 9, fontWeight: 600, color: '#9CA3AF' }}>{h}</th>
+                  <th key={i} className="px-2 py-1.5 text-left uppercase" style={{ fontSize: 9, fontWeight: 600, color: '#374151' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -60,7 +60,7 @@ export default function ReferenceResultsGrid({
                   <td className="px-1 py-1" style={{ width: 60 }}><input className={inp} style={inpStyle} value={r.max} onChange={e => setField(i, 'max', e.target.value)} /></td>
                   <td className="px-1 py-1" style={{ width: 28 }}>
                     <button type="button" onClick={() => removeRow(i)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-                      <MI name="close" size={13} color="#9CA3AF" />
+                      <MI name="close" size={13} color="#374151" />
                     </button>
                   </td>
                 </tr>

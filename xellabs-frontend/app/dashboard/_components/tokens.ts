@@ -17,8 +17,8 @@ export const T = {
   inputBorder: '#D9DEEA',
   tableHeadBg: '#FAFBFE',
   text: '#3B4256',
-  muted: '#6B7280',
-  faint: '#9AA1B2',
+  muted: '#374151',
+  faint: '#374151',
   cardShadow: '0 1px 2px rgba(16,24,40,0.04)',
   cardRadius: 14,
 } as const
@@ -30,7 +30,7 @@ export const CHIP_TONES: Record<ChipTone, { bg: string; text: string; border: st
   green:  { bg: '#DBEAFE', text: '#0154FC', border: '#93C5FD' },
   orange: { bg: '#FFF7ED', text: '#EA580C', border: '#FED7AA' },
   red:    { bg: '#FEF2F2', text: '#DC2626', border: '#FECACA' },
-  gray:   { bg: '#F3F4F6', text: '#6B7280', border: '#E5E7EB' },
+  gray:   { bg: '#F3F4F6', text: '#374151', border: '#E5E7EB' },
   purple: { bg: '#F5F3FF', text: '#7C3AED', border: '#DDD6FE' },
   teal:   { bg: '#DBEAFE', text: '#0154FC', border: '#93C5FD' },
 }

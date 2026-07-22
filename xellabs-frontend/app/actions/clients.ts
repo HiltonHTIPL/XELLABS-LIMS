@@ -212,8 +212,23 @@ export async function syncClientsFromSenaite(): Promise<SyncResult> {
     return { success: false, message: 'No clients found in XelLabs. Verify XelLabs is running and you are logged in as a XelLabs user.', created: 0, updated: 0, total: 0 }
   }
 
+  // mapAddress() always returns a fully-keyed {address:'',city:'',state:'',
+  // zip:'',country:''} object even when SENAITE's own address is blank, but
+  // Django stores a genuinely-empty address as plain {} — a raw JSON.stringify
+  // compare treated these as permanently "different", so every client with any
+  // blank address field got PATCHed on every single sync, forever, even with
+  // zero real changes. Normalize by dropping empty-string values on both sides
+  // before comparing, so {} and {address:'',...} correctly compare equal.
+  const normalizeAddr = (a: unknown): string => {
+    const o = (a ?? {}) as Record<string, unknown>
+    return Object.entries(o)
+      .filter(([, v]) => typeof v === 'string' && v !== '')
+      .sort(([k1], [k2]) => k1.localeCompare(k2))
+      .map(([k, v]) => `${k}=${v as string}`)
+      .join('|')
+  }
   const sameAddr = (a: SenaiteAddress | Record<string, never> | null, b: unknown) =>
-    JSON.stringify(a ?? {}) === JSON.stringify(b ?? {})
+    normalizeAddr(a) === normalizeAddr(b)
 
   // 3. Upsert each SENAITE client into Django, in parallel — this used to be a
   // sequential for-loop awaiting one Django round-trip per client (the

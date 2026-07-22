@@ -87,7 +87,7 @@ export default function NewSamplePage({ clients, sampleTypes, analysisServices, 
         <div className="flex items-center gap-3">
           {onClose && (
             <button type="button" onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100" style={{ marginRight: 4 }}>
-              <MI name="close" size={18} color="#9CA3AF" />
+              <MI name="close" size={18} color="#374151" />
             </button>
           )}
           <span style={{ fontSize: 12, color: T.muted }}>Number of samples</span>

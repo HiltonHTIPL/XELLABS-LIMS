@@ -645,11 +645,11 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
         {/* Page header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
           <div>
-            <button onClick={() => onClose ? onClose() : router.push(isEditMode ? `/dashboard/samples-overview/${editSample!.id}` : '/dashboard/samples-overview')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280', display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, marginBottom: 4, padding: 0 }}>
+            <button onClick={() => onClose ? onClose() : router.push(isEditMode ? `/dashboard/samples-overview/${editSample!.id}` : '/dashboard/samples-overview')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#374151', display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, marginBottom: 4, padding: 0 }}>
               <MI name="arrow_back" size={16} /> {onClose ? 'Close' : 'Back'}
             </button>
             <h1 style={{ fontSize: 24, fontWeight: 800, color: '#2563EB', margin: 0 }}>{isEditMode ? 'Edit Sample' : 'New Sample'}</h1>
-            <p style={{ fontSize: 13, color: '#6B7280', margin: '4px 0 0' }}>
+            <p style={{ fontSize: 13, color: '#374151', margin: '4px 0 0' }}>
               {isEditMode ? `Editing ${editSample?.sample_id}.` : 'Register and receive incoming laboratory samples.'}
             </p>
           </div>
@@ -695,7 +695,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                       cursor: 'pointer',
                       fontSize: 13,
                       fontWeight: isActive ? 700 : 500,
-                      color: isActive ? '#2563EB' : '#6B7280',
+                      color: isActive ? '#2563EB' : '#374151',
                       marginBottom: -2,
                       transition: 'all 0.15s',
                       position: 'relative',
@@ -709,7 +709,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                     }}>{idx + 1}</span>
                     Sample {idx + 1}
                     {forms[idx].clientId && (
-                      <span style={{ fontSize: 10, color: isActive ? '#2563EB' : '#9CA3AF', maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: 10, color: isActive ? '#2563EB' : '#374151', maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {clients.find(c => String(c.id) === forms[idx].clientId)?.name ?? ''}
                       </span>
                     )}
@@ -727,7 +727,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                       background: isActive ? '#DBEAFE' : '#E5E7EB',
                       border: 'none', cursor: 'pointer',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 11, color: isActive ? '#2563EB' : '#6B7280', fontWeight: 700,
+                      fontSize: 11, color: isActive ? '#2563EB' : '#374151', fontWeight: 700,
                       lineHeight: 1,
                     }}
                   >×</button>
@@ -757,8 +757,8 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
           {sampleCount > 1 && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
               <button type="button" onClick={applyClientToAll} disabled={!f.clientId}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 7, border: '1.5px solid #2563EB', background: f.clientId ? '#EFF6FF' : '#F9FAFB', color: f.clientId ? '#2563EB' : '#9CA3AF', fontSize: 12, fontWeight: 600, cursor: f.clientId ? 'pointer' : 'not-allowed', transition: 'all 0.15s' }}>
-                <MI name="sync" size={14} color={f.clientId ? '#2563EB' : '#9CA3AF'} />
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 7, border: '1.5px solid #2563EB', background: f.clientId ? '#EFF6FF' : '#F9FAFB', color: f.clientId ? '#2563EB' : '#374151', fontSize: 12, fontWeight: 600, cursor: f.clientId ? 'pointer' : 'not-allowed', transition: 'all 0.15s' }}>
+                <MI name="sync" size={14} color={f.clientId ? '#2563EB' : '#374151'} />
                 Apply client to all {sampleCount} samples
               </button>
             </div>
@@ -771,7 +771,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                   <select value={f.primarySample} onChange={e => set('primarySample', e.target.value)} style={inp}>
                     <option value="yes">Yes</option><option value="no">No</option>
                   </select></div>
-                <div style={field}><label style={lbl}>Client *</label>
+                <div style={field}><label style={lbl}>Client <span style={{ color: '#EF4444' }}>*</span></label>
                   {clientLocked ? (
                     <div style={{ ...inp, display: 'flex', alignItems: 'center', background: '#F9FAFB' }}>
                       <span style={{ fontWeight: 600, color: '#111827' }}>
@@ -784,7 +784,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                       {clients.filter(c => c.is_active).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   )}</div>
-                <div style={field}><label style={lbl}>Contact *</label>
+                <div style={field}><label style={lbl}>Contact <span style={{ color: '#EF4444' }}>*</span></label>
                   <input value={f.contactName} onChange={e => set('contactName', e.target.value)} placeholder="e.g. Jane Doe" style={inp} /></div>
                 <div style={field}><label style={lbl}>CC Contact</label>
                   <input value={f.ccContact} onChange={e => set('ccContact', e.target.value)} placeholder="e.g. John Smith" style={inp} /></div>
@@ -801,7 +801,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                       ))}
                     </select>
                     {f.clientId && batchOptionsFor(f.clientId).length < batches.filter(b => b.review_state === 'open').length && (
-                      <span style={{ fontSize: 11, color: '#9CA3AF', marginTop: 3 }}>Filtered to this client&apos;s batches only</span>
+                      <span style={{ fontSize: 11, color: '#374151', marginTop: 3 }}>Filtered to this client&apos;s batches only</span>
                     )}</div>
                   <div style={field}><label style={lbl}>Batch Sub-group</label>
                     <input value={f.batchSubGroup} onChange={e => set('batchSubGroup', e.target.value)} placeholder="e.g. Stability Study" style={inp} /></div>
@@ -814,7 +814,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                     {sampleTemplates.map(t => <option key={t.uid} value={t.uid}>{t.title}</option>)}
                   </select>
                   {isEditMode && (
-                    <span style={{ fontSize: 11, color: '#9CA3AF', marginTop: 3 }}>Applying a template here will overwrite Sample Type, Container{canEditAnalyses ? ' and Lab Analyses' : ''}.</span>
+                    <span style={{ fontSize: 11, color: '#374151', marginTop: 3 }}>Applying a template here will overwrite Sample Type, Container{canEditAnalyses ? ' and Lab Analyses' : ''}.</span>
                   )}
                 </div>
                 <div style={field}><label style={lbl}>Analysis Profiles</label>
@@ -828,7 +828,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
               if (!client) return (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#F9FAFB', borderRadius: 10, border: '1.5px dashed #D1D5DB', padding: '24px 16px', gap: 8, textAlign: 'center' }}>
                   <MI name="business" size={32} color="#D1D5DB" />
-                  <span style={{ fontSize: 12, color: '#9CA3AF', lineHeight: 1.5 }}>Select a client to see<br />auto-populated details</span>
+                  <span style={{ fontSize: 12, color: '#374151', lineHeight: 1.5 }}>Select a client to see<br />auto-populated details</span>
                 </div>
               )
               const fullName = [client.contact_first_name, client.contact_last_name].filter(Boolean).join(' ') || client.contact_person || '—'
@@ -858,7 +858,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                       <div key={row.label} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                         <MI name={row.icon} size={14} color="#3B82F6" />
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 10, color: '#6B7280', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{row.label}</div>
+                          <div style={{ fontSize: 10, color: '#374151', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{row.label}</div>
                           <div style={{ fontSize: 12, color: '#1E3A5F', fontWeight: 500, wordBreak: 'break-word' }}>{row.value}</div>
                         </div>
                       </div>
@@ -893,10 +893,10 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
             )
           })()}
           <div style={{ ...grid4, marginBottom: 16 }}>
-            <div style={field}><label style={lbl}>Date Sampled *</label>
+            <div style={field}><label style={lbl}>Date Sampled <span style={{ color: '#EF4444' }}>*</span></label>
               <input type="datetime-local" value={f.dateSampled} max={nowLocal ?? undefined}
                 onChange={e => set('dateSampled', e.target.value)} style={inp} /></div>
-            <div style={field}><label style={lbl}>Sample Type *</label>
+            <div style={field}><label style={lbl}>Sample Type <span style={{ color: '#EF4444' }}>*</span></label>
               {sampleTypeLocked ? (
                 <div style={{ ...inp, display: 'flex', alignItems: 'center', background: '#F9FAFB' }}>
                   <span style={{ fontWeight: 600, color: '#111827' }}>
@@ -912,10 +912,10 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
               {f.sampleTypeId && (() => {
                 const st = sampleTypes.find(s => String(s.id) === f.sampleTypeId)
                 if (!st?.prefix) return null
-                return <span style={{ fontSize: 11, color: '#9CA3AF', marginTop: 3 }}>ID format: {st.prefix}-{new Date().getFullYear()}-### (assigned on save)</span>
+                return <span style={{ fontSize: 11, color: '#374151', marginTop: 3 }}>ID format: {st.prefix}-{new Date().getFullYear()}-### (assigned on save)</span>
               })()}
               {f.sampleTemplateId && (
-                <span style={{ fontSize: 11, color: '#9CA3AF', marginTop: 3 }}>Filtered to the type set by this template</span>
+                <span style={{ fontSize: 11, color: '#374151', marginTop: 3 }}>Filtered to the type set by this template</span>
               )}</div>
             <div style={field}><label style={lbl}>Container</label>
               <select value={f.containerType} onChange={e => set('containerType', e.target.value)} style={inp}>
@@ -924,7 +924,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                   .map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
               {f.sampleTemplateId && (
-                <span style={{ fontSize: 11, color: '#9CA3AF', marginTop: 3 }}>Filtered to containers suited for this template</span>
+                <span style={{ fontSize: 11, color: '#374151', marginTop: 3 }}>Filtered to containers suited for this template</span>
               )}</div>
             <div style={field}><label style={lbl}>Preservation</label>
               <select value={f.preservation} onChange={e => set('preservation', e.target.value)} style={inp}>
@@ -938,7 +938,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                 <option value="">— select —</option>
                 {analysisSpecOptionsFor(f.sampleTypeId).map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
               </select>
-              <span style={{ fontSize: 11, color: '#9CA3AF', marginTop: 3 }}>Selecting one auto-fills Lab Analyses from its rows</span></div>
+              <span style={{ fontSize: 11, color: '#374151', marginTop: 3 }}>Selecting one auto-fills Lab Analyses from its rows</span></div>
             <div style={field}><label style={lbl}>Sample Point</label>
               <select value={f.samplePoint} onChange={e => set('samplePoint', e.target.value)} style={inp}>
                 <option value="">— select —</option>
@@ -960,17 +960,17 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
               </select></div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto auto', gap: 16, alignItems: 'end' }}>
-            <div style={field}><label style={lbl}>Sample Condition *</label>
+            <div style={field}><label style={lbl}>Sample Condition <span style={{ color: '#EF4444' }}>*</span></label>
               <div style={{ position: 'relative' }}>
-                <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 8, height: 8, borderRadius: '50%', background: CONDITION_DOT[f.condition] ?? '#6B7280', pointerEvents: 'none' }} />
+                <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 8, height: 8, borderRadius: '50%', background: CONDITION_DOT[f.condition] ?? '#374151', pointerEvents: 'none' }} />
                 <select value={f.condition} onChange={e => set('condition', e.target.value)} style={{ ...inp, paddingLeft: 26 }}>
                   <option value="good">Good</option><option value="acceptable">Acceptable</option>
                   <option value="compromised">Compromised</option><option value="not_acceptable">Not Acceptable</option>
                 </select>
               </div></div>
-            <div style={field}><label style={lbl}>Priority *</label>
+            <div style={field}><label style={lbl}>Priority <span style={{ color: '#EF4444' }}>*</span></label>
               <div style={{ position: 'relative' }}>
-                <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 8, height: 8, borderRadius: '50%', background: PRIORITY_DOT[f.priority] ?? '#6B7280', pointerEvents: 'none' }} />
+                <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 8, height: 8, borderRadius: '50%', background: PRIORITY_DOT[f.priority] ?? '#374151', pointerEvents: 'none' }} />
                 <select value={f.priority} onChange={e => set('priority', e.target.value)} style={{ ...inp, paddingLeft: 26 }}>
                   <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
                 </select>
@@ -985,12 +985,12 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 2 }}>
               <Toggle checked={f.composite} onChange={v => set('composite', v)} />
               <span style={{ fontSize: 12, color: '#374151' }}>Composite</span>
-              <MI name="info_outline" size={14} color="#9CA3AF" />
+              <MI name="info_outline" size={14} color="#374151" />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 2 }}>
               <Toggle checked={f.internalUse} onChange={v => set('internalUse', v)} />
               <span style={{ fontSize: 12, color: '#374151' }}>Internal use</span>
-              <MI name="info_outline" size={14} color="#9CA3AF" />
+              <MI name="info_outline" size={14} color="#374151" />
             </div>
           </div>
         </div>
@@ -1021,7 +1021,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                 <p style={{ margin: '6px 0 3px', fontSize: 13, color: '#374151' }}>
                   {attachments.length ? `${attachments.length} file${attachments.length > 1 ? 's' : ''} selected` : <>Drag and drop files here<br /><span style={{ color: '#2563EB', fontWeight: 600 }}>or browse</span></>}
                 </p>
-                <p style={{ fontSize: 11, color: '#9CA3AF', margin: 0 }}>PDF, JPG, PNG · max 10 MB each</p>
+                <p style={{ fontSize: 11, color: '#374151', margin: 0 }}>PDF, JPG, PNG · max 10 MB each</p>
               </label>
               {attachments.length > 0 && (
                 <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -1031,7 +1031,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                         <MI name={entry.status === 'failed' ? 'error_outline' : entry.status === 'done' ? 'check_circle' : entry.status === 'uploading' ? 'hourglass_top' : 'description'}
                           size={14} color={entry.status === 'failed' ? '#DC2626' : entry.status === 'done' ? '#059669' : '#2563EB'} />
                         <span style={{ color: entry.status === 'failed' ? '#991B1B' : '#1D4ED8', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.file.name}</span>
-                        <span style={{ color: '#9CA3AF', flexShrink: 0 }}>({(entry.file.size / 1024).toFixed(0)} KB)</span>
+                        <span style={{ color: '#374151', flexShrink: 0 }}>({(entry.file.size / 1024).toFixed(0)} KB)</span>
                         {entry.status === 'failed' && (
                           <button type="button" onClick={() => retryAttachment(i)}
                             style={{ fontSize: 11, fontWeight: 600, color: '#DC2626', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>
@@ -1040,8 +1040,8 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                         )}
                       </div>
                       <button type="button" onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', padding: 2 }}>
-                        <MI name="close" size={14} color="#9CA3AF" />
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#374151', padding: 2 }}>
+                        <MI name="close" size={14} color="#374151" />
                       </button>
                     </div>
                   ))}
@@ -1054,7 +1054,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                 <textarea value={f.remarks} onChange={e => set('remarks', e.target.value.slice(0, 500))} rows={6}
                   placeholder="Add any remarks about this sample..."
                   style={{ ...inp, resize: 'none', paddingBottom: 24 }} />
-                <span style={{ position: 'absolute', bottom: 8, right: 10, fontSize: 11, color: '#9CA3AF' }}>{f.remarks.length} / 500</span>
+                <span style={{ position: 'absolute', bottom: 8, right: 10, fontSize: 11, color: '#374151' }}>{f.remarks.length} / 500</span>
               </div>
             </div>
           </div>
@@ -1062,10 +1062,10 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
 
         {/* Bottom actions */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, padding: '14px 0' }}>
-          <span style={{ fontSize: 12, color: '#9CA3AF' }}>
+          <span style={{ fontSize: 12, color: '#374151' }}>
             {submitting && submitProgress.total > 1
               ? `Logging sample ${Math.min(submitProgress.done + 1, submitProgress.total)} of ${submitProgress.total}…`
-              : '* Required fields'}
+              : <><span style={{ color: '#EF4444' }}>*</span> Required fields</>}
           </span>
           <div style={{ display: 'flex', gap: 10 }}>
             {isEditMode ? (
@@ -1106,7 +1106,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
               </div>
               <div>
                 <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Lab Analyses</span>
-                {sampleCount > 1 && <div style={{ fontSize: 10, color: '#9CA3AF' }}>Sample {activeTab + 1}</div>}
+                {sampleCount > 1 && <div style={{ fontSize: 10, color: '#374151' }}>Sample {activeTab + 1}</div>}
               </div>
             </div>
             <span style={{ fontSize: 11, background: '#EFF6FF', color: '#2563EB', borderRadius: 10, padding: '2px 8px', fontWeight: 600 }}>{f.selectedTests.length} {f.selectedTests.length === 1 ? 'analysis' : 'analyses'}</span>
@@ -1116,24 +1116,24 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr style={{ background: '#F9FAFB', borderBottom: '1px solid #F3F4F6' }}>
-                  <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: '#6B7280', width: 24 }}>#</th>
-                  <th style={{ padding: '8px 8px', textAlign: 'left', fontWeight: 600, color: '#6B7280' }}>Test / Analysis</th>
-                  <th style={{ padding: '8px 8px', textAlign: 'left', fontWeight: 600, color: '#6B7280' }}>Method</th>
-                  <th style={{ padding: '8px 8px', textAlign: 'right', fontWeight: 600, color: '#6B7280' }}>Price</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', width: 24 }}>#</th>
+                  <th style={{ padding: '8px 8px', textAlign: 'left', fontWeight: 600, color: '#374151' }}>Test / Analysis</th>
+                  <th style={{ padding: '8px 8px', textAlign: 'left', fontWeight: 600, color: '#374151' }}>Method</th>
+                  <th style={{ padding: '8px 8px', textAlign: 'right', fontWeight: 600, color: '#374151' }}>Price</th>
                   <th style={{ width: 28 }} />
                 </tr>
               </thead>
               <tbody>
                 {f.selectedTests.map((t, i) => (
                   <tr key={t.uid} style={{ borderBottom: '1px solid #F9FAFB' }}>
-                    <td style={{ padding: '8px 12px', color: '#9CA3AF', fontWeight: 600 }}>{i + 1}</td>
+                    <td style={{ padding: '8px 12px', color: '#374151', fontWeight: 600 }}>{i + 1}</td>
                     <td style={{ padding: '8px 8px', color: '#111827', fontWeight: 500 }}>{t.title}</td>
-                    <td style={{ padding: '8px 8px', color: '#6B7280' }}>{t.Keyword}</td>
+                    <td style={{ padding: '8px 8px', color: '#374151' }}>{t.Keyword}</td>
                     <td style={{ padding: '8px 8px', textAlign: 'right', color: '#374151', fontWeight: 500 }}>{t.Price ? `$${parseFloat(t.Price).toFixed(2)}` : '—'}</td>
                     <td style={{ padding: '8px 6px' }}>
                       {canEditAnalyses && (
                         <button type="button" onClick={() => removeTest(t.uid)} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                          <MI name="delete_outline" size={16} color="#9CA3AF" />
+                          <MI name="delete_outline" size={16} color="#374151" />
                         </button>
                       )}
                     </td>
@@ -1142,7 +1142,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
               </tbody>
             </table>
           )}
-          {f.selectedTests.length === 0 && <div style={{ padding: '20px 16px', textAlign: 'center', color: '#9CA3AF', fontSize: 12 }}>No analyses added yet.</div>}
+          {f.selectedTests.length === 0 && <div style={{ padding: '20px 16px', textAlign: 'center', color: '#374151', fontSize: 12 }}>No analyses added yet.</div>}
 
           {!canEditAnalyses && (
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, margin: '0 16px 12px', padding: '8px 10px', borderRadius: 7, background: '#FFFBEB', border: '1px solid #FDE68A', fontSize: 11, color: '#92400E' }}>
@@ -1162,13 +1162,13 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                   style={{ ...inp, marginBottom: 6, fontSize: 12 }} />
                 <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid #E5E7EB', borderRadius: 6 }}>
                   {filteredTests.length === 0
-                    ? <div style={{ padding: '10px', fontSize: 12, color: '#9CA3AF', textAlign: 'center' }}>No tests found</div>
+                    ? <div style={{ padding: '10px', fontSize: 12, color: '#374151', textAlign: 'center' }}>No tests found</div>
                     : filteredTests.slice(0, 20).map(t => (
                       <button key={t.uid} type="button" onClick={() => addTest(t)}
                         style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '8px 10px', border: 'none', borderBottom: '1px solid #F9FAFB', background: '#fff', cursor: 'pointer', textAlign: 'left' }}>
                         <div>
                           <div style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>{t.title}</div>
-                          <div style={{ fontSize: 11, color: '#9CA3AF' }}>{t.Keyword}</div>
+                          <div style={{ fontSize: 11, color: '#374151' }}>{t.Keyword}</div>
                         </div>
                         {t.Price && <span style={{ fontSize: 12, color: '#374151', fontWeight: 500 }}>${parseFloat(t.Price).toFixed(2)}</span>}
                       </button>
@@ -1176,7 +1176,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                   }
                 </div>
                 <button type="button" onClick={() => { setShowAddAnalysis(false); setAnalysisSearch('') }}
-                  style={{ marginTop: 6, fontSize: 11, color: '#9CA3AF', background: 'none', border: 'none', cursor: 'pointer', width: '100%' }}>Cancel</button>
+                  style={{ marginTop: 6, fontSize: 11, color: '#374151', background: 'none', border: 'none', cursor: 'pointer', width: '100%' }}>Cancel</button>
               </div>
             )}
           </div>
@@ -1190,7 +1190,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
             </div>
             <div>
               <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Pricing Summary</span>
-              {sampleCount > 1 && <div style={{ fontSize: 10, color: '#9CA3AF' }}>Sample {activeTab + 1}</div>}
+              {sampleCount > 1 && <div style={{ fontSize: 10, color: '#374151' }}>Sample {activeTab + 1}</div>}
             </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

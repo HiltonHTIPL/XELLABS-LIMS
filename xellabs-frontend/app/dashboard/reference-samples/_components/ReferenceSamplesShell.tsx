@@ -3,6 +3,7 @@ import { useState, useActionState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import ReferenceResultsGrid, { type RefResultRow } from '../../_components/ReferenceResultsGrid'
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
 import type { RefOption } from '../../_components/AdminRefShell'
 import {
   createReferenceSample, updateReferenceSample, deactivateReferenceSample,
@@ -74,16 +75,40 @@ export default function ReferenceSamplesShell({
   const base = 'w-full px-3 py-2 text-xs rounded-lg outline-none'
   const bstyle = { border: '1px solid #D1D5DB', color: '#111827' } as const
 
+  // ReferenceSampleRow has only `uid`, so key rows by uid. `typeLabel` is a
+  // derived primitive so the Type column (rendered from the `blank` boolean)
+  // is sortable.
+  type Row = ReferenceSampleRow & { id: string; typeLabel: string }
+  const dataRows: Row[] = rows.map(r => ({ ...r, id: r.uid, typeLabel: r.blank ? 'Blank' : 'Control' }))
+  const columns: DataTableColumn<Row>[] = [
+    {
+      id: 'title', label: 'Name', sortable: true, minWidth: 200,
+      render: r => <span className="text-xs truncate" style={{ color: '#111827', fontWeight: 500 }}>{r.title}</span>,
+    },
+    {
+      id: 'supplierTitle', label: 'Supplier', sortable: true, minWidth: 160,
+      render: r => <span className="text-xs truncate" style={{ color: '#374151' }}>{r.supplierTitle || '—'}</span>,
+    },
+    {
+      id: 'typeLabel', label: 'Type', sortable: true, minWidth: 110,
+      render: r => <span className="text-xs" style={{ color: '#374151' }}>{r.blank ? 'Blank' : 'Control'}</span>,
+    },
+    {
+      id: 'expiryDate', label: 'Expiry', sortable: true, minWidth: 120,
+      render: r => <span className="text-xs" style={{ color: '#374151' }}>{r.expiryDate || '—'}</span>,
+    },
+  ]
+
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div className="flex items-center justify-between mb-3" style={{ flexShrink: 0 }}>
         <div className="flex items-center gap-3">
           <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
-            <MI name="arrow_back" size={16} color="#6B7280" />
+            <MI name="arrow_back" size={16} color="#374151" />
           </Link>
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Reference Samples</h1>
-            <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>QC materials (control / blank) used on worksheets for quality control</p>
+            <p className="text-sm mt-0.5" style={{ color: '#374151' }}>QC materials (control / blank) used on worksheets for quality control</p>
           </div>
         </div>
         <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
@@ -102,7 +127,7 @@ export default function ReferenceSamplesShell({
               </div>
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>{isEditing ? `Edit — ${editing.title}` : 'New Reference Sample'}</h2>
             </div>
-            <button onClick={closeForm} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
+            <button onClick={closeForm} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#374151" /></button>
           </div>
 
           <form action={action} className="flex flex-col flex-1 min-h-0">
@@ -123,14 +148,14 @@ export default function ReferenceSamplesShell({
                     <option value="">— Select supplier —</option>
                     {suppliers.map(s => <option key={s.uid} value={s.path}>{s.title}</option>)}
                   </select>
-                  {suppliers.length === 0 && <p className="mt-0.5" style={{ fontSize: 10, color: '#9CA3AF' }}>No suppliers yet — add one under Administration → Suppliers first.</p>}
+                  {suppliers.length === 0 && <p className="mt-0.5" style={{ fontSize: 10, color: '#374151' }}>No suppliers yet — add one under Administration → Suppliers first.</p>}
                   {state.errors?.supplierPath && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{state.errors.supplierPath[0]}</p>}
                 </div>
               )}
               {isEditing && (
                 <div>
                   <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Supplier</label>
-                  <input className={base} style={{ ...bstyle, backgroundColor: '#F9FAFB', color: '#6B7280' }} value={editing.supplierTitle} disabled />
+                  <input className={base} style={{ ...bstyle, backgroundColor: '#F9FAFB', color: '#374151' }} value={editing.supplierTitle} disabled />
                 </div>
               )}
               <div>
@@ -144,7 +169,7 @@ export default function ReferenceSamplesShell({
                   <option value="">— None —</option>
                   {definitions.map(d => <option key={d.uid} value={d.uid}>{d.title}</option>)}
                 </select>
-                <p className="mt-0.5" style={{ fontSize: 10, color: '#9CA3AF' }}>Selecting a definition copies its expected results below (editable).</p>
+                <p className="mt-0.5" style={{ fontSize: 10, color: '#374151' }}>Selecting a definition copies its expected results below (editable).</p>
               </div>
               <div className="flex gap-4 items-end">
                 <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: '#374151' }}>
@@ -187,48 +212,30 @@ export default function ReferenceSamplesShell({
         </div>
       )}
 
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {rows.length === 0 ? (
           <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
             <MI name="colorize" size={36} color="#D1D5DB" />
-            <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No reference samples yet</p>
-            <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>Create QC materials to use as Blank/Control on worksheets</p>
+            <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>No reference samples yet</p>
+            <p className="text-xs mt-0.5" style={{ color: '#374151' }}>Create QC materials to use as Blank/Control on worksheets</p>
             <button onClick={openCreate} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
               <MI name="add" size={13} color="#fff" /> New Reference Sample
             </button>
           </div>
         ) : (
-          <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
-            <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-              <colgroup><col style={{ width: '30%' }} /><col style={{ width: '24%' }} /><col style={{ width: '16%' }} /><col style={{ width: '16%' }} /><col style={{ width: '14%' }} /></colgroup>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                  {['Name', 'Supplier', 'Type', 'Expiry', ''].map((h, i) => (
-                    <th key={i} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row, i) => (
-                  <tr key={row.uid} style={{ borderBottom: i < rows.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
-                    <td className="px-3 py-2 text-xs truncate" style={{ color: '#111827', fontWeight: 500 }}>{row.title}</td>
-                    <td className="px-3 py-2 text-xs truncate" style={{ color: '#6B7280' }}>{row.supplierTitle || '—'}</td>
-                    <td className="px-3 py-2 text-xs" style={{ color: '#6B7280' }}>{row.blank ? 'Blank' : 'Control'}</td>
-                    <td className="px-3 py-2 text-xs" style={{ color: '#6B7280' }}>{row.expiryDate || '—'}</td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => openEdit(row)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}><MI name="edit" size={14} color="#6B7280" /></button>
-                        <button onClick={() => remove(row)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}><MI name="delete_outline" size={14} color="#DC2626" /></button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-              <p style={{ fontSize: 10, color: '#9CA3AF' }}>{rows.length} reference sample{rows.length !== 1 ? 's' : ''}</p>
-            </div>
-          </div>
+          <DataTable<Row>
+            data={dataRows}
+            columns={columns}
+            searchable
+            persistKey="reference-samples"
+            emptyMessage="No reference samples found."
+            rowActions={row => (
+              <div className="flex items-center gap-1">
+                <button onClick={() => openEdit(row)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}><MI name="edit" size={14} color="#6B7280" /></button>
+                <button onClick={() => remove(row)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}><MI name="delete_outline" size={14} color="#DC2626" /></button>
+              </div>
+            )}
+          />
         )}
       </div>
     </div>

@@ -2,9 +2,10 @@
 import { useMemo, useState, useActionState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  PageHeader, Card, StatCard, Btn, Field, ConfirmModal, EmptyState, Pagination,
-  MI, T, Chip, thStyle, tdStyle, inputStyle, selectStyle, textareaStyle,
+  PageHeader, Card, StatCard, Btn, Field, ConfirmModal, EmptyState,
+  MI, T, Chip, inputStyle, selectStyle, textareaStyle,
 } from '@/app/dashboard/_components/ui'
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
 import {
   createQCSample, updateQCSample, deleteQCSample, reviewQCSample,
   type QCSample, type QCSampleFormState, type QCWorksheet,
@@ -39,7 +40,47 @@ function statusChipTone(status: string): 'green' | 'red' | 'orange' | 'gray' {
   return 'gray'
 }
 
-const PAGE_SIZE = 10
+type QCRow = QCSample & { _type: string; _worksheet: string }
+
+const qcColumns: DataTableColumn<QCRow>[] = [
+  { id: 'qc_id', label: 'QC ID', sortable: true, minWidth: 110, render: q => <span style={{ fontWeight: 600, color: T.heading }}>{q.qc_id}</span> },
+  { id: '_type', label: 'Type', sortable: true, minWidth: 110, render: q => qcTypeLabel(q.qc_type) },
+  { id: 'senaite_service_name', label: 'Test', sortable: true, minWidth: 140, render: q => q.senaite_service_name || '—' },
+  { id: '_worksheet', label: 'Worksheet', sortable: true, minWidth: 110, render: q => q._worksheet || '—' },
+  { id: 'lot_number', label: 'Lot #', sortable: true, minWidth: 110, render: q => q.lot_number || '—' },
+  {
+    id: 'target_value', label: 'Target', sortable: true, minWidth: 110,
+    render: q => q.target_value != null
+      ? <>{q.target_value}{q.tolerance_percent != null ? <span style={{ color: T.faint }}> ±{q.tolerance_percent}%</span> : null}</>
+      : '—',
+  },
+  {
+    id: 'actual_value', label: 'Actual', sortable: true, minWidth: 100,
+    render: q => (
+      <span style={{ fontWeight: q.status === 'failed' ? 700 : 400, color: q.status === 'failed' ? T.danger : T.text }}>
+        {q.actual_value ?? '—'}
+      </span>
+    ),
+  },
+  {
+    id: 'status', label: 'Status', sortable: true, minWidth: 200,
+    render: q => (
+      <div className="flex items-center gap-2">
+        <Chip tone={statusChipTone(q.status)} dot>{q.status}</Chip>
+        {(q.status === 'failed' || q.status === 'warning') && !q.is_reviewed && (
+          <span className="inline-flex items-center gap-1 font-semibold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-200" style={{ fontSize: 10 }}>
+            <MI name="warning" size={10} /> Requires Review
+          </span>
+        )}
+        {q.is_reviewed && (
+          <span className="inline-flex items-center gap-1 font-medium text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200" style={{ fontSize: 10 }}>
+            <MI name="verified_user" size={10} /> Reviewed by {q.reviewed_by_name || 'Admin'}
+          </span>
+        )}
+      </div>
+    ),
+  },
+]
 
 function QCModal({
   editing, services, worksheets, onClose, onDone,
@@ -267,7 +308,6 @@ export default function QualityShell({
   const [typeFilter, setTypeFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [needsReviewOnly, setNeedsReviewOnly] = useState(false)
-  const [page, setPage] = useState(1)
   const [tab, setTab] = useState<'qc' | 'import'>('qc')
 
   const worksheetIdById = useMemo(() => {
@@ -284,8 +324,13 @@ export default function QualityShell({
     )
   }, [initialQCSamples, typeFilter, statusFilter, needsReviewOnly])
 
-  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  // Derived primitive fields so the shared DataTable can sort computed/nested
+  // columns (type label, worksheet id) — render still reproduces the original cells.
+  const rows: QCRow[] = filtered.map(q => ({
+    ...q,
+    _type: qcTypeLabel(q.qc_type),
+    _worksheet: q.worksheet ? (worksheetIdById.get(q.worksheet) ?? `#${q.worksheet}`) : '',
+  }))
 
   const total = initialQCSamples.length
   const passed = initialQCSamples.filter(q => q.status === 'passed').length
@@ -364,7 +409,7 @@ export default function QualityShell({
               <p style={{ fontSize: 11, color: '#B91C1C' }}>Failed or warning controls must be reviewed before related results can be treated as release-ready.</p>
             </div>
           </div>
-          <Btn variant="outline" icon="filter_list" onClick={() => { setNeedsReviewOnly(true); setStatusFilter(''); setPage(1) }}>
+          <Btn variant="outline" icon="filter_list" onClick={() => { setNeedsReviewOnly(true); setStatusFilter('') }}>
             Show queue
           </Btn>
         </div>
@@ -397,15 +442,15 @@ export default function QualityShell({
         icon="science"
         action={
           <div className="flex items-center gap-2">
-            <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(1) }} style={{ ...selectStyle, height: 32, fontSize: 12 }}>
+            <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value) }} style={{ ...selectStyle, height: 32, fontSize: 12 }}>
               <option value="">All Types</option>
               {QC_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
-            <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setNeedsReviewOnly(false); setPage(1) }} style={{ ...selectStyle, height: 32, fontSize: 12 }}>
+            <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setNeedsReviewOnly(false) }} style={{ ...selectStyle, height: 32, fontSize: 12 }}>
               <option value="">All Statuses</option>
               {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
-            <button type="button" onClick={() => { setNeedsReviewOnly(v => !v); setStatusFilter(''); setPage(1) }}
+            <button type="button" onClick={() => { setNeedsReviewOnly(v => !v); setStatusFilter('') }}
               className="px-2 rounded"
               style={{
                 height: 32, fontSize: 11, fontWeight: 600, cursor: 'pointer',
@@ -422,72 +467,30 @@ export default function QualityShell({
         {filtered.length === 0 ? (
           <EmptyState icon="science" title="No QC samples found" sub="Adjust your filters or create a new QC sample." />
         ) : (
-          <>
-            <div style={{ overflowX: 'auto' }}>
-              <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    {['QC ID', 'Type', 'Test', 'Worksheet', 'Lot #', 'Target', 'Actual', 'Status', ''].map(h => (
-                      <th key={h} style={thStyle}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {pageItems.map(q => (
-                    <tr key={q.id}>
-                      <td style={{ ...tdStyle, fontWeight: 600, color: T.heading }}>{q.qc_id}</td>
-                      <td style={tdStyle}>{qcTypeLabel(q.qc_type)}</td>
-                      <td style={tdStyle}>{q.senaite_service_name || '—'}</td>
-                      <td style={tdStyle}>{q.worksheet ? (worksheetIdById.get(q.worksheet) ?? `#${q.worksheet}`) : '—'}</td>
-                      <td style={tdStyle}>{q.lot_number || '—'}</td>
-                      <td style={tdStyle}>
-                        {q.target_value != null
-                          ? <>{q.target_value}{q.tolerance_percent != null ? <span style={{ color: T.faint }}> ±{q.tolerance_percent}%</span> : null}</>
-                          : '—'}
-                      </td>
-                      <td style={{ ...tdStyle, fontWeight: q.status === 'failed' ? 700 : 400, color: q.status === 'failed' ? T.danger : T.text }}>
-                        {q.actual_value ?? '—'}
-                      </td>
-                      <td style={tdStyle}>
-                        <div className="flex items-center gap-2">
-                          <Chip tone={statusChipTone(q.status)} dot>{q.status}</Chip>
-                          {(q.status === 'failed' || q.status === 'warning') && !q.is_reviewed && (
-                             <span className="inline-flex items-center gap-1 font-semibold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-200" style={{ fontSize: 10 }}>
-                               <MI name="warning" size={10} /> Requires Review
-                             </span>
-                          )}
-                          {q.is_reviewed && (
-                             <span className="inline-flex items-center gap-1 font-medium text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200" style={{ fontSize: 10 }}>
-                               <MI name="verified_user" size={10} /> Reviewed by {q.reviewed_by_name || 'Admin'}
-                             </span>
-                          )}
-                        </div>
-                      </td>
-                      <td style={tdStyle}>
-                        <div className="flex items-center justify-end gap-1">
-                          {(q.status === 'failed' || q.status === 'warning') && !q.is_reviewed && (
-                             <button onClick={() => setReviewing(q)} className="px-2 py-1 rounded bg-red-50 hover:bg-red-100 text-red-700 flex items-center gap-1" style={{ border: '1px solid #FECACA', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>
-                               <MI name="policy" size={13} /> Review
-                             </button>
-                          )}
-                          <button onClick={() => openEdit(q)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-                            <MI name="edit" size={14} color={T.faint} />
-                          </button>
-                          <button onClick={() => setDeleting(q)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-                            <MI name="delete" size={14} color={T.danger} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="px-3 py-3 flex items-center justify-between" style={{ borderTop: `1px solid ${T.cardBorder}` }}>
-              <p style={{ fontSize: 11, color: T.faint }}>{filtered.length} QC sample{filtered.length !== 1 ? 's' : ''}</p>
-              <Pagination page={page} pages={pages} onPage={setPage} />
-            </div>
-          </>
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <DataTable<QCRow>
+              data={rows}
+              columns={qcColumns}
+              searchable
+              persistKey="quality-qc-samples"
+              emptyMessage="No QC samples found."
+              rowActions={q => (
+                <div className="flex items-center justify-end gap-1">
+                  {(q.status === 'failed' || q.status === 'warning') && !q.is_reviewed && (
+                    <button onClick={() => setReviewing(q)} className="px-2 py-1 rounded bg-red-50 hover:bg-red-100 text-red-700 flex items-center gap-1" style={{ border: '1px solid #FECACA', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>
+                      <MI name="policy" size={13} /> Review
+                    </button>
+                  )}
+                  <button onClick={() => openEdit(q)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
+                    <MI name="edit" size={14} color={T.faint} />
+                  </button>
+                  <button onClick={() => setDeleting(q)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
+                    <MI name="delete" size={14} color={T.danger} />
+                  </button>
+                </div>
+              )}
+            />
+          </div>
         )}
       </Card>
       </div>

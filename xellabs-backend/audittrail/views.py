@@ -2,10 +2,11 @@ from rest_framework import viewsets, filters
 from django_filters.rest_framework import DjangoFilterBackend
 from django_filters import rest_framework as df_filters
 from core.permissions import AuditReadOnly
-from .models import AuditEvent, LoginEvent, SecurityEvent, RecordVersion
+from .models import AuditEvent, LoginEvent, SecurityEvent, RecordVersion, ImportLog
 from .serializers import (
     AuditEventSerializer, LoginEventSerializer,
     SecurityEventSerializer, RecordVersionSerializer,
+    ImportLogSerializer,
 )
 
 
@@ -51,3 +52,14 @@ class RecordVersionViewSet(viewsets.ReadOnlyModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ["content_type", "object_id"]
     ordering_fields = ["version_number", "created_at"]
+
+
+class ImportLogViewSet(viewsets.ModelViewSet):
+    queryset = ImportLog.objects.select_related("user").all()
+    serializer_class = ImportLogSerializer
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ["entity_name", "user"]
+    ordering_fields = ["timestamp"]
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)

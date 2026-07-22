@@ -11,7 +11,7 @@ const EVENT_ICON: Record<string, { icon: string; color: string; bg: string }> = 
   stored:            { icon: 'inventory_2',   color: '#0154FC', bg: '#EFF6FF' },
   released:          { icon: 'output',        color: '#F59E0B', bg: '#FFFBEB' },
   status_change:     { icon: 'sync',          color: '#8B5CF6', bg: '#EDE9FE' },
-  update:            { icon: 'edit',          color: '#6B7280', bg: '#F3F4F6' },
+  update:            { icon: 'edit',          color: '#374151', bg: '#F3F4F6' },
 }
 
 function fmtTime(iso: string) {
@@ -39,18 +39,18 @@ export default function HistoryModal({ sampleId, events, onClose }: {
             </div>
             <div>
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>Activity / Audit Trail</h2>
-              <p style={{ fontSize: 10, color: '#9CA3AF' }}>{sampleId}</p>
+              <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>{sampleId}</p>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100">
-            <MI name="close" size={16} color="#9CA3AF" />
+            <MI name="close" size={16} color="#374151" />
           </button>
         </div>
 
         <div style={{ overflowY: 'auto', flex: 1 }}>
           {events.length === 0 ? (
             <div style={{ padding: 24, textAlign: 'center' }}>
-              <p style={{ fontSize: 11, color: '#9CA3AF' }}>No activity recorded</p>
+              <p style={{ fontSize: 11, color: '#374151' }}>No activity recorded</p>
             </div>
           ) : (
             [...events].reverse().map((ev, i) => {
@@ -62,11 +62,11 @@ export default function HistoryModal({ sampleId, events, onClose }: {
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ fontSize: 12, fontWeight: 500, color: '#111827' }}>{ev.label}</p>
-                    <p style={{ fontSize: 10, color: '#9CA3AF', marginTop: 1 }}>{ev.user}</p>
+                    <p style={{ fontSize: 10, color: '#374151', marginTop: 1 }}>{ev.user}</p>
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0 }}>
                     <p style={{ fontSize: 10, color: '#374151', fontWeight: 500 }}>{fmtTime(ev.timestamp)}</p>
-                    <p style={{ fontSize: 10, color: '#9CA3AF' }}>{fmtDate(ev.timestamp)}</p>
+                    <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>{fmtDate(ev.timestamp)}</p>
                   </div>
                 </div>
               )

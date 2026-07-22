@@ -8,6 +8,7 @@ import {
   type WorksheetTemplateFormState,
 } from '@/app/actions/worksheet-templates'
 import type { RefOption } from '@/app/dashboard/_components/AdminRefShell'
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -163,6 +164,55 @@ export default function WorksheetTemplatesShell({
   const titleFor = (uid: string, list: RefOption[]) => list.find(o => o.uid === uid)?.title ?? ''
   const routineOptions = vals.positions.filter(p => p.type === 'a')
 
+  const layoutSummaryFor = (t: WorksheetTemplateRow) => {
+    const counts = t.positions.reduce((acc, p) => { acc[p.type] = (acc[p.type] ?? 0) + 1; return acc }, {} as Record<string, number>)
+    return (['a', 'b', 'c', 'd'] as WtPositionType[]).filter(k => counts[k]).map(k => `${counts[k]} ${TYPE_LABELS[k]}`).join(', ')
+  }
+  const analysesTextFor = (t: WorksheetTemplateRow) =>
+    t.serviceUids.length ? (t.serviceUids.map(u => titleFor(u, services)).filter(Boolean).join(', ') || `${t.serviceUids.length} selected`) : '—'
+
+  // WorksheetTemplateRow has no `id`, so key rows by uid. Positions (count),
+  // Layout, Method, and Analyses are computed values, so expose derived
+  // primitive sort fields while the render recomputes the display.
+  type Row = WorksheetTemplateRow & { id: string; Positions: number; Layout: string; Method: string; Analyses: string }
+  const dataRows: Row[] = rows.map(t => ({
+    ...t,
+    id: t.uid,
+    Positions: t.numOfPositions || t.positions.length || 0,
+    Layout: layoutSummaryFor(t),
+    Method: titleFor(t.restrictToMethodUid, methods),
+    Analyses: analysesTextFor(t),
+  }))
+  const columns: DataTableColumn<Row>[] = [
+    {
+      id: 'title', label: 'Name', sortable: true, minWidth: 220,
+      render: t => (
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: '#DBEAFE' }}>
+            <MI name="grid_on" size={13} color="#0154FC" />
+          </div>
+          <span className="text-xs font-medium truncate" style={{ color: '#111827' }}>{t.title}</span>
+        </div>
+      ),
+    },
+    {
+      id: 'Positions', label: 'Positions', sortable: true, minWidth: 100,
+      render: t => <span className="text-xs" style={{ color: '#374151' }}>{t.numOfPositions || t.positions.length || '—'}</span>,
+    },
+    {
+      id: 'Layout', label: 'Layout', sortable: true, minWidth: 180,
+      render: t => <span className="text-xs truncate" style={{ color: '#374151' }}>{layoutSummaryFor(t) || '—'}</span>,
+    },
+    {
+      id: 'Method', label: 'Method', sortable: true, minWidth: 150,
+      render: t => <span className="text-xs truncate" style={{ color: '#374151' }}>{titleFor(t.restrictToMethodUid, methods) || '—'}</span>,
+    },
+    {
+      id: 'Analyses', label: 'Analyses', sortable: true, minWidth: 200,
+      render: t => <span className="text-xs truncate" style={{ color: '#374151' }}>{analysesTextFor(t)}</span>,
+    },
+  ]
+
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
@@ -170,11 +220,11 @@ export default function WorksheetTemplatesShell({
       <div className="flex items-center justify-between mb-3" style={{ flexShrink: 0 }}>
         <div className="flex items-center gap-3">
           <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
-            <MI name="arrow_back" size={16} color="#6B7280" />
+            <MI name="arrow_back" size={16} color="#374151" />
           </Link>
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Worksheet Templates</h1>
-            <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Predefined worksheet layouts — tray size, routine/QC position plan, analyses, instrument and method</p>
+            <p className="text-sm mt-0.5" style={{ color: '#374151' }}>Predefined worksheet layouts — tray size, routine/QC position plan, analyses, instrument and method</p>
           </div>
         </div>
         <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
@@ -204,13 +254,13 @@ export default function WorksheetTemplatesShell({
                 <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>
                   {isEdit ? `Edit — ${editing!.title}` : 'New Worksheet Template'}
                 </h2>
-                <p style={{ fontSize: 10, color: '#9CA3AF' }}>
+                <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>
                   {isEdit ? 'Update layout and analyses' : 'Define the tray size, positions, and analyses'}
                 </p>
               </div>
             </div>
             <button onClick={closeDrawer} className="p-1.5 rounded-lg hover:bg-gray-100">
-              <MI name="close" size={16} color="#9CA3AF" />
+              <MI name="close" size={16} color="#374151" />
             </button>
           </div>
 
@@ -240,7 +290,7 @@ export default function WorksheetTemplatesShell({
 
               <div>
                 <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
-                  Description <span className="font-normal" style={{ color: '#9CA3AF' }}>(optional)</span>
+                  Description <span className="font-normal" style={{ color: '#374151' }}>(optional)</span>
                 </label>
                 <textarea
                   name="description"
@@ -256,7 +306,7 @@ export default function WorksheetTemplatesShell({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
-                    Restrict to Method <span className="font-normal" style={{ color: '#9CA3AF' }}>(optional)</span>
+                    Restrict to Method <span className="font-normal" style={{ color: '#374151' }}>(optional)</span>
                   </label>
                   <select
                     value={vals.restrictToMethodUid}
@@ -270,7 +320,7 @@ export default function WorksheetTemplatesShell({
                 </div>
                 <div>
                   <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
-                    Preferred Instrument <span className="font-normal" style={{ color: '#9CA3AF' }}>(optional)</span>
+                    Preferred Instrument <span className="font-normal" style={{ color: '#374151' }}>(optional)</span>
                   </label>
                   <select
                     value={vals.instrumentUid}
@@ -289,7 +339,7 @@ export default function WorksheetTemplatesShell({
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="block text-xs font-medium" style={{ color: '#374151' }}>Worksheet Layout</label>
                   <div className="flex items-center gap-2">
-                    <span style={{ fontSize: 10, color: '#9CA3AF' }}>Positions</span>
+                    <span style={{ fontSize: 10, color: '#374151' }}>Positions</span>
                     <input
                       type="number" min={0} max={100}
                       value={vals.positions.length}
@@ -310,7 +360,7 @@ export default function WorksheetTemplatesShell({
                 )}
 
                 {vals.positions.length === 0 ? (
-                  <p className="px-3 py-3 text-xs rounded-lg" style={{ color: '#9CA3AF', border: '1px dashed #D1D5DB', backgroundColor: '#FAFAFA' }}>
+                  <p className="px-3 py-3 text-xs rounded-lg" style={{ color: '#374151', border: '1px dashed #D1D5DB', backgroundColor: '#FAFAFA' }}>
                     Set the number of positions (tray size), then choose an Analysis type for each.
                   </p>
                 ) : (
@@ -353,10 +403,10 @@ export default function WorksheetTemplatesShell({
                           </select>
                         )}
 
-                        {p.type === 'a' && <span className="flex-1 text-xs" style={{ color: '#9CA3AF' }}>Routine analysis</span>}
+                        {p.type === 'a' && <span className="flex-1 text-xs" style={{ color: '#374151' }}>Routine analysis</span>}
 
                         <button type="button" onClick={() => removePosition(idx)} className="p-1 rounded hover:bg-gray-200 shrink-0" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-                          <MI name="delete" size={13} color="#9CA3AF" />
+                          <MI name="delete" size={13} color="#6B7280" />
                         </button>
                       </div>
                     ))}
@@ -369,11 +419,11 @@ export default function WorksheetTemplatesShell({
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-xs font-medium" style={{ color: '#374151' }}>Analysis Services</label>
-                  <span style={{ fontSize: 10, color: '#9CA3AF' }}>{vals.serviceUids.length} selected</span>
+                  <span style={{ fontSize: 10, color: '#374151' }}>{vals.serviceUids.length} selected</span>
                 </div>
                 <div className="rounded-lg" style={{ border: '1px solid #D1D5DB', maxHeight: 200, overflowY: 'auto', backgroundColor: '#fff' }}>
                   {services.length === 0 ? (
-                    <p className="px-3 py-3 text-xs" style={{ color: '#9CA3AF' }}>No analysis services available.</p>
+                    <p className="px-3 py-3 text-xs" style={{ color: '#374151' }}>No analysis services available.</p>
                   ) : (
                     services.map(svc => (
                       <label key={svc.uid} className="flex items-center gap-2 px-3 py-1.5 cursor-pointer" style={{ borderBottom: '1px solid #F3F4F6' }}>
@@ -412,7 +462,7 @@ export default function WorksheetTemplatesShell({
               </div>
               <h3 className="text-sm font-semibold" style={{ color: '#111827' }}>Remove worksheet template?</h3>
             </div>
-            <p className="text-xs mb-5" style={{ color: '#6B7280' }}>
+            <p className="text-xs mb-5" style={{ color: '#374151' }}>
               This will remove &ldquo;{deleteTarget.title}&rdquo; from the active list. It can be reactivated in the backend if needed.
             </p>
             <div className="flex items-center justify-end gap-2">
@@ -431,69 +481,34 @@ export default function WorksheetTemplatesShell({
       )}
 
       {/* Table / empty state */}
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {rows.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="grid_on" size={36} color="#D1D5DB" />
-          <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No worksheet templates yet</p>
-          <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>Create your first layout to speed up worksheet creation</p>
+          <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>No worksheet templates yet</p>
+          <p className="text-xs mt-0.5" style={{ color: '#374151' }}>Create your first layout to speed up worksheet creation</p>
           <button onClick={openCreate} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
             <MI name="add" size={13} color="#fff" /> New Worksheet Template
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
-          <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-            <colgroup>
-              <col style={{ width: '24%' }} /><col style={{ width: '12%' }} /><col style={{ width: '20%' }} /><col style={{ width: '16%' }} /><col style={{ width: '20%' }} /><col style={{ width: '8%' }} />
-            </colgroup>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                {['Name', 'Positions', 'Layout', 'Method', 'Analyses', ''].map(h => (
-                  <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((t, i) => {
-                const counts = t.positions.reduce((acc, p) => { acc[p.type] = (acc[p.type] ?? 0) + 1; return acc }, {} as Record<string, number>)
-                const layoutSummary = (['a', 'b', 'c', 'd'] as WtPositionType[])
-                  .filter(k => counts[k]).map(k => `${counts[k]} ${TYPE_LABELS[k]}`).join(', ')
-                return (
-                  <tr key={t.uid} style={{ borderBottom: i < rows.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
-                    <td className="px-3 py-2.5">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: '#DBEAFE' }}>
-                          <MI name="grid_on" size={13} color="#0154FC" />
-                        </div>
-                        <span className="text-xs font-medium truncate" style={{ color: '#111827' }}>{t.title}</span>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#374151' }}>{t.numOfPositions || t.positions.length || '—'}</td>
-                    <td className="px-3 py-2.5 text-xs truncate" style={{ color: '#6B7280' }}>{layoutSummary || '—'}</td>
-                    <td className="px-3 py-2.5 text-xs truncate" style={{ color: '#6B7280' }}>{titleFor(t.restrictToMethodUid, methods) || '—'}</td>
-                    <td className="px-3 py-2.5 text-xs truncate" style={{ color: '#6B7280' }}>
-                      {t.serviceUids.length ? (t.serviceUids.map(u => titleFor(u, services)).filter(Boolean).join(', ') || `${t.serviceUids.length} selected`) : '—'}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => openEdit(t)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }} title="Edit">
-                          <MI name="edit" size={14} color="#9CA3AF" />
-                        </button>
-                        <button onClick={() => setDeleteTarget(t)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }} title="Remove">
-                          <MI name="delete" size={14} color="#9CA3AF" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-          <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-            <p style={{ fontSize: 10, color: '#9CA3AF' }}>{rows.length} template{rows.length !== 1 ? 's' : ''}</p>
-          </div>
-        </div>
+        <DataTable<Row>
+          data={dataRows}
+          columns={columns}
+          searchable
+          persistKey="worksheet-templates"
+          emptyMessage="No worksheet templates found."
+          rowActions={t => (
+            <div className="flex items-center gap-1">
+              <button onClick={() => openEdit(t)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }} title="Edit">
+                <MI name="edit" size={14} color="#6B7280" />
+              </button>
+              <button onClick={() => setDeleteTarget(t)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }} title="Remove">
+                <MI name="delete" size={14} color="#6B7280" />
+              </button>
+            </div>
+          )}
+        />
       )}
       </div>
     </div>

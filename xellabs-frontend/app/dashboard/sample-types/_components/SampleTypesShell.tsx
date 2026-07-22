@@ -1,9 +1,26 @@
 'use client'
+import { exportRowsToCsv } from '@/app/lib/exportCsv'
 import { useState, useActionState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createSampleType, updateSampleType, createContainerType, createSampleMatrix, type SampleTypeFormState, type CreateRefOptionState } from '@/app/actions/sample-types'
 import { type SenaiteSampleType, type SenaiteRefOption, STICKER_TEMPLATES } from '@/app/lib/senaite'
+import ImportButton, { type ParsedRow } from '../../_components/ImportButton'
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
+
+const exportColumns = [
+  { key: 'title', label: 'Sample Type' },
+  { key: 'description', label: 'Description' },
+  { key: 'Hazardous', label: 'Hazardous', render: (st: SenaiteSampleType) => st.Hazardous ? 'Yes' : 'No' },
+  { key: 'Prefix', label: 'Prefix' },
+  { key: 'MinimumVolume', label: 'Minimum Volume' },
+  { key: 'RetentionPeriod', label: 'Retention Period', render: (st: SenaiteSampleType) => {
+    const r = st.RetentionPeriod
+    return r && (r.days || r.hours || r.minutes) ? `${r.days}d ${r.hours}h ${r.minutes}m` : ''
+  } },
+  { key: 'SampleMatrixTitle', label: 'SampleMatrix' },
+  { key: 'ContainerTypeTitle', label: 'Default Container' },
+]
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -19,7 +36,7 @@ function Field({
     <div>
       <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
         {label}{required && <span style={{ color: '#EF4444' }}> *</span>}
-        {hint && <span className="ml-1 font-normal" style={{ color: '#9CA3AF' }}>{hint}</span>}
+        {hint && <span className="ml-1 font-normal" style={{ color: '#374151' }}>{hint}</span>}
       </label>
       <input
         name={name}
@@ -45,7 +62,7 @@ function SelectField({
     <div>
       <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
         {label}
-        {hint && <span className="ml-1 font-normal" style={{ color: '#9CA3AF' }}>{hint}</span>}
+        {hint && <span className="ml-1 font-normal" style={{ color: '#374151' }}>{hint}</span>}
       </label>
       <select
         name={name}
@@ -58,7 +75,7 @@ function SelectField({
         {options.map(o => <option key={o.uid} value={o.uid}>{o.title}</option>)}
       </select>
       {options.length === 0 && (
-        <p className="mt-0.5 text-xs" style={{ color: '#9CA3AF' }}>None configured yet in the lab system.</p>
+        <p className="mt-0.5 text-xs" style={{ color: '#374151' }}>None configured yet in the lab system.</p>
       )}
     </div>
   )
@@ -185,6 +202,107 @@ export default function SampleTypesShell({
   }
   function closeDrawer() { setShowDrawer(false) }
 
+  async function handleImportRow(row: ParsedRow) {
+    const fd = new FormData()
+    fd.append('_is_import', 'true')
+    if (row.title) fd.append('title', row.title)
+    if (row.description) fd.append('description', row.description)
+    if (row.Prefix) fd.append('Prefix', row.Prefix)
+    if (row.MinimumVolume) fd.append('MinimumVolume', row.MinimumVolume)
+
+    if (row.Hazardous && row.Hazardous.toLowerCase() === 'yes') {
+      fd.append('hazardous', 'on')
+    }
+
+    if (row.RetentionPeriod) {
+      const match = row.RetentionPeriod.match(/(\d+)d\s+(\d+)h\s+(\d+)m/)
+      if (match) {
+        fd.append('retentionDays', match[1])
+        fd.append('retentionHours', match[2])
+        fd.append('retentionMinutes', match[3])
+      }
+    } else {
+      fd.append('retentionDays', '30')
+      fd.append('retentionHours', '0')
+      fd.append('retentionMinutes', '0')
+    }
+
+    if (row.SampleMatrixTitle) {
+      const matrix = sampleMatrixOptions.find(m => m.title.toLowerCase() === row.SampleMatrixTitle.toLowerCase())
+      if (!matrix) return { success: false, message: `Sample Matrix not found: ${row.SampleMatrixTitle}` }
+      fd.append('sampleMatrixUid', matrix.uid)
+    }
+
+    if (row.ContainerTypeTitle) {
+      const c = containerTypeOptions.find(c => c.title.toLowerCase() === row.ContainerTypeTitle.toLowerCase())
+      if (!c) return { success: false, message: `Container Type not found: ${row.ContainerTypeTitle}` }
+      fd.append('containerTypeUid', c.uid)
+    }
+
+    const res = await createSampleType({}, fd)
+    return { success: res.success, message: res.message, errors: res.errors }
+  }
+
+  // Columns reproduce the previous hand-rolled cells exactly (same badges /
+  // formatting) so the migration to the shared <DataTable> is visually neutral
+  // while adding sort / search / pagination / autosize / pin / reorder / resize.
+  const columns: DataTableColumn<SenaiteSampleType>[] = [
+    {
+      id: 'title', label: 'Name', sortable: true, minWidth: 200,
+      render: st => (
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: '#DBEAFE' }}>
+            <MI name="science" size={13} color="#0154FC" />
+          </div>
+          <span className="text-xs font-medium" style={{ color: '#111827' }}>{st.title}</span>
+        </div>
+      ),
+    },
+    {
+      id: 'Prefix', label: 'Prefix', sortable: true, minWidth: 100,
+      render: st => (
+        <span className="text-xs font-mono px-2 py-0.5 rounded-full" style={{ backgroundColor: '#EFF6FF', color: '#2563EB', fontWeight: 600 }}>
+          {st.Prefix || '—'}
+        </span>
+      ),
+    },
+    {
+      id: 'MinimumVolume', label: 'Min. Volume', sortable: true, minWidth: 110,
+      render: st => <span className="text-xs" style={{ color: '#374151' }}>{st.MinimumVolume || '—'}</span>,
+    },
+    {
+      id: 'Retention', label: 'Retention', sortable: true, minWidth: 120,
+      render: st => (
+        <span className="text-xs" style={{ color: '#374151' }}>
+          {st.RetentionPeriod?.days || st.RetentionPeriod?.hours || st.RetentionPeriod?.minutes
+            ? `${st.RetentionPeriod.days}d ${st.RetentionPeriod.hours}h ${st.RetentionPeriod.minutes}m`
+            : '—'}
+        </span>
+      ),
+    },
+    {
+      id: 'Hazardous', label: 'Hazardous', sortable: true, minWidth: 100,
+      render: st => st.Hazardous
+        ? <span className="text-xs" style={{ color: '#DC2626', fontWeight: 600 }}>Yes</span>
+        : <span className="text-xs" style={{ color: '#374151' }}>No</span>,
+    },
+    {
+      id: 'uid', label: 'UID', sortable: true, minWidth: 160,
+      render: st => <span className="font-mono text-xs" style={{ color: '#374151' }}>{st.uid}</span>,
+    },
+  ]
+
+  // Sort keys the table engine can order by: Retention is a {days,hours,minutes}
+  // object with no single sortable value, so expose it as total minutes. Every
+  // other column sorts by its own row field (title/Prefix/MinimumVolume/
+  // Hazardous/uid) directly.
+  const rows = initialSampleTypes.map(st => ({
+    ...st,
+    Retention: (st.RetentionPeriod?.days ?? 0) * 1440
+      + (st.RetentionPeriod?.hours ?? 0) * 60
+      + (st.RetentionPeriod?.minutes ?? 0),
+  }))
+
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
@@ -192,16 +310,32 @@ export default function SampleTypesShell({
       <div className="flex items-center justify-between mb-3" style={{ flexShrink: 0 }}>
         <div className="flex items-center gap-3">
           <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
-            <MI name="arrow_back" size={16} color="#6B7280" />
+            <MI name="arrow_back" size={16} color="#374151" />
           </Link>
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Sample Types</h1>
-            <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Manage sample types used across the laboratory</p>
+            <p className="text-sm mt-0.5" style={{ color: '#374151' }}>Manage sample types used across the laboratory</p>
           </div>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
-          <MI name="add" size={15} color="#fff" /> New Sample Type
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => exportRowsToCsv(exportColumns, [], 'sample-types-template')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ color: '#374151', border: '1px solid #D1D5DB', backgroundColor: '#fff' }}>
+            <MI name="download" size={15} color="#374151" /> Template
+          </button>
+          <button onClick={() => exportRowsToCsv(exportColumns, initialSampleTypes, 'sample-types')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ color: '#0154FC', border: '1px solid #0154FC', backgroundColor: '#fff' }}>
+            <MI name="file_download" size={15} color="#0154FC" /> Export
+          </button>
+          <ImportButton
+            columns={exportColumns}
+            existingTitles={initialSampleTypes.map(s => s.title)}
+            templateFilename="sample-types-template"
+            entityName="Sample Types"
+            onImportRow={handleImportRow}
+            onRefresh={() => router.refresh()}
+          />
+          <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
+            <MI name="add" size={15} color="#fff" /> New Sample Type
+          </button>
+        </div>
       </div>
 
       {/* Toast */}
@@ -228,13 +362,13 @@ export default function SampleTypesShell({
                 <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>
                   {isEdit ? `Edit — ${editing!.title}` : 'New Sample Type'}
                 </h2>
-                <p style={{ fontSize: 10, color: '#9CA3AF' }}>
+                <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>
                   {isEdit ? 'Update sample type details' : 'Create a new sample type'}
                 </p>
               </div>
             </div>
             <button onClick={closeDrawer} className="p-1.5 rounded-lg hover:bg-gray-100">
-              <MI name="close" size={16} color="#9CA3AF" />
+              <MI name="close" size={16} color="#374151" />
             </button>
           </div>
 
@@ -273,7 +407,7 @@ export default function SampleTypesShell({
               <div>
                 <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
                   Retention Period<span style={{ color: '#EF4444' }}> *</span>
-                  <span className="ml-1 font-normal" style={{ color: '#9CA3AF' }}>(how long unpreserved samples stay valid)</span>
+                  <span className="ml-1 font-normal" style={{ color: '#374151' }}>(how long unpreserved samples stay valid)</span>
                 </label>
                 <div className="flex gap-2">
                   {(['retentionDays', 'retentionHours', 'retentionMinutes'] as const).map((k, i) => (
@@ -287,7 +421,7 @@ export default function SampleTypesShell({
                         className="w-full px-3 py-2 text-xs rounded-lg outline-none"
                         style={{ border: '1px solid #D1D5DB', color: '#111827' }}
                       />
-                      <p className="mt-0.5 text-center" style={{ fontSize: 10, color: '#9CA3AF' }}>{['Days', 'Hours', 'Minutes'][i]}</p>
+                      <p className="mt-0.5 text-center" style={{ fontSize: 10, color: '#374151' }}>{['Days', 'Hours', 'Minutes'][i]}</p>
                     </div>
                   ))}
                 </div>
@@ -369,12 +503,12 @@ export default function SampleTypesShell({
                 <input type="checkbox" name="hazardous" checked={vals.hazardous}
                   onChange={e => setVal('hazardous', e.target.checked)} style={{ accentColor: '#0154FC' }} />
                 <span className="text-xs font-medium" style={{ color: '#374151' }}>Hazardous</span>
-                <span style={{ fontSize: 10, color: '#9CA3AF' }}>Samples of this type should be treated as hazardous</span>
+                <span style={{ fontSize: 10, color: '#374151' }}>Samples of this type should be treated as hazardous</span>
               </label>
 
               <div>
                 <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Admitted sticker templates</label>
-                <p className="mb-1" style={{ fontSize: 10, color: '#9CA3AF' }}>Defines the stickers to use for this sample type.</p>
+                <p className="mb-1" style={{ fontSize: 10, color: '#374151' }}>Defines the stickers to use for this sample type.</p>
                 <div className="flex gap-3">
                   <div className="flex-1">
                     <p className="mb-1" style={{ fontSize: 10, fontWeight: 600, color: '#374151' }}>Admitted stickers</p>
@@ -440,73 +574,29 @@ export default function SampleTypesShell({
       </div>
 
       {/* Table / empty state */}
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {initialSampleTypes.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="science" size={36} color="#D1D5DB" />
-          <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No sample types yet</p>
-          <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>Create your first sample type to get started</p>
+          <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>No sample types yet</p>
+          <p className="text-xs mt-0.5" style={{ color: '#374151' }}>Create your first sample type to get started</p>
           <button onClick={openCreate} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
             <MI name="add" size={13} color="#fff" /> New Sample Type
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
-          <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-            <colgroup>
-              <col style={{ width: '24%' }} /><col style={{ width: '10%' }} /><col style={{ width: '14%' }} />
-              <col style={{ width: '16%' }} /><col style={{ width: '12%' }} /><col style={{ width: '16%' }} /><col style={{ width: '8%' }} />
-            </colgroup>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                {['Name', 'Prefix', 'Min. Volume', 'Retention', 'Hazardous', 'UID', ''].map(h => (
-                  <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {initialSampleTypes.map((st, i) => (
-                <tr key={st.uid} style={{ borderBottom: i < initialSampleTypes.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
-                  <td className="px-3 py-2.5">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: '#DBEAFE' }}>
-                        <MI name="science" size={13} color="#0154FC" />
-                      </div>
-                      <span className="text-xs font-medium" style={{ color: '#111827' }}>{st.title}</span>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <span className="text-xs font-mono px-2 py-0.5 rounded-full" style={{ backgroundColor: '#EFF6FF', color: '#2563EB', fontWeight: 600 }}>
-                      {st.Prefix || '—'}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{st.MinimumVolume || '—'}</td>
-                  <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>
-                    {st.RetentionPeriod?.days || st.RetentionPeriod?.hours || st.RetentionPeriod?.minutes
-                      ? `${st.RetentionPeriod.days}d ${st.RetentionPeriod.hours}h ${st.RetentionPeriod.minutes}m`
-                      : '—'}
-                  </td>
-                  <td className="px-3 py-2.5">
-                    {st.Hazardous ? (
-                      <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#FEF2F2', color: '#DC2626', fontWeight: 600 }}>Yes</span>
-                    ) : (
-                      <span className="text-xs" style={{ color: '#9CA3AF' }}>No</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2.5 font-mono text-xs truncate" style={{ color: '#9CA3AF' }}>{st.uid}</td>
-                  <td className="px-3 py-2.5">
-                    <button onClick={() => openEdit(st)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }} title="Edit">
-                      <MI name="edit" size={14} color="#9CA3AF" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-            <p style={{ fontSize: 10, color: '#9CA3AF' }}>{initialSampleTypes.length} sample type{initialSampleTypes.length !== 1 ? 's' : ''}</p>
-          </div>
-        </div>
+        <DataTable<SenaiteSampleType>
+          data={rows}
+          columns={columns}
+          searchable
+          persistKey="sample-types"
+          emptyMessage="No sample types found."
+          rowActions={st => (
+            <button onClick={() => openEdit(st)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }} title="Edit">
+              <MI name="edit" size={14} color="#6B7280" />
+            </button>
+          )}
+        />
       )}
       </div>
     </div>

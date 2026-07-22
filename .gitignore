@@ -115,4 +115,5 @@ xellabs-backend/unit_tests/
 sample-imports/
 TEST-REPORT.md
 docker-compose.override.yml
+docker-compose.testing.yml
 test-results/

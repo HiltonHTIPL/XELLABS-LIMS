@@ -21,7 +21,7 @@ function Field({
     <div>
       <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
         {label}{required && <span style={{ color: '#EF4444' }}> *</span>}
-        {hint && <span className="ml-1 font-normal" style={{ color: '#9CA3AF' }}>{hint}</span>}
+        {hint && <span className="ml-1 font-normal" style={{ color: '#374151' }}>{hint}</span>}
       </label>
       <input
         name={name}
@@ -166,13 +166,13 @@ export default function StorageModal({
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>
                 {isEdit ? `Edit — ${editing!.name}` : 'New Storage Location'}
               </h2>
-              <p style={{ fontSize: 10, color: '#9CA3AF' }}>
+              <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>
                 {isEdit ? 'Update location details' : 'Add a new storage location'}
               </p>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100">
-            <MI name="close" size={16} color="#9CA3AF" />
+            <MI name="close" size={16} color="#374151" />
           </button>
         </div>
 
@@ -209,7 +209,7 @@ export default function StorageModal({
               <div className="flex-1">
                 <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
                   Rows <span style={{ color: '#EF4444' }}>*</span>
-                  <span className="ml-1 font-normal" style={{ color: '#9CA3AF' }}>(max 26)</span>
+                  <span className="ml-1 font-normal" style={{ color: '#374151' }}>(max 26)</span>
                 </label>
                 <input
                   name="rows"
@@ -226,7 +226,7 @@ export default function StorageModal({
               <div className="flex-1">
                 <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
                   Columns <span style={{ color: '#EF4444' }}>*</span>
-                  <span className="ml-1 font-normal" style={{ color: '#9CA3AF' }}>(max 99)</span>
+                  <span className="ml-1 font-normal" style={{ color: '#374151' }}>(max 99)</span>
                 </label>
                 <input
                   name="columns"
@@ -246,7 +246,7 @@ export default function StorageModal({
           {/* Parent select — a Building is always top-level (no parent possible);
               every other type requires one, so there's no "None" option for them. */}
           {selectedType === 'building' ? (
-            <p className="text-xs" style={{ color: '#9CA3AF' }}>
+            <p className="text-xs" style={{ color: '#374151' }}>
               A Building is always top-level — it has no parent location.
             </p>
           ) : (
@@ -281,7 +281,7 @@ export default function StorageModal({
           {/* Notes textarea */}
           <div>
             <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
-              Notes <span className="font-normal" style={{ color: '#9CA3AF' }}>(optional)</span>
+              Notes <span className="font-normal" style={{ color: '#374151' }}>(optional)</span>
             </label>
             <textarea
               name="notes"
@@ -296,7 +296,7 @@ export default function StorageModal({
           {/* Description — sent to SENAITE on every mapped content type */}
           <div>
             <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
-              Description <span className="font-normal" style={{ color: '#9CA3AF' }}>(optional)</span>
+              Description <span className="font-normal" style={{ color: '#374151' }}>(optional)</span>
             </label>
             <textarea name="description" rows={2} placeholder="General description"
               defaultValue={editing?.description ?? ''}
@@ -318,7 +318,7 @@ export default function StorageModal({
               />
               <div>
                 <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
-                  Address <span className="font-normal" style={{ color: '#9CA3AF' }}>(optional)</span>
+                  Address <span className="font-normal" style={{ color: '#374151' }}>(optional)</span>
                 </label>
                 <input name="address" type="text" placeholder="Physical address"
                   defaultValue={editing?.address ?? ''}

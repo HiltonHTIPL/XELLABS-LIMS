@@ -38,7 +38,7 @@ export default function SampleAuditDrawer({ sampleId, open, onClose }: { sampleI
                 <MI name="history" size={20} color="#0154FC" />
                 <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#111827' }}>Audit Trail</h2>
               </div>
-              <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', display: 'flex', color: '#6B7280' }}>
+              <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', display: 'flex', color: '#374151' }}>
                 <MI name="close" size={20} />
               </button>
             </div>
@@ -68,7 +68,7 @@ export default function SampleAuditDrawer({ sampleId, open, onClose }: { sampleI
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', marginBottom: 2, textTransform: 'capitalize' }}>
                           {entry.action.replace('_', ' ')}
                         </div>
-                        <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 4 }}>
+                        <div style={{ fontSize: 12, color: '#374151', marginBottom: 4 }}>
                           {fmt(entry.timestamp)} by <span style={{ fontWeight: 500 }}>{entry.user_display ?? 'System'}</span>
                         </div>
                         
@@ -77,9 +77,9 @@ export default function SampleAuditDrawer({ sampleId, open, onClose }: { sampleI
                             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                               <thead style={{ backgroundColor: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
                                 <tr>
-                                  <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: '#6B7280' }}>Field</th>
-                                  <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: '#6B7280' }}>Old Value</th>
-                                  <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: '#6B7280' }}>New Value</th>
+                                  <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: '#374151' }}>Field</th>
+                                  <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: '#374151' }}>Old Value</th>
+                                  <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: '#374151' }}>New Value</th>
                                 </tr>
                               </thead>
                               <tbody>

@@ -12,6 +12,7 @@ import { type EnvLabel } from '@/app/lib/envOverride'
 function runtimeEnvLabel(): EnvLabel {
   const env = (process.env.APP_ENV ?? process.env.NEXT_PUBLIC_APP_ENV ?? 'development').toLowerCase()
   if (env === 'production') return 'Production'
+  if (env === 'testing') return 'Testing'
   if (env === 'qa') return 'QA'
   if (env === 'staging') return 'Staging'
   return 'Development'

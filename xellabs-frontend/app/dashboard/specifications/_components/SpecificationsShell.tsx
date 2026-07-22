@@ -14,6 +14,7 @@ import type { SenaiteAnalysisService } from '@/app/lib/senaite'
 import type { DjangoSampleType } from '@/app/actions/lab-samples'
 import type { DynamicAnalysisSpecification } from '@/app/actions/dynamic-analysis-specifications'
 import { ConfirmModal } from '@/app/dashboard/_components/ui'
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
 
 const OPERATORS = ['>=', '>', '<=', '<', '=']
 
@@ -109,10 +110,10 @@ function SpecificationModal({ editing, services, sampleTypes, dynamicSpecs, onCl
             </div>
             <div>
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>{isEdit ? 'Edit Specification' : 'New Specification'}</h2>
-              <p style={{ fontSize: 10, color: '#9CA3AF' }}>Define pass/fail ranges per test for a sample type</p>
+              <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>Define pass/fail ranges per test for a sample type</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#374151" /></button>
         </div>
         <form action={action} onSubmit={handleSubmit} className="px-5 py-4 flex flex-col gap-3">
           <input type="hidden" name="rows_json" />
@@ -147,7 +148,7 @@ function SpecificationModal({ editing, services, sampleTypes, dynamicSpecs, onCl
             <p className="text-xs font-semibold mb-1" style={{ color: '#374151' }}>
               Specifications{fieldErrors.rows && <span className="ml-2" style={{ color: '#EF4444', fontWeight: 400 }}>{fieldErrors.rows}</span>}
             </p>
-            <p className="mb-2" style={{ fontSize: 10, color: '#9CA3AF' }}>
+            <p className="mb-2" style={{ fontSize: 10, color: '#374151' }}>
               Check a test to include it, then set its range. &apos;Min warn&apos;/&apos;Max warn&apos; raise a less severe alert (shoulder range); &apos;&lt; Min&apos;/&apos;&gt; Max&apos; are the display values shown in results when out of range.
             </p>
             <div className="overflow-x-auto rounded-lg" style={{ border: '1px solid #E5E7EB' }}>
@@ -155,7 +156,7 @@ function SpecificationModal({ editing, services, sampleTypes, dynamicSpecs, onCl
                 <thead>
                   <tr style={{ backgroundColor: '#FAFAFA', borderBottom: '1px solid #E5E7EB' }}>
                     {['', 'Test', 'Min warn', 'Min', 'Min op', 'Max', 'Max warn', 'Max op', '< Min', '> Max', 'Comment'].map(h => (
-                      <th key={h} className="px-2 py-1.5 text-left" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', whiteSpace: 'nowrap' }}>{h}</th>
+                      <th key={h} className="px-2 py-1.5 text-left" style={{ fontSize: 10, fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -255,16 +256,52 @@ export default function SpecificationsShell({ initialSpecifications, services, s
     })
   }
 
+  // Derived primitives for sortable columns computed from nested/looked-up data:
+  // sampleTypeName (from the sampleType map) and testsCount (rows.length).
+  type Row = AnalysisSpecification & { sampleTypeName: string; testsCount: number }
+  const rows: Row[] = filtered.map(s => ({
+    ...s,
+    sampleTypeName: sampleTypeMap.get(s.sample_type) ?? `#${s.sample_type}`,
+    testsCount: s.rows.length,
+  }))
+  const columns: DataTableColumn<Row>[] = [
+    {
+      id: 'title', label: 'Title', sortable: true, minWidth: 200,
+      render: s => <span className="text-xs font-medium" style={{ color: '#111827' }}>{s.title}</span>,
+    },
+    {
+      id: 'sampleTypeName', label: 'Sample Type', sortable: true, minWidth: 160,
+      render: s => <span className="text-xs" style={{ color: '#111827' }}>{sampleTypeMap.get(s.sample_type) ?? `#${s.sample_type}`}</span>,
+    },
+    {
+      id: 'testsCount', label: 'Tests', sortable: true, minWidth: 110,
+      render: s => (
+        <span className="font-mono text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#EFF6FF', color: '#2563EB', fontWeight: 600 }}>
+          {s.rows.length} test{s.rows.length !== 1 ? 's' : ''}
+        </span>
+      ),
+    },
+    {
+      id: 'is_active', label: 'Status', sortable: true, minWidth: 120,
+      render: s => (
+        <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, color: s.is_active ? '#0154FC' : '#374151' }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: s.is_active ? '#0154FC' : '#374151', display: 'inline-block' }} />
+          {s.is_active ? 'Active' : 'Inactive'}
+        </span>
+      ),
+    },
+  ]
+
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div className="flex items-center justify-between mb-5" style={{ flexShrink: 0 }}>
         <div className="flex items-center gap-3">
           <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
-            <MI name="arrow_back" size={16} color="#6B7280" />
+            <MI name="arrow_back" size={16} color="#374151" />
           </Link>
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Specifications</h1>
-            <p className="mt-1" style={{ fontSize: 13, color: '#6B7280' }}>Define pass/fail ranges per test and sample type</p>
+            <p className="mt-1" style={{ fontSize: 13, color: '#374151' }}>Define pass/fail ranges per test and sample type</p>
           </div>
         </div>
         <button onClick={openCreate} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#2563EB', border: 'none', cursor: 'pointer' }}>
@@ -300,62 +337,33 @@ export default function SpecificationsShell({ initialSpecifications, services, s
         />
       )}
 
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {filtered.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2', borderRadius: 14 }}>
           <MI name="rule" size={36} color="#D1D5DB" />
-          <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No specifications yet</p>
+          <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>No specifications yet</p>
           <button onClick={openCreate} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
             <MI name="add" size={13} color="#fff" /> New Specification
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2', borderRadius: 14, boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
-          <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-            <colgroup>
-              <col style={{ width: '30%' }} /><col style={{ width: '26%' }} /><col style={{ width: '18%' }} /><col style={{ width: '14%' }} /><col style={{ width: '12%' }} />
-            </colgroup>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                {['Title', 'Sample Type', 'Tests', 'Status', ''].map(h => (
-                  <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((s, i) => (
-                <tr key={s.id} style={{ borderBottom: i < filtered.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
-                  <td className="px-3 py-2.5 text-xs font-medium" style={{ color: '#111827' }}>{s.title}</td>
-                  <td className="px-3 py-2.5 text-xs" style={{ color: '#111827' }}>{sampleTypeMap.get(s.sample_type) ?? `#${s.sample_type}`}</td>
-                  <td className="px-3 py-2.5">
-                    <span className="font-mono text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#EFF6FF', color: '#2563EB', fontWeight: 600 }}>
-                      {s.rows.length} test{s.rows.length !== 1 ? 's' : ''}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, color: s.is_active ? '#0154FC' : '#6B7280' }}>
-                      <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: s.is_active ? '#0154FC' : '#9CA3AF', display: 'inline-block' }} />
-                      {s.is_active ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => openEdit(s)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-                        <MI name="edit" size={14} color="#9CA3AF" />
-                      </button>
-                      <button onClick={() => setDeleting(s)} disabled={busy} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-                        <MI name="delete" size={14} color="#EF4444" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-            <p style={{ fontSize: 10, color: '#9CA3AF' }}>{filtered.length} specification{filtered.length !== 1 ? 's' : ''}</p>
-          </div>
-        </div>
+        <DataTable<Row>
+          data={rows}
+          columns={columns}
+          searchable
+          persistKey="specifications"
+          emptyMessage="No specifications found."
+          rowActions={s => (
+            <div className="flex items-center gap-1">
+              <button onClick={() => openEdit(s)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
+                <MI name="edit" size={14} color="#6B7280" />
+              </button>
+              <button onClick={() => setDeleting(s)} disabled={busy} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
+                <MI name="delete" size={14} color="#EF4444" />
+              </button>
+            </div>
+          )}
+        />
       )}
       </div>
     </div>

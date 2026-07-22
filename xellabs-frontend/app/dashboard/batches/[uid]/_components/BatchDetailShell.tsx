@@ -211,8 +211,8 @@ export default function BatchDetailShell({
 
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <button onClick={() => router.push('/dashboard/batches')} className="flex items-center gap-1 mb-2" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280', fontSize: 13, padding: 0, flexShrink: 0 }}>
-        <MI name="arrow_back" size={16} color="#6B7280" /> Back to Batches
+      <button onClick={() => router.push('/dashboard/batches')} className="flex items-center gap-1 mb-2" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#374151', fontSize: 13, padding: 0, flexShrink: 0 }}>
+        <MI name="arrow_back" size={16} color="#374151" /> Back to Batches
       </button>
 
       <div className="flex items-start justify-between mb-4" style={{ flexShrink: 0 }}>
@@ -226,7 +226,7 @@ export default function BatchDetailShell({
               <span className="text-xs font-mono px-2 py-0.5 rounded-full" style={{ backgroundColor: '#EFF6FF', color: '#2563EB', fontWeight: 600 }}>{batch.id}</span>
               <StatusBadge state={batch.review_state} />
             </div>
-            <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>
+            <p className="text-sm mt-0.5" style={{ color: '#374151' }}>
               {batch.ClientTitle ? `${batch.ClientTitle}${batch.ClientID ? ` (${batch.ClientID})` : ''}` : 'No client assigned'}
               {batch.ClientBatchID ? ` · Client Batch ID: ${batch.ClientBatchID}` : ''}
             </p>
@@ -259,8 +259,8 @@ export default function BatchDetailShell({
         ].map(card => (
           <div key={card.label} className="bg-white rounded-xl p-3" style={{ border: '1px solid #E8EAF2' }}>
             <div className="flex items-center gap-2 mb-1">
-              <MI name={card.icon} size={14} color="#9CA3AF" />
-              <span style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{card.label}</span>
+              <MI name={card.icon} size={14} color="#374151" />
+              <span style={{ fontSize: 10, color: '#374151', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{card.label}</span>
             </div>
             <div style={{ fontSize: 18, fontWeight: 700, color: '#111827' }}>{card.value}</div>
           </div>
@@ -270,7 +270,7 @@ export default function BatchDetailShell({
       {(batch.description || batch.Remarks) && (
         <div className="bg-white rounded-xl p-3 mb-4" style={{ border: '1px solid #E8EAF2', flexShrink: 0 }}>
           {batch.description && <p className="text-xs" style={{ color: '#374151' }}>{batch.description}</p>}
-          {batch.Remarks && <p className="text-xs mt-1" style={{ color: '#9CA3AF' }}>{batch.Remarks}</p>}
+          {batch.Remarks && <p className="text-xs mt-1" style={{ color: '#374151' }}>{batch.Remarks}</p>}
         </div>
       )}
 
@@ -284,10 +284,10 @@ export default function BatchDetailShell({
             <MI name="grid_view" size={14} color="#374151" /> {selected.size === 1 ? 'Enter Results' : 'Multi Results'} <span style={{ background: '#DBEAFE', color: '#1D4ED8', borderRadius: 999, padding: '1px 6px', fontSize: 10 }}>{selected.size}</span>
           </button>
           <button disabled title="Coming soon" style={{ ...toolbarBtn, opacity: 0.5, cursor: 'not-allowed' }}>
-            <MI name="print" size={14} color="#9CA3AF" /> Print stickers <span style={{ background: '#F3F4F6', color: '#6B7280', borderRadius: 999, padding: '1px 6px', fontSize: 10 }}>{selected.size}</span>
+            <MI name="print" size={14} color="#374151" /> Print stickers <span style={{ background: '#F3F4F6', color: '#374151', borderRadius: 999, padding: '1px 6px', fontSize: 10 }}>{selected.size}</span>
           </button>
           <button disabled title="Coming soon" style={{ ...toolbarBtn, opacity: 0.5, cursor: 'not-allowed' }}>
-            <MI name="content_copy" size={14} color="#9CA3AF" /> Copy to new <span style={{ background: '#F3F4F6', color: '#6B7280', borderRadius: 999, padding: '1px 6px', fontSize: 10 }}>{selected.size}</span>
+            <MI name="content_copy" size={14} color="#374151" /> Copy to new <span style={{ background: '#F3F4F6', color: '#374151', borderRadius: 999, padding: '1px 6px', fontSize: 10 }}>{selected.size}</span>
           </button>
           <button onClick={handleCancel} disabled={busy || cancellableCount === 0}
             style={{ ...toolbarBtn, background: '#DC2626', color: '#fff', border: 'none', opacity: cancellableCount === 0 ? 0.5 : 1, cursor: cancellableCount === 0 ? 'not-allowed' : 'pointer' }}>
@@ -305,8 +305,8 @@ export default function BatchDetailShell({
         {samples.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12">
             <MI name="science" size={32} color="#D1D5DB" />
-            <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No samples in batch</p>
-            <p className="text-xs mt-0.5 mb-3" style={{ color: '#9CA3AF' }}>Add an existing unassigned sample, or register a new one for this batch</p>
+            <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>No samples in batch</p>
+            <p className="text-xs mt-0.5 mb-3" style={{ color: '#374151' }}>Add an existing unassigned sample, or register a new one for this batch</p>
             <div className="flex items-center gap-2">
               <button onClick={openAdd} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium" style={{ backgroundColor: '#fff', color: '#374151', border: '1px solid #D1D5DB', cursor: 'pointer' }}>
                 <MI name="playlist_add" size={13} color="#374151" /> Add Samples
@@ -324,7 +324,7 @@ export default function BatchDetailShell({
                   <input type="checkbox" checked={selected.size === samples.length} onChange={toggleAll} style={{ cursor: 'pointer' }} />
                 </th>
                 {['Sample ID', 'Client', 'Sample Type', 'Date Sampled', 'Priority', 'Status'].map(h => (
-                  <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
+                  <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#374151', letterSpacing: '0.05em' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -342,15 +342,15 @@ export default function BatchDetailShell({
                           {s.id || s.title}
                         </Link>
                       ) : (
-                        <span className="text-xs font-mono px-2 py-0.5 rounded-full" style={{ backgroundColor: '#F3F4F6', color: '#6B7280', fontWeight: 600 }}>
+                        <span className="text-xs font-mono px-2 py-0.5 rounded-full" style={{ backgroundColor: '#F3F4F6', color: '#374151', fontWeight: 600 }}>
                           {s.id || s.title}
                         </span>
                       )}
                     </td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{s.ClientTitle || '—'}</td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{s.SampleTypeTitle || '—'}</td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{fmtDate(s.DateSampled)}</td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{mapSenaitePriority(s.Priority)}</td>
+                    <td className="px-3 py-2.5 text-xs" style={{ color: '#374151' }}>{s.ClientTitle || '—'}</td>
+                    <td className="px-3 py-2.5 text-xs" style={{ color: '#374151' }}>{s.SampleTypeTitle || '—'}</td>
+                    <td className="px-3 py-2.5 text-xs" style={{ color: '#374151' }}>{fmtDate(s.DateSampled)}</td>
+                    <td className="px-3 py-2.5 text-xs" style={{ color: '#374151' }}>{mapSenaitePriority(s.Priority)}</td>
                     <td className="px-3 py-2.5"><SampleStateBadge state={s.review_state} /></td>
                   </tr>
                 )
@@ -359,7 +359,7 @@ export default function BatchDetailShell({
           </table>
         )}
         <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-          <p style={{ fontSize: 10, color: '#9CA3AF' }}>{samples.length} sample{samples.length !== 1 ? 's' : ''}{selected.size > 0 ? ` · ${selected.size} selected` : ''}</p>
+          <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>{samples.length} sample{samples.length !== 1 ? 's' : ''}{selected.size > 0 ? ` · ${selected.size} selected` : ''}</p>
         </div>
       </div>
       </div>
@@ -372,37 +372,37 @@ export default function BatchDetailShell({
             <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #F3F4F6' }}>
               <div>
                 <h2 style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>{selectedSamples.length === 1 ? 'Enter Results' : 'Multi Results'}</h2>
-                <p style={{ fontSize: 11, color: '#9CA3AF' }}>{selectedSamples.length} sample{selectedSamples.length !== 1 ? 's' : ''} selected</p>
+                <p style={{ fontSize: 11, color: '#374151' }}>{selectedSamples.length} sample{selectedSamples.length !== 1 ? 's' : ''} selected</p>
               </div>
               <button onClick={closeResults} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                <MI name="close" size={16} color="#9CA3AF" />
+                <MI name="close" size={16} color="#374151" />
               </button>
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', padding: '8px 20px' }}>
               {resultsLoading ? (
                 <div className="flex items-center justify-center py-10">
-                  <p style={{ fontSize: 12, color: '#9CA3AF' }}>Loading analyses…</p>
+                  <p style={{ fontSize: 12, color: '#374151' }}>Loading analyses…</p>
                 </div>
               ) : resultsList.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-10">
                   <MI name="science" size={28} color="#D1D5DB" />
-                  <p className="mt-2 text-sm" style={{ color: '#6B7280' }}>No analyses to enter results for</p>
-                  <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>The selected sample(s) have no analyses attached yet</p>
+                  <p className="mt-2 text-sm" style={{ color: '#374151' }}>No analyses to enter results for</p>
+                  <p className="text-xs mt-0.5" style={{ color: '#374151' }}>The selected sample(s) have no analyses attached yet</p>
                 </div>
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid #F3F4F6' }}>
                       {['Sample', 'Analysis', 'Result', 'Unit'].map(h => (
-                        <th key={h} className="px-2 py-2 text-left" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+                        <th key={h} className="px-2 py-2 text-left" style={{ fontSize: 10, fontWeight: 600, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {resultsList.map(a => (
                       <tr key={a.uid} style={{ borderBottom: '1px solid #F9FAFB' }}>
-                        <td className="px-2 py-2 text-xs" style={{ color: '#6B7280' }}>{a.sampleId}</td>
+                        <td className="px-2 py-2 text-xs" style={{ color: '#374151' }}>{a.sampleId}</td>
                         <td className="px-2 py-2 text-xs font-medium" style={{ color: '#111827' }}>{a.title || a.Keyword}</td>
                         <td className="px-2 py-2">
                           <input
@@ -413,7 +413,7 @@ export default function BatchDetailShell({
                             style={{ border: '1px solid #D1D5DB', padding: '5px 8px', width: 120 }}
                           />
                         </td>
-                        <td className="px-2 py-2 text-xs" style={{ color: '#9CA3AF' }}>{a.Unit || '—'}</td>
+                        <td className="px-2 py-2 text-xs" style={{ color: '#374151' }}>{a.Unit || '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -442,18 +442,18 @@ export default function BatchDetailShell({
             <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #F3F4F6' }}>
               <div>
                 <h2 style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Add Samples to Batch</h2>
-                <p style={{ fontSize: 11, color: '#9CA3AF' }}>
+                <p style={{ fontSize: 11, color: '#374151' }}>
                   {batch.ClientTitle ? `Showing unassigned samples for ${batch.ClientTitle}` : 'Showing unassigned samples across all clients'}
                 </p>
               </div>
               <button onClick={closeAdd} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                <MI name="close" size={16} color="#9CA3AF" />
+                <MI name="close" size={16} color="#374151" />
               </button>
             </div>
 
             <div className="px-5 pt-3">
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ backgroundColor: '#F3F4F6', border: '1px solid #E5E7EB' }}>
-                <MI name="search" size={14} color="#9CA3AF" />
+                <MI name="search" size={14} color="#374151" />
                 <input
                   type="text"
                   value={addSearch}
@@ -468,13 +468,13 @@ export default function BatchDetailShell({
             <div style={{ flex: 1, overflowY: 'auto', padding: '8px 20px' }}>
               {addLoading ? (
                 <div className="flex items-center justify-center py-10">
-                  <p style={{ fontSize: 12, color: '#9CA3AF' }}>Loading unassigned samples…</p>
+                  <p style={{ fontSize: 12, color: '#374151' }}>Loading unassigned samples…</p>
                 </div>
               ) : addFiltered.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-10">
                   <MI name="science" size={28} color="#D1D5DB" />
-                  <p className="mt-2 text-sm" style={{ color: '#6B7280' }}>No unassigned samples found</p>
-                  <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>
+                  <p className="mt-2 text-sm" style={{ color: '#374151' }}>No unassigned samples found</p>
+                  <p className="text-xs mt-0.5" style={{ color: '#374151' }}>
                     {batch.ClientTitle ? `Every sample for ${batch.ClientTitle} is already in a batch.` : 'Every sample is already assigned to a batch.'}
                   </p>
                 </div>
@@ -491,7 +491,7 @@ export default function BatchDetailShell({
                         />
                       </th>
                       {['Sample ID', 'Client', 'Sample Type', 'Date Sampled', 'Status'].map(h => (
-                        <th key={h} className="px-2 py-2 text-left" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+                        <th key={h} className="px-2 py-2 text-left" style={{ fontSize: 10, fontWeight: 600, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -502,9 +502,9 @@ export default function BatchDetailShell({
                           <input type="checkbox" checked={addSelected.has(s.uid)} onChange={() => toggleAddSelected(s.uid)} style={{ cursor: 'pointer' }} />
                         </td>
                         <td className="px-2 py-2 text-xs font-mono font-semibold" style={{ color: '#2563EB' }}>{s.id || s.title}</td>
-                        <td className="px-2 py-2 text-xs" style={{ color: '#6B7280' }}>{s.ClientTitle || '—'}</td>
-                        <td className="px-2 py-2 text-xs" style={{ color: '#6B7280' }}>{s.SampleTypeTitle || '—'}</td>
-                        <td className="px-2 py-2 text-xs" style={{ color: '#6B7280' }}>{fmtDate(s.DateSampled)}</td>
+                        <td className="px-2 py-2 text-xs" style={{ color: '#374151' }}>{s.ClientTitle || '—'}</td>
+                        <td className="px-2 py-2 text-xs" style={{ color: '#374151' }}>{s.SampleTypeTitle || '—'}</td>
+                        <td className="px-2 py-2 text-xs" style={{ color: '#374151' }}>{fmtDate(s.DateSampled)}</td>
                         <td className="px-2 py-2"><SampleStateBadge state={s.review_state} /></td>
                       </tr>
                     ))}
@@ -514,7 +514,7 @@ export default function BatchDetailShell({
             </div>
 
             <div className="px-5 py-4 flex items-center justify-between gap-2" style={{ borderTop: '1px solid #F3F4F6' }}>
-              <span style={{ fontSize: 11, color: '#9CA3AF' }}>{addSelected.size} selected</span>
+              <span style={{ fontSize: 11, color: '#374151' }}>{addSelected.size} selected</span>
               <div className="flex items-center gap-2">
                 <button onClick={closeAdd} disabled={addSubmitting} style={{ fontSize: 12, fontWeight: 500, padding: '7px 16px', borderRadius: 8, border: '1px solid #E8EAF2', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
                   Cancel

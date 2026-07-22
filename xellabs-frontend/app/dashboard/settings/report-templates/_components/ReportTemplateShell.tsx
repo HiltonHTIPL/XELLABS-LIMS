@@ -241,11 +241,11 @@ export default function ReportTemplateShell({ initialTemplates, defaultFields }:
       {/* Page header */}
       <div className="flex items-center gap-3" style={{ marginBottom: 20 }}>
         <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
-          <span className="material-icons" style={{ fontSize: 16, color: '#6B7280' }}>arrow_back</span>
+          <span className="material-icons" style={{ fontSize: 16, color: '#374151' }}>arrow_back</span>
         </Link>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: '#111827' }}>Report Template Editor</h1>
-          <p style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>
+          <p style={{ fontSize: 13, color: '#374151', marginTop: 4 }}>
             Customize every line of each report type — labels, values, visibility, order, logo and colour.
           </p>
         </div>
@@ -309,7 +309,7 @@ export default function ReportTemplateShell({ initialTemplates, defaultFields }:
           )}
           {selectedId && (
             delConfirm
-              ? <><CtrlBtn onClick={handleDelete} icon="check" label="Confirm" color="#dc2626" filled compact /><CtrlBtn onClick={() => setDelConfirm(false)} icon="close" label="Cancel" color="#6b7280" compact /></>
+              ? <><CtrlBtn onClick={handleDelete} icon="check" label="Confirm" color="#dc2626" filled compact /><CtrlBtn onClick={() => setDelConfirm(false)} icon="close" label="Cancel" color="#374151" compact /></>
               : <CtrlBtn onClick={() => setDelConfirm(true)} icon="delete" label="Delete" color="#dc2626" disabled={busy} compact />
           )}
           {selectedId && <CtrlBtn onClick={handlePreview} icon="preview" label="Preview PDF" color="#059669" compact />}
@@ -381,7 +381,7 @@ export default function ReportTemplateShell({ initialTemplates, defaultFields }:
               borderBottom: '1px solid #e5e7eb', paddingBottom: 6, marginBottom: 8,
             }}>
               <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
-                letterSpacing: '0.08em', color: '#6b7280' }}>
+                letterSpacing: '0.08em', color: '#374151' }}>
                 {group.label}
               </span>
               <button
@@ -395,7 +395,7 @@ export default function ReportTemplateShell({ initialTemplates, defaultFields }:
 
             <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr 1fr 60px 56px 28px',
               gap: 6, padding: '3px 6px', fontSize: 10, fontWeight: 600,
-              color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              color: '#374151', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
               <span /><span>Label</span><span>Value</span>
               <span style={{ textAlign: 'center' }}>Show</span>
               <span style={{ textAlign: 'center' }}>Move</span>
@@ -419,7 +419,7 @@ export default function ReportTemplateShell({ initialTemplates, defaultFields }:
 
         {/* Save */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8, paddingTop: 16, borderTop: '1px solid #e5e7eb' }}>
-          {isNew && <span style={{ fontSize: 12, color: '#6b7280', alignSelf: 'center' }}>Creating new template</span>}
+          {isNew && <span style={{ fontSize: 12, color: '#374151', alignSelf: 'center' }}>Creating new template</span>}
           <button
             type="submit"
             disabled={pending || busy}
@@ -539,7 +539,7 @@ function FieldRow({ field, isFirst, isLast, isCustom, onChange, onMove, onRemove
           placeholder="Value"
         />
       ) : (
-        <span style={{ fontSize: 10, color: '#9ca3af', padding: '4px 7px' }}>auto from data</span>
+        <span style={{ fontSize: 10, color: '#374151', padding: '4px 7px' }}>auto from data</span>
       )}
 
       {/* Toggle */}

@@ -6,8 +6,9 @@ import {
   transitionWorksheet, submitWorksheetResult, verifyWorksheetAnalysis,
   addAnalysesToWorksheet, removeAnalysesFromWorksheet, addDuplicateToWorksheet,
   addReferenceToWorksheet, updateWorksheetFields,
-  type WorksheetInfo, type UnassignedAnalysis, type ReferenceSampleOption, type LabAnalyst,
+  type ReferenceSampleOption,
 } from '@/app/actions/senaite-worksheets'
+import type { WorksheetInfo, UnassignedAnalysis, LabAnalyst } from '@/app/lib/senaite-worksheets'
 import type { RefOption } from '@/app/dashboard/_components/AdminRefShell'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
@@ -56,7 +57,7 @@ export default function WorksheetDetailShell({
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
 
   const isOpen = worksheet.reviewState === 'open'
-  const badge = STATE_BADGE[worksheet.reviewState] ?? { bg: '#F3F4F6', color: '#6B7280', label: worksheet.reviewState || '—' }
+  const badge = STATE_BADGE[worksheet.reviewState] ?? { bg: '#F3F4F6', color: '#374151', label: worksheet.reviewState || '—' }
   const actions = TRANSITIONS[worksheet.reviewState] ?? []
   const slots = useMemo(() => [...worksheet.slots].sort((a, b) => a.position - b.position), [worksheet.slots])
   const routinePositions = useMemo(
@@ -214,22 +215,22 @@ export default function WorksheetDetailShell({
       <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
         <div className="flex items-center gap-3">
           <Link href="/dashboard/worksheets" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
-            <MI name="arrow_back" size={16} color="#6B7280" />
+            <MI name="arrow_back" size={16} color="#374151" />
           </Link>
           <div>
             <div className="flex items-center gap-2.5">
               <h1 style={{ fontSize: 24, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>{worksheet.id}</h1>
               <span className="inline-flex items-center px-2 py-0.5 rounded-full" style={{ backgroundColor: badge.bg, color: badge.color, fontSize: 11, fontWeight: 600 }}>{badge.label}</span>
             </div>
-            <p className="text-xs mt-0.5" style={{ color: '#6B7280' }}>
+            <p className="text-xs mt-0.5" style={{ color: '#374151' }}>
               {worksheet.templateTitle ? `From template: ${worksheet.templateTitle}` : 'Blank worksheet'}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {isOpen && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg" style={{ fontSize: 11, color: '#6B7280', backgroundColor: '#F3F4F6', border: '1px solid #E8EAF2' }}>
-              <MI name="info" size={13} color="#9CA3AF" />
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg" style={{ fontSize: 11, color: '#374151', backgroundColor: '#F3F4F6', border: '1px solid #E8EAF2' }}>
+              <MI name="info" size={13} color="#374151" />
               Submits for review automatically once every result is entered
             </span>
           )}
@@ -276,7 +277,7 @@ export default function WorksheetDetailShell({
       <div className="bg-white rounded-xl px-4 py-4 mb-4" style={{ border: '1px solid #E8EAF2' }}>
         <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
           <div>
-            <label className="block mb-1" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Analyst</label>
+            <label className="block mb-1" style={{ fontSize: 10, fontWeight: 600, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Analyst</label>
             {isOpen ? (
               <select value={analyst} onChange={e => setAnalyst(e.target.value)} className="w-full px-2.5 py-1.5 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827' }}>
                 <option value="">Unassigned</option>
@@ -287,7 +288,7 @@ export default function WorksheetDetailShell({
             ) : <p className="text-sm font-semibold" style={{ color: '#111827' }}>{analystLabel || '—'}</p>}
           </div>
           <div>
-            <label className="block mb-1" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Instrument</label>
+            <label className="block mb-1" style={{ fontSize: 10, fontWeight: 600, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Instrument</label>
             {isOpen ? (
               <select value={instrumentUid} onChange={e => setInstrumentUid(e.target.value)} className="w-full px-2.5 py-1.5 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827' }}>
                 <option value="">None</option>
@@ -296,7 +297,7 @@ export default function WorksheetDetailShell({
             ) : <p className="text-sm font-semibold" style={{ color: '#111827' }}>{worksheet.instrumentTitle || '—'}</p>}
           </div>
           <div>
-            <label className="block mb-1" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Method</label>
+            <label className="block mb-1" style={{ fontSize: 10, fontWeight: 600, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Method</label>
             {isOpen ? (
               <select value={methodUid} onChange={e => setMethodUid(e.target.value)} className="w-full px-2.5 py-1.5 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827' }}>
                 <option value="">None</option>
@@ -305,12 +306,12 @@ export default function WorksheetDetailShell({
             ) : <p className="text-sm font-semibold" style={{ color: '#111827' }}>{worksheet.methodTitle || '—'}</p>}
           </div>
           <div className="flex items-end gap-3">
-            <div><span style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase' }}>Routine</span><p className="text-sm font-semibold" style={{ color: '#111827' }}>{worksheet.numRegularAnalyses}</p></div>
-            <div><span style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase' }}>QC</span><p className="text-sm font-semibold" style={{ color: '#111827' }}>{worksheet.numQcAnalyses}</p></div>
+            <div><span style={{ fontSize: 10, fontWeight: 600, color: '#374151', textTransform: 'uppercase' }}>Routine</span><p className="text-sm font-semibold" style={{ color: '#111827' }}>{worksheet.numRegularAnalyses}</p></div>
+            <div><span style={{ fontSize: 10, fontWeight: 600, color: '#374151', textTransform: 'uppercase' }}>QC</span><p className="text-sm font-semibold" style={{ color: '#111827' }}>{worksheet.numQcAnalyses}</p></div>
           </div>
         </div>
         <div className="mt-3">
-          <label className="block mb-1" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Remarks</label>
+          <label className="block mb-1" style={{ fontSize: 10, fontWeight: 600, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Remarks</label>
           {isOpen ? (
             <textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={2} placeholder="Worksheet notes…" className="w-full px-2.5 py-1.5 text-xs rounded-lg outline-none resize-none" style={{ border: '1px solid #D1D5DB', color: '#111827' }} />
           ) : <p className="text-xs" style={{ color: '#374151' }}>{latestRemark(worksheet.remarks) || '—'}</p>}
@@ -332,14 +333,14 @@ export default function WorksheetDetailShell({
           <button onClick={() => setShowAdd(v => !v)} className="w-full flex items-center justify-between px-4 py-3" style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
             <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#111827' }}>
               <MI name="playlist_add" size={16} color="#0154FC" /> Add analyses
-              <span style={{ fontSize: 11, color: '#9CA3AF', fontWeight: 400 }}>{unassigned.length} available</span>
+              <span style={{ fontSize: 11, color: '#374151', fontWeight: 400 }}>{unassigned.length} available</span>
             </span>
-            <MI name={showAdd ? 'expand_less' : 'expand_more'} size={18} color="#9CA3AF" />
+            <MI name={showAdd ? 'expand_less' : 'expand_more'} size={18} color="#374151" />
           </button>
           {showAdd && (
             <div className="px-4 pb-4">
               {unassigned.length === 0 ? (
-                <p className="text-xs" style={{ color: '#9CA3AF' }}>No pending analyses. Receive samples to make their analyses available here.</p>
+                <p className="text-xs" style={{ color: '#374151' }}>No pending analyses. Receive samples to make their analyses available here.</p>
               ) : (
                 <>
                   <div className="rounded-lg" style={{ border: '1px solid #E8EAF2', maxHeight: 220, overflowY: 'auto' }}>
@@ -347,8 +348,8 @@ export default function WorksheetDetailShell({
                       <label key={a.uid} className="flex items-center gap-2 px-3 py-1.5 cursor-pointer" style={{ borderBottom: '1px solid #F3F4F6' }}>
                         <input type="checkbox" checked={!!picked[a.uid]} onChange={e => setPicked(p => ({ ...p, [a.uid]: e.target.checked }))} style={{ accentColor: '#0154FC' }} />
                         <span className="text-xs" style={{ color: '#111827', flex: 1 }}>{a.title}</span>
-                        <span className="text-xs" style={{ color: '#6B7280' }}>{a.sampleId}</span>
-                        <span className="text-xs" style={{ color: '#9CA3AF' }}>{a.clientTitle}</span>
+                        <span className="text-xs" style={{ color: '#374151' }}>{a.sampleId}</span>
+                        <span className="text-xs" style={{ color: '#374151' }}>{a.clientTitle}</span>
                       </label>
                     ))}
                   </div>
@@ -386,7 +387,7 @@ export default function WorksheetDetailShell({
                   <MI name="science" size={12} color="#059669" /> Add QC
                 </button>
                 {references.length === 0 && (
-                  <span style={{ fontSize: 11, color: '#9CA3AF' }}>
+                  <span style={{ fontSize: 11, color: '#374151' }}>
                     No reference samples yet — add them under Administration → Reference Samples.
                   </span>
                 )}
@@ -404,15 +405,15 @@ export default function WorksheetDetailShell({
         {slots.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10">
             <MI name="grid_off" size={32} color="#D1D5DB" />
-            <p className="mt-2 text-sm" style={{ color: '#6B7280' }}>No positions assigned</p>
-            <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>Use “Add analyses” above, or apply a template</p>
+            <p className="mt-2 text-sm" style={{ color: '#374151' }}>No positions assigned</p>
+            <p className="text-xs mt-0.5" style={{ color: '#374151' }}>Use “Add analyses” above, or apply a template</p>
           </div>
         ) : (
           <table className="w-full" style={{ borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
                 {['Pos', 'Type', 'Analysis', 'Sample', 'Result', 'State', ''].map((h, hi) => (
-                  <th key={hi} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
+                  <th key={hi} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#374151', letterSpacing: '0.05em' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -426,15 +427,15 @@ export default function WorksheetDetailShell({
                     <td className="px-3 py-2.5">
                       <span className="inline-block w-7 text-center text-xs font-semibold rounded" style={{ color: '#0154FC', backgroundColor: '#EFF6FF', padding: '3px 0' }}>{s.position}</span>
                     </td>
-                    <td className="px-3 py-2.5"><span className="text-xs font-medium" style={{ color: TYPE_COLOR[s.type] ?? '#6B7280' }}>{TYPE_LABEL[s.type] ?? s.type}</span></td>
+                    <td className="px-3 py-2.5"><span className="text-xs font-medium" style={{ color: TYPE_COLOR[s.type] ?? '#374151' }}>{TYPE_LABEL[s.type] ?? s.type}</span></td>
                     <td className="px-3 py-2.5 text-xs" style={{ color: '#111827' }}>{a?.title ?? '—'}</td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{a?.sampleId || '—'}</td>
+                    <td className="px-3 py-2.5 text-xs" style={{ color: '#374151' }}>{a?.sampleId || '—'}</td>
                     <td className="px-3 py-2.5">
                       {editable ? (
                         <input value={results[s.analysisUid] ?? ''} onChange={e => setResult(s.analysisUid, e.target.value)} placeholder="Enter result…" className="px-2 py-1 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827', width: 110 }} />
                       ) : <span className="text-xs font-medium" style={{ color: '#111827' }}>{a?.result || '—'}</span>}
                     </td>
-                    <td className="px-3 py-2.5"><span className="text-xs" style={{ color: state === 'verified' ? '#166534' : state === 'to_be_verified' ? '#92400E' : '#9CA3AF' }}>{state || '—'}</span></td>
+                    <td className="px-3 py-2.5"><span className="text-xs" style={{ color: state === 'verified' ? '#166534' : state === 'to_be_verified' ? '#92400E' : '#374151' }}>{state || '—'}</span></td>
                     <td className="px-3 py-2.5 text-right whitespace-nowrap">
                       {editable && a && (
                         <>

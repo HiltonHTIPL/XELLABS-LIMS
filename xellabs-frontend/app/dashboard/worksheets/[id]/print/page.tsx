@@ -28,7 +28,7 @@ export default async function WorksheetPrintPage({ params }: { params: Promise<{
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #14265E', paddingBottom: 12, marginBottom: 16 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 800, color: '#14265E', margin: 0 }}>XelLabs LIMS</h1>
-          <p style={{ fontSize: 12, color: '#6B7280', margin: '2px 0 0' }}>Worksheet — {ws.id}</p>
+          <p style={{ fontSize: 12, color: '#374151', margin: '2px 0 0' }}>Worksheet — {ws.id}</p>
         </div>
         <div style={{ textAlign: 'right', fontSize: 12, color: '#374151' }}>
           <div>Status: <strong>{ws.reviewState}</strong></div>
@@ -39,15 +39,15 @@ export default async function WorksheetPrintPage({ params }: { params: Promise<{
       <table style={{ width: '100%', fontSize: 12, marginBottom: 20, borderCollapse: 'collapse' }}>
         <tbody>
           <tr>
-            <td style={{ padding: '3px 8px', color: '#6B7280', width: 120 }}>Analyst</td><td style={{ padding: '3px 8px' }}>{ws.analyst || '—'}</td>
-            <td style={{ padding: '3px 8px', color: '#6B7280', width: 120 }}>Instrument</td><td style={{ padding: '3px 8px' }}>{ws.instrumentTitle || '—'}</td>
+            <td style={{ padding: '3px 8px', color: '#374151', width: 120 }}>Analyst</td><td style={{ padding: '3px 8px' }}>{ws.analyst || '—'}</td>
+            <td style={{ padding: '3px 8px', color: '#374151', width: 120 }}>Instrument</td><td style={{ padding: '3px 8px' }}>{ws.instrumentTitle || '—'}</td>
           </tr>
           <tr>
-            <td style={{ padding: '3px 8px', color: '#6B7280' }}>Method</td><td style={{ padding: '3px 8px' }}>{ws.methodTitle || '—'}</td>
-            <td style={{ padding: '3px 8px', color: '#6B7280' }}>Template</td><td style={{ padding: '3px 8px' }}>{ws.templateTitle || '—'}</td>
+            <td style={{ padding: '3px 8px', color: '#374151' }}>Method</td><td style={{ padding: '3px 8px' }}>{ws.methodTitle || '—'}</td>
+            <td style={{ padding: '3px 8px', color: '#374151' }}>Template</td><td style={{ padding: '3px 8px' }}>{ws.templateTitle || '—'}</td>
           </tr>
           <tr>
-            <td style={{ padding: '3px 8px', color: '#6B7280' }}>Routine / QC</td><td style={{ padding: '3px 8px' }}>{ws.numRegularAnalyses} / {ws.numQcAnalyses}</td>
+            <td style={{ padding: '3px 8px', color: '#374151' }}>Routine / QC</td><td style={{ padding: '3px 8px' }}>{ws.numRegularAnalyses} / {ws.numQcAnalyses}</td>
           </tr>
         </tbody>
       </table>
@@ -56,7 +56,7 @@ export default async function WorksheetPrintPage({ params }: { params: Promise<{
         <thead>
           <tr style={{ background: '#F3F4F6' }}>
             {['Pos', 'Type', 'Analysis', 'Sample', 'Result', 'State'].map(h => (
-              <th key={h} style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid #D1D5DB', fontSize: 11, textTransform: 'uppercase', color: '#6B7280' }}>{h}</th>
+              <th key={h} style={{ padding: '6px 8px', textAlign: 'left', borderBottom: '1px solid #D1D5DB', fontSize: 11, textTransform: 'uppercase', color: '#374151' }}>{h}</th>
             ))}
           </tr>
         </thead>
@@ -75,8 +75,8 @@ export default async function WorksheetPrintPage({ params }: { params: Promise<{
       </table>
 
       <div style={{ marginTop: 40, display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#374151' }}>
-        <div style={{ borderTop: '1px solid #9CA3AF', paddingTop: 4, width: 200 }}>Analyst signature</div>
-        <div style={{ borderTop: '1px solid #9CA3AF', paddingTop: 4, width: 200 }}>Reviewer signature</div>
+        <div style={{ borderTop: '1px solid #374151', paddingTop: 4, width: 200 }}>Analyst signature</div>
+        <div style={{ borderTop: '1px solid #374151', paddingTop: 4, width: 200 }}>Reviewer signature</div>
       </div>
     </div>
   )

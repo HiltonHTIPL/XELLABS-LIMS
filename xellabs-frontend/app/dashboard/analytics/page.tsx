@@ -31,7 +31,7 @@ export default function AnalyticsPage() {
     <div className="flex flex-col h-[calc(100vh-80px)] w-full p-6">
       <div className="flex items-center gap-3 mb-4 flex-shrink-0">
         <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
-          <span className="material-icons" style={{ fontSize: 16, color: '#6B7280' }}>arrow_back</span>
+          <span className="material-icons" style={{ fontSize: 16, color: '#374151' }}>arrow_back</span>
         </Link>
         <h1 className="text-2xl font-semibold text-gray-900">Data Analytics</h1>
         <button

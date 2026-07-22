@@ -306,23 +306,26 @@ export async function fetchSenaiteClientsForDropdown(
 export async function fetchSenaiteClientsFull(token: string): Promise<SenaiteClientFull[]> {
   const headers = { Authorization: `Basic ${token}`, Accept: 'application/json' }
   try {
-    // Fetch BOTH active and inactive clients — the Clients page computes the
-    // Active/Inactive stat cards and status filter client-side, so filtering
-    // to review_state=active here would hide deactivated clients entirely
-    // (Inactive count stuck at 0, "Inactive" filter empty, a just-deactivated
-    // client vanishing instead of moving to Inactive).
-    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Client?complete=true&limit=1000`, {
-      headers, cache: 'no-store',
-    })
+    // Client and Contact are independent SENAITE queries (Contact isn't
+    // filtered by the resolved client list — it fetches everything and gets
+    // grouped by parent_path below) — fire both concurrently instead of
+    // sequentially. Each `complete=true` call measured ~1-1.5s standalone;
+    // this halves the wall-clock cost of every page that calls getClients().
+    const [res, cRes] = await Promise.all([
+      // Fetch BOTH active and inactive clients — the Clients page computes the
+      // Active/Inactive stat cards and status filter client-side, so filtering
+      // to review_state=active here would hide deactivated clients entirely
+      // (Inactive count stuck at 0, "Inactive" filter empty, a just-deactivated
+      // client vanishing instead of moving to Inactive).
+      fetch(`${SENAITE_URL}/@@API/senaite/v1/Client?complete=true&limit=1000`, { headers, cache: 'no-store' }),
+      // One bulk Contact fetch, grouped by parent client path below.
+      fetch(`${SENAITE_URL}/@@API/senaite/v1/Contact?complete=true&limit=2000`, { headers, cache: 'no-store' }),
+    ])
     if (!res.ok) return []
     const data = await res.json()
     const clients: SenaiteClientFull[] = (data.items ?? []).map(mapClient)
     if (clients.length === 0) return []
 
-    // One bulk Contact fetch, grouped by parent client path.
-    const cRes = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Contact?complete=true&limit=2000`, {
-      headers, cache: 'no-store',
-    })
     if (cRes.ok) {
       const cData = await cRes.json()
       const byParent = new Map<string, SenaiteContact>()
@@ -1784,6 +1787,60 @@ export async function fetchSenaiteInstruments(token: string): Promise<SenaiteIns
   } catch { return [] }
 }
 
+// Instrument create/update/detail-read — MUST go through the legacy v1 API,
+// never plone.restapi. Confirmed live: any restapi call that returns a full
+// Instrument object (GET, or the response body of a create/PATCH) 500s with
+// "No converter for making <InstrumentType ...> JSON compatible" — restapi
+// cannot serialize this type's reference fields at all. A restapi CREATE
+// attempt actually rolled back (the object was never persisted), unlike
+// AnalysisRequest where a v1/update "failure" can still have applied — so
+// this is a stricter, cleaner case than AR's: v1 create/update on Instrument
+// is fully reliable, verified by re-fetching via the v1 singular endpoint
+// (`v1/instrument/<uid>`), which returns every field (InstrumentType,
+// Manufacturer, Supplier, Model, SerialNo) as plain JSON-safe {uid,url,api_url}
+// refs — completely unlike restapi's crash on the same reference fields.
+export async function createSenaiteInstrument(
+  token: string,
+  fields: { title: string; InstrumentType: string; Manufacturer: string; Supplier: string; Model?: string; SerialNo?: string; Methods?: string[] },
+): Promise<{ success: boolean; uid?: string; error?: string }> {
+  const headers = { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/create`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        portal_type: 'Instrument',
+        parent_path: `${SENAITE_SITE_PATH}/bika_setup/bika_instruments`,
+        ...fields,
+      }),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok || data.success === false) return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+    const item = ((data.items as Record<string, unknown>[]) ?? [])[0]
+    return { success: true, uid: item?.uid as string | undefined }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+export async function updateSenaiteInstrument(
+  token: string,
+  uid: string,
+  fields: { title?: string; InstrumentType?: string; Manufacturer?: string; Supplier?: string; Model?: string; SerialNo?: string; Methods?: string[] },
+): Promise<{ success: boolean; error?: string }> {
+  const headers = { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ uid, ...fields }),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (res.ok && data.success !== false) return { success: true }
+    return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
 export type SenaiteStorageLocation = {
   uid: string
   id: string
@@ -2252,9 +2309,18 @@ function analysisServiceBody(payload: AnalysisServicePayload): Record<string, un
     PointOfCapture: payload.PointOfCapture ?? 'lab',
     BulkPrice: payload.BulkPrice ?? '0.00',
     VAT: payload.VAT ?? '',
+    // Unlike every other blank-optional field on this type (which merely
+    // trips the already-handled bogus "'NoneType' object has no attribute
+    // 'form'" response-rendering error while the object is still created
+    // fine underneath — see createSenaiteAnalysisService's verify-by-refetch
+    // fallback), LowerLimitOfQuantification/UpperLimitOfQuantification
+    // genuinely BLOCK creation when sent as `''`: SENAITE rejects them with
+    // "Value u'' is not floatable" and the object never gets created at all.
+    // Confirmed live by isolating each blank-float field one at a time.
+    // Always send a numeric default, matching the Price/BulkPrice pattern.
     LowerDetectionLimit: payload.LowerDetectionLimit ?? '',
-    LowerLimitOfQuantification: payload.LowerLimitOfQuantification ?? '',
-    UpperLimitOfQuantification: payload.UpperLimitOfQuantification ?? '',
+    LowerLimitOfQuantification: payload.LowerLimitOfQuantification || '0.00',
+    UpperLimitOfQuantification: payload.UpperLimitOfQuantification || '0.00',
     UpperDetectionLimit: payload.UpperDetectionLimit ?? '',
     DetectionLimitSelector: payload.DetectionLimitSelector ?? false,
     AllowManualDetectionLimit: payload.AllowManualDetectionLimit ?? false,
@@ -3069,7 +3135,24 @@ export async function submitAnalysisResult(
     })
     const updateData = await updateRes.json().catch(() => ({})) as Record<string, unknown>
     if (!updateRes.ok || updateData.success === false) {
-      return { success: false, error: (updateData.message as string) ?? `Update failed: HTTP ${updateRes.status}` }
+      // Confirmed live (2026-07-22): for an Analysis whose Service/Analysis
+      // has any blank detection-limit field, this endpoint returns HTTP 200
+      // with `success:false, message:"Value '' is not floatable"` — the same
+      // to_float('') crash as the submit-transition render bug above, this
+      // time surfacing while the endpoint recomputes a formatted-result
+      // summary for its own JSON response, AFTER the Result field has
+      // already been written. `updateData.success===false` is therefore not
+      // trustworthy either; verify by re-fetching the Result value itself
+      // before treating this as a real failure.
+      const verifyRes = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Analysis/${analysisUid}?complete=true`, {
+        headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+        cache: 'no-store',
+      })
+      const verifyData = await verifyRes.json().catch(() => ({})) as Record<string, unknown>
+      const savedResult = (verifyData.items as Record<string, unknown>[] | undefined)?.[0]?.Result
+      if (String(savedResult ?? '') !== String(result)) {
+        return { success: false, error: (updateData.message as string) ?? `Update failed: HTTP ${updateRes.status}` }
+      }
     }
 
     // See senaiteWorkflowAction for why content_status_modify is used instead of
@@ -3085,16 +3168,37 @@ export async function submitAnalysisResult(
     // content_status_modify returned ok, yet review_state never left
     // "registered" for an unreceived sample's analysis. Verify the state
     // actually changed, same guard senaiteWorkflowAction already uses for ARs.
-    const ok = await _contentStatusModify(token, path, 'submit')
-    if (!ok) return { success: false, error: 'Failed to submit result for verification.' }
+    //
+    // The inverse is also true, confirmed live (2026-07-22): `res.ok` can be
+    // FALSE (500) even though the transition itself genuinely committed —
+    // the 500 comes from the classic-UI redirect target's own page render
+    // (the Analysis's base_view), which crashes with `APIError: Value '' is
+    // not floatable` whenever its Analysis Service has a blank
+    // LowerLimitOfQuantification/UpperLimitOfQuantification (getLowerLimitOfQuantification
+    // calls to_float('') while rendering the result-entry widget) — unrelated
+    // to whether the workflow transition succeeded. So a non-ok response here
+    // must NOT short-circuit; only the re-fetched review_state below is
+    // trustworthy proof either way.
+    await _contentStatusModify(token, path, 'submit')
 
-    const afterRes = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Analysis/${analysisUid}?complete=true`, {
-      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
-      cache: 'no-store',
-    })
-    const afterData = await afterRes.json().catch(() => ({})) as Record<string, unknown>
-    const afterItems = (afterData.items as Record<string, unknown>[]) ?? []
-    const stateAfter = afterItems[0]?.review_state as string | undefined
+    // The catalog-brain metadata `review_state` reads from can lag the
+    // just-committed ZODB transaction by up to a second or two (confirmed
+    // live 2026-07-22: a re-check moments later, e.g. the next CSV import's
+    // own preview pass, correctly saw "to_be_verified" for an analysis this
+    // same check had just reported as still "assigned"). A single immediate
+    // re-fetch isn't reliable proof of failure — poll briefly before giving up.
+    let stateAfter: string | undefined
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 1000))
+      const afterRes = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Analysis/${analysisUid}?complete=true`, {
+        headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+        cache: 'no-store',
+      })
+      const afterData = await afterRes.json().catch(() => ({})) as Record<string, unknown>
+      const afterItems = (afterData.items as Record<string, unknown>[]) ?? []
+      stateAfter = afterItems[0]?.review_state as string | undefined
+      if (stateAfter === 'to_be_verified' || stateAfter === 'verified') break
+    }
     if (stateAfter !== 'to_be_verified' && stateAfter !== 'verified') {
       return {
         success: false,

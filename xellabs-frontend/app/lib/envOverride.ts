@@ -3,7 +3,7 @@
 export const ENV_OVERRIDE_KEY = 'xl_env_badge_override'
 export const ENV_OVERRIDE_EVENT = 'xl-env-badge-override-change'
 
-export const ENV_LABELS = ['Development', 'QA', 'Staging', 'Production'] as const
+export const ENV_LABELS = ['Development', 'Testing', 'QA', 'Staging', 'Production'] as const
 export type EnvLabel = typeof ENV_LABELS[number]
 
 export function getEnvOverride(): EnvLabel | null {

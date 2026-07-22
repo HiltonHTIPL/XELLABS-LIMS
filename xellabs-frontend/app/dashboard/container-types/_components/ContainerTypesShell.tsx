@@ -1,9 +1,17 @@
 'use client'
+import { exportRowsToCsv } from '@/app/lib/exportCsv'
 import { useState, useActionState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createContainerType, updateContainerType, type ContainerTypeFormState } from '@/app/actions/container-types'
 import type { SenaiteContainerType } from '@/app/lib/senaite'
+import ImportButton, { type ParsedRow } from '../../_components/ImportButton'
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
+
+const exportColumns = [
+  { key: 'title', label: 'Title' },
+  { key: 'description', label: 'Description' },
+]
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -61,22 +69,61 @@ export default function ContainerTypesShell({ initialContainerTypes }: { initial
   function openEdit(ct: SenaiteContainerType) { setEditing(ct); setTitle(ct.title); setDescription(ct.description); setShowForm(true) }
   function closeForm() { setShowForm(false); setEditing(null) }
 
+  async function handleImportRow(row: ParsedRow) {
+    const fd = new FormData()
+    if (row.title) fd.append('title', row.title)
+    if (row.description) fd.append('description', row.description)
+
+    const res = await createContainerType({}, fd)
+    return { success: res.success, message: res.message, errors: res.errors }
+  }
+
+  // SenaiteContainerType has no `id`, so key rows by uid for the shared table.
+  type Row = SenaiteContainerType & { id: string }
+  const rows: Row[] = initialContainerTypes.map(ct => ({ ...ct, id: ct.uid }))
+  const columns: DataTableColumn<Row>[] = [
+    {
+      id: 'title', label: 'Name', sortable: true, minWidth: 200,
+      render: ct => <span className="text-xs font-medium" style={{ color: '#111827' }}>{ct.title}</span>,
+    },
+    {
+      id: 'description', label: 'Description', sortable: true, minWidth: 300,
+      render: ct => <span className="text-xs" style={{ color: '#374151' }}>{ct.description || '—'}</span>,
+    },
+  ]
+
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
       <div className="flex items-center justify-between mb-3" style={{ flexShrink: 0 }}>
         <div className="flex items-center gap-3">
           <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
-            <MI name="arrow_back" size={16} color="#6B7280" />
+            <MI name="arrow_back" size={16} color="#374151" />
           </Link>
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Container Types</h1>
-            <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Manage sample container types</p>
+            <p className="text-sm mt-0.5" style={{ color: '#374151' }}>Manage sample container types</p>
           </div>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
-          <MI name="add" size={15} color="#fff" /> New Container Type
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => exportRowsToCsv(exportColumns, [], 'container-types-template')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ color: '#374151', border: '1px solid #D1D5DB', backgroundColor: '#fff' }}>
+            <MI name="download" size={15} color="#374151" /> Template
+          </button>
+          <button onClick={() => exportRowsToCsv(exportColumns, initialContainerTypes, 'container-types')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ color: '#0154FC', border: '1px solid #0154FC', backgroundColor: '#fff' }}>
+            <MI name="file_download" size={15} color="#0154FC" /> Export
+          </button>
+          <ImportButton
+            columns={exportColumns}
+            existingTitles={initialContainerTypes.map(ct => ct.title)}
+            templateFilename="container-types-template"
+            entityName="Container Types"
+            onImportRow={handleImportRow}
+            onRefresh={() => router.refresh()}
+          />
+          <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
+            <MI name="add" size={15} color="#fff" /> New Container Type
+          </button>
+        </div>
       </div>
 
       {/* Drawer */}
@@ -93,7 +140,7 @@ export default function ContainerTypesShell({ initialContainerTypes }: { initial
                 {isEditing ? `Edit — ${editing.title}` : 'New Container Type'}
               </h2>
             </div>
-            <button onClick={closeForm} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
+            <button onClick={closeForm} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#374151" /></button>
           </div>
 
           <form ref={formRef} action={action} className="flex flex-col flex-1 min-h-0">
@@ -135,47 +182,29 @@ export default function ContainerTypesShell({ initialContainerTypes }: { initial
         </div>
       )}
 
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {initialContainerTypes.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="inventory_2" size={36} color="#D1D5DB" />
-          <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No container types yet</p>
-          <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>Create your first container type to get started</p>
+          <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>No container types yet</p>
+          <p className="text-xs mt-0.5" style={{ color: '#374151' }}>Create your first container type to get started</p>
           <button onClick={openCreate} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
             <MI name="add" size={13} color="#fff" /> New Container Type
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
-          <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-            <colgroup>
-              <col style={{ width: '25%' }} /><col style={{ width: '65%' }} /><col style={{ width: '10%' }} />
-            </colgroup>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                {['Name', 'Description', ''].map(h => (
-                  <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {initialContainerTypes.map((ct, i) => (
-                <tr key={ct.uid} style={{ borderBottom: i < initialContainerTypes.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
-                  <td className="px-3 py-2 text-xs font-medium truncate" style={{ color: '#111827' }}>{ct.title}</td>
-                  <td className="px-3 py-2 text-xs truncate" style={{ color: '#6B7280' }}>{ct.description || '—'}</td>
-                  <td className="px-3 py-2">
-                    <button onClick={() => openEdit(ct)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-                      <MI name="edit" size={14} color="#6B7280" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-            <p style={{ fontSize: 10, color: '#9CA3AF' }}>{initialContainerTypes.length} container type{initialContainerTypes.length !== 1 ? 's' : ''}</p>
-          </div>
-        </div>
+        <DataTable<Row>
+          data={rows}
+          columns={columns}
+          searchable
+          persistKey="container-types"
+          emptyMessage="No container types found."
+          rowActions={ct => (
+            <button onClick={() => openEdit(ct)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }} title="Edit">
+              <MI name="edit" size={14} color="#6B7280" />
+            </button>
+          )}
+        />
       )}
       </div>
     </div>

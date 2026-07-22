@@ -36,7 +36,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
   active: { bg: '#ECFDF5', fg: '#059669' },
-  inactive: { bg: '#F3F4F6', fg: '#6B7280' },
+  inactive: { bg: '#F3F4F6', fg: '#374151' },
   under_maintenance: { bg: '#FFFBEB', fg: '#D97706' },
   maintenance: { bg: '#FFFBEB', fg: '#D97706' },
   out_of_service: { bg: '#FEF2F2', fg: '#B91C1C' },
@@ -200,7 +200,7 @@ export default function InstrumentDetailShell(
 
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <Link href="/dashboard/instruments" className="inline-flex items-center gap-1 mb-3" style={{ fontSize: 12, color: '#6B7280', flexShrink: 0 }}>
+      <Link href="/dashboard/instruments" className="inline-flex items-center gap-1 mb-3" style={{ fontSize: 12, color: '#374151', flexShrink: 0 }}>
         <MI name="arrow_back" size={14} /> Instrument Register
       </Link>
 
@@ -214,7 +214,7 @@ export default function InstrumentDetailShell(
             ) : null}
             <div>
               <h1 style={{ fontSize: 22, fontWeight: 800, color: '#14265E' }}>{name}</h1>
-              <p style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>
+              <p style={{ fontSize: 12, color: '#374151', marginTop: 2 }}>
                 {String(instrument.instrument_id ?? '')} · {String(instrument.manufacturer_org_name || instrument.manufacturer || '—')} {String(instrument.model ?? '')}
               </p>
               {typeof instrument.installation_certificate === 'string' && instrument.installation_certificate ? (
@@ -269,7 +269,7 @@ export default function InstrumentDetailShell(
       <div className="flex gap-1 mb-3" style={{ borderBottom: '1px solid #E8EAF2', flexShrink: 0 }}>
         {TABS.map(t => (
           <button key={t.key} onClick={() => setActive(t.key)}
-            className="flex items-center gap-1.5 px-3 py-2" style={{ fontSize: 13, fontWeight: 600, color: active === t.key ? '#0154FC' : '#6B7280', borderBottom: active === t.key ? '2px solid #0154FC' : '2px solid transparent' }}>
+            className="flex items-center gap-1.5 px-3 py-2" style={{ fontSize: 13, fontWeight: 600, color: active === t.key ? '#0154FC' : '#374151', borderBottom: active === t.key ? '2px solid #0154FC' : '2px solid transparent' }}>
             <MI name={t.icon} size={15} /> {t.label}
             <span style={{ fontSize: 10, backgroundColor: '#EEF2FF', color: '#4F46E5', borderRadius: 999, padding: '1px 6px' }}>{(rowsByTab[t.key] ?? []).length}</span>
           </button>
@@ -286,13 +286,13 @@ export default function InstrumentDetailShell(
       <div className="bg-white" style={{ border: '1px solid #E8EAF2', borderRadius: 10, overflow: 'hidden' }}>
         <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
           <thead>
-            <tr style={{ backgroundColor: '#F9FAFB', textAlign: 'left', color: '#6B7280' }}>
+            <tr style={{ backgroundColor: '#F9FAFB', textAlign: 'left', color: '#374151' }}>
               {tab.cols.map(c => <th key={c.key} style={{ padding: '9px 12px', fontWeight: 600 }}>{c.header}</th>)}
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
-              <tr><td colSpan={tab.cols.length} style={{ padding: 20, textAlign: 'center', color: '#9CA3AF' }}>No {tab.label.toLowerCase()} recorded.</td></tr>
+              <tr><td colSpan={tab.cols.length} style={{ padding: 20, textAlign: 'center', color: '#374151' }}>No {tab.label.toLowerCase()} recorded.</td></tr>
             )}
             {rows.map(r => (
               <tr key={r.id} style={{ borderTop: '1px solid #F3F4F6', color: '#111827' }}>
@@ -316,7 +316,7 @@ export default function InstrumentDetailShell(
         <div style={{ position: 'absolute', top: 'var(--dashboard-header-h)', right: 0, bottom: 'var(--dashboard-footer-h)', width: 440, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.12)', transform: drawer ? 'translateX(0)' : 'translateX(100%)', transition: 'transform 0.28s', display: 'flex', flexDirection: 'column' }}>
           <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #F3F4F6' }}>
             <h2 style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Add {tab.label.replace(/s$/, '')}</h2>
-            <button onClick={() => setDrawer(false)}><MI name="close" size={16} color="#9CA3AF" /></button>
+            <button onClick={() => setDrawer(false)}><MI name="close" size={16} color="#374151" /></button>
           </div>
           <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
             {tab.fields.map(f => (
@@ -355,7 +355,7 @@ export default function InstrumentDetailShell(
 function Meta({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div style={{ fontSize: 10, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
+      <div style={{ fontSize: 10, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
       <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', marginTop: 2 }}>{value}</div>
     </div>
   )
