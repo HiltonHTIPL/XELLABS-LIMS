@@ -92,6 +92,11 @@ export default function SampleAuditDrawer({ sampleId, open, onClose }: { sampleI
                                 ))}
                               </tbody>
                             </table>
+                            {entry.changes.some(c => c.reason) && (
+                              <div style={{ padding: '8px 10px', backgroundColor: '#FEF2F2', borderTop: '1px solid #FECACA', color: '#991B1B', fontSize: 11.5 }}>
+                                <strong>Reason:</strong> {entry.changes.find(c => c.reason)?.reason}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>

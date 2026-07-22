@@ -1723,7 +1723,7 @@ export type SenaiteInstrument = {
 const TITLE_MAP_TTL_MS = 5 * 60 * 1000
 const titleMapCache = new Map<string, { expires: number; map: Record<string, string> }>()
 
-async function fetchSenaiteTitleMap(token: string, portalType: string): Promise<Record<string, string>> {
+export async function fetchSenaiteTitleMap(token: string, portalType: string): Promise<Record<string, string>> {
   const cached = titleMapCache.get(portalType)
   if (cached && cached.expires > Date.now()) return cached.map
   try {
@@ -2449,7 +2449,7 @@ export async function fetchSenaiteSample(token: string, uid: string): Promise<Se
  * it needs its own copy of the same logic. Filters client-side rather than
  * trusting a server-side query filter, per this build's confirmed unreliable
  * list-filter params (see other _find_by_title-style lookups in this repo). */
-async function resolveOrCreateContactUid(token: string, clientPath: string, fullName: string): Promise<string | null> {
+export async function resolveOrCreateContactUid(token: string, clientPath: string, fullName: string): Promise<string | null> {
   const name = fullName.trim()
   if (!name) return null
   const headers = { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }
@@ -2636,10 +2636,33 @@ export async function createSenaiteSample(
  * - the update is APPLIED even when the response says success:false (e.g.
  *   `{"Contact": "Contact is required"}`) — so verify by re-fetching the field
  *   instead of trusting the response body. */
+/** Resolves a Client's SENAITE folder path from its SENAITE UID — needed to
+ * scope Contact lookups/creates (see resolveOrCreateContactUid) when editing
+ * an existing sample, mirroring the same lookup createSenaiteSample() does
+ * internally at creation time. */
+export async function resolveSenaiteClientPathByUid(token: string, clientUid: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/client?UID=${encodeURIComponent(clientUid)}&complete=true`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return null
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    const items = (data.items as Record<string, unknown>[]) ?? []
+    return (items[0]?.path as string) ?? null
+  } catch { return null }
+}
+
 export async function updateSenaiteSample(
   token: string,
   uid: string,
-  fields: { DateSampled?: string; SampleType?: string; ClientSampleID?: string; Batch?: string }
+  fields: {
+    DateSampled?: string; SampleType?: string; ClientSampleID?: string; Batch?: string
+    Priority?: string; Composite?: boolean; InternalUse?: boolean
+    ClientOrderNumber?: string; ClientReference?: string; Remarks?: string
+    Preservation?: string; SamplePoint?: string; SamplingDeviation?: string
+    Contact?: string; CCContact?: string[]; CCEmails?: string
+  }
 ): Promise<{ success: boolean; error?: string }> {
   const headers = { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }
   try {
@@ -2663,13 +2686,43 @@ export async function updateSenaiteSample(
       if (item) {
         const applied = Object.entries(fields).every(([k, v]) => {
           const got = item[k]
-          if (k === 'SampleType' || k === 'Batch') return (got as { uid?: string } | null)?.uid === v
+          if (k === 'SampleType' || k === 'Batch' || k === 'Preservation' || k === 'SamplePoint' || k === 'SamplingDeviation' || k === 'Contact') {
+            return (got as { uid?: string } | null)?.uid === v
+          }
+          if (k === 'CCContact') {
+            const gotUids = ((got as { uid?: string }[] | null) ?? []).map(c => c.uid)
+            return Array.isArray(v) && v.every(u => gotUids.includes(u))
+          }
           if (k === 'DateSampled') return typeof got === 'string' && typeof v === 'string' && got.slice(0, 10) === v.slice(0, 10)
           return got === v
         })
         if (applied) return { success: true }
       }
     }
+    return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+/** Best-effort push of the full analyses list to an existing SENAITE AR — a
+ * plain field-set via v1/update, same mechanism createSenaiteSample() uses to
+ * set Analyses at creation time. SENAITE's own add/remove analyses workflow
+ * actions are more robust for this, but aren't exposed on this build's REST
+ * surface (see CLAUDE.md §16f) — this is the same best-effort path already
+ * relied on elsewhere in this file. Caller is responsible for only invoking
+ * this while the sample is still in a state where analyses are editable. */
+export async function updateSenaiteSampleAnalyses(
+  token: string, uid: string, analysisUids: string[],
+): Promise<{ success: boolean; error?: string }> {
+  const headers = { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' }
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/update`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ uid, Analyses: analysisUids }),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (res.ok && data.success !== false) return { success: true }
     return { success: false, error: (data.message as string) ?? `HTTP ${res.status}` }
   } catch (e) { return { success: false, error: String(e) } }
 }

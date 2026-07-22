@@ -20,9 +20,11 @@ class AuditEvent(models.Model):
         ("verify", "Verified"),
         ("complete", "Completed"),
         ("store", "Store"),
+        ("dispose", "Disposed"),
     ]
     user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
     action = models.CharField(max_length=30, choices=ACTION)
+    source = models.CharField(max_length=50, default="manual")
     content_type = models.ForeignKey(ContentType, null=True, blank=True, on_delete=models.SET_NULL)
     object_id = models.PositiveBigIntegerField(null=True, blank=True)
     object_repr = models.CharField(max_length=300, blank=True)

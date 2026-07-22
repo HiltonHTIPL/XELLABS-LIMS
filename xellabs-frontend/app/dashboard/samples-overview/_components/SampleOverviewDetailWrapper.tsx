@@ -5,9 +5,13 @@ import { getLabSample, type LabSample } from '@/app/actions/lab-samples'
 import { getAnalysisRequestsForSample, type AnalysisRequest } from '@/app/actions/analysis-requests'
 import SampleOverviewDetail from '../[id]/_components/SampleOverviewDetail'
 
+type DetailData = {
+  sample: LabSample | null
+  analysisRequests: AnalysisRequest[]
+}
+
 export default function SampleOverviewDetailWrapper({ djangoId, onClose }: { djangoId: number; onClose: () => void }) {
-  const [sample, setSample] = useState<LabSample | null>(null)
-  const [analysisRequests, setAnalysisRequests] = useState<AnalysisRequest[]>([])
+  const [data, setData] = useState<DetailData | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -15,11 +19,13 @@ export default function SampleOverviewDetailWrapper({ djangoId, onClose }: { dja
     setLoading(true)
     Promise.all([
       getLabSample(djangoId),
-      getAnalysisRequestsForSample(djangoId)
+      getAnalysisRequestsForSample(djangoId),
     ]).then(([s, ars]) => {
       if (!active) return
-      setSample(s)
-      setAnalysisRequests(ars)
+      setData({
+        sample: s,
+        analysisRequests: ars,
+      })
       setLoading(false)
     }).catch(err => {
       console.error(err)
@@ -31,12 +37,12 @@ export default function SampleOverviewDetailWrapper({ djangoId, onClose }: { dja
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', backgroundColor: '#F9FAFB' }}>
-        <div style={{ fontSize: 13, color: '#6B7280' }}>Loading local sample details...</div>
+        <div style={{ fontSize: 13, color: '#6B7280' }}>Loading sample details...</div>
       </div>
     )
   }
 
-  if (!sample) {
+  if (!data || !data.sample) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', backgroundColor: '#F9FAFB' }}>
         <div style={{ fontSize: 13, color: '#EF4444' }}>Sample not found.</div>
@@ -50,7 +56,12 @@ export default function SampleOverviewDetailWrapper({ djangoId, onClose }: { dja
         <span className="material-icons" style={{ fontSize: 18, color: '#6B7280' }}>close</span>
       </button>
       <div style={{ height: '100%', overflowY: 'auto' }}>
-        <SampleOverviewDetail sample={sample} id={String(djangoId)} analysisRequests={analysisRequests} isDrawer={true} />
+        <SampleOverviewDetail
+          sample={data.sample}
+          id={String(djangoId)}
+          analysisRequests={data.analysisRequests}
+          isDrawer={true}
+        />
       </div>
     </div>
   )

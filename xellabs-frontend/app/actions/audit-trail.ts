@@ -15,6 +15,7 @@ export type AuditEvent = {
   user: number | null
   user_display: string | null
   action: string
+  source: string
   content_type: number | null
   content_type_label: string | null
   object_id: number | null

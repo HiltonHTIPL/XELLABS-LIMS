@@ -11,7 +11,7 @@
 //   GET  <object>/@@worksheet-info
 // Workflow transitions use plone.restapi's @workflow endpoint (works on AT
 // content — confirmed). Reads/listing use the v1 jsonapi catalog.
-import { SENAITE_URL, SENAITE_ORIGIN, SENAITE_SITE_PATH } from './senaite'
+import { SENAITE_URL, SENAITE_ORIGIN, SENAITE_SITE_PATH, fetchSenaiteTitleMap } from './senaite'
 
 const authHeaders = (token: string) => ({
   Authorization: `Basic ${token}`,
@@ -177,9 +177,16 @@ export async function listSenaiteWorksheets(token: string): Promise<WorksheetLis
     if (!res.ok) return []
     const data = await res.json()
     const items = Array.isArray(data.items) ? (data.items as RawView[]) : []
+    // The v1 API's Instrument reference only ever comes back as {uid, url,
+    // api_url} — never a resolved title (confirmed live: SENAITE never
+    // populates it), same class of bug as fetchSenaiteInstruments' own
+    // InstrumentType/Manufacturer/Supplier/Location refs. Resolve via a title
+    // map instead of trusting `.title` on the reference object.
+    const instrumentTitles = await fetchSenaiteTitleMap(token, 'Instrument')
     return items.map(w => {
       const analyst = (w.Analyst as RawView) ?? {}
       const instrument = (w.Instrument as RawView) ?? {}
+      const instrumentUid = (instrument.uid as string) ?? ''
       return {
         uid: (w.uid as string) ?? '',
         id: (w.id as string) ?? '',
@@ -187,7 +194,7 @@ export async function listSenaiteWorksheets(token: string): Promise<WorksheetLis
         analyst: (analyst.fullname as string) ?? (w.getAnalyst as string) ?? (w.Analyst as string) ?? '',
         reviewState: (w.review_state as string) ?? '',
         created: (w.created as string) ?? '',
-        instrumentTitle: (instrument.title as string) ?? '',
+        instrumentTitle: instrumentUid ? (instrumentTitles[instrumentUid] ?? '') : '',
         templateTitle: (w.getWorksheetTemplateTitle as string) ?? '',
         numAnalyses: Array.isArray(w.Analyses) ? (w.Analyses as unknown[]).length : 0,
       }
