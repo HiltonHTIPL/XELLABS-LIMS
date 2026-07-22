@@ -646,6 +646,43 @@ export async function disposeSample(id: number, formData: FormData): Promise<Dis
   }
 }
 
+export type BulkDisposeResult = {
+  ok: boolean
+  disposed_count?: number
+  disposed_ids?: number[]
+  skipped_count?: number
+  skipped?: { id: number; reason: string }[]
+  message?: string
+}
+
+export async function bulkDisposeSamples(ids: number[], formData: FormData): Promise<BulkDisposeResult> {
+  try {
+    formData.append('sample_ids', JSON.stringify(ids))
+    console.log('[bulkDisposeSamples] sending IDs:', ids, 'regulatory_basis:', formData.get('regulatory_basis'))
+    const res = await djangoFetch('/api/lims/samples/bulk-dispose/', {
+      method: 'POST',
+      body: formData,
+    })
+    const data = await res.json().catch(() => ({})) as BulkDisposeResult & { detail?: string }
+    console.log('[bulkDisposeSamples] response status:', res.status, data)
+    if (!res.ok) {
+      return { ok: false, message: data.detail ?? data.message ?? `Error ${res.status}` }
+    }
+    revalidatePath('/dashboard/samples-overview')
+    revalidatePath('/dashboard/chain-of-custody')
+    return {
+      ok: true,
+      disposed_count: data.disposed_count,
+      disposed_ids: data.disposed_ids,
+      skipped_count: data.skipped_count,
+      skipped: data.skipped,
+      message: data.message,
+    }
+  } catch (e) {
+    return { ok: false, message: String(e) }
+  }
+}
+
 // New Sample page loads await this sync before rendering (see page.tsx), and
 // it's a real Django→SENAITE round trip each time — on a slow network this was
 // the dominant cost of every single page load. Sample types are rarely added

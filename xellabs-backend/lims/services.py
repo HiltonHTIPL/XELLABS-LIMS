@@ -212,23 +212,29 @@ def dispose_sample(sample, user, basis, notes="", certificate=None):
     if extra_notes:
         stamp = f"{stamp} — {extra_notes}"
 
+    old_location = sample.storage_location or ""
+
     sample.description = (
         f"{sample.description}\n{stamp}".strip() if sample.description else stamp
     )
-    update_fields = ["status", "description", "updated_at"]
+    sample.storage_location = ""
+    sample.status = "disposed"
+    sample._audit_action = "dispose"
+    sample._audit_reason = stamp
+
+    update_fields = ["status", "storage_location", "description", "updated_at"]
     if certificate is not None:
         if sample.attachment:
             sample.attachment.delete(save=False)
         sample.attachment = certificate
         update_fields.append("attachment")
 
-    sample.status = "disposed"
     sample.save(update_fields=update_fields)
 
     ChainOfCustody.objects.create(
         sample=sample,
         action="disposed",
-        from_location=sample.storage_location or "",
+        from_location=old_location,
         to_location="Disposed",
         transferred_by=user,
         notes=stamp,
@@ -287,6 +293,7 @@ def reject_result(result, user, remarks=""):
     result.status = "rejected"
     if remarks:
         result.remarks = f"Rejected by {user.username}: {remarks}"
+        result._audit_reason = f"Rejected: {remarks}"
     result.save(update_fields=["status", "remarks"])
     _refresh_samples_for_result(result)
     return result

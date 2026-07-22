@@ -255,6 +255,8 @@ def _sync_results(session, sample, ar_uid: str):
                 result.unit = result_unit
                 result.status = result_status
                 result.is_out_of_range = is_out_of_range
+                # Automated SENAITE poll, not a manual user edit — tag the audit source.
+                result._audit_source = "api"
                 result.save(update_fields=["value", "unit", "status", "is_out_of_range"])
                 logger.debug("Updated result for %s / %s", sample.sample_id, test_title)
             elif created:
