@@ -177,7 +177,22 @@ export type SyncResult = {
   total: number
 }
 
+// getClients() (called on every dashboard page that lists clients, e.g. New
+// Sample) awaits this sync first — it fetches every client from BOTH Django
+// and SENAITE in full before checking for real changes, which was the
+// dominant cost of those page loads on a slow network. Clients are rarely
+// added mid-session, so skip repeat syncs within a short TTL (same tradeoff
+// as fetchSenaiteTitleMap's 5-min cache) — getClients() always re-reads
+// Django itself afterward, so a skipped sync just serves the existing mirror.
+const CLIENT_SYNC_TTL_MS = 60 * 1000
+let lastClientSync = 0
+let lastClientSyncResult: SyncResult | null = null
+
 export async function syncClientsFromSenaite(): Promise<SyncResult> {
+  if (lastClientSyncResult && Date.now() - lastClientSync < CLIENT_SYNC_TTL_MS) {
+    return lastClientSyncResult
+  }
+
   const session = await getSession()
   if (!session) return { success: false, message: 'Not authenticated. Please sign in again.', created: 0, updated: 0, total: 0 }
 
@@ -289,7 +304,7 @@ export async function syncClientsFromSenaite(): Promise<SyncResult> {
   // from a Server Action or Route Handler, not mid-render (confirmed: caused
   // a hard render error there). Not currently wired to any manual "Sync"
   // button elsewhere, so nothing depends on the stale-cache invalidation.
-  return {
+  const result: SyncResult = {
     success: failed === 0,
     message: failed === 0
       ? `Sync complete — ${created} created, ${updated} updated.`
@@ -298,6 +313,9 @@ export async function syncClientsFromSenaite(): Promise<SyncResult> {
     updated,
     total: senaiteClients.length,
   }
+  lastClientSync = Date.now()
+  lastClientSyncResult = result
+  return result
 }
 
 export async function updateClient(

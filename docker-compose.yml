@@ -225,6 +225,7 @@ services:
     build:
       context: ./xellabs-frontend
     restart: unless-stopped
+    command: npm run dev -- -H 0.0.0.0
     ports:
       - "3000:3000"   # reach the app at http://127.0.0.1:3000 (and http://<host-lan-ip>:3000 on the LAN)
     environment:

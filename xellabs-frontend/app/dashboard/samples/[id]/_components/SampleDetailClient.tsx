@@ -16,7 +16,7 @@ const ANALYSIS_TONE: Record<string, 'gray'|'blue'|'orange'|'green'|'red'> = {
   unassigned: 'gray', assigned: 'blue', to_be_verified: 'orange', verified: 'green', published: 'green', retracted: 'red',
 }
 
-type Props = { sample: SenaiteSample | null; uid: string }
+type Props = { sample: SenaiteSample | null; uid: string; onClose?: () => void }
 
 export default function SampleDetailClient({ sample, uid }: Props) {
   const router = useRouter()

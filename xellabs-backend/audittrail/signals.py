@@ -72,17 +72,20 @@ def wire_signals(model):
         request = get_current_request()
         user = _get_user(request)
         ip = _get_ip(request)
-        reason = _get_reason(request)
+        reason = getattr(instance, "_audit_reason", None) or _get_reason(request)
+        source = getattr(instance, "_audit_source", None) or (request.META.get("HTTP_X_AUDIT_SOURCE") if request and hasattr(request, 'META') else None) or "manual"
         ct = ContentType.objects.get_for_model(sender)
-        action = "create" if created else "update"
+        action = getattr(instance, "_audit_action", None) or ("create" if created else "update")
 
         event = AuditEvent.objects.create(
             user=user,
             action=action,
+            source=source,
             content_type=ct,
             object_id=instance.pk,
             object_repr=str(instance)[:300],
             ip_address=ip,
+            extra_data=None,
         )
 
         if not created:

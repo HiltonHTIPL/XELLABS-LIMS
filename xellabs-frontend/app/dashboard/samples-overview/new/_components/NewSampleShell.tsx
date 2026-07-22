@@ -1,9 +1,10 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { createSampleWithAnalyses, type DjangoSampleType, type LabSample } from '@/app/actions/lab-samples'
+import { createSampleWithAnalyses, updateSampleWithAnalyses, type DjangoSampleType, type LabSample, type NewSamplePayload, type SelectedAnalysis } from '@/app/actions/lab-samples'
 import { type DjangoClient } from '@/app/actions/clients'
 import { type AnalysisSpecification } from '@/app/actions/specifications'
+import { type AnalysisRequest } from '@/app/actions/analysis-requests'
 import { type SenaiteBatch, type SenaiteSampleTemplate, type SenaiteRefOption, type SenaiteAnalysisService } from '@/app/lib/senaite'
 import StorageLocationInput from '@/app/dashboard/_components/StorageLocationInput'
 
@@ -98,6 +99,61 @@ type Props = {
   sampleTemplates: SenaiteSampleTemplate[]; sampleContainers: SenaiteRefOption[]; batches: SenaiteBatch[]
   analysisSpecifications: AnalysisSpecification[]; preservations: SenaiteRefOption[]; samplingDeviations: SenaiteRefOption[]
   samplePoints: SenaiteRefOption[]; existingSamples: LabSample[]
+  /** When present, the page edits this existing sample in place instead of creating new ones. */
+  editSample?: LabSample | null
+  editAnalysisRequest?: AnalysisRequest | null
+  /** When present, renders as an in-page overlay instead of a full page — Back/Cancel
+   * and the post-save redirect call this instead of navigating to another route. */
+  onClose?: () => void
+}
+
+// Builds the single-sample edit form from an existing LabSample + its linked
+// AnalysisRequest (if any) — the update-mode counterpart to blankForm().
+// Sample Template / Analysis Profiles have no reverse mapping back from a
+// saved sample, so those two stay blank in edit mode (they're create-time
+// conveniences only, not stored fields on the sample itself).
+function formFromSample(sample: LabSample, ar: AnalysisRequest | null, services: SenaiteAnalysisService[], batches: SenaiteBatch[]): SampleForm {
+  const matchedBatch = sample.batch_id ? batches.find(b => String(b.id) === sample.batch_id) : undefined
+  const selectedTests: SenaiteAnalysisService[] = (ar?.analyses ?? []).map(a => {
+    const match = services.find(s => s.uid === a.senaite_service_uid)
+    return match ?? ({ uid: a.senaite_service_uid, title: a.senaite_service_name, Keyword: '', Price: '' } as SenaiteAnalysisService)
+  })
+  return {
+    primarySample: 'yes',
+    clientId: sample.client ? String(sample.client) : '',
+    contactName: sample.contact_name ?? '',
+    ccContact: sample.cc_contact ?? '',
+    ccEmails: (sample.cc_emails ?? '').split(',').map(s => s.trim()).filter(Boolean),
+    batchUid: matchedBatch?.uid ?? '',
+    batchSubGroup: sample.batch_sub_group ?? '',
+    sampleTemplateId: '', analysisProfiles: [], suggestedContainer: '',
+    dateSampled: sample.collection_date ? sample.collection_date.slice(0, 16) : '',
+    sampleTypeId: sample.sample_type ? String(sample.sample_type) : '',
+    containerType: sample.container_type ?? '',
+    preservation: sample.preservation ?? '',
+    analysisSpec: sample.analysis_specification ?? '',
+    samplePoint: sample.sample_point ?? '',
+    storageLocation: sample.preferred_storage_location ?? '',
+    storageLabelCode: sample.preferred_storage_label_code ?? '',
+    samplingDeviation: sample.sampling_deviation && sample.sampling_deviation !== 'none' ? sample.sampling_deviation : 'none',
+    condition: sample.condition || 'good',
+    priority: sample.priority || 'medium',
+    envConditions: sample.environmental_conditions || 'room_temp',
+    composite: sample.composite ?? false,
+    internalUse: sample.internal_use ?? false,
+    clientOrderNum: sample.client_order_number ?? '',
+    clientReference: sample.client_reference ?? '',
+    clientSampleId: sample.client_sample_id ?? '',
+    remarks: sample.description ?? '',
+    selectedTests,
+  }
+}
+
+// A sample's analyses are only editable while it's still 'registered' —
+// mirrors the guard in lims/serializers.py AnalysisRequestSerializer.update()
+// so the UI never promises an edit the backend will reject.
+function canEditAnalysesFor(sample: LabSample | null | undefined): boolean {
+  return !sample || sample.status === 'registered'
 }
 
 // A sample counts as "complete" once it has the two fields handleSubmit itself
@@ -127,8 +183,10 @@ function findLikelyDuplicate(form: SampleForm, clients: DjangoClient[], sampleTy
   }) ?? null
 }
 
-export default function NewSampleShell({ sampleTypes, clients, services, sampleTemplates, sampleContainers, batches, analysisSpecifications, preservations, samplingDeviations, samplePoints, existingSamples }: Props) {
+export default function NewSampleShell({ sampleTypes, clients, services, sampleTemplates, sampleContainers, batches, analysisSpecifications, preservations, samplingDeviations, samplePoints, existingSamples, editSample, editAnalysisRequest, onClose }: Props) {
   const router = useRouter()
+  const isEditMode = Boolean(editSample)
+  const canEditAnalyses = canEditAnalysesFor(editSample)
   // Pre-select a Batch when arriving from that batch's "New Sample" button
   // (/dashboard/samples-overview/new?batch=<uid>) — only applied to the first
   // sample tab, not every subsequent "Add Another Sample" tab.
@@ -140,7 +198,11 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
   // Arrived via a Client's "New Sample" button — lock the Client field to a
   // permanent read-only display instead of a switchable dropdown, since every
   // sample created from this link is for that one client.
-  const [clientLocked] = useState(Boolean(initialClientUid) && !initialBatchUid)
+  const [clientLocked] = useState(isEditMode || (Boolean(initialClientUid) && !initialBatchUid))
+  // Sample Type is locked in edit mode too — changing a sample's fundamental
+  // type after creation isn't supported by SENAITE's own AR edit view either,
+  // since Container/Preservation/AnalysisSpec options are all scoped to it.
+  const sampleTypeLocked = isEditMode
 
   // Sample Types valid for a given template — filtered down to the one matching
   // the template's SENAITE sample type via senaite_uid. Falls back to the full
@@ -169,7 +231,11 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
     return open.filter(b => b.ClientUID === client.senaite_uid)
   }
 
-  const [forms, setForms] = useState<SampleForm[]>(() => [{ ...blankForm(), batchUid: initialBatchUid }])
+  const [forms, setForms] = useState<SampleForm[]>(() =>
+    editSample
+      ? [formFromSample(editSample, editAnalysisRequest ?? null, services, batches)]
+      : [{ ...blankForm(), batchUid: initialBatchUid }]
+  )
   const [activeTab, setActiveTab] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const [submitProgress, setSubmitProgress] = useState({ done: 0, total: 0 })
@@ -244,6 +310,63 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
       if (i + SUBMIT_BATCH_SIZE < items.length) await new Promise(r => setTimeout(r, SUBMIT_BATCH_DELAY_MS))
     }
     return results
+  }
+
+  async function handleUpdateSubmit() {
+    if (!editSample) return
+    if (!f.clientId || !f.sampleTypeId) {
+      setError('Client and Sample Type are required.')
+      return
+    }
+    if (f.dateSampled && new Date(f.dateSampled) > new Date()) {
+      setError('Date Sampled cannot be in the future.')
+      return
+    }
+    setError(''); setSubmitting(true)
+    const client = clients.find(c => String(c.id) === f.clientId)
+    const sampleType = sampleTypes.find(st => String(st.id) === f.sampleTypeId)
+    const batch = batches.find(b => b.uid === f.batchUid)
+    const payload: NewSamplePayload = {
+      client: Number(f.clientId), sample_type: Number(f.sampleTypeId),
+      priority: f.priority, condition: f.condition,
+      collection_date: f.dateSampled ? new Date(f.dateSampled).toISOString() : undefined,
+      description: f.remarks || undefined,
+      preferred_storage_location: f.storageLocation || undefined,
+      preferred_storage_label_code: f.storageLabelCode || undefined,
+      contact_name: f.contactName || undefined, cc_contact: f.ccContact || undefined,
+      cc_emails: f.ccEmails.join(',') || undefined, batch_id: batch?.id || undefined,
+      batch_senaite_uid: f.batchUid || undefined,
+      batch_sub_group: f.batchSubGroup || undefined, container_type: f.containerType || undefined,
+      preservation: f.preservation || undefined, analysis_specification: f.analysisSpec || undefined,
+      sampling_deviation: f.samplingDeviation !== 'none' ? f.samplingDeviation : undefined,
+      sample_point: f.samplePoint || undefined, environmental_conditions: f.envConditions || undefined,
+      composite: f.composite, internal_use: f.internalUse,
+      client_order_number: f.clientOrderNum || undefined,
+      client_reference: f.clientReference || undefined,
+      client_sample_id: f.clientSampleId || undefined,
+      client_senaite_uid: client?.senaite_uid || undefined,
+      sample_type_senaite_uid: sampleType?.senaite_uid || undefined,
+      preservation_senaite_uid: preservations.find(p => p.title === f.preservation)?.uid || undefined,
+      sample_point_senaite_uid: samplePoints.find(p => p.title === f.samplePoint)?.uid || undefined,
+      sampling_deviation_senaite_uid: f.samplingDeviation !== 'none'
+        ? samplingDeviations.find(d => d.title === f.samplingDeviation)?.uid || undefined
+        : undefined,
+    }
+    const testsPayload: SelectedAnalysis[] = f.selectedTests.map(t => ({ uid: t.uid, name: t.title }))
+    const result = await updateSampleWithAnalyses(
+      editSample.id, editSample.senaite_uid ?? '', editAnalysisRequest?.id ?? null,
+      payload, testsPayload, canEditAnalyses,
+    )
+    setSubmitting(false)
+    if (!result.success) {
+      setError(result.message)
+      return
+    }
+    if (attachments.some(a => a.status !== 'done')) {
+      await uploadAttachmentsTo([editSample.id])
+    }
+    setSuccess(result.message)
+    setTimeout(() => { if (onClose) onClose(); else router.push(`/dashboard/samples-overview/${editSample.id}`) }, 1500)
   }
 
   async function handleSubmit(asDraft = false) {
@@ -448,8 +571,10 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
       sampleTypeId: matchedSampleType ? String(matchedSampleType.id) : form.sampleTypeId,
       containerType: template ? (allowedContainers[0]?.value ?? '') : form.containerType,
       suggestedContainer: templateContainer,
-      analysisProfiles: template ? matchedServices.map(s => s.title) : form.analysisProfiles,
-      selectedTests: matchedServices.length ? matchedServices : form.selectedTests,
+      // Analyses are locked once a sample is no longer 'registered' — a
+      // template must not silently smuggle a change past that guard.
+      analysisProfiles: canEditAnalyses ? (template ? matchedServices.map(s => s.title) : form.analysisProfiles) : form.analysisProfiles,
+      selectedTests: canEditAnalyses ? (matchedServices.length ? matchedServices : form.selectedTests) : form.selectedTests,
     } : form))
   }
 
@@ -473,7 +598,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
     setForms(prev => prev.map((form, i) => i === activeTab ? {
       ...form,
       analysisSpec: specId,
-      selectedTests: matchedServices.length ? matchedServices : form.selectedTests,
+      selectedTests: canEditAnalyses ? (matchedServices.length ? matchedServices : form.selectedTests) : form.selectedTests,
     } : form))
   }
 
@@ -511,7 +636,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
   const grid4 = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 16 } as const
   const field = { display: 'flex', flexDirection: 'column' as const }
 
-  return (
+  const content = (
     <div style={{ display: 'flex', height: '100%', background: '#F9FAFB', overflow: 'hidden' }}>
 
       {/* ── Left: Form ── */}
@@ -520,32 +645,36 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
         {/* Page header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
           <div>
-            <button onClick={() => router.push('/dashboard/samples-overview')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280', display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, marginBottom: 4, padding: 0 }}>
-              <MI name="arrow_back" size={16} /> Back
+            <button onClick={() => onClose ? onClose() : router.push(isEditMode ? `/dashboard/samples-overview/${editSample!.id}` : '/dashboard/samples-overview')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280', display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, marginBottom: 4, padding: 0 }}>
+              <MI name="arrow_back" size={16} /> {onClose ? 'Close' : 'Back'}
             </button>
-            <h1 style={{ fontSize: 24, fontWeight: 800, color: '#2563EB', margin: 0 }}>New Sample</h1>
-            <p style={{ fontSize: 13, color: '#6B7280', margin: '4px 0 0' }}>Register and receive incoming laboratory samples.</p>
+            <h1 style={{ fontSize: 24, fontWeight: 800, color: '#2563EB', margin: 0 }}>{isEditMode ? 'Edit Sample' : 'New Sample'}</h1>
+            <p style={{ fontSize: 13, color: '#6B7280', margin: '4px 0 0' }}>
+              {isEditMode ? `Editing ${editSample?.sample_id}.` : 'Register and receive incoming laboratory samples.'}
+            </p>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 13, color: '#374151', fontWeight: 500 }}>Number of samples</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button type="button" onClick={() => changeCount(-1)} disabled={sampleCount === 1}
-                  style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #D1D5DB', background: sampleCount === 1 ? '#F9FAFB' : '#fff', cursor: sampleCount === 1 ? 'default' : 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: sampleCount === 1 ? '#D1D5DB' : '#374151' }}>−</button>
-                <span style={{ minWidth: 24, textAlign: 'center', fontSize: 14, fontWeight: 600, color: '#111827' }}>{sampleCount}</span>
-                <button type="button" onClick={() => changeCount(1)}
-                  style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #D1D5DB', background: '#fff', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#374151' }}>+</button>
+          {!isEditMode && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 13, color: '#374151', fontWeight: 500 }}>Number of samples</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button type="button" onClick={() => changeCount(-1)} disabled={sampleCount === 1}
+                    style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #D1D5DB', background: sampleCount === 1 ? '#F9FAFB' : '#fff', cursor: sampleCount === 1 ? 'default' : 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: sampleCount === 1 ? '#D1D5DB' : '#374151' }}>−</button>
+                  <span style={{ minWidth: 24, textAlign: 'center', fontSize: 14, fontWeight: 600, color: '#111827' }}>{sampleCount}</span>
+                  <button type="button" onClick={() => changeCount(1)}
+                    style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #D1D5DB', background: '#fff', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#374151' }}>+</button>
+                </div>
               </div>
+              <button type="button" onClick={addTab}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, border: '1.5px solid #2563EB', background: '#fff', color: '#2563EB', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                <MI name="add" size={16} color="#2563EB" /> Add Another Sample
+              </button>
             </div>
-            <button type="button" onClick={addTab}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, border: '1.5px solid #2563EB', background: '#fff', color: '#2563EB', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-              <MI name="add" size={16} color="#2563EB" /> Add Another Sample
-            </button>
-          </div>
+          )}
         </div>
 
         {/* ── Sample tabs ── */}
-        {sampleCount > 1 && (
+        {!isEditMode && sampleCount > 1 && (
           <div style={{ display: 'flex', gap: 4, marginBottom: 20, flexWrap: 'wrap', borderBottom: '2px solid #E5E7EB', paddingBottom: 0 }}>
             {forms.map((_, idx) => {
               const isActive = idx === activeTab
@@ -684,6 +813,9 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                     <option value="">None — configure manually</option>
                     {sampleTemplates.map(t => <option key={t.uid} value={t.uid}>{t.title}</option>)}
                   </select>
+                  {isEditMode && (
+                    <span style={{ fontSize: 11, color: '#9CA3AF', marginTop: 3 }}>Applying a template here will overwrite Sample Type, Container{canEditAnalyses ? ' and Lab Analyses' : ''}.</span>
+                  )}
                 </div>
                 <div style={field}><label style={lbl}>Analysis Profiles</label>
                   <TagInput tags={f.analysisProfiles} onAdd={v => set('analysisProfiles', [...f.analysisProfiles, v])} onRemove={v => set('analysisProfiles', f.analysisProfiles.filter(x => x !== v))} placeholder="Type profile and press Enter" /></div>
@@ -747,6 +879,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
         <div style={section}>
           <SectionHeader num={2} title="Sampling Details" />
           {(() => {
+            if (isEditMode) return null
             const dup = findLikelyDuplicate(f, clients, sampleTypes, existingSamples)
             if (!dup) return null
             return (
@@ -764,10 +897,18 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
               <input type="datetime-local" value={f.dateSampled} max={nowLocal ?? undefined}
                 onChange={e => set('dateSampled', e.target.value)} style={inp} /></div>
             <div style={field}><label style={lbl}>Sample Type *</label>
-              <select value={f.sampleTypeId} onChange={e => set('sampleTypeId', e.target.value)} style={{ ...inp, borderColor: !f.sampleTypeId && error ? '#EF4444' : '#D1D5DB' }}>
-                {!f.sampleTemplateId && <option value="">— select —</option>}
-                {sampleTypeOptionsFor(f.sampleTemplateId).map(st => <option key={st.id} value={st.id}>{st.name}</option>)}
-              </select>
+              {sampleTypeLocked ? (
+                <div style={{ ...inp, display: 'flex', alignItems: 'center', background: '#F9FAFB' }}>
+                  <span style={{ fontWeight: 600, color: '#111827' }}>
+                    {sampleTypes.find(st => String(st.id) === f.sampleTypeId)?.name ?? ''}
+                  </span>
+                </div>
+              ) : (
+                <select value={f.sampleTypeId} onChange={e => set('sampleTypeId', e.target.value)} style={{ ...inp, borderColor: !f.sampleTypeId && error ? '#EF4444' : '#D1D5DB' }}>
+                  {!f.sampleTemplateId && <option value="">— select —</option>}
+                  {sampleTypeOptionsFor(f.sampleTemplateId).map(st => <option key={st.id} value={st.id}>{st.name}</option>)}
+                </select>
+              )}
               {f.sampleTypeId && (() => {
                 const st = sampleTypes.find(s => String(s.id) === f.sampleTypeId)
                 if (!st?.prefix) return null
@@ -927,18 +1068,28 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
               : '* Required fields'}
           </span>
           <div style={{ display: 'flex', gap: 10 }}>
-            <button type="button" onClick={clearActiveForm} style={{ padding: '10px 22px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#374151' }}>
-              Clear Form
-            </button>
-            <button type="button" onClick={() => handleSubmit(true)} disabled={submitting}
-              style={{ padding: '10px 22px', borderRadius: 8, border: 'none', background: '#2563EB', color: '#fff', fontSize: 13, fontWeight: 600, cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.7 : 1 }}>
-              {submitting ? 'Saving…' : 'Save Draft'}
-            </button>
-            <button type="button" onClick={() => handleSubmit(false)} disabled={submitting}
-              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 22px', borderRadius: 8, border: 'none', background: '#0154FC', color: '#fff', fontSize: 13, fontWeight: 600, cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.7 : 1 }}>
-              <MI name="check_circle" size={16} color="#fff" />
-              {submitting ? 'Logging…' : `Log ${sampleCount > 1 ? `${sampleCount} Samples` : 'Sample'}`}
-            </button>
+            {isEditMode ? (
+              <button type="button" onClick={handleUpdateSubmit} disabled={submitting}
+                style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 22px', borderRadius: 8, border: 'none', background: '#0154FC', color: '#fff', fontSize: 13, fontWeight: 600, cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.7 : 1 }}>
+                <MI name="check_circle" size={16} color="#fff" />
+                {submitting ? 'Saving…' : 'Save Changes'}
+              </button>
+            ) : (
+              <>
+                <button type="button" onClick={clearActiveForm} style={{ padding: '10px 22px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#374151' }}>
+                  Clear Form
+                </button>
+                <button type="button" onClick={() => handleSubmit(true)} disabled={submitting}
+                  style={{ padding: '10px 22px', borderRadius: 8, border: 'none', background: '#2563EB', color: '#fff', fontSize: 13, fontWeight: 600, cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.7 : 1 }}>
+                  {submitting ? 'Saving…' : 'Save Draft'}
+                </button>
+                <button type="button" onClick={() => handleSubmit(false)} disabled={submitting}
+                  style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 22px', borderRadius: 8, border: 'none', background: '#0154FC', color: '#fff', fontSize: 13, fontWeight: 600, cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.7 : 1 }}>
+                  <MI name="check_circle" size={16} color="#fff" />
+                  {submitting ? 'Logging…' : `Log ${sampleCount > 1 ? `${sampleCount} Samples` : 'Sample'}`}
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -980,9 +1131,11 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                     <td style={{ padding: '8px 8px', color: '#6B7280' }}>{t.Keyword}</td>
                     <td style={{ padding: '8px 8px', textAlign: 'right', color: '#374151', fontWeight: 500 }}>{t.Price ? `$${parseFloat(t.Price).toFixed(2)}` : '—'}</td>
                     <td style={{ padding: '8px 6px' }}>
-                      <button type="button" onClick={() => removeTest(t.uid)} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                        <MI name="delete_outline" size={16} color="#9CA3AF" />
-                      </button>
+                      {canEditAnalyses && (
+                        <button type="button" onClick={() => removeTest(t.uid)} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                          <MI name="delete_outline" size={16} color="#9CA3AF" />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -991,8 +1144,14 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
           )}
           {f.selectedTests.length === 0 && <div style={{ padding: '20px 16px', textAlign: 'center', color: '#9CA3AF', fontSize: 12 }}>No analyses added yet.</div>}
 
+          {!canEditAnalyses && (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, margin: '0 16px 12px', padding: '8px 10px', borderRadius: 7, background: '#FFFBEB', border: '1px solid #FDE68A', fontSize: 11, color: '#92400E' }}>
+              <MI name="lock" size={13} color="#B45309" />
+              <span>Analyses can no longer be edited once a sample has been received. Contact a lab manager for corrections.</span>
+            </div>
+          )}
           <div style={{ padding: '12px 16px', borderTop: '1px solid #F3F4F6' }}>
-            {!showAddAnalysis ? (
+            {!canEditAnalyses ? null : !showAddAnalysis ? (
               <button type="button" onClick={() => setShowAddAnalysis(true)}
                 style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '8px 12px', border: '1.5px dashed #D1D5DB', borderRadius: 7, background: '#fff', cursor: 'pointer', fontSize: 12, color: '#2563EB', fontWeight: 600, justifyContent: 'center' }}>
                 <MI name="add" size={15} color="#2563EB" /> Add Analysis
@@ -1047,6 +1206,18 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  )
+
+  if (!onClose) return content
+
+  // Drawer mode — rendered as an in-page overlay on top of the caller (e.g.
+  // Sample Detail) instead of navigating to the standalone /new?edit= route.
+  return (
+    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)', zIndex: 1000 }}>
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#fff', boxShadow: '0 -6px 32px rgba(0,0,0,0.15)', overflow: 'hidden', zIndex: 1001 }}>
+        {content}
       </div>
     </div>
   )

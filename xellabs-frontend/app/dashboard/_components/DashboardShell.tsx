@@ -145,7 +145,7 @@ export default function DashboardShell({ children, initials, displayName, roleLa
           internal panels fill it via height:'100%'). Pages listed in
           NATURAL_HEIGHT_ROUTES instead scroll as a single column so their
           footer follows short content instead of sitting pinned far below it. */}
-      <div className={`flex-1 flex flex-col min-w-0 ${naturalHeight ? 'overflow-y-auto' : 'overflow-hidden'}`}>
+      <div className={`flex-1 flex flex-col min-w-0 min-h-0 ${naturalHeight ? 'overflow-y-auto' : 'overflow-hidden'}`}>
 
         {/* Navbar */}
         <header
@@ -375,7 +375,7 @@ export default function DashboardShell({ children, initials, displayName, roleLa
         </header>
 
         {/* Page content */}
-        <main className={naturalHeight ? '' : 'flex-1 overflow-y-auto'}>
+        <main className={naturalHeight ? 'dashboard-main-scroll' : 'flex-1 overflow-auto dashboard-main-scroll'}>
           {children}
         </main>
 

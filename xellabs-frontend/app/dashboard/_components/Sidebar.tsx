@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { usePathname } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 import { T } from './tokens'
 
 function MI({ name, size = 16 }: { name: string; size?: number }) {
@@ -75,6 +75,11 @@ interface Props {
 
 export default function Sidebar({ onToggle, role, reportDraftCount, isSuperuser }: Props) {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
+  // /dashboard/samples-overview/new doubles as the Edit Sample page
+  // (?edit=<id>) — that's "editing an existing sample", not "New Samples",
+  // so it should highlight Samples Overview instead of New Samples.
+  const isEditingSample = pathname === '/dashboard/samples-overview/new' && Boolean(searchParams.get('edit'))
 
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
     const open = new Set<string>()
@@ -162,7 +167,12 @@ export default function Sidebar({ onToggle, role, reportDraftCount, isSuperuser 
                 {isOpen && (
                   <div style={{ marginLeft: 12, borderLeft: '1.5px solid rgba(255,255,255,0.15)', paddingLeft: 8, marginBottom: 4 }}>
                     {entry.children.filter(c => isVisible(c.roles, c.superuserOnly)).map(child => {
-                      const active = child.exact ? pathname === child.href : (pathname === child.href || pathname.startsWith(child.href + '/'))
+                      const rawActive = child.exact ? pathname === child.href : (pathname === child.href || pathname.startsWith(child.href + '/'))
+                      const active = child.href === '/dashboard/samples-overview/new'
+                        ? rawActive && !isEditingSample
+                        : child.href === '/dashboard/samples-overview'
+                          ? rawActive || isEditingSample
+                          : rawActive
                       return (
                         <Link key={child.href} href={child.href} style={linkStyle(active)}>
                           <span style={{ flexShrink: 0, marginTop: 1, display: 'flex' }}>

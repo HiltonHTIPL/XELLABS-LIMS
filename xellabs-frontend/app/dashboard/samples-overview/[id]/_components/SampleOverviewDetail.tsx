@@ -7,8 +7,8 @@ import { type AnalysisRequest } from '@/app/actions/analysis-requests'
 import LiveBarcode from '@/app/dashboard/_components/LiveBarcode'
 import { STICKER_TEMPLATES, printSticker, type StickerTemplate } from '@/app/lib/stickerTemplates'
 import { type CocSample } from '@/app/actions/storage'
-import DisposeSampleModal from '../../_components/DisposeSampleModal'
 import { sampleDisplayId as displayId } from '@/app/lib/sampleDisplay'
+import SampleAuditDrawer from './SampleAuditDrawer'
 
 // renderSticker/printSticker were built for the chain-of-custody lookup shape
 // (CocSample) — adapt LabSample into it rather than writing a second sticker
@@ -131,7 +131,7 @@ function EditDrawer({ sample, onClose, onSaved }: { sample: LabSample; onClose: 
   return (
     <>
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 400, backgroundColor: 'rgba(0,0,0,0.28)' }} />
-      <div style={{ position: 'fixed', top: 'var(--dashboard-header-h)', right: 0, bottom: 'var(--dashboard-footer-h)', width: 460, zIndex: 401, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.12)', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 460, zIndex: 401, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.12)', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '16px 20px', borderBottom: '1px solid #F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <div>
             <h3 style={{ fontSize: 15, fontWeight: 700, color: '#14265E', margin: 0 }}>Edit Sample</h3>
@@ -219,7 +219,7 @@ function EditDrawer({ sample, onClose, onSaved }: { sample: LabSample; onClose: 
   )
 }
 
-export default function SampleOverviewDetail({ sample, id, analysisRequests }: { sample: LabSample | null; id: string; analysisRequests: AnalysisRequest[] }) {
+export default function SampleOverviewDetail({ sample, id, analysisRequests, isDrawer }: { sample: LabSample | null; id: string; analysisRequests: AnalysisRequest[]; isDrawer?: boolean }) {
   const router = useRouter()
   // Date.now() is impure — capture it after mount rather than during render.
   const [nowMs, setNowMs] = useState<number | null>(null)
@@ -229,7 +229,7 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
   }, [])
   const searchParams = useSearchParams()
   const [showEdit, setShowEdit] = useState(() => searchParams.get('edit') === '1')
-  const [showDispose, setShowDispose] = useState(false)
+  const [showAuditTrail, setShowAuditTrail] = useState(false)
   const [printOpen, setPrintOpen] = useState(false)
   const [templateId, setTemplateId] = useState(STICKER_TEMPLATES[0].id)
   const [copies, setCopies] = useState(1)
@@ -240,7 +240,9 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
         <MI name="science" size={48} color="#D1D5DB" />
         <p style={{ fontSize: 15, color: '#6B7280', marginTop: 12 }}>Sample not found</p>
         <p style={{ fontSize: 12, color: '#9CA3AF' }}>ID: {id}</p>
-        <Link href="/dashboard/samples-overview" style={{ fontSize: 13, color: '#2563EB', marginTop: 16, display: 'inline-block' }}>← Back to Samples</Link>
+        {!isDrawer && (
+          <Link href="/dashboard/samples-overview" style={{ fontSize: 13, color: '#2563EB', marginTop: 16, display: 'inline-block' }}>← Back to Samples</Link>
+        )}
       </div>
     )
   }
@@ -256,7 +258,7 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
   const pastRetention = Boolean(
     sample.expiry_date
     && new Date(sample.expiry_date) < new Date()
-    && !['published', 'disposed', 'rejected'].includes(sample.status)
+    && !['registered', 'disposed', 'rejected'].includes(sample.status)
   )
   const docUrl = sample.attachment_url || sample.attachment || null
 
@@ -266,21 +268,23 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
   )
 
   return (
-    <div style={{ padding: 24, minHeight: '100%', background: '#F9FAFB' }}>
+    <div style={{ padding: isDrawer ? '40px 24px 24px' : 24, minHeight: '100%', background: '#F9FAFB' }}>
       {/* Breadcrumb */}
-      <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 6 }}>
-        <span style={{ cursor: 'pointer' }} onClick={() => router.push('/dashboard/samples-overview')}>Samples</span>
-        <span style={{ margin: '0 6px' }}>›</span>
-        <span style={{ fontWeight: 600, color: '#111827' }}>Sample Detail</span>
-      </div>
+      {!isDrawer && (
+        <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 6 }}>
+          <span style={{ cursor: 'pointer' }} onClick={() => router.push('/dashboard/samples-overview')}>Samples</span>
+          <span style={{ margin: '0 6px' }}>›</span>
+          <span style={{ fontWeight: 600, color: '#111827' }}>Sample Detail</span>
+        </div>
+      )}
 
       {showEdit && <EditDrawer sample={sample} onClose={() => setShowEdit(false)} onSaved={() => router.refresh()} />}
-      {showDispose && (
-        <DisposeSampleModal
-          sampleId={sample.id}
-          sampleLabel={sample.sample_id}
-          onClose={() => setShowDispose(false)}
-          onDisposed={() => router.refresh()}
+
+      {showAuditTrail && (
+        <SampleAuditDrawer
+          sampleId={displayId(sample)}
+          open={showAuditTrail}
+          onClose={() => setShowAuditTrail(false)}
         />
       )}
 
@@ -318,23 +322,13 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests }: {
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: 'none', background: '#0154FC', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             <MI name="edit" size={16} color="#fff" /><span>Edit Sample</span>
           </button>
-          {['received', 'results_pending', 'reviewed', 'published'].includes(sample.status) && (
-            <button onClick={() => setShowDispose(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #FECACA', background: '#FEF2F2', color: '#B91C1C', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-              <MI name="delete_forever" size={16} color="#B91C1C" /><span>Dispose</span>
-            </button>
-          )}
           <button onClick={() => document.getElementById('storage-info')?.scrollIntoView({ behavior: 'smooth' })}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             <MI name="inventory_2" size={16} /><span>Storage History</span>
           </button>
-          <button onClick={() => router.push(`/dashboard/audit-trail?sample=${displayId(sample)}`)}
+          <button onClick={() => setShowAuditTrail(true)}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             <MI name="shield" size={16} /><span>Audit Trail</span>
-          </button>
-          <button onClick={() => router.push(`/dashboard/chain-of-custody?sample=${displayId(sample)}&returnTo=${encodeURIComponent(`/dashboard/samples-overview/${sample.id}`)}`)}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            <MI name="fact_check" size={16} /><span>Chain of Custody</span>
           </button>
           <button onClick={() => router.push(`/dashboard/analysis-requests?sample=${sample.id}`)}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: 'none', background: '#0154FC', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>

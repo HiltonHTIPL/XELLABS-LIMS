@@ -1,5 +1,6 @@
 from rest_framework import viewsets, filters
 from django_filters.rest_framework import DjangoFilterBackend
+from django_filters import rest_framework as df_filters
 from core.permissions import AuditReadOnly
 from .models import AuditEvent, LoginEvent, SecurityEvent, RecordVersion
 from .serializers import (
@@ -8,12 +9,21 @@ from .serializers import (
 )
 
 
+class AuditEventFilter(df_filters.FilterSet):
+    date_from = df_filters.DateFilter(field_name="timestamp", lookup_expr="gte")
+    date_to = df_filters.DateFilter(field_name="timestamp", lookup_expr="lte")
+
+    class Meta:
+        model = AuditEvent
+        fields = ["action", "content_type", "user", "date_from", "date_to"]
+
+
 class AuditEventViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = AuditEvent.objects.select_related("user", "content_type").prefetch_related("changes").all()
     serializer_class = AuditEventSerializer
     permission_classes = [AuditReadOnly]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
-    filterset_fields = ["action", "content_type", "user"]
+    filterset_class = AuditEventFilter
     ordering_fields = ["timestamp"]
 
 

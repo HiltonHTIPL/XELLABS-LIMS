@@ -2,7 +2,7 @@ import logging
 
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from core.permissions import (
@@ -343,6 +343,71 @@ class SampleViewSet(viewsets.ModelViewSet):
         data = SampleSerializer(sample, context={"request": request}).data
         data["attachment_url"] = attachment_url
         return Response(data)
+
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="bulk-dispose",
+        parser_classes=[MultiPartParser, FormParser, JSONParser],
+        permission_classes=[IsLabManagerOrAbove],
+    )
+    def bulk_dispose(self, request):
+        """Bulk dispose past-retention samples in XELLABS (TC-9).
+        Invokes dispose_sample() in a loop per sample so signals & audit events fire."""
+        from .services import dispose_sample
+
+        raw_ids = request.data.get("sample_ids") or request.data.get("ids") or []
+        if isinstance(raw_ids, str):
+            import json
+            try:
+                raw_ids = json.loads(raw_ids)
+            except Exception:
+                raw_ids = [s.strip() for s in raw_ids.split(",") if s.strip()]
+
+        if not isinstance(raw_ids, (list, tuple, set)):
+            raw_ids = [raw_ids]
+
+        if not raw_ids:
+            return Response({"detail": "No sample IDs provided."}, status=status.HTTP_400_BAD_REQUEST)
+
+        basis = request.data.get("regulatory_basis") or ""
+        notes = request.data.get("notes") or ""
+        certificate = request.FILES.get("attachment") or request.FILES.get("certificate")
+
+        samples = Sample.objects.filter(id__in=raw_ids)
+        sample_map = {s.id: s for s in samples}
+
+        disposed_ids = []
+        skipped = []
+
+        for sid in raw_ids:
+            try:
+                sid_int = int(sid)
+            except (ValueError, TypeError):
+                skipped.append({"id": sid, "reason": "Invalid sample ID format."})
+                continue
+
+            sample = sample_map.get(sid_int)
+            if not sample:
+                skipped.append({"id": sid_int, "reason": "Sample not found."})
+                continue
+
+            try:
+                dispose_sample(sample, request.user, basis=basis, notes=notes, certificate=certificate)
+                disposed_ids.append(sample.id)
+            except ValueError as e:
+                skipped.append({"id": sample.id, "reason": str(e)})
+            except Exception as e:
+                skipped.append({"id": sample.id, "reason": f"Unexpected error: {str(e)}"})
+
+        return Response({
+            "ok": True,
+            "disposed_count": len(disposed_ids),
+            "disposed_ids": disposed_ids,
+            "skipped_count": len(skipped),
+            "skipped": skipped,
+            "message": f"Successfully disposed {len(disposed_ids)} sample(s)." + (f" Skipped {len(skipped)} sample(s)." if skipped else "")
+        })
 
     @action(detail=True, methods=["post"], permission_classes=[CanReceiveOrStoreSamples])
     def receive(self, request, pk=None):
