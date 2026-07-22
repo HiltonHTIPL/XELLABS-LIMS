@@ -257,7 +257,7 @@ export default function ImportButton({ columns, existingTitles = [], templateFil
               </div>
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>Import Data</h2>
             </div>
-            {!importing && <button onClick={closeDrawer} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>}
+            {!importing && <button onClick={closeDrawer} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#374151" /></button>}
           </div>
 
           {/* Tabs */}
@@ -305,7 +305,7 @@ export default function ImportButton({ columns, existingTitles = [], templateFil
               </div>
             ) : !parsedRows ? (
               <div className="flex flex-col items-center justify-center py-12 rounded-xl" style={{ border: '1px dashed #D1D5DB', backgroundColor: '#F9FAFB' }}>
-                <MI name="file_upload" size={32} color="#9CA3AF" />
+                <MI name="file_upload" size={32} color="#374151" />
                 <p className="mt-2 text-sm font-medium text-gray-700">Upload CSV file</p>
                 <p className="mt-1 text-xs text-gray-500 text-center px-4">The CSV headers must match the exported file exactly.</p>
                 <input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileChange} className="hidden" />

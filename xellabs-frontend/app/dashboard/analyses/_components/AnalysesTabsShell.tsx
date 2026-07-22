@@ -46,13 +46,13 @@ export default function AnalysesTabsShell({
             onClick={() => setTab(t.key)}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium"
             style={{
-              color: tab === t.key ? '#0154FC' : '#6B7280',
+              color: tab === t.key ? '#0154FC' : '#374151',
               borderBottom: tab === t.key ? '2px solid #0154FC' : '2px solid transparent',
               background: 'none',
               cursor: 'pointer',
             }}
           >
-            <MI name={t.icon} size={14} color={tab === t.key ? '#0154FC' : '#9CA3AF'} />
+            <MI name={t.icon} size={14} color={tab === t.key ? '#0154FC' : '#374151'} />
             {t.label}
           </button>
         ))}

@@ -54,7 +54,7 @@ export default function BulkDisposeSampleModal({ sampleIds, onClose, onDisposed 
           </div>
           <div>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: '#111827', margin: 0 }}>Dispose Selected Samples</h3>
-            <p style={{ fontSize: 12.5, color: '#6B7280', margin: '4px 0 0' }}>
+            <p style={{ fontSize: 12.5, color: '#374151', margin: '4px 0 0' }}>
               <strong>{sampleIds.length} sample(s)</strong> selected for disposal. Record the compliance basis and optional certificate.
             </p>
           </div>

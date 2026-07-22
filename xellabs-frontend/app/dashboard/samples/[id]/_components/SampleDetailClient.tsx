@@ -265,7 +265,7 @@ export default function SampleDetailClient({ sample, uid }: Props) {
               <MI name="shield" size={20} />
               <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Audit Trail</h2>
             </div>
-            <button onClick={() => setShowAuditTrail(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#6B7280' }}>
+            <button onClick={() => setShowAuditTrail(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#374151' }}>
               <MI name="close" size={20} />
             </button>
           </div>
@@ -290,7 +290,7 @@ export default function SampleDetailClient({ sample, uid }: Props) {
                       <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', marginBottom: 2, textTransform: 'capitalize' }}>
                         {entry.action ? `Transition: ${entry.action}` : 'Created'}
                       </div>
-                      <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 4 }}>
+                      <div style={{ fontSize: 12, color: '#374151', marginBottom: 4 }}>
                         {fmtDate(entry.time)} by <span style={{ fontWeight: 500 }}>{entry.actor}</span>
                       </div>
                       <div style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 12, fontSize: 11, backgroundColor: '#EFF6FF', color: T.primary, fontWeight: 500 }}>

@@ -110,7 +110,7 @@ export default function StorageLocationInput({ value, onChange, disabled }: {
           </span>
           {!disabled && (
             <button type="button" onClick={clear} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, lineHeight: 1 }}>
-              <MI name="close" size={14} color="#6B7280" />
+              <MI name="close" size={14} color="#374151" />
             </button>
           )}
         </div>
@@ -131,7 +131,7 @@ export default function StorageLocationInput({ value, onChange, disabled }: {
             className="flex-1 outline-none py-2 px-3 text-xs"
             style={{ color: '#374151', backgroundColor: 'transparent', minWidth: 0 }}
           />
-          {busy && <MI name="hourglass_top" size={13} color="#9CA3AF" />}
+          {busy && <MI name="hourglass_top" size={13} color="#374151" />}
           <button type="button" onClick={() => setScanning(true)} disabled={disabled} title="Scan location QR"
             style={{ border: 'none', borderLeft: '1px solid #E5E7EB', background: '#F9FAFB', cursor: 'pointer', padding: '7px 9px', display: 'flex' }}>
             <MI name="qr_code_scanner" size={16} color="#2563EB" />
@@ -148,14 +148,14 @@ export default function StorageLocationInput({ value, onChange, disabled }: {
               className="w-full text-left"
               style={{ display: 'block', padding: '8px 10px', border: 'none', borderBottom: '1px solid #F3F4F6', background: 'none', cursor: 'pointer' }}>
               <span style={{ fontSize: 11, fontWeight: 600, color: '#111827', display: 'block' }}>{b.name}</span>
-              <span style={{ fontSize: 10, color: '#6B7280' }}>{boxPath(b)}</span>
+              <span style={{ fontSize: 10, color: '#374151' }}>{boxPath(b)}</span>
             </button>
           ))}
         </div>
       )}
       {open && !busy && results.length === 0 && query.trim() && !value && (
         <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 30, backgroundColor: '#fff', border: '1px solid #E5E7EB', borderRadius: 8, marginTop: 4, padding: '8px 10px' }}>
-          <span style={{ fontSize: 11, color: '#9CA3AF' }}>No matching boxes.</span>
+          <span style={{ fontSize: 11, color: '#374151' }}>No matching boxes.</span>
         </div>
       )}
 

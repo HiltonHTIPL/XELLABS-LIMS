@@ -3,11 +3,10 @@ import { useState, useMemo, useTransition } from 'react'
 import Link from 'next/link'
 import { getResults, type EnrichedResult, type ResultFilters, type ResultStatus } from '@/app/actions/results'
 import {
-  PageHeader, Card, StatCard, Btn, Field, StatusChip, Pagination, EmptyState, MI,
-  thStyle, tdStyle, inputCls, inputStyle, selectStyle, T,
+  PageHeader, Card, StatCard, Btn, Field, StatusChip, EmptyState,
+  inputCls, inputStyle, selectStyle, T,
 } from '@/app/dashboard/_components/ui'
-
-const PAGE_SIZE = 20
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
 
 function fmtDate(v: string | null): string {
   if (!v) return '—'
@@ -23,11 +22,9 @@ export default function ResultsShell({ initialResults }: { initialResults: Enric
   const [outOfRange, setOutOfRange] = useState<'' | 'true' | 'false'>('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
-  const [page, setPage] = useState(1)
   const [pending, startTransition] = useTransition()
 
   function runSearch() {
-    setPage(1)
     const filters: ResultFilters = {
       search: search || undefined,
       status: status || undefined,
@@ -42,7 +39,7 @@ export default function ResultsShell({ initialResults }: { initialResults: Enric
   }
 
   function resetFilters() {
-    setSearch(''); setStatus(''); setOutOfRange(''); setDateFrom(''); setDateTo(''); setPage(1)
+    setSearch(''); setStatus(''); setOutOfRange(''); setDateFrom(''); setDateTo('')
     startTransition(async () => {
       const r = await getResults({})
       setResults(r)
@@ -57,8 +54,67 @@ export default function ResultsShell({ initialResults }: { initialResults: Enric
     return { total, pendingCount, verified, outRange }
   }, [results])
 
-  const pages = Math.max(1, Math.ceil(results.length / PAGE_SIZE))
-  const pageResults = results.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  // Submitted/Verified are nullable dates — expose epoch sort fields; renders keep
+  // reading the original ISO values (and their by-name sub-lines) unchanged.
+  type Row = EnrichedResult & { submitted_sort: number; verified_sort: number }
+  const rows: Row[] = results.map(r => ({
+    ...r,
+    submitted_sort: r.submitted_at ? new Date(r.submitted_at).getTime() : 0,
+    verified_sort: r.verified_at ? new Date(r.verified_at).getTime() : 0,
+  }))
+
+  const columns: DataTableColumn<Row>[] = [
+    { id: 'test_name', label: 'Test', sortable: true, minWidth: 140, render: r => r.test_name || '—' },
+    {
+      id: 'sample_id', label: 'Sample', sortable: true, minWidth: 140,
+      render: r => (
+        <div>
+          <div>{r.sample_id || '—'}</div>
+          {r.sample_barcode && <div style={{ fontSize: 11, color: T.faint }}>{r.sample_barcode}</div>}
+        </div>
+      ),
+    },
+    { id: 'ar_id', label: 'AR ID', sortable: true, minWidth: 110, render: r => r.ar_id || '—' },
+    {
+      id: 'ws_id', label: 'Worksheet', sortable: true, minWidth: 120,
+      render: r => (
+        r.ws_id ? (
+          r.worksheet_id ? (
+            <Link href={`/dashboard/worksheets/${r.worksheet_id}`} style={{ color: T.primary, fontWeight: 600, textDecoration: 'none' }}>
+              {r.ws_id}
+            </Link>
+          ) : r.ws_id
+        ) : '—'
+      ),
+    },
+    { id: 'value', label: 'Value', sortable: true, minWidth: 90, render: r => r.value || '—' },
+    { id: 'unit', label: 'Unit', sortable: true, minWidth: 80, render: r => r.unit || '—' },
+    { id: 'status', label: 'Status', sortable: true, minWidth: 110, render: r => <StatusChip status={r.status} /> },
+    {
+      id: 'is_out_of_range', label: 'Range', sortable: true, minWidth: 110,
+      render: r => r.is_out_of_range
+        ? <span style={{ color: T.danger, fontWeight: 600, fontSize: 12 }}>Out of range</span>
+        : <span style={{ color: T.muted, fontSize: 12 }}>In range</span>,
+    },
+    {
+      id: 'submitted_sort', label: 'Submitted', sortable: true, minWidth: 150,
+      render: r => (
+        <div>
+          <div>{fmtDate(r.submitted_at)}</div>
+          {r.submitted_by_name && <div style={{ fontSize: 11, color: T.faint }}>{r.submitted_by_name}</div>}
+        </div>
+      ),
+    },
+    {
+      id: 'verified_sort', label: 'Verified', sortable: true, minWidth: 150,
+      render: r => (
+        <div>
+          <div>{fmtDate(r.verified_at)}</div>
+          {r.verified_by_name && <div style={{ fontSize: 11, color: T.faint }}>{r.verified_by_name}</div>}
+        </div>
+      ),
+    },
+  ]
 
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -122,72 +178,21 @@ export default function ResultsShell({ initialResults }: { initialResults: Enric
       </Card>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       <Card title="Results" icon="science" pad={false}>
-        {pageResults.length === 0 ? (
+        {results.length === 0 ? (
           <div className="p-4">
             <EmptyState icon="fact_check" title="No results found" sub="Try adjusting your search or filters." />
           </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>Test</th>
-                  <th style={thStyle}>Sample</th>
-                  <th style={thStyle}>AR ID</th>
-                  <th style={thStyle}>Worksheet</th>
-                  <th style={thStyle}>Value</th>
-                  <th style={thStyle}>Unit</th>
-                  <th style={thStyle}>Status</th>
-                  <th style={thStyle}>Range</th>
-                  <th style={thStyle}>Submitted</th>
-                  <th style={thStyle}>Verified</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pageResults.map(r => (
-                  <tr key={r.id}>
-                    <td style={tdStyle}>{r.test_name || '—'}</td>
-                    <td style={tdStyle}>
-                      <div>{r.sample_id || '—'}</div>
-                      {r.sample_barcode && <div style={{ fontSize: 11, color: T.faint }}>{r.sample_barcode}</div>}
-                    </td>
-                    <td style={tdStyle}>{r.ar_id || '—'}</td>
-                    <td style={tdStyle}>
-                      {r.ws_id ? (
-                        r.worksheet_id ? (
-                          <Link href={`/dashboard/worksheets/${r.worksheet_id}`} style={{ color: T.primary, fontWeight: 600, textDecoration: 'none' }}>
-                            {r.ws_id}
-                          </Link>
-                        ) : r.ws_id
-                      ) : '—'}
-                    </td>
-                    <td style={tdStyle}>{r.value || '—'}</td>
-                    <td style={tdStyle}>{r.unit || '—'}</td>
-                    <td style={tdStyle}><StatusChip status={r.status} /></td>
-                    <td style={tdStyle}>
-                      {r.is_out_of_range
-                        ? <span style={{ color: T.danger, fontWeight: 600, fontSize: 12 }}>Out of range</span>
-                        : <span style={{ color: T.muted, fontSize: 12 }}>In range</span>}
-                    </td>
-                    <td style={tdStyle}>
-                      <div>{fmtDate(r.submitted_at)}</div>
-                      {r.submitted_by_name && <div style={{ fontSize: 11, color: T.faint }}>{r.submitted_by_name}</div>}
-                    </td>
-                    <td style={tdStyle}>
-                      <div>{fmtDate(r.verified_at)}</div>
-                      {r.verified_by_name && <div style={{ fontSize: 11, color: T.faint }}>{r.verified_by_name}</div>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {pages > 1 && (
-          <div className="flex justify-end p-3">
-            <Pagination page={page} pages={pages} onPage={setPage} showTotal totalItems={results.length} />
+          <div className="p-4" style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            <DataTable<Row>
+              data={rows}
+              columns={columns}
+              persistKey="results"
+              bare
+              emptyMessage="No results found."
+            />
           </div>
         )}
       </Card>

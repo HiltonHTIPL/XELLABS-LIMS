@@ -18,18 +18,18 @@ export function TrendChart({ data }: { data: TatTrendPoint[] }) {
     <div className="bg-white rounded-xl" style={{ border: '1px solid #E5E7EB', padding: '14px 16px 10px' }}>
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold" style={{ color: '#111827' }}>Turnaround Time Trend (days)</h3>
-        <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: '#F3F4F6', color: '#6B7280' }}>Last 5 Weeks</span>
+        <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: '#F3F4F6', color: '#374151' }}>Last 5 Weeks</span>
       </div>
       {!hasData ? (
         <div className="flex items-center justify-center" style={{ height: 160 }}>
-          <p style={{ fontSize: 12, color: '#9CA3AF' }}>No completed samples yet to compute turnaround time.</p>
+          <p style={{ fontSize: 12, color: '#374151' }}>No completed samples yet to compute turnaround time.</p>
         </div>
       ) : (
         <ResponsiveContainer width="100%" height={160}>
           <LineChart data={chartData} margin={{ top: 4, right: 8, left: -22, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
-            <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#9CA3AF' }} tickLine={false} axisLine={false} />
-            <YAxis tick={{ fontSize: 10, fill: '#9CA3AF' }} tickLine={false} axisLine={false} />
+            <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#374151' }} tickLine={false} axisLine={false} />
+            <YAxis tick={{ fontSize: 10, fill: '#374151' }} tickLine={false} axisLine={false} />
             <Tooltip
               contentStyle={{ fontSize: 11, border: '1px solid #E5E7EB', borderRadius: 6 }}
               labelStyle={{ color: '#374151', fontWeight: 600 }}
@@ -49,7 +49,7 @@ export function TrendChart({ data }: { data: TatTrendPoint[] }) {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  logged: '#9CA3AF', received: '#3B82F6', in_process: '#0154FC',
+  logged: '#374151', received: '#3B82F6', in_process: '#0154FC',
   to_be_verified: '#F59E0B', on_hold_for_qa: '#F97316', completed: '#22C55E', overdue: '#EF4444',
 }
 const STATUS_LABELS: Record<string, string> = {
@@ -79,7 +79,7 @@ export function StatusDonut({ stats }: { stats: SampleStats }) {
         </ResponsiveContainer>
         <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', textAlign: 'center', pointerEvents: 'none' }}>
           <p style={{ fontSize: 16, fontWeight: 700, color: '#111827', lineHeight: 1 }}>{total.toLocaleString()}</p>
-          <p style={{ fontSize: 8, color: '#9CA3AF', marginTop: 2 }}>Total<br/>Samples</p>
+          <p style={{ fontSize: 9, fontWeight: 600, color: '#374151', marginTop: 2, letterSpacing: '0.02em' }}>Total<br/>Samples</p>
         </div>
       </div>
 
@@ -97,7 +97,7 @@ export function StatusDonut({ stats }: { stats: SampleStats }) {
         ))}
       </div>
 
-      <p style={{ fontSize: 9, color: '#9CA3AF', marginTop: 8 }}>As of {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+      <p style={{ fontSize: 9, color: '#4B5563', marginTop: 8 }}>As of {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
     </div>
   )
 }

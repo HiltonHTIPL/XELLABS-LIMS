@@ -1,10 +1,10 @@
 'use client'
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import {
-  createWorksheet, type WorksheetListItem,
-} from '@/app/actions/senaite-worksheets'
+import { createWorksheet } from '@/app/actions/senaite-worksheets'
+import type { WorksheetListItem } from '@/app/lib/senaite-worksheets'
 import type { RefOption } from '@/app/dashboard/_components/AdminRefShell'
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -18,7 +18,7 @@ const STATE_BADGE: Record<string, { bg: string; color: string; label: string }> 
 }
 
 function StateBadge({ state }: { state: string }) {
-  const s = STATE_BADGE[state] ?? { bg: '#F3F4F6', color: '#6B7280', label: state || '—' }
+  const s = STATE_BADGE[state] ?? { bg: '#F3F4F6', color: '#374151', label: state || '—' }
   return (
     <span className="inline-flex items-center px-2 py-0.5 rounded-full" style={{ backgroundColor: s.bg, color: s.color, fontSize: 11, fontWeight: 600 }}>
       {s.label}
@@ -53,6 +53,55 @@ export default function WorksheetsShell({ initialWorksheets, templates, instrume
   function openCreate() { setTemplateUid(''); setInstrumentUid(''); setShowCreate(true) }
   function closeCreate() { if (!busy) setShowCreate(false) }
 
+  // Row id = uid (unique); keep the worksheet business id as `wsId` for the
+  // Worksheet column + row navigation. `createdSort` (epoch) lets the engine
+  // order the Created column, which renders a formatted date string.
+  type Row = WorksheetListItem & { id: string; wsId: string; createdSort: number }
+  const rows: Row[] = initialWorksheets.map(w => ({
+    ...w,
+    id: w.uid,
+    wsId: w.id,
+    createdSort: w.created ? (new Date(w.created).getTime() || 0) : 0,
+  }))
+
+  const columns: DataTableColumn<Row>[] = [
+    {
+      id: 'wsId', label: 'Worksheet', sortable: true, minWidth: 160,
+      render: w => (
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: '#DBEAFE' }}>
+            <MI name="grid_view" size={13} color="#0154FC" />
+          </div>
+          <span className="text-xs font-semibold" style={{ color: '#0154FC' }}>{w.wsId}</span>
+        </div>
+      ),
+    },
+    {
+      id: 'analyst', label: 'Analyst', sortable: true, minWidth: 140,
+      render: w => <span className="text-xs" style={{ color: '#374151' }}>{w.analyst || '—'}</span>,
+    },
+    {
+      id: 'templateTitle', label: 'Template', sortable: true, minWidth: 160,
+      render: w => <span className="text-xs" style={{ color: '#374151' }}>{w.templateTitle || '—'}</span>,
+    },
+    {
+      id: 'instrumentTitle', label: 'Instrument', sortable: true, minWidth: 160,
+      render: w => <span className="text-xs" style={{ color: '#374151' }}>{w.instrumentTitle || '—'}</span>,
+    },
+    {
+      id: 'numAnalyses', label: 'Analyses', sortable: true, minWidth: 100,
+      render: w => <span className="text-xs" style={{ color: '#374151' }}>{w.numAnalyses}</span>,
+    },
+    {
+      id: 'reviewState', label: 'Status', sortable: true, minWidth: 130,
+      render: w => <StateBadge state={w.reviewState} />,
+    },
+    {
+      id: 'createdSort', label: 'Created', sortable: true, minWidth: 130,
+      render: w => <span className="text-xs" style={{ color: '#374151' }}>{fmtDate(w.created)}</span>,
+    },
+  ]
+
   function submitCreate() {
     startTransition(async () => {
       const r = await createWorksheet({
@@ -74,7 +123,7 @@ export default function WorksheetsShell({ initialWorksheets, templates, instrume
       <div className="flex items-center justify-between mb-4" style={{ flexShrink: 0 }}>
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Worksheets</h1>
-          <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Create worksheets from templates — routine analyses and QC positions are laid out automatically</p>
+          <p className="text-sm mt-0.5" style={{ color: '#374151' }}>Create worksheets from templates — routine analyses and QC positions are laid out automatically</p>
         </div>
         <button onClick={openCreate} className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold text-white" style={{ backgroundColor: '#0154FC' }}>
           <MI name="add" size={16} color="#fff" /> New Worksheet
@@ -100,10 +149,10 @@ export default function WorksheetsShell({ initialWorksheets, templates, instrume
               </div>
               <div>
                 <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>New Worksheet</h2>
-                <p style={{ fontSize: 10, color: '#9CA3AF' }}>Pick a template to auto-lay-out positions and pull in pending analyses</p>
+                <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>Pick a template to auto-lay-out positions and pull in pending analyses</p>
               </div>
             </div>
-            <button onClick={closeCreate} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
+            <button onClick={closeCreate} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#374151" /></button>
           </div>
 
           <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
@@ -114,13 +163,13 @@ export default function WorksheetsShell({ initialWorksheets, templates, instrume
                 <option value="">None — blank worksheet</option>
                 {templates.map(t => <option key={t.uid} value={t.uid}>{t.title}</option>)}
               </select>
-              <p className="mt-1" style={{ fontSize: 10, color: '#9CA3AF' }}>
+              <p className="mt-1" style={{ fontSize: 10, color: '#374151' }}>
                 A template fills routine positions from received samples&rsquo; pending analyses and adds any Blank / Control / Duplicate QC positions it defines.
               </p>
             </div>
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
-                Instrument <span className="font-normal" style={{ color: '#9CA3AF' }}>(optional)</span>
+                Instrument <span className="font-normal" style={{ color: '#374151' }}>(optional)</span>
               </label>
               <select value={instrumentUid} onChange={e => setInstrumentUid(e.target.value)}
                 className="w-full px-3 py-2 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827' }}>
@@ -143,52 +192,25 @@ export default function WorksheetsShell({ initialWorksheets, templates, instrume
       </div>
 
       {/* Table */}
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {initialWorksheets.length === 0 ? (
           <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
             <MI name="grid_view" size={36} color="#D1D5DB" />
-            <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No worksheets yet</p>
-            <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>Create one from a template to lay out analyses and QC automatically</p>
+            <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>No worksheets yet</p>
+            <p className="text-xs mt-0.5" style={{ color: '#374151' }}>Create one from a template to lay out analyses and QC automatically</p>
             <button onClick={openCreate} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
               <MI name="add" size={13} color="#fff" /> New Worksheet
             </button>
           </div>
         ) : (
-          <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
-            <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                  {['Worksheet', 'Analyst', 'Template', 'Instrument', 'Analyses', 'Status', 'Created'].map(h => (
-                    <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {initialWorksheets.map((w, i) => (
-                  <tr key={w.uid} onClick={() => router.push(`/dashboard/worksheets/${w.id}`)}
-                    style={{ borderBottom: i < initialWorksheets.length - 1 ? '1px solid #F9FAFB' : 'none', cursor: 'pointer' }} className="hover:bg-gray-50">
-                    <td className="px-3 py-2.5">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: '#DBEAFE' }}>
-                          <MI name="grid_view" size={13} color="#0154FC" />
-                        </div>
-                        <span className="text-xs font-semibold" style={{ color: '#0154FC' }}>{w.id}</span>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#374151' }}>{w.analyst || '—'}</td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{w.templateTitle || '—'}</td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{w.instrumentTitle || '—'}</td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#374151' }}>{w.numAnalyses}</td>
-                    <td className="px-3 py-2.5"><StateBadge state={w.reviewState} /></td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#9CA3AF' }}>{fmtDate(w.created)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-              <p style={{ fontSize: 10, color: '#9CA3AF' }}>{initialWorksheets.length} worksheet{initialWorksheets.length !== 1 ? 's' : ''}</p>
-            </div>
-          </div>
+          <DataTable<Row>
+            data={rows}
+            columns={columns}
+            searchable
+            persistKey="worksheets"
+            emptyMessage="No worksheets found."
+            onRowClick={w => router.push(`/dashboard/worksheets/${w.wsId}`)}
+          />
         )}
       </div>
     </div>

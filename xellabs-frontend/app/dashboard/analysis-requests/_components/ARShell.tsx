@@ -12,7 +12,7 @@ function MI({ name, size = 16, color }: { name: string; size?: number; color?: s
 }
 
 const PRIORITY_OPTIONS = [
-  { value: 'low',    label: 'Low',    bg: '#F3F4F6', color: '#6B7280' },
+  { value: 'low',    label: 'Low',    bg: '#F3F4F6', color: '#374151' },
   { value: 'normal', label: 'Normal', bg: '#DBEAFE', color: '#1E40AF' },
   { value: 'high',   label: 'High',   bg: '#FEF3C7', color: '#92400E' },
   { value: 'urgent', label: 'Urgent', bg: '#FEE2E2', color: '#991B1B' },
@@ -71,11 +71,11 @@ export default function ARShell({ initialARs, samples, services }: Props) {
       <div className="flex items-center justify-between mb-3" style={{ flexShrink: 0 }}>
         <div className="flex items-center gap-3">
           <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
-            <MI name="arrow_back" size={16} color="#6B7280" />
+            <MI name="arrow_back" size={16} color="#374151" />
           </Link>
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Analysis Requests</h1>
-            <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Link samples to tests and manage analysis workflow</p>
+            <p className="text-sm mt-0.5" style={{ color: '#374151' }}>Link samples to tests and manage analysis workflow</p>
           </div>
         </div>
         <button onClick={() => setShowModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
@@ -103,8 +103,8 @@ export default function ARShell({ initialARs, samples, services }: Props) {
       {initialARs.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="assignment" size={36} color="#D1D5DB" />
-          <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No analysis requests yet</p>
-          <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>Register a sample first, then create an analysis request</p>
+          <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>No analysis requests yet</p>
+          <p className="text-xs mt-0.5" style={{ color: '#374151' }}>Register a sample first, then create an analysis request</p>
           <button onClick={() => setShowModal(true)} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
             <MI name="add" size={13} color="#fff" /> New Request
           </button>
@@ -118,7 +118,7 @@ export default function ARShell({ initialARs, samples, services }: Props) {
             <thead>
               <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
                 {['AR ID', 'Sample', 'Tests', 'Priority', 'Due Date', 'Status', 'Change Status', ''].map(h => (
-                  <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
+                  <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#374151', letterSpacing: '0.05em' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -130,11 +130,11 @@ export default function ARShell({ initialARs, samples, services }: Props) {
                   <tr key={ar.id} style={{ borderBottom: i < initialARs.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
                     <td className="px-3 py-2.5 text-xs font-semibold font-mono" style={{ color: '#2563EB' }}>{ar.ar_id}</td>
                     <td className="px-3 py-2.5 text-xs" style={{ color: '#374151' }}>{ar.sample_id || `#${ar.sample}`}</td>
-                    <td className="px-3 py-2.5 text-xs truncate" style={{ color: '#6B7280' }}>{ar.analyses.map(a => a.senaite_service_name).join(', ') || `${ar.analyses.length} test(s)`}</td>
+                    <td className="px-3 py-2.5 text-xs truncate" style={{ color: '#374151' }}>{ar.analyses.map(a => a.senaite_service_name).join(', ') || `${ar.analyses.length} test(s)`}</td>
                     <td className="px-3 py-2.5">
                       <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: pri.bg, color: pri.color }}>{pri.label}</span>
                     </td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{ar.due_date ? new Date(ar.due_date).toLocaleDateString('en-GB', { timeZone: 'UTC' }) : '—'}</td>
+                    <td className="px-3 py-2.5 text-xs" style={{ color: '#374151' }}>{ar.due_date ? new Date(ar.due_date).toLocaleDateString('en-GB', { timeZone: 'UTC' }) : '—'}</td>
                     <td className="px-3 py-2.5">
                       <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: sta.bg, color: sta.color }}>{sta.label}</span>
                     </td>
@@ -162,7 +162,7 @@ export default function ARShell({ initialARs, samples, services }: Props) {
             </tbody>
           </table>
           <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-            <p style={{ fontSize: 10, color: '#9CA3AF' }}>{initialARs.length} request{initialARs.length !== 1 ? 's' : ''}</p>
+            <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>{initialARs.length} request{initialARs.length !== 1 ? 's' : ''}</p>
           </div>
         </div>
       )}

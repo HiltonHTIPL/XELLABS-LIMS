@@ -50,7 +50,7 @@ function ImportPanel({
               border: `1px solid ${col.required ? T.primary : T.cardBorder}`,
             }}
           >
-            {col.name}{col.required ? ' *' : ''}
+            {col.name}{col.required && <span style={{ color: '#EF4444' }}> *</span>}
           </span>
         ))}
       </div>

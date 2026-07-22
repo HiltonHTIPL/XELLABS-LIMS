@@ -9,6 +9,7 @@ import {
   type DynamicSpecFormState,
 } from '@/app/actions/dynamic-analysis-specifications'
 import { ConfirmModal } from '@/app/dashboard/_components/ui'
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -22,7 +23,7 @@ function Field({ label, children, required, error, hint }: {
       <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
         {label}{required && <span style={{ color: '#EF4444' }}> *</span>}
       </label>
-      {hint && <p className="mb-1" style={{ fontSize: 10, color: '#9CA3AF' }}>{hint}</p>}
+      {hint && <p className="mb-1" style={{ fontSize: 10, color: '#374151' }}>{hint}</p>}
       {children}
       {error && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{error}</p>}
     </div>
@@ -58,10 +59,10 @@ function NewDynamicSpecModal({ onClose, onDone }: { onClose: () => void; onDone:
             </div>
             <div>
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>New Dynamic Analysis Specification</h2>
-              <p style={{ fontSize: 10, color: '#9CA3AF' }}>Upload an Excel file of spec ranges</p>
+              <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>Upload an Excel file of spec ranges</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#374151" /></button>
         </div>
         <form action={action} className="px-5 py-4 flex flex-col gap-3">
           <Field label="Title" required error={fieldErrors.name}>
@@ -127,16 +128,46 @@ export default function DynamicAnalysisSpecificationsShell({ initialSpecs }: {
     })
   }
 
+  const columns: DataTableColumn<DynamicAnalysisSpecification>[] = [
+    {
+      id: 'name', label: 'Title', sortable: true, minWidth: 220,
+      render: s => (
+        <span className="text-xs font-medium" style={{ color: '#111827' }}>
+          {s.file
+            ? <a href={s.file} target="_blank" rel="noopener noreferrer" style={{ color: '#0154FC' }}>{s.name}</a>
+            : s.name}
+        </span>
+      ),
+    },
+    {
+      id: 'summary', label: 'Summary', sortable: true, minWidth: 240,
+      render: s => <span className="text-xs" style={{ color: '#374151' }}>{s.summary || '—'}</span>,
+    },
+    {
+      id: 'created_at', label: 'Created', sortable: true, minWidth: 130,
+      render: s => <span className="text-xs" style={{ color: '#374151' }}>{new Date(s.created_at).toLocaleDateString()}</span>,
+    },
+    {
+      id: 'is_active', label: 'Status', sortable: true, minWidth: 120,
+      render: s => (
+        <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, color: s.is_active ? '#0154FC' : '#374151' }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: s.is_active ? '#0154FC' : '#374151', display: 'inline-block' }} />
+          {s.is_active ? 'Active' : 'Inactive'}
+        </span>
+      ),
+    },
+  ]
+
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div className="flex items-center justify-between mb-5" style={{ flexShrink: 0 }}>
         <div className="flex items-center gap-3">
           <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
-            <MI name="arrow_back" size={16} color="#6B7280" />
+            <MI name="arrow_back" size={16} color="#374151" />
           </Link>
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Dynamic Analysis Specifications</h1>
-            <p className="mt-1" style={{ fontSize: 13, color: '#6B7280' }}>Upload Excel-based spec ranges — link them from a regular Specification</p>
+            <p className="mt-1" style={{ fontSize: 13, color: '#374151' }}>Upload Excel-based spec ranges — link them from a regular Specification</p>
           </div>
         </div>
         <button onClick={openCreate} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#2563EB', border: 'none', cursor: 'pointer' }}>
@@ -164,57 +195,28 @@ export default function DynamicAnalysisSpecificationsShell({ initialSpecs }: {
         />
       )}
 
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {initialSpecs.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2', borderRadius: 14 }}>
           <MI name="dynamic_feed" size={36} color="#D1D5DB" />
-          <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No dynamic analysis specifications yet</p>
+          <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>No dynamic analysis specifications yet</p>
           <button onClick={openCreate} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
             <MI name="add" size={13} color="#fff" /> New Dynamic Specification
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2', borderRadius: 14, boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
-          <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-            <colgroup>
-              <col style={{ width: '28%' }} /><col style={{ width: '32%' }} /><col style={{ width: '18%' }} /><col style={{ width: '14%' }} /><col style={{ width: '8%' }} />
-            </colgroup>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                {['Title', 'Summary', 'Created', 'Status', ''].map(h => (
-                  <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {initialSpecs.map((s, i) => (
-                <tr key={s.id} style={{ borderBottom: i < initialSpecs.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
-                  <td className="px-3 py-2.5 text-xs font-medium" style={{ color: '#111827' }}>
-                    {s.file
-                      ? <a href={s.file} target="_blank" rel="noopener noreferrer" style={{ color: '#0154FC' }}>{s.name}</a>
-                      : s.name}
-                  </td>
-                  <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{s.summary || '—'}</td>
-                  <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{new Date(s.created_at).toLocaleDateString()}</td>
-                  <td className="px-3 py-2.5">
-                    <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, color: s.is_active ? '#0154FC' : '#6B7280' }}>
-                      <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: s.is_active ? '#0154FC' : '#9CA3AF', display: 'inline-block' }} />
-                      {s.is_active ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <button onClick={() => setDeleting(s)} disabled={busy} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-                      <MI name="delete" size={14} color="#EF4444" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-            <p style={{ fontSize: 10, color: '#9CA3AF' }}>{initialSpecs.length} dynamic specification{initialSpecs.length !== 1 ? 's' : ''}</p>
-          </div>
-        </div>
+        <DataTable<DynamicAnalysisSpecification>
+          data={initialSpecs}
+          columns={columns}
+          searchable
+          persistKey="dynamic-analysis-specifications"
+          emptyMessage="No dynamic analysis specifications found."
+          rowActions={s => (
+            <button onClick={() => setDeleting(s)} disabled={busy} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
+              <MI name="delete" size={14} color="#EF4444" />
+            </button>
+          )}
+        />
       )}
       </div>
     </div>

@@ -98,11 +98,11 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
       <div className="flex items-center justify-between px-5 py-3" style={{ backgroundColor: '#fff', borderBottom: '1px solid #E5E7EB' }}>
         <div className="flex items-center gap-3">
           <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
-            <MI name="arrow_back" size={16} color="#6B7280" />
+            <MI name="arrow_back" size={16} color="#374151" />
           </Link>
           <div>
             <h1 className="text-lg font-bold" style={{ color: '#111827' }}>Administration</h1>
-            <p className="text-xs mt-0.5" style={{ color: '#6B7280' }}>
+            <p className="text-xs mt-0.5" style={{ color: '#374151' }}>
               {tab === 'users' ? 'Manage staff users and their lab roles' : 'Manage groups and the roles granted to their members'}
             </p>
           </div>
@@ -115,7 +115,7 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
                 style={{
                   border: 'none', cursor: 'pointer',
                   backgroundColor: tab === t ? '#0154FC' : 'transparent',
-                  color: tab === t ? '#fff' : '#6B7280',
+                  color: tab === t ? '#fff' : '#374151',
                 }}>
                 {t === 'users' ? 'Users' : 'Groups'}
               </button>
@@ -158,10 +158,10 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
             <thead>
               <tr style={{ backgroundColor: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
                 {['Name', 'Username', 'Email', 'Role', 'Status', 'Joined'].map(h => (
-                  <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>{h}</th>
+                  <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
                 {SENAITE_USER_ROLES.map(role => (
-                  <th key={role} title={`SENAITE role: ${role}`} style={{ textAlign: 'center', padding: '10px 8px', fontSize: 10, fontWeight: 600, color: '#6B7280', whiteSpace: 'nowrap', borderLeft: '1px solid #F3F4F6' }}>{role}</th>
+                  <th key={role} title={`SENAITE role: ${role}`} style={{ textAlign: 'center', padding: '10px 8px', fontSize: 10, fontWeight: 600, color: '#374151', whiteSpace: 'nowrap', borderLeft: '1px solid #F3F4F6' }}>{role}</th>
                 ))}
                 <th style={{ padding: '10px 14px' }} />
               </tr>
@@ -169,7 +169,7 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
             <tbody>
               {users.length === 0 ? (
                 <tr>
-                  <td colSpan={6 + SENAITE_USER_ROLES.length + 1} style={{ padding: '32px', textAlign: 'center', color: '#9CA3AF' }}>
+                  <td colSpan={6 + SENAITE_USER_ROLES.length + 1} style={{ padding: '32px', textAlign: 'center', color: '#374151' }}>
                     No staff users yet — click "New User" to create one.
                   </td>
                 </tr>
@@ -179,8 +179,8 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
                   return (
                     <tr key={u.id} style={{ borderBottom: '1px solid #F3F4F6' }}>
                       <td style={{ padding: '10px 14px', fontWeight: 500, color: '#111827' }}>{u.full_name}</td>
-                      <td style={{ padding: '10px 14px', color: '#6B7280' }}>{u.username}</td>
-                      <td style={{ padding: '10px 14px', color: '#6B7280' }}>{u.email || '—'}</td>
+                      <td style={{ padding: '10px 14px', color: '#374151' }}>{u.username}</td>
+                      <td style={{ padding: '10px 14px', color: '#374151' }}>{u.email || '—'}</td>
                       <td style={{ padding: '10px 14px' }}>
                         <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 999, backgroundColor: badge.bg, color: badge.color }}>
                           {STAFF_ROLE_LABELS[u.role]}
@@ -191,7 +191,7 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
                           {u.is_active ? 'Active' : 'Disabled'}
                         </span>
                       </td>
-                      <td style={{ padding: '10px 14px', color: '#9CA3AF' }}>{fmtDate(u.date_joined)}</td>
+                      <td style={{ padding: '10px 14px', color: '#374151' }}>{fmtDate(u.date_joined)}</td>
                       {SENAITE_USER_ROLES.map(role => (
                         <td key={role} style={{ padding: '10px 8px', textAlign: 'center', borderLeft: '1px solid #F3F4F6' }}>
                           <input
@@ -226,9 +226,9 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ backgroundColor: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
-                <th style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>Group Name</th>
+                <th style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>Group Name</th>
                 {SENAITE_USER_ROLES.map(role => (
-                  <th key={role} title={`SENAITE role: ${role}`} style={{ textAlign: 'center', padding: '10px 8px', fontSize: 10, fontWeight: 600, color: '#6B7280', whiteSpace: 'nowrap', borderLeft: '1px solid #F3F4F6' }}>{role}</th>
+                  <th key={role} title={`SENAITE role: ${role}`} style={{ textAlign: 'center', padding: '10px 8px', fontSize: 10, fontWeight: 600, color: '#374151', whiteSpace: 'nowrap', borderLeft: '1px solid #F3F4F6' }}>{role}</th>
                 ))}
                 <th style={{ padding: '10px 14px' }} />
               </tr>
@@ -236,13 +236,13 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
             <tbody>
               {!groupsLoaded ? (
                 <tr>
-                  <td colSpan={SENAITE_USER_ROLES.length + 2} style={{ padding: '32px', textAlign: 'center', color: '#9CA3AF' }}>
+                  <td colSpan={SENAITE_USER_ROLES.length + 2} style={{ padding: '32px', textAlign: 'center', color: '#374151' }}>
                     Loading groups…
                   </td>
                 </tr>
               ) : groups.length === 0 ? (
                 <tr>
-                  <td colSpan={SENAITE_USER_ROLES.length + 2} style={{ padding: '32px', textAlign: 'center', color: '#9CA3AF' }}>
+                  <td colSpan={SENAITE_USER_ROLES.length + 2} style={{ padding: '32px', textAlign: 'center', color: '#374151' }}>
                     No groups found.
                   </td>
                 </tr>
@@ -251,7 +251,7 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
                   <tr key={g.id} style={{ borderBottom: '1px solid #F3F4F6' }}>
                     <td style={{ padding: '10px 14px', fontWeight: 500, color: '#111827' }}>
                       {g.title}
-                      <span style={{ marginLeft: 6, fontSize: 10, color: '#9CA3AF' }}>({g.id})</span>
+                      <span style={{ marginLeft: 6, fontSize: 10, color: '#374151' }}>({g.id})</span>
                     </td>
                     {SENAITE_USER_ROLES.map(role => (
                       <td key={role} style={{ padding: '10px 8px', textAlign: 'center', borderLeft: '1px solid #F3F4F6' }}>

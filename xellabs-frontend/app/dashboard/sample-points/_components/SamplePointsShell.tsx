@@ -8,6 +8,7 @@ import {
 } from '@/app/actions/sample-points'
 import type { SenaiteSamplePoint, SenaiteRefOption } from '@/app/lib/senaite'
 import CheckboxList from '../../_components/CheckboxList'
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -111,23 +112,64 @@ export default function SamplePointsShell({
 
   const fieldErrors = state.errors ?? {}
 
+  // SenaiteSamplePoint has no `id`, so key rows by uid. `SampleTypes` is a
+  // derived numeric sort field (the count) since the cell shows a count or 'All'.
+  type Row = SenaiteSamplePoint & { id: string; SampleTypes: number }
+  const rows: Row[] = initialSamplePoints.map(p => ({ ...p, id: p.uid, SampleTypes: p.sampleTypeUids.length }))
+  const columns: DataTableColumn<Row>[] = [
+    {
+      id: 'title', label: 'Name', sortable: true, minWidth: 200,
+      render: p => (
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: '#DBEAFE' }}>
+            <MI name="place" size={13} color="#0154FC" />
+          </div>
+          <span className="text-xs font-medium truncate" style={{ color: '#111827' }}>{p.title}</span>
+        </div>
+      ),
+    },
+    {
+      id: 'description', label: 'Description', sortable: true, minWidth: 260,
+      render: p => <span className="text-xs truncate" style={{ color: p.description ? '#374151' : '#D1D5DB' }}>{p.description || '—'}</span>,
+    },
+    {
+      id: 'SampleTypes', label: 'Sample Types', sortable: true, minWidth: 130,
+      render: p => <span className="text-xs" style={{ color: '#374151' }}>{p.sampleTypeUids.length ? p.sampleTypeUids.length : 'All'}</span>,
+    },
+    {
+      id: 'composite', label: 'Composite', sortable: true, minWidth: 110,
+      render: p => <span className="text-xs" style={{ color: p.composite ? '#0154FC' : '#374151' }}>{p.composite ? 'Yes' : 'No'}</span>,
+    },
+    {
+      id: 'reviewState', label: 'Status', sortable: true, minWidth: 110,
+      render: p => {
+        const active = p.reviewState === 'active'
+        return (
+          <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ backgroundColor: active ? '#ECFDF5' : '#FFFBEB', color: active ? '#059669' : '#D97706' }}>
+            {active ? 'Active' : 'Inactive'}
+          </span>
+        )
+      },
+    },
+  ]
+
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
       <div className="flex items-center justify-between mb-3" style={{ flexShrink: 0 }}>
         <div className="flex items-center gap-3">
           <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
-            <MI name="arrow_back" size={16} color="#6B7280" />
+            <MI name="arrow_back" size={16} color="#374151" />
           </Link>
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Sample Points</h1>
-            <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Manage the sample point options offered when building sample templates</p>
+            <p className="text-sm mt-0.5" style={{ color: '#374151' }}>Manage the sample point options offered when building sample templates</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => router.refresh()} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium"
             style={{ border: '1px solid #E8EAF2', color: '#374151', backgroundColor: '#fff' }}>
-            <MI name="refresh" size={15} color="#6B7280" /> Refresh
+            <MI name="refresh" size={15} color="#374151" /> Refresh
           </button>
           <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
             <MI name="add" size={15} color="#fff" /> New Sample Point
@@ -157,7 +199,7 @@ export default function SamplePointsShell({
                 {isEditing ? `Edit — ${editing.title}` : 'New Sample Point'}
               </h2>
             </div>
-            <button onClick={closeForm} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
+            <button onClick={closeForm} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#374151" /></button>
           </div>
 
           <form action={action} className="flex flex-col flex-1 min-h-0" encType="multipart/form-data">
@@ -186,7 +228,7 @@ export default function SamplePointsShell({
 
               <div>
                 <p className="text-xs font-medium mb-1" style={{ color: '#374151' }}>Sampling Frequency</p>
-                <p className="text-xs mb-1.5" style={{ color: '#9CA3AF' }}>If a sample is taken periodically at this point, enter frequency here, e.g. weekly</p>
+                <p className="text-xs mb-1.5" style={{ color: '#374151' }}>If a sample is taken periodically at this point, enter frequency here, e.g. weekly</p>
                 <div className="grid grid-cols-3 gap-2">
                   <Field label="Days" name="_freqDays" value={vals.frequencyDays} onChange={v => setVal('frequencyDays', v)} />
                   <Field label="Hours" name="_freqHours" value={vals.frequencyHours} onChange={v => setVal('frequencyHours', v)} />
@@ -196,7 +238,7 @@ export default function SamplePointsShell({
 
               <div>
                 <p className="text-xs font-medium mb-1" style={{ color: '#374151' }}>Sample Types</p>
-                <p className="text-xs mb-1.5" style={{ color: '#9CA3AF' }}>Sample types that can be collected at this point. Leave empty to allow all types.</p>
+                <p className="text-xs mb-1.5" style={{ color: '#374151' }}>Sample types that can be collected at this point. Leave empty to allow all types.</p>
                 <CheckboxList options={sampleTypes} selected={vals.sampleTypeUids} onChange={v => setVal('sampleTypeUids', v)} />
               </div>
 
@@ -205,7 +247,7 @@ export default function SamplePointsShell({
                   onChange={e => setVal('composite', e.target.checked)} style={{ accentColor: '#0154FC' }} />
                 <span className="text-xs font-medium" style={{ color: '#374151' }}>Composite</span>
               </label>
-              <p style={{ fontSize: 10, color: '#9CA3AF', marginTop: -8 }}>
+              <p style={{ fontSize: 10, color: '#374151', marginTop: -8 }}>
                 Check this box if samples taken at this point are &apos;composite&apos; (combined from more than one sub-sample). Default (unchecked) indicates &apos;grab&apos; samples.
               </p>
 
@@ -226,12 +268,12 @@ export default function SamplePointsShell({
                   <button type="button" onClick={() => attachmentInputRef.current?.click()}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
                     style={{ border: '1px solid #D1D5DB', color: '#374151', background: '#fff', cursor: 'pointer' }}>
-                    <MI name="upload_file" size={13} color="#6B7280" /> Choose File
+                    <MI name="upload_file" size={13} color="#374151" /> Choose File
                   </button>
-                  <span className="text-xs" style={{ color: attachmentName ? '#111827' : '#9CA3AF' }}>{attachmentName || 'No file chosen'}</span>
+                  <span className="text-xs" style={{ color: attachmentName ? '#111827' : '#374151' }}>{attachmentName || 'No file chosen'}</span>
                 </div>
                 {isEditing && editing.attachmentFilename && (
-                  <p className="mt-1 text-xs" style={{ color: '#9CA3AF' }}>Current: {editing.attachmentFilename}</p>
+                  <p className="mt-1 text-xs" style={{ color: '#374151' }}>Current: {editing.attachmentFilename}</p>
                 )}
               </div>
 
@@ -256,80 +298,44 @@ export default function SamplePointsShell({
         </div>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {initialSamplePoints.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="place" size={36} color="#D1D5DB" />
-          <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No sample points yet</p>
+          <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>No sample points yet</p>
           <button onClick={openCreate} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
             <MI name="add" size={13} color="#fff" /> New Sample Point
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
-          <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-            <colgroup>
-              <col style={{ width: '20%' }} /><col style={{ width: '28%' }} /><col style={{ width: '15%' }} />
-              <col style={{ width: '10%' }} /><col style={{ width: '12%' }} /><col style={{ width: '15%' }} />
-            </colgroup>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                {['Name', 'Description', 'Sample Types', 'Composite', 'Status', 'Actions'].map(h => (
-                  <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {initialSamplePoints.map((p, i) => {
-                const active = p.reviewState === 'active'
-                return (
-                  <tr key={p.uid} style={{ borderBottom: i < initialSamplePoints.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
-                    <td className="px-3 py-2.5">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: '#DBEAFE' }}>
-                          <MI name="place" size={13} color="#0154FC" />
-                        </div>
-                        <span className="text-xs font-medium truncate" style={{ color: '#111827' }}>{p.title}</span>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2.5 text-xs truncate" style={{ color: p.description ? '#6B7280' : '#D1D5DB' }}>{p.description || '—'}</td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{p.sampleTypeUids.length ? p.sampleTypeUids.length : 'All'}</td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: p.composite ? '#0154FC' : '#6B7280' }}>{p.composite ? 'Yes' : 'No'}</td>
-                    <td className="px-3 py-2.5">
-                      <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ backgroundColor: active ? '#ECFDF5' : '#FFFBEB', color: active ? '#059669' : '#D97706' }}>
-                        {active ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <div className="flex items-center gap-1.5">
-                        <button onClick={() => openEdit(p)} title="Edit"
-                          className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium hover:bg-gray-50"
-                          style={{ border: '1px solid #E8EAF2', background: '#fff', color: '#374151', cursor: 'pointer' }}>
-                          <MI name="edit" size={13} color="#6B7280" /> Edit
-                        </button>
-                        <button onClick={() => handleToggleActive(p)} disabled={toggling === p.uid} title={active ? 'Deactivate' : 'Activate'}
-                          className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium hover:opacity-80"
-                          style={{
-                            border: `1px solid ${active ? '#FCA5A5' : '#A7F3D0'}`,
-                            background: active ? '#FEF2F2' : '#ECFDF5',
-                            color: active ? '#DC2626' : '#059669',
-                            cursor: toggling === p.uid ? 'not-allowed' : 'pointer',
-                            opacity: toggling === p.uid ? 0.6 : 1,
-                          }}>
-                          <MI name={active ? 'block' : 'check_circle'} size={13} color={active ? '#DC2626' : '#059669'} />
-                          {active ? 'Deactivate' : 'Activate'}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-          <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-            <p style={{ fontSize: 10, color: '#9CA3AF' }}>{initialSamplePoints.length} sample point{initialSamplePoints.length !== 1 ? 's' : ''}</p>
-          </div>
-        </div>
+        <DataTable<Row>
+          data={rows}
+          columns={columns}
+          searchable
+          persistKey="sample-points"
+          emptyMessage="No sample points found."
+          rowActions={p => (
+            <div className="flex items-center gap-1.5">
+              <button onClick={() => openEdit(p)} title="Edit"
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium hover:bg-gray-50"
+                style={{ border: '1px solid #E8EAF2', background: '#fff', color: '#374151', cursor: 'pointer' }}>
+                <MI name="edit" size={13} color="#6B7280" /> Edit
+              </button>
+              <button onClick={() => handleToggleActive(p)} disabled={toggling === p.uid} title={p.reviewState === 'active' ? 'Deactivate' : 'Activate'}
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium hover:opacity-80"
+                style={{
+                  border: `1px solid ${p.reviewState === 'active' ? '#FCA5A5' : '#A7F3D0'}`,
+                  background: p.reviewState === 'active' ? '#FEF2F2' : '#ECFDF5',
+                  color: p.reviewState === 'active' ? '#DC2626' : '#059669',
+                  cursor: toggling === p.uid ? 'not-allowed' : 'pointer',
+                  opacity: toggling === p.uid ? 0.6 : 1,
+                }}>
+                <MI name={p.reviewState === 'active' ? 'block' : 'check_circle'} size={13} color={p.reviewState === 'active' ? '#DC2626' : '#059669'} />
+                {p.reviewState === 'active' ? 'Deactivate' : 'Activate'}
+              </button>
+            </div>
+          )}
+        />
       )}
       </div>
     </div>

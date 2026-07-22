@@ -55,7 +55,7 @@ export default function NotFound() {
             Page Not Found
           </h1>
 
-          <p style={{ fontSize: 13, color: '#6B7280', lineHeight: 1.65, maxWidth: 360, marginBottom: 28 }}>
+          <p style={{ fontSize: 13, color: '#374151', lineHeight: 1.65, maxWidth: 360, marginBottom: 28 }}>
             The page you are looking for doesn&apos;t exist or may have been moved.
           </p>
 
@@ -81,7 +81,7 @@ export default function NotFound() {
           <div style={{ width: '100%', height: 1, backgroundColor: '#F3F4F6', marginBottom: 24 }} />
 
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-            <span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#9CA3AF', fontWeight: 500 }}>
+            <span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#374151', fontWeight: 500 }}>
               Regards
             </span>
             <span style={{ fontSize: 13, fontWeight: 700, color: '#0B1E47' }}>

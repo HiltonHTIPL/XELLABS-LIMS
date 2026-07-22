@@ -11,8 +11,9 @@ import {
 } from '@/app/actions/instrument-maintenance'
 import {
   PageHeader, Card, Btn, IconBtn, StatusChip, ConfirmModal, EmptyState,
-  thStyle, tdStyle, inputStyle, selectStyle, textareaStyle, Field, MI, T,
+  inputStyle, selectStyle, textareaStyle, Field, MI, T,
 } from '@/app/dashboard/_components/ui'
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
 
 type Tab = 'calibrations' | 'maintenances' | 'runs' | 'imports'
 
@@ -467,6 +468,82 @@ export default function InstrumentMaintenanceShell({
     else setShowImportModal(true)
   }
 
+  // ── Rows + columns for the shared DataTable ──────────────────────────────
+  // Each list already carries a numeric `id`. Derived primitive fields
+  // (instrument_label + *_ts epoch) are added so computed / date columns sort
+  // correctly; every render reproduces the previous hand-rolled cell exactly.
+  const dateTs = (d: string | null | undefined) => (d ? new Date(d).getTime() || 0 : 0)
+
+  type CalRow = Calibration & { instrument_label: string; calibration_date_ts: number; next_due_ts: number }
+  const calRows: CalRow[] = useMemo(
+    () => filteredCalibrations.map(c => ({
+      ...c,
+      instrument_label: instrumentLabel(instruments, c.instrument),
+      calibration_date_ts: dateTs(c.calibration_date),
+      next_due_ts: dateTs(c.next_due),
+    })),
+    [filteredCalibrations, instruments],
+  )
+  const calColumns: DataTableColumn<CalRow>[] = [
+    { id: 'instrument_label', label: 'Instrument', sortable: true, minWidth: 200, render: c => instrumentLabel(instruments, c.instrument) },
+    { id: 'calibration_date_ts', label: 'Calibration Date', sortable: true, minWidth: 160, render: c => fmtDate(c.calibration_date) },
+    { id: 'next_due_ts', label: 'Next Due', sortable: true, minWidth: 140, render: c => fmtDate(c.next_due) },
+    { id: 'status', label: 'Status', sortable: true, minWidth: 120, render: c => <StatusChip status={c.status} /> },
+    { id: 'notes', label: 'Notes', sortable: true, minWidth: 220, render: c => c.notes || '—' },
+  ]
+
+  type MaintRow = Maintenance & { instrument_label: string; maintenance_date_ts: number; next_due_ts: number }
+  const maintRows: MaintRow[] = useMemo(
+    () => filteredMaintenances.map(m => ({
+      ...m,
+      instrument_label: instrumentLabel(instruments, m.instrument),
+      maintenance_date_ts: dateTs(m.maintenance_date),
+      next_due_ts: dateTs(m.next_due),
+    })),
+    [filteredMaintenances, instruments],
+  )
+  const maintColumns: DataTableColumn<MaintRow>[] = [
+    { id: 'instrument_label', label: 'Instrument', sortable: true, minWidth: 200, render: m => instrumentLabel(instruments, m.instrument) },
+    { id: 'maintenance_date_ts', label: 'Maintenance Date', sortable: true, minWidth: 160, render: m => fmtDate(m.maintenance_date) },
+    { id: 'next_due_ts', label: 'Next Due', sortable: true, minWidth: 140, render: m => fmtDate(m.next_due) },
+    { id: 'maintenance_type', label: 'Type', sortable: true, minWidth: 120, render: m => <StatusChip status={m.maintenance_type} /> },
+    { id: 'notes', label: 'Notes', sortable: true, minWidth: 220, render: m => m.notes || '—' },
+  ]
+
+  type RunRow = InstrumentRun & { instrument_label: string; run_date_ts: number }
+  const runRows: RunRow[] = useMemo(
+    () => filteredRuns.map(r => ({
+      ...r,
+      instrument_label: instrumentLabel(instruments, r.instrument),
+      run_date_ts: dateTs(r.run_date),
+    })),
+    [filteredRuns, instruments],
+  )
+  const runColumns: DataTableColumn<RunRow>[] = [
+    { id: 'instrument_label', label: 'Instrument', sortable: true, minWidth: 200, render: r => instrumentLabel(instruments, r.instrument) },
+    { id: 'run_date_ts', label: 'Run Date', sortable: true, minWidth: 160, render: r => fmtDate(r.run_date) },
+    { id: 'notes', label: 'Notes', sortable: true, minWidth: 300, render: r => r.notes || '—' },
+  ]
+
+  type ImportRow = InstrumentResultImport & { instrument_label: string; created_ts: number }
+  const importRows: ImportRow[] = useMemo(
+    () => filteredImports.map(i => ({
+      ...i,
+      instrument_label: instrumentLabel(instruments, i.instrument),
+      created_ts: dateTs(i.created_at),
+    })),
+    [filteredImports, instruments],
+  )
+  const importColumns: DataTableColumn<ImportRow>[] = [
+    { id: 'instrument_label', label: 'Instrument', sortable: true, minWidth: 200, render: i => instrumentLabel(instruments, i.instrument) },
+    { id: 'file_format', label: 'Format', sortable: true, minWidth: 100, render: i => i.file_format.toUpperCase() },
+    {
+      id: 'status', label: 'Status', sortable: true, minWidth: 120,
+      render: i => <span title={i.status === 'failed' ? i.error_log : undefined}><StatusChip status={i.status} /></span>,
+    },
+    { id: 'created_ts', label: 'Created', sortable: true, minWidth: 160, render: i => fmtDate(i.created_at) },
+  ]
+
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ flexShrink: 0 }}>
@@ -498,154 +575,95 @@ export default function InstrumentMaintenanceShell({
       </div>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {tab === 'calibrations' && (
-        <Card pad={false}>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           {filteredCalibrations.length === 0 ? (
-            <EmptyState icon="verified" title="No calibration records" sub="Create one to get started" />
+            <Card pad={false}><EmptyState icon="verified" title="No calibration records" sub="Create one to get started" /></Card>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    {['Instrument', 'Calibration Date', 'Next Due', 'Status', 'Notes', ''].map(h => (
-                      <th key={h} style={thStyle}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredCalibrations.map(c => (
-                    <tr key={c.id}>
-                      <td style={tdStyle}>{instrumentLabel(instruments, c.instrument)}</td>
-                      <td style={tdStyle}>{fmtDate(c.calibration_date)}</td>
-                      <td style={tdStyle}>{fmtDate(c.next_due)}</td>
-                      <td style={tdStyle}><StatusChip status={c.status} /></td>
-                      <td style={{ ...tdStyle, maxWidth: 220 }} className="truncate">{c.notes || '—'}</td>
-                      <td style={tdStyle}>
-                        <div className="flex items-center gap-1">
-                          <IconBtn icon="edit" title="Edit" onClick={() => { setEditingCal(c); setShowCalModal(true) }} />
-                          <IconBtn icon="delete" title="Delete" color={T.danger} onClick={() => setDeleteCal(c)} />
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable<CalRow>
+              data={calRows}
+              columns={calColumns}
+              searchable
+              persistKey="im-calibrations"
+              emptyMessage="No calibration records found."
+              rowActions={c => (
+                <div className="flex items-center gap-1">
+                  <IconBtn icon="edit" title="Edit" onClick={() => { setEditingCal(c); setShowCalModal(true) }} />
+                  <IconBtn icon="delete" title="Delete" color={T.danger} onClick={() => setDeleteCal(c)} />
+                </div>
+              )}
+            />
           )}
-        </Card>
+        </div>
       )}
 
       {tab === 'maintenances' && (
-        <Card pad={false}>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           {filteredMaintenances.length === 0 ? (
-            <EmptyState icon="build" title="No maintenance records" sub="Create one to get started" />
+            <Card pad={false}><EmptyState icon="build" title="No maintenance records" sub="Create one to get started" /></Card>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    {['Instrument', 'Maintenance Date', 'Next Due', 'Type', 'Notes', ''].map(h => (
-                      <th key={h} style={thStyle}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredMaintenances.map(m => (
-                    <tr key={m.id}>
-                      <td style={tdStyle}>{instrumentLabel(instruments, m.instrument)}</td>
-                      <td style={tdStyle}>{fmtDate(m.maintenance_date)}</td>
-                      <td style={tdStyle}>{fmtDate(m.next_due)}</td>
-                      <td style={tdStyle}><StatusChip status={m.maintenance_type} /></td>
-                      <td style={{ ...tdStyle, maxWidth: 220 }} className="truncate">{m.notes || '—'}</td>
-                      <td style={tdStyle}>
-                        <div className="flex items-center gap-1">
-                          <IconBtn icon="edit" title="Edit" onClick={() => { setEditingMaint(m); setShowMaintModal(true) }} />
-                          <IconBtn icon="delete" title="Delete" color={T.danger} onClick={() => setDeleteMaint(m)} />
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable<MaintRow>
+              data={maintRows}
+              columns={maintColumns}
+              searchable
+              persistKey="im-maintenances"
+              emptyMessage="No maintenance records found."
+              rowActions={m => (
+                <div className="flex items-center gap-1">
+                  <IconBtn icon="edit" title="Edit" onClick={() => { setEditingMaint(m); setShowMaintModal(true) }} />
+                  <IconBtn icon="delete" title="Delete" color={T.danger} onClick={() => setDeleteMaint(m)} />
+                </div>
+              )}
+            />
           )}
-        </Card>
+        </div>
       )}
 
       {tab === 'runs' && (
-        <Card pad={false}>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           {filteredRuns.length === 0 ? (
-            <EmptyState icon="play_circle" title="No run records" sub="Create one to get started" />
+            <Card pad={false}><EmptyState icon="play_circle" title="No run records" sub="Create one to get started" /></Card>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    {['Instrument', 'Run Date', 'Notes', ''].map(h => (
-                      <th key={h} style={thStyle}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredRuns.map(r => (
-                    <tr key={r.id}>
-                      <td style={tdStyle}>{instrumentLabel(instruments, r.instrument)}</td>
-                      <td style={tdStyle}>{fmtDate(r.run_date)}</td>
-                      <td style={{ ...tdStyle, maxWidth: 300 }} className="truncate">{r.notes || '—'}</td>
-                      <td style={tdStyle}>
-                        <div className="flex items-center gap-1">
-                          <IconBtn icon="edit" title="Edit" onClick={() => { setEditingRun(r); setShowRunModal(true) }} />
-                          <IconBtn icon="delete" title="Delete" color={T.danger} onClick={() => setDeleteRun(r)} />
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable<RunRow>
+              data={runRows}
+              columns={runColumns}
+              searchable
+              persistKey="im-runs"
+              emptyMessage="No run records found."
+              rowActions={r => (
+                <div className="flex items-center gap-1">
+                  <IconBtn icon="edit" title="Edit" onClick={() => { setEditingRun(r); setShowRunModal(true) }} />
+                  <IconBtn icon="delete" title="Delete" color={T.danger} onClick={() => setDeleteRun(r)} />
+                </div>
+              )}
+            />
           )}
-        </Card>
+        </div>
       )}
 
       {tab === 'imports' && (
-        <Card pad={false}>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           {filteredImports.length === 0 ? (
-            <EmptyState icon="upload_file" title="No import records" sub="Upload a result file to get started" />
+            <Card pad={false}><EmptyState icon="upload_file" title="No import records" sub="Upload a result file to get started" /></Card>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    {['Instrument', 'Format', 'Status', 'Created', ''].map(h => (
-                      <th key={h} style={thStyle}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredImports.map(i => (
-                    <tr key={i.id}>
-                      <td style={tdStyle}>{instrumentLabel(instruments, i.instrument)}</td>
-                      <td style={tdStyle}>{i.file_format.toUpperCase()}</td>
-                      <td style={tdStyle} title={i.status === 'failed' ? i.error_log : undefined}>
-                        <StatusChip status={i.status} />
-                      </td>
-                      <td style={tdStyle}>{fmtDate(i.created_at)}</td>
-                      <td style={tdStyle}>
-                        <div className="flex items-center gap-1">
-                          {i.status !== 'processed' && (
-                            <IconBtn icon="play_arrow" title="Process" onClick={() => processImport(i)} disabled={busy} />
-                          )}
-                          <IconBtn icon="delete" title="Delete" color={T.danger} onClick={() => setDeleteImport(i)} />
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable<ImportRow>
+              data={importRows}
+              columns={importColumns}
+              searchable
+              persistKey="im-imports"
+              emptyMessage="No import records found."
+              rowActions={i => (
+                <div className="flex items-center gap-1">
+                  {i.status !== 'processed' && (
+                    <IconBtn icon="play_arrow" title="Process" onClick={() => processImport(i)} disabled={busy} />
+                  )}
+                  <IconBtn icon="delete" title="Delete" color={T.danger} onClick={() => setDeleteImport(i)} />
+                </div>
+              )}
+            />
           )}
-        </Card>
+        </div>
       )}
       </div>
 

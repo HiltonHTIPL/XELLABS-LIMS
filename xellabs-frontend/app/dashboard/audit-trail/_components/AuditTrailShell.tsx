@@ -32,7 +32,7 @@ const ACTION_COLORS: Record<string, { bg: string; fg: string }> = {
   store: { bg: '#FFFBEB', fg: '#B45309' },
   dispose: { bg: '#FBEAEA', fg: '#7F1D1D' },
 }
-const DEFAULT_ACTION_COLOR = { bg: '#F3F4F6', fg: '#6B7280' }
+const DEFAULT_ACTION_COLOR = { bg: '#F3F4F6', fg: '#374151' }
 
 function ActionPill({ action }: { action: string }) {
   const c = ACTION_COLORS[action] ?? DEFAULT_ACTION_COLOR

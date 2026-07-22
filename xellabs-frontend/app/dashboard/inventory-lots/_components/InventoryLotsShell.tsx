@@ -10,6 +10,7 @@ import {
   type InventoryFormState,
 } from '@/app/actions/inventory'
 import { ConfirmModal } from '@/app/dashboard/_components/ui'
+import DataTable, { type DataTableColumn } from '@/app/dashboard/_components/DataTable'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -103,10 +104,10 @@ function LotModal({ editing, itemsByKind, contentTypes, onClose, onDone }: {
             </div>
             <div>
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>{isEdit ? `Edit Lot — ${editing!.lot_number}` : 'New Lot'}</h2>
-              <p style={{ fontSize: 10, color: '#9CA3AF' }}>{isEdit ? 'Update lot details' : 'Receive a new lot into inventory'}</p>
+              <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>{isEdit ? 'Update lot details' : 'Receive a new lot into inventory'}</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#374151" /></button>
         </div>
         <form action={action} className="px-5 py-4 flex flex-col gap-3">
           {!isEdit && (
@@ -117,7 +118,7 @@ function LotModal({ editing, itemsByKind, contentTypes, onClose, onDone }: {
           )}
           {!isEdit && <input type="hidden" name="content_type" value={kind ? contentTypes[kind] ?? '' : ''} />}
           {isEdit && (
-            <div className="text-xs px-3 py-2 rounded-lg" style={{ backgroundColor: '#F7F8FC', color: '#6B7280' }}>
+            <div className="text-xs px-3 py-2 rounded-lg" style={{ backgroundColor: '#F7F8FC', color: '#374151' }}>
               Item type/link cannot be changed after creation.
             </div>
           )}
@@ -177,7 +178,7 @@ function TransactionModal({ lots, onClose, onDone }: { lots: Lot[]; onClose: () 
       <div style={{ position: 'fixed', top: 'var(--dashboard-header-h)', right: 0, bottom: 'var(--dashboard-footer-h)', width: 440, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.15)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #F3F4F6' }}>
           <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>Record Transaction</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#374151" /></button>
         </div>
         <form action={action} className="px-5 py-4 flex flex-col gap-3">
           <Select label="Lot" name="lot" required error={fieldErrors.lot} options={lotOptions} />
@@ -230,7 +231,7 @@ function AlertModal({ lots, onClose, onDone }: { lots: Lot[]; onClose: () => voi
       <div style={{ position: 'fixed', top: 'var(--dashboard-header-h)', right: 0, bottom: 'var(--dashboard-footer-h)', width: 400, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.15)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #F3F4F6' }}>
           <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>New Expiry Alert</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#374151" /></button>
         </div>
         <form action={action} className="px-5 py-4 flex flex-col gap-3">
           <Select label="Lot" name="lot" required error={fieldErrors.lot} options={lotOptions} />
@@ -311,12 +312,62 @@ export default function InventoryLotsShell({
 
   const TX_LABEL: Record<string, string> = { in: 'Received', out: 'Consumed', adjust: 'Adjustment', dispose: 'Disposed' }
 
+  // ── Lots table ── Lot has a numeric `id`. Item name is computed from a lookup,
+  // so expose it as a sortable primitive derived field.
+  type LotRow = Lot & { itemName: string }
+  const lotRows: LotRow[] = initialLots.map(lot => ({
+    ...lot,
+    itemName: itemLookup.get(`${lot.content_type}:${lot.object_id}`) ?? `#${lot.object_id}`,
+  }))
+  const lotColumns: DataTableColumn<LotRow>[] = [
+    { id: 'itemName', label: 'Item', sortable: true, minWidth: 180, render: lot => <span className="text-xs font-medium" style={{ color: '#111827' }}>{lot.itemName}</span> },
+    { id: 'lot_number', label: 'Lot #', sortable: true, minWidth: 120, render: lot => <span className="text-xs" style={{ color: '#374151' }}>{lot.lot_number}</span> },
+    { id: 'quantity', label: 'Quantity', sortable: true, minWidth: 100, render: lot => <span className="text-xs" style={{ color: '#374151' }}>{lot.quantity}</span> },
+    { id: 'received_date', label: 'Received', sortable: true, minWidth: 120, render: lot => <span className="text-xs" style={{ color: '#374151' }}>{lot.received_date}</span> },
+    { id: 'expiry_date', label: 'Expiry', sortable: true, minWidth: 120, render: lot => <span className="text-xs" style={{ color: '#374151' }}>{lot.expiry_date || '—'}</span> },
+    { id: 'storage_location', label: 'Storage', sortable: true, minWidth: 110, render: lot => <span className="text-xs" style={{ color: '#374151' }}>{lot.storage_location ?? '—'}</span> },
+  ]
+
+  // ── Transactions table ── has numeric `id`. Lot label computed from a find.
+  type TxnRow = InventoryTransaction & { lotLabel: string }
+  const txnRows: TxnRow[] = initialTransactions.map(t => ({
+    ...t,
+    lotLabel: initialLots.find(l => l.id === t.lot)?.lot_number ?? `#${t.lot}`,
+  }))
+  const txnColumns: DataTableColumn<TxnRow>[] = [
+    { id: 'lotLabel', label: 'Lot', sortable: true, minWidth: 120, render: t => <span className="text-xs font-medium" style={{ color: '#111827' }}>{t.lotLabel}</span> },
+    { id: 'transaction_type', label: 'Type', sortable: true, minWidth: 110, render: t => <span className="text-xs" style={{ color: '#374151' }}>{TX_LABEL[t.transaction_type] ?? t.transaction_type}</span> },
+    { id: 'quantity', label: 'Quantity', sortable: true, minWidth: 100, render: t => <span className="text-xs" style={{ color: '#374151' }}>{t.quantity}</span> },
+    { id: 'reference', label: 'Reference', sortable: true, minWidth: 120, render: t => <span className="text-xs" style={{ color: '#374151' }}>{t.reference || '—'}</span> },
+    { id: 'notes', label: 'Notes', sortable: true, minWidth: 160, render: t => <span className="text-xs" style={{ color: '#374151' }}>{t.notes || '—'}</span> },
+    { id: 'created_at', label: 'Date', sortable: true, minWidth: 160, render: t => <span className="text-xs" style={{ color: '#374151' }}>{new Date(t.created_at).toLocaleString()}</span> },
+  ]
+
+  // ── Alerts table ── has numeric `id`. Lot label computed from a find.
+  type AlertRow = ExpiryAlert & { lotLabel: string }
+  const alertRows: AlertRow[] = initialAlerts.map(a => ({
+    ...a,
+    lotLabel: initialLots.find(l => l.id === a.lot)?.lot_number ?? `#${a.lot}`,
+  }))
+  const alertColumns: DataTableColumn<AlertRow>[] = [
+    { id: 'lotLabel', label: 'Lot', sortable: true, minWidth: 120, render: a => <span className="text-xs font-medium" style={{ color: '#111827' }}>{a.lotLabel}</span> },
+    { id: 'alert_date', label: 'Alert Date', sortable: true, minWidth: 130, render: a => <span className="text-xs" style={{ color: '#374151' }}>{a.alert_date}</span> },
+    {
+      id: 'is_acknowledged', label: 'Status', sortable: true, minWidth: 120,
+      render: a => (
+        <span style={{ fontSize: 11, fontWeight: 600, color: a.is_acknowledged ? '#0154FC' : '#DC2626' }}>
+          {a.is_acknowledged ? 'Acknowledged' : 'Pending'}
+        </span>
+      ),
+    },
+  ]
+
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Lots &amp; Stock</h1>
-          <p className="mt-1" style={{ fontSize: 13, color: '#6B7280' }}>Track received lots, stock movements, and expiry alerts</p>
+          <p className="mt-1" style={{ fontSize: 13, color: '#374151' }}>Track received lots, stock movements, and expiry alerts</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Link href="/dashboard/inventory-dashboard" className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold" style={{ backgroundColor: '#fff', color: '#2563EB', border: '1px solid #D9DEEA', textDecoration: 'none' }}>
@@ -359,10 +410,10 @@ export default function InventoryLotsShell({
         ] as { key: Tab; label: string; icon: string; count: number }[]).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
-            style={{ backgroundColor: tab === t.key ? '#fff' : 'transparent', color: tab === t.key ? '#14265E' : '#6B7280', border: 'none', cursor: 'pointer', boxShadow: tab === t.key ? '0 1px 2px rgba(16,24,40,0.08)' : 'none' }}>
-            <MI name={t.icon} size={14} color={tab === t.key ? '#2563EB' : '#9CA3AF'} />
+            style={{ backgroundColor: tab === t.key ? '#fff' : 'transparent', color: tab === t.key ? '#14265E' : '#374151', border: 'none', cursor: 'pointer', boxShadow: tab === t.key ? '0 1px 2px rgba(16,24,40,0.08)' : 'none' }}>
+            <MI name={t.icon} size={14} color={tab === t.key ? '#2563EB' : '#374151'} />
             {t.label}
-            <span style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 700 }}>{t.count}</span>
+            <span style={{ fontSize: 10, color: '#374151', fontWeight: 700 }}>{t.count}</span>
           </button>
         ))}
       </div>
@@ -386,47 +437,29 @@ export default function InventoryLotsShell({
         initialLots.length === 0 ? (
           <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2', borderRadius: 14 }}>
             <MI name="inventory_2" size={36} color="#D1D5DB" />
-            <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No lots yet</p>
+            <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>No lots yet</p>
             <button onClick={openCreateLot} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
               <MI name="add" size={13} color="#fff" /> New Lot
             </button>
           </div>
         ) : (
-          <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2', borderRadius: 14, boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
-            <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                  {['Item', 'Lot #', 'Quantity', 'Received', 'Expiry', 'Storage', ''].map(h => (
-                    <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {initialLots.map((lot, i) => (
-                  <tr key={lot.id} style={{ borderBottom: i < initialLots.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
-                    <td className="px-3 py-2.5 text-xs font-medium" style={{ color: '#111827' }}>
-                      {itemLookup.get(`${lot.content_type}:${lot.object_id}`) ?? `#${lot.object_id}`}
-                    </td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{lot.lot_number}</td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{lot.quantity}</td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{lot.received_date}</td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{lot.expiry_date || '—'}</td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{lot.storage_location ?? '—'}</td>
-                    <td className="px-3 py-2.5">
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => openEditLot(lot)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-                          <MI name="edit" size={14} color="#9CA3AF" />
-                        </button>
-                        <button onClick={() => setToDelete(lot)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-                          <MI name="delete" size={14} color="#EF4444" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable<LotRow>
+            data={lotRows}
+            columns={lotColumns}
+            searchable
+            persistKey="inventory-lots"
+            emptyMessage="No lots found."
+            rowActions={lot => (
+              <div className="flex items-center gap-1">
+                <button onClick={() => openEditLot(lot)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
+                  <MI name="edit" size={14} color="#6B7280" />
+                </button>
+                <button onClick={() => setToDelete(lot)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
+                  <MI name="delete" size={14} color="#EF4444" />
+                </button>
+              </div>
+            )}
+          />
         )
       )}
 
@@ -434,35 +467,16 @@ export default function InventoryLotsShell({
         initialTransactions.length === 0 ? (
           <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2', borderRadius: 14 }}>
             <MI name="swap_horiz" size={36} color="#D1D5DB" />
-            <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No transactions yet</p>
+            <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>No transactions yet</p>
           </div>
         ) : (
-          <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2', borderRadius: 14, boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
-            <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                  {['Lot', 'Type', 'Quantity', 'Reference', 'Notes', 'Date'].map(h => (
-                    <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {initialTransactions.map((t, i) => {
-                  const lot = initialLots.find(l => l.id === t.lot)
-                  return (
-                    <tr key={t.id} style={{ borderBottom: i < initialTransactions.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
-                      <td className="px-3 py-2.5 text-xs font-medium" style={{ color: '#111827' }}>{lot?.lot_number ?? `#${t.lot}`}</td>
-                      <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{TX_LABEL[t.transaction_type] ?? t.transaction_type}</td>
-                      <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{t.quantity}</td>
-                      <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{t.reference || '—'}</td>
-                      <td className="px-3 py-2.5 text-xs truncate" style={{ color: '#6B7280' }}>{t.notes || '—'}</td>
-                      <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{new Date(t.created_at).toLocaleString()}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+          <DataTable<TxnRow>
+            data={txnRows}
+            columns={txnColumns}
+            searchable
+            persistKey="inventory-transactions"
+            emptyMessage="No transactions found."
+          />
         )
       )}
 
@@ -470,43 +484,21 @@ export default function InventoryLotsShell({
         initialAlerts.length === 0 ? (
           <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2', borderRadius: 14 }}>
             <MI name="notifications_active" size={36} color="#D1D5DB" />
-            <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No expiry alerts</p>
+            <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>No expiry alerts</p>
           </div>
         ) : (
-          <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2', borderRadius: 14, boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
-            <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                  {['Lot', 'Alert Date', 'Status', ''].map(h => (
-                    <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {initialAlerts.map((a, i) => {
-                  const lot = initialLots.find(l => l.id === a.lot)
-                  return (
-                    <tr key={a.id} style={{ borderBottom: i < initialAlerts.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
-                      <td className="px-3 py-2.5 text-xs font-medium" style={{ color: '#111827' }}>{lot?.lot_number ?? `#${a.lot}`}</td>
-                      <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{a.alert_date}</td>
-                      <td className="px-3 py-2.5">
-                        <span style={{ fontSize: 11, fontWeight: 600, color: a.is_acknowledged ? '#0154FC' : '#DC2626' }}>
-                          {a.is_acknowledged ? 'Acknowledged' : 'Pending'}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        {!a.is_acknowledged && (
-                          <button onClick={() => acknowledge(a)} className="px-2 py-1 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#0154FC', border: 'none', cursor: 'pointer' }}>
-                            Acknowledge
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+          <DataTable<AlertRow>
+            data={alertRows}
+            columns={alertColumns}
+            searchable
+            persistKey="inventory-alerts"
+            emptyMessage="No expiry alerts found."
+            rowActions={a => (
+              !a.is_acknowledged
+                ? <button onClick={() => acknowledge(a)} className="px-2 py-1 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: '#0154FC', border: 'none', cursor: 'pointer' }}>Acknowledge</button>
+                : null
+            )}
+          />
         )
       )}
     </div>

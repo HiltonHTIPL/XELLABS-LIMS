@@ -24,14 +24,10 @@ export type ReferenceSampleOption = {
   uid: string; title: string; supplierTitle: string; blank: boolean; serviceUids: string[]
 }
 
-export type { UnassignedAnalysis, LabAnalyst } from '@/app/lib/senaite-worksheets'
-
 // Lab members eligible to be assigned as worksheet analyst.
 export async function getLabAnalysts(): Promise<LabAnalyst[]> {
   return fetchLabAnalysts(serverToken())
 }
-
-export type { WorksheetInfo, WorksheetListItem } from '@/app/lib/senaite-worksheets'
 
 // ── Reads ────────────────────────────────────────────────────────────────────
 export async function getSenaiteWorksheets(): Promise<WorksheetListItem[]> {

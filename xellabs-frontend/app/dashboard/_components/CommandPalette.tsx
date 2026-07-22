@@ -101,7 +101,7 @@ export default function CommandPalette({ role, isSuperuser, open, onClose }: Pro
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: '1px solid #E5E7EB' }}>
-          <span className="material-icons" style={{ fontSize: 18, color: '#9CA3AF' }}>search</span>
+          <span className="material-icons" style={{ fontSize: 18, color: '#374151' }}>search</span>
           <input
             ref={inputRef}
             type="text"
@@ -112,11 +112,11 @@ export default function CommandPalette({ role, isSuperuser, open, onClose }: Pro
             className="flex-1 outline-none text-sm"
             style={{ color: '#111827' }}
           />
-          <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: '#F3F4F6', color: '#9CA3AF' }}>Esc</span>
+          <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: '#F3F4F6', color: '#374151' }}>Esc</span>
         </div>
         <div style={{ maxHeight: '50vh', overflowY: 'auto' }}>
           {results.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm" style={{ color: '#9CA3AF' }}>No matching pages</div>
+            <div className="px-4 py-8 text-center text-sm" style={{ color: '#374151' }}>No matching pages</div>
           ) : (
             results.map((item, i) => (
               <button
@@ -132,7 +132,7 @@ export default function CommandPalette({ role, isSuperuser, open, onClose }: Pro
                 <span className="material-icons" style={{ fontSize: 18, color: T.primary }}>{item.icon}</span>
                 <span className="min-w-0">
                   <span className="block text-sm font-medium truncate" style={{ color: '#111827' }}>{item.label}</span>
-                  {item.group && <span className="block text-xs" style={{ color: '#9CA3AF' }}>{item.group}</span>}
+                  {item.group && <span className="block text-xs" style={{ color: '#374151' }}>{item.group}</span>}
                 </span>
               </button>
             ))

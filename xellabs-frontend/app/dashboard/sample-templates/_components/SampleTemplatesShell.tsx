@@ -10,6 +10,7 @@ import {
   type SenaiteSampleTemplate, type SenaiteSampleType, type SenaiteAnalysisService,
   type SenaiteRefOption, type SampleTemplatePartition, type SampleTemplateService,
 } from '@/app/lib/senaite'
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -164,6 +165,55 @@ export default function SampleTemplatesShell({
 
   const titleFor = (uid: string, list: SenaiteRefOption[]) => list.find(o => o.uid === uid)?.title ?? ''
 
+  const analysesText = (t: SenaiteSampleTemplate) =>
+    t.services?.length
+      ? t.services.map(s => titleFor(s.uid, analysisServices)).filter(Boolean).join(', ') || `${t.services.length} selected`
+      : '—'
+  const flagsText = (t: SenaiteSampleTemplate) =>
+    [t.composite && 'Composite', t.samplingRequired && 'Sampling', t.autoPartition && 'Auto-part.'].filter(Boolean).join(', ') || '—'
+
+  // SenaiteSampleTemplate has no `id`, so key rows by uid. Sample Type, Analyses,
+  // and Flags are computed from other objects/lists, so expose derived primitive
+  // sort fields (Partitions as a count) while the render recomputes the display.
+  type Row = SenaiteSampleTemplate & { id: string; SampleType: string; Partitions: number; Analyses: string; Flags: string }
+  const rows: Row[] = initialTemplates.map(t => ({
+    ...t,
+    id: t.uid,
+    SampleType: titleFor(t.sampleTypeUid, sampleTypes),
+    Partitions: t.partitions?.length || 0,
+    Analyses: analysesText(t),
+    Flags: flagsText(t),
+  }))
+  const columns: DataTableColumn<Row>[] = [
+    {
+      id: 'title', label: 'Name', sortable: true, minWidth: 220,
+      render: t => (
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: '#DBEAFE' }}>
+            <MI name="assignment" size={13} color="#0154FC" />
+          </div>
+          <span className="text-xs font-medium" style={{ color: '#111827' }}>{t.title}</span>
+        </div>
+      ),
+    },
+    {
+      id: 'SampleType', label: 'Sample Type', sortable: true, minWidth: 160,
+      render: t => <span className="text-xs" style={{ color: '#374151' }}>{titleFor(t.sampleTypeUid, sampleTypes) || '—'}</span>,
+    },
+    {
+      id: 'Partitions', label: 'Partitions', sortable: true, minWidth: 100,
+      render: t => <span className="text-xs" style={{ color: '#374151' }}>{t.partitions?.length || 0}</span>,
+    },
+    {
+      id: 'Analyses', label: 'Analyses', sortable: true, minWidth: 280,
+      render: t => <span className="text-xs truncate" style={{ color: '#374151' }}>{analysesText(t)}</span>,
+    },
+    {
+      id: 'Flags', label: 'Flags', sortable: true, minWidth: 120,
+      render: t => <span className="text-xs" style={{ color: '#374151' }}>{flagsText(t)}</span>,
+    },
+  ]
+
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
@@ -171,11 +221,11 @@ export default function SampleTemplatesShell({
       <div className="flex items-center justify-between mb-3" style={{ flexShrink: 0 }}>
         <div className="flex items-center gap-3">
           <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
-            <MI name="arrow_back" size={16} color="#6B7280" />
+            <MI name="arrow_back" size={16} color="#374151" />
           </Link>
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Sample Templates</h1>
-            <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Predefined sample type, partitions, and analysis combinations for quick sample registration</p>
+            <p className="text-sm mt-0.5" style={{ color: '#374151' }}>Predefined sample type, partitions, and analysis combinations for quick sample registration</p>
           </div>
         </div>
         <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
@@ -205,13 +255,13 @@ export default function SampleTemplatesShell({
                 <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>
                   {isEdit ? `Edit — ${editing!.title}` : 'New Sample Template'}
                 </h2>
-                <p style={{ fontSize: 10, color: '#9CA3AF' }}>
+                <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>
                   {isEdit ? 'Update template details' : 'Bundle a sample type, partitions, and analyses together'}
                 </p>
               </div>
             </div>
             <button onClick={closeDrawer} className="p-1.5 rounded-lg hover:bg-gray-100">
-              <MI name="close" size={16} color="#9CA3AF" />
+              <MI name="close" size={16} color="#374151" />
             </button>
           </div>
 
@@ -240,7 +290,7 @@ export default function SampleTemplatesShell({
 
               <div>
                 <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
-                  Description <span className="font-normal" style={{ color: '#9CA3AF' }}>(optional)</span>
+                  Description <span className="font-normal" style={{ color: '#374151' }}>(optional)</span>
                 </label>
                 <textarea
                   name="description"
@@ -256,7 +306,7 @@ export default function SampleTemplatesShell({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
-                    Sample Type <span className="font-normal" style={{ color: '#9CA3AF' }}>(optional)</span>
+                    Sample Type <span className="font-normal" style={{ color: '#374151' }}>(optional)</span>
                   </label>
                   <select
                     value={vals.sampleTypeUid}
@@ -271,7 +321,7 @@ export default function SampleTemplatesShell({
 
                 <div>
                   <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
-                    Sample Point <span className="font-normal" style={{ color: '#9CA3AF' }}>(optional)</span>
+                    Sample Point <span className="font-normal" style={{ color: '#374151' }}>(optional)</span>
                   </label>
                   <select
                     value={vals.samplePointUid}
@@ -315,14 +365,14 @@ export default function SampleTemplatesShell({
                         <span className="text-xs font-semibold" style={{ color: '#374151' }}>{p.partId}</span>
                         {vals.partitions.length > 1 && (
                           <button type="button" onClick={() => removePartition(idx)} className="p-1 rounded hover:bg-gray-200" style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-                            <MI name="delete" size={13} color="#9CA3AF" />
+                            <MI name="delete" size={13} color="#6B7280" />
                           </button>
                         )}
                       </div>
 
                       <div className="grid grid-cols-3 gap-2">
                         <div>
-                          <label className="block mb-0.5" style={{ fontSize: 10, color: '#6B7280' }}>Container</label>
+                          <label className="block mb-0.5" style={{ fontSize: 10, color: '#374151' }}>Container</label>
                           <select
                             value={p.containerUid}
                             onChange={e => setPartition(idx, { containerUid: e.target.value })}
@@ -334,7 +384,7 @@ export default function SampleTemplatesShell({
                           </select>
                         </div>
                         <div>
-                          <label className="block mb-0.5" style={{ fontSize: 10, color: '#6B7280' }}>Preservation</label>
+                          <label className="block mb-0.5" style={{ fontSize: 10, color: '#374151' }}>Preservation</label>
                           <select
                             value={p.preservationUid}
                             onChange={e => setPartition(idx, { preservationUid: e.target.value })}
@@ -346,7 +396,7 @@ export default function SampleTemplatesShell({
                           </select>
                         </div>
                         <div>
-                          <label className="block mb-0.5" style={{ fontSize: 10, color: '#6B7280' }}>Sample Type</label>
+                          <label className="block mb-0.5" style={{ fontSize: 10, color: '#374151' }}>Sample Type</label>
                           <select
                             value={p.sampleTypeUid}
                             onChange={e => setPartition(idx, { sampleTypeUid: e.target.value })}
@@ -366,11 +416,11 @@ export default function SampleTemplatesShell({
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-xs font-medium" style={{ color: '#374151' }}>Analyses</label>
-                  <span style={{ fontSize: 10, color: '#9CA3AF' }}>{vals.services.length} selected</span>
+                  <span style={{ fontSize: 10, color: '#374151' }}>{vals.services.length} selected</span>
                 </div>
                 <div className="rounded-lg" style={{ border: '1px solid #D1D5DB', maxHeight: 220, overflowY: 'auto', backgroundColor: '#fff' }}>
                   {analysisServices.length === 0 ? (
-                    <p className="px-3 py-3 text-xs" style={{ color: '#9CA3AF' }}>No analyses available.</p>
+                    <p className="px-3 py-3 text-xs" style={{ color: '#374151' }}>No analyses available.</p>
                   ) : (
                     analysisServices.map(svc => {
                       const selected = vals.services.find(s => s.uid === svc.uid)
@@ -384,14 +434,14 @@ export default function SampleTemplatesShell({
                               <select
                                 value={selected.partId}
                                 onChange={e => setServicePartId(svc.uid, e.target.value)}
-                                style={{ fontSize: 10, border: '1px solid #E8EAF2', borderRadius: 6, color: '#6B7280', padding: '2px 4px' }}
+                                style={{ fontSize: 10, border: '1px solid #E8EAF2', borderRadius: 6, color: '#374151', padding: '2px 4px' }}
                               >
                                 {vals.partitions.map(p => <option key={p.partId} value={p.partId}>{p.partId}</option>)}
                               </select>
                               <label className="flex items-center gap-1 cursor-pointer" title="Hide from report">
                                 <input type="checkbox" checked={!!selected.hidden}
-                                  onChange={() => toggleServiceHidden(svc.uid)} style={{ accentColor: '#9CA3AF' }} />
-                                <span style={{ fontSize: 10, color: '#9CA3AF' }}>Hidden</span>
+                                  onChange={() => toggleServiceHidden(svc.uid)} style={{ accentColor: '#374151' }} />
+                                <span style={{ fontSize: 10, color: '#374151' }}>Hidden</span>
                               </label>
                             </>
                           )}
@@ -429,7 +479,7 @@ export default function SampleTemplatesShell({
               </div>
               <h3 className="text-sm font-semibold" style={{ color: '#111827' }}>Delete sample template?</h3>
             </div>
-            <p className="text-xs mb-5" style={{ color: '#6B7280' }}>
+            <p className="text-xs mb-5" style={{ color: '#374151' }}>
               This will permanently delete &ldquo;{deleteTarget.title}&rdquo;. This action cannot be undone.
             </p>
             <div className="flex items-center justify-end gap-2">
@@ -448,68 +498,34 @@ export default function SampleTemplatesShell({
       )}
 
       {/* Table / empty state */}
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {initialTemplates.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="assignment" size={36} color="#D1D5DB" />
-          <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No sample templates yet</p>
-          <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>Create your first template to speed up sample registration</p>
+          <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>No sample templates yet</p>
+          <p className="text-xs mt-0.5" style={{ color: '#374151' }}>Create your first template to speed up sample registration</p>
           <button onClick={openCreate} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
             <MI name="add" size={13} color="#fff" /> New Sample Template
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
-          <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-            <colgroup>
-              <col style={{ width: '22%' }} /><col style={{ width: '18%' }} /><col style={{ width: '12%' }} /><col style={{ width: '30%' }} /><col style={{ width: '10%' }} /><col style={{ width: '8%' }} />
-            </colgroup>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                {['Name', 'Sample Type', 'Partitions', 'Analyses', 'Flags', ''].map(h => (
-                  <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {initialTemplates.map((t, i) => (
-                <tr key={t.uid} style={{ borderBottom: i < initialTemplates.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
-                  <td className="px-3 py-2.5">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: '#DBEAFE' }}>
-                        <MI name="assignment" size={13} color="#0154FC" />
-                      </div>
-                      <span className="text-xs font-medium" style={{ color: '#111827' }}>{t.title}</span>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2.5 text-xs" style={{ color: '#374151' }}>{titleFor(t.sampleTypeUid, sampleTypes) || '—'}</td>
-                  <td className="px-3 py-2.5 text-xs" style={{ color: '#6B7280' }}>{t.partitions?.length || 0}</td>
-                  <td className="px-3 py-2.5 text-xs truncate" style={{ color: '#6B7280' }}>
-                    {t.services?.length
-                      ? t.services.map(s => titleFor(s.uid, analysisServices)).filter(Boolean).join(', ') || `${t.services.length} selected`
-                      : '—'}
-                  </td>
-                  <td className="px-3 py-2.5 text-xs" style={{ color: '#9CA3AF' }}>
-                    {[t.composite && 'Composite', t.samplingRequired && 'Sampling', t.autoPartition && 'Auto-part.'].filter(Boolean).join(', ') || '—'}
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => openEdit(t)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }} title="Edit">
-                        <MI name="edit" size={14} color="#9CA3AF" />
-                      </button>
-                      <button onClick={() => setDeleteTarget(t)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }} title="Delete">
-                        <MI name="delete" size={14} color="#9CA3AF" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-            <p style={{ fontSize: 10, color: '#9CA3AF' }}>{initialTemplates.length} template{initialTemplates.length !== 1 ? 's' : ''}</p>
-          </div>
-        </div>
+        <DataTable<Row>
+          data={rows}
+          columns={columns}
+          searchable
+          persistKey="sample-templates"
+          emptyMessage="No sample templates found."
+          rowActions={t => (
+            <div className="flex items-center gap-1">
+              <button onClick={() => openEdit(t)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }} title="Edit">
+                <MI name="edit" size={14} color="#6B7280" />
+              </button>
+              <button onClick={() => setDeleteTarget(t)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }} title="Delete">
+                <MI name="delete" size={14} color="#6B7280" />
+              </button>
+            </div>
+          )}
+        />
       )}
       </div>
     </div>

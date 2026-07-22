@@ -6,6 +6,7 @@ import {
   type AnalysisProfile, type AnalysisProfileFormState, type ProfileServiceRef,
 } from '@/app/actions/analysis-profiles'
 import { type SenaiteAnalysisService } from '@/app/lib/senaite'
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -132,6 +133,37 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
     return analysisServices.find(s => s.uid === uid)?.title ?? uid
   }
 
+  // AnalysisProfile is keyed by uid for the shared table. The Analyses column is
+  // computed from a nested list, so expose a derived primitive `analyses` string
+  // for sorting while the renderer still reads the original object.
+  type Row = AnalysisProfile & { id: string; analyses: string }
+  const rows: Row[] = initialProfiles.map(p => ({
+    ...p,
+    id: p.uid,
+    analyses: p.analysis_services?.length ? p.analysis_services.map(a => serviceTitle(a.uid)).join(', ') : '—',
+  }))
+  const columns: DataTableColumn<Row>[] = [
+    {
+      id: 'name', label: 'Name', sortable: true, minWidth: 220,
+      render: p => (
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: '#DBEAFE' }}>
+            <MI name="science" size={13} color="#0154FC" />
+          </div>
+          <span className="text-xs font-medium" style={{ color: '#111827' }}>{p.name}</span>
+        </div>
+      ),
+    },
+    {
+      id: 'analyses', label: 'Analyses', sortable: true, minWidth: 320,
+      render: p => (
+        <span className="text-xs truncate" style={{ color: '#374151' }}>
+          {p.analysis_services?.length ? p.analysis_services.map(a => serviceTitle(a.uid)).join(', ') : '—'}
+        </span>
+      ),
+    },
+  ]
+
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
@@ -139,7 +171,7 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
       <div className="flex items-center justify-between mb-3" style={{ flexShrink: 0 }}>
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Analysis Profiles</h1>
-          <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Reusable bundles of analyses you can apply to any sample, independent of sample type</p>
+          <p className="text-sm mt-0.5" style={{ color: '#374151' }}>Reusable bundles of analyses you can apply to any sample, independent of sample type</p>
         </div>
         <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
           <MI name="add" size={15} color="#fff" /> New Analysis Profile
@@ -166,13 +198,13 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
                 <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>
                   {isEdit ? `Edit — ${editing!.name}` : 'New Analysis Profile'}
                 </h2>
-                <p style={{ fontSize: 10, color: '#9CA3AF' }}>
+                <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>
                   {isEdit ? 'Update profile details' : 'Bundle a set of analyses under one reusable name'}
                 </p>
               </div>
             </div>
             <button onClick={closeForm} className="p-1.5 rounded-lg hover:bg-gray-100">
-              <MI name="close" size={16} color="#9CA3AF" />
+              <MI name="close" size={16} color="#374151" />
             </button>
           </div>
 
@@ -225,11 +257,11 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="block text-xs font-medium" style={{ color: '#374151' }}>Sample Types</label>
-                  <span style={{ fontSize: 10, color: '#9CA3AF' }}>{vals.sampleTypes.length} selected — leave empty to allow any sample type</span>
+                  <span style={{ fontSize: 10, color: '#374151' }}>{vals.sampleTypes.length} selected — leave empty to allow any sample type</span>
                 </div>
                 <div className="rounded-lg" style={{ border: '1px solid #D1D5DB', maxHeight: 140, overflowY: 'auto' }}>
                   {sampleTypeOptions.length === 0 ? (
-                    <p className="px-3 py-3 text-xs" style={{ color: '#9CA3AF' }}>No sample types available.</p>
+                    <p className="px-3 py-3 text-xs" style={{ color: '#374151' }}>No sample types available.</p>
                   ) : (
                     <div className="grid grid-cols-2 gap-x-3">
                       {sampleTypeOptions.map(st => (
@@ -247,11 +279,11 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="block text-xs font-medium" style={{ color: '#374151' }}>Analyses<span style={{ color: '#EF4444' }}> *</span></label>
-                  <span style={{ fontSize: 10, color: '#9CA3AF' }}>{vals.analysisServices.length} selected</span>
+                  <span style={{ fontSize: 10, color: '#374151' }}>{vals.analysisServices.length} selected</span>
                 </div>
                 <div className="rounded-lg" style={{ border: `1px solid ${fieldErrors.analysis_services ? '#EF4444' : '#D1D5DB'}`, maxHeight: 280, overflowY: 'auto' }}>
                   {analysisServices.length === 0 ? (
-                    <p className="px-3 py-3 text-xs" style={{ color: '#9CA3AF' }}>No analyses available.</p>
+                    <p className="px-3 py-3 text-xs" style={{ color: '#374151' }}>No analyses available.</p>
                   ) : (
                     <div className="grid grid-cols-2 gap-x-3">
                       {analysisServices.map(svc => (
@@ -335,7 +367,7 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
               </div>
               <h3 className="text-sm font-semibold" style={{ color: '#111827' }}>Deactivate analysis profile?</h3>
             </div>
-            <p className="text-xs mb-5" style={{ color: '#6B7280' }}>
+            <p className="text-xs mb-5" style={{ color: '#374151' }}>
               &ldquo;{deleteTarget.name}&rdquo; will no longer be available for selection when registering samples. It can be reactivated later if needed.
             </p>
             <div className="flex items-center justify-end gap-2">
@@ -354,61 +386,34 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
       )}
 
       {/* Table / empty state */}
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {initialProfiles.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="science" size={36} color="#D1D5DB" />
-          <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No analysis profiles yet</p>
-          <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>Create your first profile to speed up sample registration</p>
+          <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>No analysis profiles yet</p>
+          <p className="text-xs mt-0.5" style={{ color: '#374151' }}>Create your first profile to speed up sample registration</p>
           <button onClick={openCreate} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
             <MI name="add" size={13} color="#fff" /> New Analysis Profile
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
-          <table className="w-full" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
-            <colgroup>
-              <col style={{ width: '30%' }} /><col style={{ width: '58%' }} /><col style={{ width: '12%' }} />
-            </colgroup>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                {['Name', 'Analyses', ''].map(h => (
-                  <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {initialProfiles.map((p, i) => (
-                <tr key={p.uid} style={{ borderBottom: i < initialProfiles.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
-                  <td className="px-3 py-2.5">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: '#DBEAFE' }}>
-                        <MI name="science" size={13} color="#0154FC" />
-                      </div>
-                      <span className="text-xs font-medium" style={{ color: '#111827' }}>{p.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2.5 text-xs truncate" style={{ color: '#6B7280' }}>
-                    {p.analysis_services?.length ? p.analysis_services.map(a => serviceTitle(a.uid)).join(', ') : '—'}
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => openEdit(p)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }} title="Edit">
-                        <MI name="edit" size={14} color="#9CA3AF" />
-                      </button>
-                      <button onClick={() => setDeleteTarget(p)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }} title="Deactivate">
-                        <MI name="visibility_off" size={14} color="#9CA3AF" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-            <p style={{ fontSize: 10, color: '#9CA3AF' }}>{initialProfiles.length} profile{initialProfiles.length !== 1 ? 's' : ''}</p>
-          </div>
-        </div>
+        <DataTable<Row>
+          data={rows}
+          columns={columns}
+          searchable
+          persistKey="analysis-profiles"
+          emptyMessage="No analysis profiles found."
+          rowActions={p => (
+            <div className="flex items-center gap-1">
+              <button onClick={() => openEdit(p)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }} title="Edit">
+                <MI name="edit" size={14} color="#6B7280" />
+              </button>
+              <button onClick={() => setDeleteTarget(p)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }} title="Deactivate">
+                <MI name="visibility_off" size={14} color="#374151" />
+              </button>
+            </div>
+          )}
+        />
       )}
       </div>
     </div>

@@ -18,8 +18,8 @@ function Txt({ label, value, onChange, required, error, placeholder, type = 'tex
   if (readOnly) {
     return (
       <div>
-        <label className="block text-xs font-medium mb-1" style={{ color: '#9CA3AF' }}>{label}</label>
-        <p className="text-xs py-2" style={{ color: value ? '#111827' : '#9CA3AF' }}>{value || '—'}</p>
+        <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>{label}</label>
+        <p className="text-xs py-2" style={{ color: value ? '#111827' : '#374151' }}>{value || '—'}</p>
       </div>
     )
   }
@@ -98,7 +98,7 @@ export default function LaboratoryShell({ data, supervisors }: { data: Laborator
       <div className="flex items-center justify-between mb-3">
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Laboratory Information</h1>
-          <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Your laboratory&apos;s identity, contact, and accreditation details</p>
+          <p className="text-sm mt-0.5" style={{ color: '#374151' }}>Your laboratory&apos;s identity, contact, and accreditation details</p>
         </div>
         {mode === 'view' && (
           <button type="button" onClick={() => setMode('edit')}
@@ -135,7 +135,7 @@ export default function LaboratoryShell({ data, supervisors }: { data: Laborator
             <button key={t.key} type="button" onClick={() => setTab(t.key)}
               className="px-4 py-2 text-xs font-medium"
               style={{
-                color: tab === t.key ? '#0154FC' : '#6B7280',
+                color: tab === t.key ? '#0154FC' : '#374151',
                 borderBottom: tab === t.key ? '2px solid #0154FC' : '2px solid transparent',
                 marginBottom: -1, cursor: 'pointer',
               }}>
@@ -150,9 +150,9 @@ export default function LaboratoryShell({ data, supervisors }: { data: Laborator
               <input type="hidden" name="Name" value={vals.Name} />
               <Txt label="Laboratory Name" value={vals.Name} onChange={v => set('Name', v)} required error={state.errors?.Name?.[0]} readOnly={readOnly} />
               <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: readOnly ? '#9CA3AF' : '#374151' }}>Supervisor</label>
+                <label className="block text-xs font-medium mb-1" style={{ color: readOnly ? '#374151' : '#374151' }}>Supervisor</label>
                 {readOnly ? (
-                  <p className="text-xs py-2" style={{ color: vals.Supervisor ? '#111827' : '#9CA3AF' }}>
+                  <p className="text-xs py-2" style={{ color: vals.Supervisor ? '#111827' : '#374151' }}>
                     {supervisors.find(s => s.uid === vals.Supervisor)?.title || '—'}
                   </p>
                 ) : (
@@ -215,9 +215,9 @@ export default function LaboratoryShell({ data, supervisors }: { data: Laborator
               <WrapTxt name="AccreditationReference" label="Accreditation Reference" value={vals.AccreditationReference} onChange={v => set('AccreditationReference', v)} readOnly={readOnly} />
             </div>
             <div className="mt-3">
-              <label className="block text-xs font-medium mb-1" style={{ color: readOnly ? '#9CA3AF' : '#374151' }}>Accreditation Page Header</label>
+              <label className="block text-xs font-medium mb-1" style={{ color: readOnly ? '#374151' : '#374151' }}>Accreditation Page Header</label>
               {readOnly ? (
-                <p className="text-xs py-2 whitespace-pre-wrap" style={{ color: vals.AccreditationPageHeader ? '#111827' : '#9CA3AF' }}>
+                <p className="text-xs py-2 whitespace-pre-wrap" style={{ color: vals.AccreditationPageHeader ? '#111827' : '#374151' }}>
                   {vals.AccreditationPageHeader || '—'}
                 </p>
               ) : (
@@ -227,9 +227,9 @@ export default function LaboratoryShell({ data, supervisors }: { data: Laborator
               )}
             </div>
             <div className="mt-3">
-              <label className="block text-xs font-medium mb-1" style={{ color: readOnly ? '#9CA3AF' : '#374151' }}>Accreditation Body Logo</label>
+              <label className="block text-xs font-medium mb-1" style={{ color: readOnly ? '#374151' : '#374151' }}>Accreditation Body Logo</label>
               {readOnly ? (
-                <p className="text-xs py-2" style={{ color: vals.hasLogo ? '#111827' : '#9CA3AF' }}>
+                <p className="text-xs py-2" style={{ color: vals.hasLogo ? '#111827' : '#374151' }}>
                   {vals.hasLogo ? 'Logo on file' : '—'}
                 </p>
               ) : (
@@ -238,7 +238,7 @@ export default function LaboratoryShell({ data, supervisors }: { data: Laborator
                   <div className="flex items-center gap-2">
                     <button type="button" onClick={() => logoRef.current?.click()} className="px-3 py-1.5 rounded-lg text-xs font-medium"
                       style={{ border: '1px solid #D1D5DB', color: '#374151', backgroundColor: '#F9FAFB', cursor: 'pointer' }}>Choose Image</button>
-                    <span className="text-xs truncate" style={{ color: logoName ? '#374151' : '#9CA3AF' }}>
+                    <span className="text-xs truncate" style={{ color: logoName ? '#374151' : '#374151' }}>
                       {logoName || (vals.hasLogo ? 'Logo on file (upload to replace)' : 'No file chosen')}
                     </span>
                   </div>
@@ -270,7 +270,7 @@ export default function LaboratoryShell({ data, supervisors }: { data: Laborator
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="bg-white rounded-xl p-5" style={{ border: '1px solid #E8EAF2' }}>
-      <p className="uppercase tracking-wide mb-3" style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', letterSpacing: '0.06em' }}>{title}</p>
+      <p className="uppercase tracking-wide mb-3" style={{ fontSize: 10, fontWeight: 700, color: '#374151', letterSpacing: '0.06em' }}>{title}</p>
       {children}
     </div>
   )

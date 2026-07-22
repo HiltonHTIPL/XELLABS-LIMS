@@ -161,11 +161,11 @@ export default function AdminRefShell({
       <div className="flex items-center justify-between mb-3" style={{ flexShrink: 0 }}>
         <div className="flex items-center gap-3">
           <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
-            <MI name="arrow_back" size={16} color="#6B7280" />
+            <MI name="arrow_back" size={16} color="#374151" />
           </Link>
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>{title}</h1>
-            <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>{subtitle}</p>
+            <p className="text-sm mt-0.5" style={{ color: '#374151' }}>{subtitle}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -202,7 +202,7 @@ export default function AdminRefShell({
                 {isEditing ? `Edit — ${editing.title}` : `New ${singularLabel}`}
               </h2>
             </div>
-            <button onClick={closeForm} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
+            <button onClick={closeForm} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#374151" /></button>
           </div>
 
           <form action={action} className="flex flex-col flex-1 min-h-0">
@@ -219,7 +219,7 @@ export default function AdminRefShell({
               {fields.map((f, i) => (
                 <div key={f.name}>
                   {f.section && f.section !== fields[i - 1]?.section && (
-                    <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#9CA3AF', marginTop: i === 0 ? 0 : 14 }}>{f.section}</h3>
+                    <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#374151', marginTop: i === 0 ? 0 : 14 }}>{f.section}</h3>
                   )}
                   <FieldInput
                     field={f}
@@ -283,8 +283,8 @@ export default function AdminRefShell({
       {rows.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name={icon} size={36} color="#D1D5DB" />
-          <p className="mt-2 text-sm font-medium" style={{ color: '#6B7280' }}>No {title.toLowerCase()} yet</p>
-          <p className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>Create your first {singularLabel.toLowerCase()} to get started</p>
+          <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>No {title.toLowerCase()} yet</p>
+          <p className="text-xs mt-0.5" style={{ color: '#374151' }}>Create your first {singularLabel.toLowerCase()} to get started</p>
           <button onClick={openCreate} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
             <MI name="add" size={13} color="#fff" /> New {singularLabel}
           </button>
@@ -299,7 +299,7 @@ export default function AdminRefShell({
             <thead>
               <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
                 {columns.map(c => (
-                  <th key={c.key} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>{c.label}</th>
+                  <th key={c.key} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#374151', letterSpacing: '0.05em' }}>{c.label}</th>
                 ))}
                 <th />
               </tr>
@@ -308,7 +308,7 @@ export default function AdminRefShell({
               {rows.map((row, i) => (
                 <tr key={row.uid} style={{ borderBottom: i < rows.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
                   {columns.map((c, ci) => (
-                    <td key={c.key} className="px-3 py-2 text-xs truncate" style={{ color: ci === 0 ? '#111827' : '#6B7280', fontWeight: ci === 0 ? 500 : 400 }}>
+                    <td key={c.key} className="px-3 py-2 text-xs truncate" style={{ color: ci === 0 ? '#111827' : '#374151', fontWeight: ci === 0 ? 500 : 400 }}>
                       {(c.render ? c.render(row) : (row[c.key] == null ? '' : String(row[c.key]))) || '—'}
                     </td>
                   ))}
@@ -322,7 +322,7 @@ export default function AdminRefShell({
             </tbody>
           </table>
           <div className="px-3 py-2 flex items-center justify-between" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-            <p style={{ fontSize: 10, color: '#9CA3AF' }}>{rows.length} {rows.length !== 1 ? `${singularLabel.toLowerCase()}s` : singularLabel.toLowerCase()}</p>
+            <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>{rows.length} {rows.length !== 1 ? `${singularLabel.toLowerCase()}s` : singularLabel.toLowerCase()}</p>
           </div>
         </div>
       )}
@@ -353,7 +353,7 @@ function FieldInput({ field, value, options, error, onChange, onToggleMulti, onO
       <div>{label}
         <textarea rows={4} placeholder={field.placeholder} value={value as string}
           onChange={e => onChange(e.target.value)} className={`${base} resize-none`} style={style} />
-        {field.help && <p className="mt-0.5" style={{ fontSize: 10, color: '#9CA3AF' }}>{field.help}</p>}
+        {field.help && <p className="mt-0.5" style={{ fontSize: 10, color: '#374151' }}>{field.help}</p>}
         {error && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{error}</p>}
       </div>
     )
@@ -366,7 +366,7 @@ function FieldInput({ field, value, options, error, onChange, onToggleMulti, onO
           <option value="">— None —</option>
           {options.map(o => <option key={o.uid} value={o.uid}>{o.title}</option>)}
         </select>
-        {field.help && <p className="mt-0.5" style={{ fontSize: 10, color: '#9CA3AF' }}>{field.help}</p>}
+        {field.help && <p className="mt-0.5" style={{ fontSize: 10, color: '#374151' }}>{field.help}</p>}
         {error && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{error}</p>}
       </div>
     )
@@ -385,7 +385,7 @@ function FieldInput({ field, value, options, error, onChange, onToggleMulti, onO
           {options.map(o => <option key={o.uid} value={o.uid}>{o.title}</option>)}
           <option value="__add__">+ Add new {entityLabel.toLowerCase()}…</option>
         </select>
-        {field.help && <p className="mt-0.5" style={{ fontSize: 10, color: '#9CA3AF' }}>{field.help}</p>}
+        {field.help && <p className="mt-0.5" style={{ fontSize: 10, color: '#374151' }}>{field.help}</p>}
         {error && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{error}</p>}
       </div>
     )
@@ -397,7 +397,7 @@ function FieldInput({ field, value, options, error, onChange, onToggleMulti, onO
       <div>{label}
         <div className="rounded-lg p-2 space-y-1 max-h-40 overflow-y-auto" style={{ border: `1px solid ${error ? '#FCA5A5' : '#D1D5DB'}` }}>
           {(field.options ?? []).length === 0
-            ? <p style={{ fontSize: 11, color: '#9CA3AF' }}>None available</p>
+            ? <p style={{ fontSize: 11, color: '#374151' }}>None available</p>
             : (field.options ?? []).map(o => (
               <label key={o.uid} className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: '#374151' }}>
                 <input type="checkbox" checked={selected.includes(o.uid)} onChange={() => onToggleMulti(o.uid)} />
@@ -415,7 +415,7 @@ function FieldInput({ field, value, options, error, onChange, onToggleMulti, onO
     <div>{label}
       <input type={field.kind === 'number' ? 'number' : 'text'} placeholder={field.placeholder}
         value={value as string} onChange={e => onChange(e.target.value)} className={base} style={style} />
-      {field.help && <p className="mt-0.5" style={{ fontSize: 10, color: '#9CA3AF' }}>{field.help}</p>}
+      {field.help && <p className="mt-0.5" style={{ fontSize: 10, color: '#374151' }}>{field.help}</p>}
       {error && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{error}</p>}
     </div>
   )
@@ -475,7 +475,7 @@ function QuickAddSlide({ open, field, onClose, onCreated }: {
         <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ borderBottom: '1px solid #F3F4F6' }}>
           <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>New {entityLabel}</h2>
           <button type="button" onClick={handleClose} className="p-1.5 rounded-lg hover:bg-gray-100">
-            <MI name="close" size={16} color="#9CA3AF" />
+            <MI name="close" size={16} color="#374151" />
           </button>
         </div>
         <div className="flex-1 overflow-y-auto px-5 py-4">

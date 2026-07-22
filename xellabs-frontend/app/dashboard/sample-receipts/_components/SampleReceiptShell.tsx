@@ -30,10 +30,10 @@ function StepBar({ active }: { active: number }) {
           <div key={s.n} className="flex items-center flex-1">
             <div className="flex items-center gap-2 shrink-0">
               <div className="flex items-center justify-center rounded-full text-xs font-bold"
-                style={{ width: 26, height: 26, backgroundColor: done || isActive ? '#2563EB' : '#fff', border: `2px solid ${done || isActive ? '#2563EB' : '#D1D5DB'}`, color: done || isActive ? '#fff' : '#9CA3AF' }}>
+                style={{ width: 26, height: 26, backgroundColor: done || isActive ? '#2563EB' : '#fff', border: `2px solid ${done || isActive ? '#2563EB' : '#D1D5DB'}`, color: done || isActive ? '#fff' : '#374151' }}>
                 {done ? <MI name="check" size={13} color="#fff" /> : s.n}
               </div>
-              <span style={{ fontSize: 12, fontWeight: isActive ? 600 : 400, color: isActive ? '#2563EB' : done ? '#2563EB' : '#9CA3AF', whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: 12, fontWeight: isActive ? 600 : 400, color: isActive ? '#2563EB' : done ? '#2563EB' : '#374151', whiteSpace: 'nowrap' }}>
                 {s.label}
               </span>
             </div>
@@ -82,7 +82,7 @@ function LabelInput({ label, required, placeholder, value, onChange, readOnly }:
       </label>
       <div className="flex items-center rounded-lg" style={{ border: '1px solid #D1D5DB', backgroundColor: readOnly ? '#FAFAFA' : '#fff' }}>
         <input value={value ?? ''} onChange={e => onChange?.(e.target.value)} placeholder={placeholder} readOnly={readOnly}
-          className="flex-1 outline-none py-2 px-3 text-xs" style={{ color: readOnly ? '#9CA3AF' : '#374151', backgroundColor: 'transparent' }} />
+          className="flex-1 outline-none py-2 px-3 text-xs" style={{ color: readOnly ? '#374151' : '#374151', backgroundColor: 'transparent' }} />
       </div>
     </div>
   )
@@ -179,7 +179,7 @@ export default function SampleReceiptShell({ sample, hasId, samplingDeviations }
         <div className="flex items-start justify-between mb-4">
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em', margin: 0 }}>Sample Receipt</h1>
-            <p style={{ fontSize: 12, color: '#9CA3AF', marginTop: 3 }}>
+            <p style={{ fontSize: 12, color: '#374151', marginTop: 3 }}>
               {sample
                 ? alreadyReceived
                   ? `Receipt record for sample ${sampleDisplayId(sample)}`
@@ -250,7 +250,7 @@ export default function SampleReceiptShell({ sample, hasId, samplingDeviations }
                 Sample Condition <span style={{ color: '#EF4444' }}>*</span>
               </label>
               <div className="flex items-center rounded-lg" style={{ border: '1px solid #D1D5DB', backgroundColor: '#fff' }}>
-                <div className="pl-3"><span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: conditionDot[condition] ?? '#9CA3AF', display: 'inline-block' }} /></div>
+                <div className="pl-3"><span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: conditionDot[condition] ?? '#374151', display: 'inline-block' }} /></div>
                 <select className="flex-1 outline-none py-2 px-2 text-xs" style={{ color: '#374151', backgroundColor: 'transparent', cursor: 'pointer' }}
                   value={condition} onChange={e => setCondition(e.target.value)}>
                   <option value="good">Good</option>
@@ -273,7 +273,7 @@ export default function SampleReceiptShell({ sample, hasId, samplingDeviations }
                 Seal Condition <span style={{ color: '#EF4444' }}>*</span>
               </label>
               <div className="flex items-center rounded-lg" style={{ border: '1px solid #D1D5DB', backgroundColor: '#fff' }}>
-                <div className="pl-3"><span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: sealDot[sealCond] ?? '#9CA3AF', display: 'inline-block' }} /></div>
+                <div className="pl-3"><span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: sealDot[sealCond] ?? '#374151', display: 'inline-block' }} /></div>
                 <select className="flex-1 outline-none py-2 px-2 text-xs" style={{ color: '#374151', backgroundColor: 'transparent', cursor: 'pointer' }}
                   value={sealCond} onChange={e => setSealCond(e.target.value)}>
                   <option value="intact">Intact</option>
@@ -310,7 +310,7 @@ export default function SampleReceiptShell({ sample, hasId, samplingDeviations }
             <div>
               <label style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 5 }}>Priority</label>
               <div className="flex items-center rounded-lg" style={{ border: '1px solid #D1D5DB', backgroundColor: '#fff' }}>
-                <div className="pl-3"><span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: priorityDot[priority] ?? '#9CA3AF', display: 'inline-block' }} /></div>
+                <div className="pl-3"><span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: priorityDot[priority] ?? '#374151', display: 'inline-block' }} /></div>
                 <select className="flex-1 outline-none py-2 px-2 text-xs" style={{ color: '#374151', backgroundColor: 'transparent', cursor: 'pointer' }}
                   value={priority} onChange={e => setPriority(e.target.value)}>
                   <option value="high">High</option>
@@ -333,7 +333,7 @@ export default function SampleReceiptShell({ sample, hasId, samplingDeviations }
             <div>
               <label style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 5 }}>Storage Location</label>
               <StorageLocationInput value={storageSel} onChange={setStorageSel} disabled={submitting || !!success} />
-              <p style={{ fontSize: 10, color: '#9CA3AF', marginTop: 4 }}>
+              <p style={{ fontSize: 10, color: '#374151', marginTop: 4 }}>
                 {sample?.preferred_storage_location
                   ? 'Pre-filled from the location chosen at registration — change it if the sample is going elsewhere.'
                   : 'Scan a location QR label or search a box — the sample is stored there on receipt.'}
@@ -348,10 +348,10 @@ export default function SampleReceiptShell({ sample, hasId, samplingDeviations }
               placeholder="Enter any additional information about the sample…"
               className="w-full outline-none resize-none rounded-xl text-xs p-3"
               style={{ border: '1px solid #D1D5DB', color: '#374151', height: 100 }} />
-            <div style={{ fontSize: 10, color: '#9CA3AF', textAlign: 'right', marginTop: 2 }}>{notes.length} / 500</div>
+            <div style={{ fontSize: 10, color: '#374151', textAlign: 'right', marginTop: 2 }}>{notes.length} / 500</div>
           </div>
 
-          <p style={{ fontSize: 10, color: '#9CA3AF', marginBottom: 16 }}>* Required fields</p>
+          <p style={{ fontSize: 10, color: '#374151', marginBottom: 16 }}><span style={{ color: '#EF4444' }}>*</span> Required fields</p>
 
           <div className="flex items-center justify-end gap-2">
             <button type="button" onClick={() => router.push('/dashboard/samples-overview')}
@@ -361,7 +361,7 @@ export default function SampleReceiptShell({ sample, hasId, samplingDeviations }
             </button>
             <button type="button" onClick={handleReceive} disabled={!canSubmit}
               className="flex items-center gap-1.5 px-5 py-2 text-xs font-semibold rounded-lg text-white"
-              style={{ backgroundColor: canSubmit ? '#0154FC' : '#9CA3AF', cursor: canSubmit ? 'pointer' : 'not-allowed', border: 'none' }}>
+              style={{ backgroundColor: canSubmit ? '#0154FC' : '#374151', cursor: canSubmit ? 'pointer' : 'not-allowed', border: 'none' }}>
               <MI name={submitting ? 'hourglass_top' : 'check_circle'} size={14} color="#fff" />
               {submitting ? 'Receiving…' : 'Receive Sample'}
             </button>
@@ -373,15 +373,15 @@ export default function SampleReceiptShell({ sample, hasId, samplingDeviations }
       <div style={{ padding: '70px 16px 20px 0', display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div className="bg-white rounded-xl" style={{ border: '1px solid #E5E7EB', overflow: 'hidden' }}>
           <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: '1px solid #F3F4F6' }}>
-            <MI name="receipt_long" size={15} color="#6B7280" />
+            <MI name="receipt_long" size={15} color="#374151" />
             <span style={{ fontSize: 12, fontWeight: 700, color: '#111827' }}>Sample Summary</span>
           </div>
           <div className="px-4 py-4">
-            <p style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', marginBottom: 6 }}>Barcode Preview</p>
+            <p style={{ fontSize: 10, fontWeight: 600, color: '#374151', marginBottom: 6 }}>Barcode Preview</p>
             <div className="rounded-lg overflow-hidden mb-1" style={{ backgroundColor: '#fff', border: '1px solid #F3F4F6', padding: '8px 4px 4px' }}>
               <Barcode label={sample ? sampleDisplayId(sample) : '—'} />
             </div>
-            <p style={{ fontSize: 9, color: '#9CA3AF', textAlign: 'center', marginBottom: 16 }}>
+            <p style={{ fontSize: 9, color: '#374151', textAlign: 'center', marginBottom: 16 }}>
               {sample ? `${sampleDisplayId(sample)} · ${sample.sample_type_name}` : 'No sample selected'}
             </p>
             {sample && (
@@ -393,9 +393,9 @@ export default function SampleReceiptShell({ sample, hasId, samplingDeviations }
                   { icon: 'calendar_today', label: 'Collection',  value: sample.collection_date ? new Date(sample.collection_date).toLocaleDateString('en-GB', { timeZone: 'UTC' }) : '—' },
                 ].map(item => (
                   <div key={item.label} className="flex items-start gap-2 mb-3">
-                    <MI name={item.icon} size={14} color="#9CA3AF" />
+                    <MI name={item.icon} size={14} color="#374151" />
                     <div>
-                      <p style={{ fontSize: 9, color: '#9CA3AF', marginBottom: 1 }}>{item.label}</p>
+                      <p style={{ fontSize: 9, color: '#374151', marginBottom: 1 }}>{item.label}</p>
                       <p style={{ fontSize: 11, fontWeight: 600, color: '#111827', margin: 0 }}>{item.value}</p>
                     </div>
                   </div>
@@ -412,7 +412,7 @@ export default function SampleReceiptShell({ sample, hasId, samplingDeviations }
           <div className="px-4 py-3">
             <button onClick={handleReceive} disabled={!canSubmit}
               className="flex items-center justify-center gap-2 w-full py-3 rounded-xl text-white text-xs font-semibold"
-              style={{ backgroundColor: canSubmit ? '#0154FC' : '#9CA3AF', cursor: canSubmit ? 'pointer' : 'not-allowed', border: 'none' }}>
+              style={{ backgroundColor: canSubmit ? '#0154FC' : '#374151', cursor: canSubmit ? 'pointer' : 'not-allowed', border: 'none' }}>
               <MI name={submitting ? 'hourglass_top' : 'check_circle'} size={16} color="#fff" />
               {submitting ? 'Receiving…' : 'Receive Sample'}
             </button>

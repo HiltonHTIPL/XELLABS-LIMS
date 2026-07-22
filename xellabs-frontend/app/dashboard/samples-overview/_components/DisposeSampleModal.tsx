@@ -59,7 +59,7 @@ export default function DisposeSampleModal({ sampleId, sampleLabel, onClose, onD
           </div>
           <div>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: '#111827', margin: 0 }}>Dispose sample</h3>
-            <p style={{ fontSize: 12.5, color: '#6B7280', margin: '4px 0 0' }}>
+            <p style={{ fontSize: 12.5, color: '#374151', margin: '4px 0 0' }}>
               {sampleLabel} will move to <strong>Disposed</strong>. Record the compliance basis and optional certificate.
             </p>
           </div>
@@ -115,7 +115,7 @@ export default function DisposeSampleModal({ sampleId, sampleLabel, onClose, onD
             background: file ? '#EFF6FF' : '#FAFAFA', cursor: 'pointer', fontSize: 12.5, color: '#374151',
           }}
         >
-          <span className="material-icons" style={{ fontSize: 18, color: file ? '#2563EB' : '#9CA3AF' }}>
+          <span className="material-icons" style={{ fontSize: 18, color: file ? '#2563EB' : '#374151' }}>
             {file ? 'description' : 'upload_file'}
           </span>
           {file ? file.name : 'Attach PDF or image (optional)'}

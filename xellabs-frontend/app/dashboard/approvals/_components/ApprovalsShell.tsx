@@ -3,8 +3,9 @@ import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { decideApproval, type Approval, type ApprovalStatus } from '@/app/actions/approvals'
 import {
-  PageHeader, Card, Btn, StatusChip, EmptyState, MI, T, thStyle, tdStyle,
+  PageHeader, Card, Btn, StatusChip, EmptyState, MI, T,
 } from '@/app/dashboard/_components/ui'
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
 
 type FilterValue = 'all' | ApprovalStatus
 
@@ -20,6 +21,21 @@ function fmtDate(v: string | null) {
   const d = new Date(v)
   return Number.isNaN(d.getTime()) ? v : d.toLocaleString()
 }
+
+// Derived primitive fields so the shared DataTable can sort computed/date columns —
+// render still reproduces the original cells exactly.
+type ApprovalRow = Approval & { _subject: string; _requestedTs: number; _reviewedTs: number }
+
+const approvalColumns: DataTableColumn<ApprovalRow>[] = [
+  { id: 'id', label: 'ID', sortable: true, minWidth: 70, render: a => `#${a.id}` },
+  { id: '_subject', label: 'Subject', sortable: true, minWidth: 200, render: a => `Content type #${a.content_type} · Object #${a.object_id}` },
+  { id: 'status', label: 'Status', sortable: true, minWidth: 110, render: a => <StatusChip status={a.status} /> },
+  { id: 'requested_by', label: 'Requested By', sortable: true, minWidth: 120, render: a => `User #${a.requested_by}` },
+  { id: '_requestedTs', label: 'Requested At', sortable: true, minWidth: 160, render: a => fmtDate(a.requested_at) },
+  { id: 'reviewed_by', label: 'Reviewed By', sortable: true, minWidth: 120, render: a => a.reviewed_by ? `User #${a.reviewed_by}` : '—' },
+  { id: '_reviewedTs', label: 'Reviewed At', sortable: true, minWidth: 160, render: a => fmtDate(a.reviewed_at) },
+  { id: 'comments', label: 'Comments', sortable: true, minWidth: 160, render: a => a.comments || '—' },
+]
 
 /** Electronic-signature confirmation modal — re-enter password before an approve/reject is applied. */
 function SignatureModal({
@@ -126,6 +142,16 @@ export default function ApprovalsShell({ initialApprovals }: { initialApprovals:
     [initialApprovals, filter]
   )
 
+  const rows: ApprovalRow[] = useMemo(
+    () => filtered.map(a => ({
+      ...a,
+      _subject: `Content type #${a.content_type} · Object #${a.object_id}`,
+      _requestedTs: a.requested_at ? (new Date(a.requested_at).getTime() || 0) : 0,
+      _reviewedTs: a.reviewed_at ? (new Date(a.reviewed_at).getTime() || 0) : 0,
+    })),
+    [filtered]
+  )
+
   function handleDone(msg: string, ok: boolean) {
     setToast({ ok, msg })
     setTimeout(() => setToast(null), 4000)
@@ -178,50 +204,26 @@ export default function ApprovalsShell({ initialApprovals }: { initialApprovals:
         {filtered.length === 0 ? (
           <EmptyState icon="fact_check" title="No approvals" sub="There are no approval requests matching this filter." />
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>ID</th>
-                  <th style={thStyle}>Subject</th>
-                  <th style={thStyle}>Status</th>
-                  <th style={thStyle}>Requested By</th>
-                  <th style={thStyle}>Requested At</th>
-                  <th style={thStyle}>Reviewed By</th>
-                  <th style={thStyle}>Reviewed At</th>
-                  <th style={thStyle}>Comments</th>
-                  <th style={thStyle}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(a => (
-                  <tr key={a.id}>
-                    <td style={tdStyle}>#{a.id}</td>
-                    <td style={tdStyle}>
-                      Content type #{a.content_type} · Object #{a.object_id}
-                    </td>
-                    <td style={tdStyle}><StatusChip status={a.status} /></td>
-                    <td style={tdStyle}>User #{a.requested_by}</td>
-                    <td style={tdStyle}>{fmtDate(a.requested_at)}</td>
-                    <td style={tdStyle}>{a.reviewed_by ? `User #${a.reviewed_by}` : '—'}</td>
-                    <td style={tdStyle}>{fmtDate(a.reviewed_at)}</td>
-                    <td style={tdStyle} className="max-w-xs truncate">{a.comments || '—'}</td>
-                    <td style={tdStyle}>
-                      {a.status === 'pending' ? (
-                        <div className="flex items-center gap-1.5">
-                          <Btn variant="success" style={{ padding: '5px 10px', fontSize: 11 }} onClick={() => setModal({ approval: a, decision: 'approve' })}>
-                            <MI name="check" size={13} /> Approve
-                          </Btn>
-                          <Btn variant="danger" style={{ padding: '5px 10px', fontSize: 11 }} onClick={() => setModal({ approval: a, decision: 'reject' })}>
-                            <MI name="close" size={13} /> Reject
-                          </Btn>
-                        </div>
-                      ) : '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <DataTable<ApprovalRow>
+              data={rows}
+              columns={approvalColumns}
+              searchable
+              persistKey="approvals"
+              emptyMessage="There are no approval requests matching this filter."
+              rowActions={a => (
+                a.status === 'pending' ? (
+                  <div className="flex items-center gap-1.5">
+                    <Btn variant="success" style={{ padding: '5px 10px', fontSize: 11 }} onClick={() => setModal({ approval: a, decision: 'approve' })}>
+                      <MI name="check" size={13} /> Approve
+                    </Btn>
+                    <Btn variant="danger" style={{ padding: '5px 10px', fontSize: 11 }} onClick={() => setModal({ approval: a, decision: 'reject' })}>
+                      <MI name="close" size={13} /> Reject
+                    </Btn>
+                  </div>
+                ) : <span style={{ color: '#374151' }}>—</span>
+              )}
+            />
           </div>
         )}
       </Card>

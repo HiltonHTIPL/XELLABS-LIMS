@@ -161,7 +161,7 @@ export default function DashboardShell({ children, initials, displayName, roleLa
             style={{ cursor: 'pointer' }}
             onClick={() => setOpen(o => !o)}
           >
-            <span className="material-icons" style={{ fontSize: 20, color: '#6B7280' }}>menu</span>
+            <span className="material-icons" style={{ fontSize: 20, color: '#374151' }}>menu</span>
           </button>
 
           {/* Environment badge — defaults to build's NEXT_PUBLIC_APP_ENV, overridable in Account Settings */}
@@ -186,14 +186,14 @@ export default function DashboardShell({ children, initials, displayName, roleLa
             className="flex items-center flex-1 min-w-0 max-w-md gap-2 px-3 py-1.5 rounded-lg ml-1"
             style={{ backgroundColor: '#F3F4F6', border: '1px solid #E5E7EB', cursor: 'pointer' }}
           >
-            <span className="material-icons shrink-0" style={{ fontSize: 16, color: '#9CA3AF' }}>search</span>
+            <span className="material-icons shrink-0" style={{ fontSize: 16, color: '#374151' }}>search</span>
             <span
               className="flex-1 min-w-0 text-left text-sm"
-              style={{ color: '#9CA3AF', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}
+              style={{ color: '#374151', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}
             >
               Search samples, IDs, projects, users...
             </span>
-            <span className="text-xs px-1.5 py-0.5 rounded shrink-0" style={{ backgroundColor: '#E5E7EB', color: '#9CA3AF' }}>⌘ K</span>
+            <span className="text-xs px-1.5 py-0.5 rounded shrink-0" style={{ backgroundColor: '#E5E7EB', color: '#374151' }}>⌘ K</span>
           </button>
           <CommandPalette role={role} isSuperuser={isSuperuser} open={paletteOpen} onClose={() => setPaletteOpen(false)} />
 
@@ -201,7 +201,7 @@ export default function DashboardShell({ children, initials, displayName, roleLa
 
           {/* Notifications — open workflow tasks */}
           <button ref={notifBtnRef} onClick={toggleNotifications} className="relative p-1.5 rounded-lg hover:bg-gray-100" style={{ cursor: 'pointer' }} title="Notifications">
-            <span className="material-icons" style={{ fontSize: 20, color: '#6B7280' }}>notifications</span>
+            <span className="material-icons" style={{ fontSize: 20, color: '#374151' }}>notifications</span>
             {notifications.length > 0 && (
               <span
                 className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full text-white flex items-center justify-center font-bold"
@@ -218,13 +218,13 @@ export default function DashboardShell({ children, initials, displayName, roleLa
               style={{ position: 'fixed', top: notifPos.top, right: notifPos.right, width: 300, zIndex: 9999, backgroundColor: '#fff', border: '1px solid #E5E7EB', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
               <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid #F3F4F6' }}>
                 <span className="text-sm font-semibold" style={{ color: '#111827' }}>Notifications</span>
-                <span style={{ fontSize: 10, color: '#9CA3AF' }}>{notifications.length} open task{notifications.length !== 1 ? 's' : ''}</span>
+                <span style={{ fontSize: 10, color: '#374151' }}>{notifications.length} open task{notifications.length !== 1 ? 's' : ''}</span>
               </div>
               <div style={{ maxHeight: 320, overflowY: 'auto' }}>
                 {notifications.length === 0 ? (
                   <div className="flex flex-col items-center py-8">
                     <span className="material-icons" style={{ fontSize: 28, color: '#D1D5DB' }}>notifications_off</span>
-                    <p className="text-xs mt-2" style={{ color: '#9CA3AF' }}>No open tasks — you're all caught up.</p>
+                    <p className="text-xs mt-2" style={{ color: '#374151' }}>No open tasks — you're all caught up.</p>
                   </div>
                 ) : (
                   notifications.slice(0, 8).map(n => (
@@ -235,7 +235,7 @@ export default function DashboardShell({ children, initials, displayName, roleLa
                       <span className="material-icons" style={{ fontSize: 16, color: n.priority === 'urgent' || n.priority === 'high' ? '#EF4444' : '#0154FC', marginTop: 1 }}>assignment</span>
                       <span style={{ minWidth: 0 }}>
                         <span className="block text-xs font-medium truncate" style={{ color: '#111827' }}>{n.title}</span>
-                        {n.due_date && <span style={{ fontSize: 10, color: '#9CA3AF' }}>Due {new Date(n.due_date).toLocaleDateString('en-GB')}</span>}
+                        {n.due_date && <span style={{ fontSize: 10, color: '#374151' }}>Due {new Date(n.due_date).toLocaleDateString('en-GB')}</span>}
                       </span>
                     </button>
                   ))
@@ -258,13 +258,13 @@ export default function DashboardShell({ children, initials, displayName, roleLa
               setHelpPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right })
             }}
             className="p-1.5 rounded-lg hover:bg-gray-100" style={{ cursor: 'pointer' }}>
-            <span className="material-icons" style={{ fontSize: 20, color: '#6B7280' }}>help_outline</span>
+            <span className="material-icons" style={{ fontSize: 20, color: '#374151' }}>help_outline</span>
           </button>
           {helpPos && (
             <div ref={helpPanelRef} className="rounded-xl"
               style={{ position: 'fixed', top: helpPos.top, right: helpPos.right, width: 260, zIndex: 9999, backgroundColor: '#fff', border: '1px solid #E5E7EB', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', padding: 14 }}>
               <p className="text-sm font-semibold" style={{ color: '#111827', margin: '0 0 4px' }}>Help & Support</p>
-              <p className="text-xs" style={{ color: '#6B7280', margin: '0 0 10px', lineHeight: 1.5 }}>
+              <p className="text-xs" style={{ color: '#374151', margin: '0 0 10px', lineHeight: 1.5 }}>
                 Questions or issues with XelLabs LIMS? Reach out to the support team.
               </p>
               <a href="mailto:support@hephzibahtech.com?subject=XelLabs%20LIMS%20Support"
@@ -274,7 +274,7 @@ export default function DashboardShell({ children, initials, displayName, roleLa
                 <span className="material-icons" style={{ fontSize: 15 }}>mail_outline</span>
                 Contact Support
               </a>
-              <p style={{ fontSize: 10, color: '#9CA3AF', margin: '10px 0 0' }}>
+              <p style={{ fontSize: 10, color: '#374151', margin: '10px 0 0' }}>
                 XelLabs LIMS · supported by Hephzibah Technologies
               </p>
             </div>
@@ -293,7 +293,7 @@ export default function DashboardShell({ children, initials, displayName, roleLa
                     className="material-icons"
                     style={{
                       fontSize: 15,
-                      color: '#9CA3AF',
+                      color: '#374151',
                       lineHeight: 1,
                       transition: 'transform 0.2s',
                       transform: userMenuOpen ? 'rotate(180deg)' : 'rotate(0deg)',
@@ -302,7 +302,7 @@ export default function DashboardShell({ children, initials, displayName, roleLa
                     keyboard_arrow_down
                   </span>
                 </div>
-                <p style={{ fontSize: 10, color: '#9CA3AF', margin: 0, lineHeight: 1.2, textAlign: 'center' }}>{roleLabel}</p>
+                <p style={{ fontSize: 10, color: '#374151', margin: 0, lineHeight: 1.2, textAlign: 'center' }}>{roleLabel}</p>
               </div>
               <div
                 className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
@@ -334,7 +334,7 @@ export default function DashboardShell({ children, initials, displayName, roleLa
                   </div>
                   <div>
                     <p className="text-sm font-semibold" style={{ color: '#111827' }}>{displayName}</p>
-                    <p style={{ fontSize: 11, color: '#9CA3AF' }}>{roleLabel}</p>
+                    <p style={{ fontSize: 11, color: '#374151' }}>{roleLabel}</p>
                   </div>
                 </div>
 
@@ -344,7 +344,7 @@ export default function DashboardShell({ children, initials, displayName, roleLa
                     style={{ color: '#374151' }}
                     onClick={() => { setUserMenuOpen(false); router.push('/dashboard/account-settings') }}
                   >
-                    <span className="material-icons" style={{ fontSize: 16, color: '#9CA3AF' }}>person</span>
+                    <span className="material-icons" style={{ fontSize: 16, color: '#374151' }}>person</span>
                     My Profile
                   </button>
                   <button
@@ -352,7 +352,7 @@ export default function DashboardShell({ children, initials, displayName, roleLa
                     style={{ color: '#374151' }}
                     onClick={() => { setUserMenuOpen(false); router.push('/dashboard/account-settings') }}
                   >
-                    <span className="material-icons" style={{ fontSize: 16, color: '#9CA3AF' }}>settings</span>
+                    <span className="material-icons" style={{ fontSize: 16, color: '#374151' }}>settings</span>
                     Account Settings
                   </button>
                 </div>
@@ -384,7 +384,7 @@ export default function DashboardShell({ children, initials, displayName, roleLa
             the value every drawer/modal overlay bounds itself against. */}
         <div
           className="flex items-center justify-between shrink-0 px-5"
-          style={{ height: 40, borderTop: '1px solid #E8EAF2', backgroundColor: '#fff', fontSize: 11, color: '#9AA1B2' }}
+          style={{ height: 40, borderTop: '1px solid #E8EAF2', backgroundColor: '#fff', fontSize: 11, color: '#374151' }}
         >
           <span>© 2026 XELLABS LIMS. All rights reserved.</span>
           <div className="flex items-center gap-3">

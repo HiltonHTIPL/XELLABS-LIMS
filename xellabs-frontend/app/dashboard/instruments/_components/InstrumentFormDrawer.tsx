@@ -28,7 +28,7 @@ function Field({ label, name, tip, placeholder, required, error, value, onChange
       <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
         {label}{required && <span style={{ color: '#EF4444' }}> *</span>}
       </label>
-      {tip && <p style={{ fontSize: 10, color: '#9CA3AF', marginBottom: 4 }}>{tip}</p>}
+      {tip && <p style={{ fontSize: 10, color: '#374151', marginBottom: 4 }}>{tip}</p>}
       <input name={name} type={type} placeholder={placeholder} value={value}
         onChange={e => onChange(e.target.value)}
         className="w-full px-3 py-2 text-xs rounded-lg outline-none"
@@ -45,7 +45,7 @@ function TextAreaField({ label, name, tip, placeholder, error, value, onChange, 
   return (
     <div>
       <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>{label}</label>
-      {tip && <p style={{ fontSize: 10, color: '#9CA3AF', marginBottom: 4 }}>{tip}</p>}
+      {tip && <p style={{ fontSize: 10, color: '#374151', marginBottom: 4 }}>{tip}</p>}
       <textarea name={name} rows={rows} placeholder={placeholder} value={value}
         onChange={e => onChange(e.target.value)}
         className="w-full px-3 py-2 text-xs rounded-lg outline-none resize-none"
@@ -63,7 +63,7 @@ function FilePickField({ label, tip, name, accept }: {
   return (
     <div>
       <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>{label}</label>
-      <p style={{ fontSize: 10, color: '#9CA3AF', marginBottom: 6 }}>{tip}</p>
+      <p style={{ fontSize: 10, color: '#374151', marginBottom: 6 }}>{tip}</p>
       <label
         className="inline-flex items-center gap-1.5 cursor-pointer"
         style={{
@@ -82,7 +82,7 @@ function FilePickField({ label, tip, name, accept }: {
           onChange={e => setFileName(e.target.files?.[0]?.name ?? '')}
         />
       </label>
-      <p style={{ fontSize: 11, color: fileName ? '#374151' : '#9CA3AF', marginTop: 6 }}>
+      <p style={{ fontSize: 11, color: fileName ? '#374151' : '#374151', marginTop: 6 }}>
         {fileName || 'No file chosen'}
       </p>
     </div>
@@ -277,10 +277,10 @@ export default function InstrumentFormDrawer({
             </div>
             <div>
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>{isEdit ? `Edit — ${editing!.name}` : 'New Instrument'}</h2>
-              <p style={{ fontSize: 10, color: '#9CA3AF' }}>{isEdit ? 'Update instrument details' : 'Register a new lab instrument'}</p>
+              <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>{isEdit ? 'Update instrument details' : 'Register a new lab instrument'}</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#374151" /></button>
         </div>
 
         <div className="flex px-5 pt-3 gap-1 shrink-0" style={{ borderBottom: '1px solid #F3F4F6' }}>
@@ -288,7 +288,7 @@ export default function InstrumentFormDrawer({
             <button key={t.key} type="button" onClick={() => setDrawerTab(t.key)}
               className="px-3 py-2 text-xs font-semibold"
               style={{
-                color: drawerTab === t.key ? '#0154FC' : '#6B7280',
+                color: drawerTab === t.key ? '#0154FC' : '#374151',
                 borderBottom: drawerTab === t.key ? '2px solid #0154FC' : '2px solid transparent',
                 background: 'none', border: 'none', cursor: 'pointer',
               }}>
@@ -374,7 +374,7 @@ export default function InstrumentFormDrawer({
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Status</label>
-                    <p style={{ fontSize: 10, color: '#9CA3AF', marginBottom: 4 }}>Operational status of this instrument</p>
+                    <p style={{ fontSize: 10, color: '#374151', marginBottom: 4 }}>Operational status of this instrument</p>
                     <select name="status" value={vals.status} onChange={e => setVal('status', e.target.value)}
                       className="w-full px-3 py-2 text-xs rounded-lg outline-none"
                       style={{ border: '1px solid #D1D5DB', color: '#111827' }}>
@@ -431,7 +431,7 @@ export default function InstrumentFormDrawer({
                     className="mt-0.5" />
                   <span>
                     <span className="font-medium">De-activate until next calibration test</span>
-                    <span style={{ display: 'block', fontSize: 10, color: '#9CA3AF', marginTop: 2 }}>
+                    <span style={{ display: 'block', fontSize: 10, color: '#374151', marginTop: 2 }}>
                       If checked, the instrument is unavailable until the next valid calibration. Cleared automatically after calibration.
                     </span>
                   </span>
@@ -458,7 +458,7 @@ export default function InstrumentFormDrawer({
                   value={vals.preventive_maintenance_procedure} onChange={v => setVal('preventive_maintenance_procedure', v)} rows={5}
                 />
                 {isEdit && (
-                  <p style={{ fontSize: 10, color: '#9CA3AF' }}>
+                  <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>
                     Cert/calibration/validation history and status transitions are on the instrument detail page.
                   </p>
                 )}

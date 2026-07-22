@@ -108,21 +108,21 @@ export default function BulkStoreModal({
             </div>
             <div>
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>Bulk Store — {box.name}</h2>
-              <p style={{ fontSize: 10, color: '#9CA3AF' }}>
+              <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>
                 {targetSlotCount ? `Filling ${targetSlotCount} selected slots, in order` : 'Each sample auto-fills the next free slot'}
               </p>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100">
-            <MI name="close" size={16} color="#9CA3AF" />
+            <MI name="close" size={16} color="#374151" />
           </button>
         </div>
 
         <div className="px-5 py-4" style={{ borderBottom: '1px solid #F3F4F6', position: 'relative' }}>
-          <label style={{ fontSize: 10, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.4 }}>Client</label>
+          <label style={{ fontSize: 10, fontWeight: 600, color: '#374151', textTransform: 'uppercase', letterSpacing: 0.4 }}>Client</label>
           <div style={{ position: 'relative', marginTop: 6 }}>
             <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', display: 'flex' }}>
-              <MI name="search" size={16} color="#9CA3AF" />
+              <MI name="search" size={16} color="#374151" />
             </span>
             <input
               value={clientSearch}
@@ -134,7 +134,7 @@ export default function BulkStoreModal({
             {selectedClient && (
               <button type="button" onClick={clearClient}
                 style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', border: 'none', borderRadius: '50%', background: '#F3F4F6', cursor: 'pointer', width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <MI name="close" size={13} color="#6B7280" />
+                <MI name="close" size={13} color="#374151" />
               </button>
             )}
           </div>
@@ -152,10 +152,10 @@ export default function BulkStoreModal({
                   >
                     <div style={{ minWidth: 0 }}>
                       <p style={{ fontSize: 13, fontWeight: 600, color: '#111827', margin: 0 }}>{c.name}</p>
-                      <p style={{ fontSize: 11, color: '#9CA3AF', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.client_id || 'Client'}</p>
+                      <p style={{ fontSize: 11, color: '#374151', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.client_id || 'Client'}</p>
                     </div>
                     <span style={{ width: 26, height: 26, borderRadius: '50%', background: '#F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginLeft: 10 }}>
-                      <MI name="arrow_forward" size={14} color="#6B7280" />
+                      <MI name="arrow_forward" size={14} color="#374151" />
                     </span>
                   </button>
                 ))}
@@ -179,22 +179,22 @@ export default function BulkStoreModal({
                   type="button"
                   onClick={addSelectedSamples}
                   disabled={selectedSamples.size === 0 || pending}
-                  style={{ fontSize: 11, fontWeight: 600, padding: '5px 12px', borderRadius: 8, backgroundColor: selectedSamples.size === 0 || pending ? '#E5E7EB' : '#0154FC', color: selectedSamples.size === 0 || pending ? '#9CA3AF' : '#fff', border: 'none', cursor: selectedSamples.size === 0 || pending ? 'default' : 'pointer' }}
+                  style={{ fontSize: 11, fontWeight: 600, padding: '5px 12px', borderRadius: 8, backgroundColor: selectedSamples.size === 0 || pending ? '#E5E7EB' : '#0154FC', color: selectedSamples.size === 0 || pending ? '#374151' : '#fff', border: 'none', cursor: selectedSamples.size === 0 || pending ? 'default' : 'pointer' }}
                 >
                   Add Selected ({selectedSamples.size})
                 </button>
               </div>
               <div style={{ maxHeight: 160, overflowY: 'auto', border: '1px solid #F3F4F6', borderRadius: 8 }}>
                 {samplesLoading ? (
-                  <p style={{ fontSize: 11, color: '#9CA3AF', padding: 10 }}>Loading samples…</p>
+                  <p style={{ fontSize: 11, color: '#374151', padding: 10 }}>Loading samples…</p>
                 ) : clientSamples.length === 0 ? (
-                  <p style={{ fontSize: 11, color: '#9CA3AF', padding: 10 }}>No unstored samples for this client.</p>
+                  <p style={{ fontSize: 11, color: '#374151', padding: 10 }}>No unstored samples for this client.</p>
                 ) : (
                   clientSamples.map(s => (
                     <label key={s.sample_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderBottom: '1px solid #F9FAFB', fontSize: 12, cursor: 'pointer' }}>
                       <input type="checkbox" checked={selectedSamples.has(s.sample_id)} onChange={() => toggleSample(s.sample_id)} />
                       <span style={{ fontWeight: 600, color: '#111827' }}>{s.sample_id}</span>
-                      <span style={{ color: '#9CA3AF' }}>{s.sample_type_name}</span>
+                      <span style={{ color: '#374151' }}>{s.sample_type_name}</span>
                     </label>
                   ))
                 )}
@@ -219,14 +219,14 @@ export default function BulkStoreModal({
               <MI name="qr_code_scanner" size={16} color="#2563EB" />
             </button>
           </form>
-          <p style={{ fontSize: 10, color: '#9CA3AF', marginTop: 6 }}>{storedCount} stored this session</p>
+          <p style={{ fontSize: 10, color: '#374151', marginTop: 6 }}>{storedCount} stored this session</p>
         </div>
 
         <div style={{ overflowY: 'auto', flex: 1 }}>
           {log.length === 0 ? (
             <div style={{ padding: 24, textAlign: 'center' }}>
               <MI name="inventory" size={28} color="#D1D5DB" />
-              <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: 8 }}>Scan samples one after another to store them here</p>
+              <p style={{ fontSize: 11, color: '#374151', marginTop: 8 }}>Scan samples one after another to store them here</p>
             </div>
           ) : (
             log.map((entry, i) => (
@@ -234,7 +234,7 @@ export default function BulkStoreModal({
                 <MI name={entry.ok ? 'check_circle' : 'error'} size={15} color={entry.ok ? '#10B981' : '#DC2626'} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>{entry.sampleId}</p>
-                  <p style={{ fontSize: 10, color: entry.ok ? '#6B7280' : '#DC2626' }}>{entry.message}</p>
+                  <p style={{ fontSize: 10, color: entry.ok ? '#374151' : '#DC2626' }}>{entry.message}</p>
                 </div>
               </div>
             ))

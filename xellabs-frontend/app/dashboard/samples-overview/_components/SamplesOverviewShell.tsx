@@ -1,6 +1,7 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
 import { type LabSample, type DjangoSampleType, patchLabSample } from '@/app/actions/lab-samples'
 import { type SenaiteSample } from '@/app/lib/senaite'
 import { getSample } from '@/app/actions/samples'
@@ -77,7 +78,7 @@ const STATUS_BADGE: Record<string, { bg: string; color: string; label: string }>
   reviewed:        { bg: '#E0E7FF', color: '#3730A3', label: 'Reviewed' },
   published:       { bg: '#DBEAFE', color: '#0154FC', label: 'Completed' },
   rejected:        { bg: '#FEE2E2', color: '#991B1B', label: 'Rejected' },
-  disposed:        { bg: '#F3F4F6', color: '#6B7280', label: 'Disposed' },
+  disposed:        { bg: '#F3F4F6', color: '#374151', label: 'Disposed' },
   on_hold_for_qa:  { bg: '#FFF7ED', color: '#C2410C', label: 'On Hold for QA' },
 }
 
@@ -95,7 +96,7 @@ const CONDITION_BADGE: Record<string, { color: string }> = {
 }
 
 const STAT_CARDS = [
-  { key: 'all',            label: 'All',              icon: 'view_list',       iconColor: '#6B7280', iconBg: '#F3F4F6' },
+  { key: 'all',            label: 'All',              icon: 'view_list',       iconColor: '#374151', iconBg: '#F3F4F6' },
   { key: 'logged',         label: 'Logged',           icon: 'inbox',           iconColor: '#3B82F6', iconBg: '#EFF6FF' },
   { key: 'received',       label: 'Received',         icon: 'move_to_inbox',   iconColor: '#0154FC', iconBg: '#DBEAFE' },
   { key: 'in_process',     label: 'In Process',       icon: 'autorenew',       iconColor: '#6366F1', iconBg: '#EEF2FF' },
@@ -177,33 +178,6 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [page, setPage] = useState(1)
   const [actionMenu, setActionMenu] = useState<{ id: number; top: number; right: number } | null>(null)
-  const PAGE_SIZE = 25
-
-  // Sorting — click a header to toggle asc/desc; one shared accessor covers every column.
-  const [sortKey, setSortKey] = useState<SortKey | null>(null)
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
-
-  function sortAccessor(s: LabSample, key: SortKey): string | number {
-    switch (key) {
-      case 'sample_id':     return displayId(s)
-      case 'client':        return s.client_name ?? ''
-      case 'sample_type':   return s.sample_type_name ?? ''
-      case 'condition':     return s.condition ?? ''
-      case 'status':        return getSampleStatusDisplay(s).label
-      case 'priority':      return s.priority ?? ''
-      case 'received_date': return s.received_date ? new Date(s.received_date).getTime() : -Infinity
-      case 'due_date':      return s.expiry_date ? new Date(s.expiry_date).getTime() : -Infinity
-      case 'tat':           return tatDays(s.received_date, nowMs) ?? -Infinity
-      case 'analyst':       return s.received_by_name ?? ''
-      case 'storage':       return s.storage_location ?? ''
-      default:              return ''
-    }
-  }
-  function toggleSort(key: SortKey) {
-    if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
-    else { setSortKey(key); setSortDir('asc') }
-    setPage(1)
-  }
 
   // Base filters exclude the status/overdue toggle so the stat cards (which ARE
   // the status buckets) don't collapse when one status is selected. The client
@@ -249,18 +223,6 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
     past_retention: statScope.filter(isPastRetentionSample).length,
   }
 
-  const sorted = sortKey
-    ? [...filtered].sort((a, b) => {
-        const va = sortAccessor(a, sortKey)
-        const vb = sortAccessor(b, sortKey)
-        const cmp = va < vb ? -1 : va > vb ? 1 : 0
-        return sortDir === 'asc' ? cmp : -cmp
-      })
-    : filtered
-
-  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE))
-  const paginated = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-
   function clearFilters() {
     setSearch(''); setFilterSampleType('')
     // Client filter is intentionally left alone when locked (arrived via a
@@ -301,13 +263,6 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
     setFilterOverdue(false)
     setFilterPastRetention(false)
     setFilterStatus(prev => (prev === statusValue ? '' : statusValue))
-  }
-  function toggleAll() {
-    if (selected.size === paginated.length) setSelected(new Set())
-    else setSelected(new Set(paginated.map(s => s.id)))
-  }
-  function toggleRow(id: number) {
-    setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   }
   function openActionMenu(e: React.MouseEvent<HTMLButtonElement>, id: number) {
     const rect = e.currentTarget.getBoundingClientRect()
@@ -493,56 +448,110 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
 }
 
   const orderedVisibleCols = ALL_COLUMNS.filter(c => vis(c.key))
-  const tableCols: { key: SortKey; label: string }[] = [
-    { key: 'sample_id', label: 'Sample ID' },
-    ...orderedVisibleCols,
+
+  // ── Shared DataTable rows/columns ──
+  // Each row carries the original LabSample under `_s` (renders read it) plus a
+  // primitive per-column sort field keyed by the same id the column uses, so the
+  // table engine can order by value (dates as epoch ms, status by its label,
+  // etc.) — matching the previous hand-rolled sortAccessor. Columns are built
+  // from the live `orderedVisibleCols` so the existing Columns chooser still
+  // drives which columns show.
+  type OverviewRow = {
+    id: number; _s: LabSample
+    sample_id: string; client: string; sample_type: string; condition: string; status: string
+    priority: string; received_date: number; due_date: number; tat: number; analyst: string; storage: string
+  }
+  const overviewRows: OverviewRow[] = filtered.map(s => ({
+    id: s.id, _s: s,
+    sample_id: displayId(s),
+    client: s.client_name ?? '',
+    sample_type: s.sample_type_name ?? '',
+    condition: s.condition ?? '',
+    status: getSampleStatusDisplay(s).label,
+    priority: s.priority ?? '',
+    received_date: s.received_date ? new Date(s.received_date).getTime() : -Infinity,
+    due_date: s.expiry_date ? new Date(s.expiry_date).getTime() : -Infinity,
+    tat: tatDays(s.received_date, nowMs) ?? -Infinity,
+    analyst: s.received_by_name ?? '',
+    storage: s.storage_location ?? '',
+  }))
+
+  function cellContent(s: LabSample, key: SortKey): ReactNode {
+    const badge = getSampleStatusDisplay(s)
+    const pBadge = PRIORITY_BADGE[s.priority] ?? { bg: '#F3F4F6', color: '#374151' }
+    const condColor = CONDITION_BADGE[s.condition]?.color ?? '#374151'
+    const tat = tatDays(s.received_date, nowMs)
+    const isOverdue = isOverdueSample(s)
+    switch (key) {
+      case 'sample_id':
+        return (
+          <span style={{ color: '#2563EB', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', whiteSpace: 'nowrap', display: 'inline-block' }}
+            onClick={() => openDetail(s.senaite_uid, s.id)}>
+            {displayId(s)}
+          </span>
+        )
+      case 'client':        return <span style={{ color: '#374151' }}>{s.client_name}</span>
+      case 'sample_type':   return <span style={{ color: '#374151' }}>{s.sample_type_name}</span>
+      case 'condition':
+        return s.condition ? (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: condColor, flexShrink: 0 }} />
+            <span style={{ color: condColor, textTransform: 'capitalize', fontWeight: 500 }}>{s.condition.replace('_', ' ')}</span>
+          </span>
+        ) : <span style={{ color: '#374151' }}>—</span>
+      case 'status': {
+        const isNearingRetStatus = isNearingRetentionSample(s)
+        return (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ background: badge.bg, color: badge.color, borderRadius: 20, padding: '3px 9px', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>
+              {badge.label}
+            </span>
+            {isNearingRetStatus ? (
+              <span style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A', borderRadius: 12, padding: '2px 7px', fontWeight: 600, fontSize: 10, whiteSpace: 'nowrap' }}>
+                Nearing Retention
+              </span>
+            ) : null}
+          </div>
+        )
+      }
+      case 'priority':
+        return s.priority ? (
+          <span style={{ background: pBadge.bg, color: pBadge.color, borderRadius: 20, padding: '3px 9px', fontWeight: 600, fontSize: 11, textTransform: 'capitalize' }}>
+            {s.priority}
+          </span>
+        ) : <span style={{ color: '#374151' }}>—</span>
+      case 'received_date': return <span style={{ color: '#374151', whiteSpace: 'nowrap' }}>{fmt(s.received_date)}</span>
+      case 'due_date': {
+        const isNearingRetDue = isNearingRetentionSample(s)
+        return (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ color: isOverdue ? '#EF4444' : '#374151', fontWeight: isOverdue ? 600 : 400, whiteSpace: 'nowrap' }}>{fmt(s.expiry_date)}</span>
+            {isNearingRetDue ? (
+              <span style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A', borderRadius: 12, padding: '2px 7px', fontWeight: 600, fontSize: 10, whiteSpace: 'nowrap' }}>
+                Nearing Retention
+              </span>
+            ) : null}
+          </div>
+        )
+      }
+      case 'tat':
+        return tat !== null ? <span style={{ fontWeight: 600, color: tat > 7 ? '#EF4444' : '#374151' }}>{tat}</span> : <span style={{ color: '#374151' }}>—</span>
+      case 'analyst':       return s.received_by_name || <span style={{ color: '#374151' }}>—</span>
+      case 'storage':       return s.storage_location || <span style={{ color: '#374151' }}>—</span>
+      default: return null
+    }
+  }
+
+  const overviewColumns: DataTableColumn<OverviewRow>[] = [
+    { id: 'sample_id', label: 'Sample ID', sortable: true, minWidth: COLUMN_META.sample_id.minWidth, render: r => cellContent(r._s, 'sample_id') },
+    ...orderedVisibleCols.map(c => ({
+      id: c.key,
+      label: c.label,
+      sortable: true,
+      minWidth: COLUMN_META[c.key]?.minWidth ?? 120,
+      render: (r: OverviewRow) => cellContent(r._s, c.key),
+    })),
   ]
-
-  // Measure the scroll container's real width so up to TARGET_FILL_COLUMNS
-  // columns can stretch to fill it exactly (no dead space). Beyond that count,
-  // every column keeps the width it had at exactly 8 (no shrinking) — the
-  // table simply grows past the container and the wrapper's own scrollbar
-  // (overflow: auto below) is what reveals the extra columns.
-  const scrollWrapRef = useRef<HTMLDivElement>(null)
-  const [containerWidth, setContainerWidth] = useState(0)
-  useEffect(() => {
-    const el = scrollWrapRef.current
-    if (!el) return
-    const update = () => setContainerWidth(el.clientWidth)
-    update()
-    const ro = new ResizeObserver(update)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-
-  // Account for container border (1px left + 1px right = 2px)
-  const availableContentWidth = Math.max(0, containerWidth - 2)
-  const dataAreaWidth = Math.max(0, availableContentWidth - CHECKBOX_WIDTH - ACTIONS_WIDTH - MENU_WIDTH)
-
-  const colWidths = (() => {
-    if (containerWidth === 0) {
-      return tableCols.map(c => COLUMN_META[c.key]?.minWidth ?? FALLBACK_COL_WIDTH)
-    }
-    const numCols = tableCols.length || 1
-    if (numCols <= TARGET_FILL_COLUMNS) {
-      const totalWeight = tableCols.reduce((sum, c) => sum + (COLUMN_META[c.key]?.weight ?? 1.0), 0)
-      return tableCols.map(c => {
-        const meta = COLUMN_META[c.key] ?? { minWidth: MIN_COL_WIDTH, weight: 1.0 }
-        const calculated = (meta.weight / totalWeight) * dataAreaWidth
-        return Math.max(meta.minWidth, calculated)
-      })
-    } else {
-      const activeWeight = tableCols.reduce((sum, c) => sum + (COLUMN_META[c.key]?.weight ?? 1.0), 0)
-      const targetWeight = (activeWeight / numCols) * TARGET_FILL_COLUMNS
-      return tableCols.map(c => {
-        const meta = COLUMN_META[c.key] ?? { minWidth: MIN_COL_WIDTH, weight: 1.0 }
-        const calculated = (meta.weight / targetWeight) * dataAreaWidth
-        return Math.max(meta.minWidth, calculated)
-      })
-    }
-  })()
-
-  const totalTableWidth = CHECKBOX_WIDTH + colWidths.reduce((a, b) => a + b, 0) + ACTIONS_WIDTH + MENU_WIDTH
 
   return (
     // Outer: flex row, full height, no overflow — nothing scrolls here
@@ -555,12 +564,12 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexShrink: 0 }}>
           <div>
             <h1 style={{ fontSize: 22, fontWeight: 700, color: '#111827', margin: 0 }}>Samples</h1>
-            <p style={{ fontSize: 13, color: '#6B7280', margin: '4px 0 0' }}>Manage and track laboratory samples throughout their lifecycle.</p>
+            <p style={{ fontSize: 13, color: '#374151', margin: '4px 0 0' }}>Manage and track laboratory samples throughout their lifecycle.</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 12, color: '#9CA3AF' }}>Last updated: {now}</span>
+            <span style={{ fontSize: 12, color: '#374151' }}>Last updated: {now}</span>
             <button onClick={() => router.refresh()} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
-              <MI name="refresh" size={18} color="#6B7280" />
+              <MI name="refresh" size={18} color="#374151" />
             </button>
           </div>
         </div>
@@ -589,7 +598,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
                   <div style={{ width: 28, height: 28, borderRadius: 6, background: card.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <MI name={card.icon} size={14} color={card.iconColor} />
                   </div>
-                  <span style={{ fontSize: 11, color: '#6B7280', fontWeight: 500, lineHeight: 1.2 }}>{card.label}</span>
+                  <span style={{ fontSize: 11, color: '#374151', fontWeight: 500, lineHeight: 1.2 }}>{card.label}</span>
                 </div>
                 <div style={{ fontSize: 22, fontWeight: 700, color: card.key === 'past_retention' ? '#991B1B' : (card.key === 'overdue' ? '#EF4444' : '#111827') }}>{count.toLocaleString()}</div>
               </button>
@@ -607,7 +616,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
                 </span>
               )}
             </div>
-            <button onClick={() => setBulkDisposeSummary(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280', padding: 2 }}>
+            <button onClick={() => setBulkDisposeSummary(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#374151', padding: 2 }}>
               <MI name="close" size={16} />
             </button>
           </div>
@@ -617,7 +626,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
         <div style={{ background: '#fff', borderRadius: 10, padding: '14px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.07)', border: '1px solid #E5E7EB', marginBottom: 14, flexShrink: 0 }}>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <div style={{ position: 'relative', flex: '1 1 200px', minWidth: 180 }}>
-              <span style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}><MI name="search" size={14} color="#9CA3AF" /></span>
+              <span style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}><MI name="search" size={14} color="#374151" /></span>
               <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} placeholder="Search by Sample ID or Client..."
                 style={{ ...sel, paddingLeft: 30, width: '100%', boxSizing: 'border-box' as const }} />
             </div>
@@ -645,7 +654,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
             </select>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <input type="date" value={filterFrom} onChange={e => { setFilterFrom(e.target.value); setPage(1) }} style={{ ...sel, fontSize: 11 }} />
-              <span style={{ fontSize: 11, color: '#9CA3AF' }}>–</span>
+              <span style={{ fontSize: 11, color: '#374151' }}>–</span>
               <input type="date" value={filterTo} onChange={e => { setFilterTo(e.target.value); setPage(1) }} style={{ ...sel, fontSize: 11 }} />
             </div>
             <button onClick={clearFilters} style={{ ...sel, background: '#F3F4F6', fontWeight: 500 }}>Clear</button>
@@ -668,8 +677,8 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
               <MI name="view_column" size={16} /><span>Columns</span>
             </button>
             <button ref={bulkBtnRef} onClick={openBulkMenu} disabled={selected.size === 0 || bulkPending}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 7, border: '1px solid #D1D5DB', background: bulkMenuOpen ? '#F3F4F6' : '#fff', color: selected.size === 0 ? '#9CA3AF' : '#374151', fontSize: 13, fontWeight: 500, cursor: selected.size === 0 ? 'default' : 'pointer', opacity: bulkPending ? 0.6 : 1 }}>
-              <MI name="checklist" size={16} color={selected.size === 0 ? '#9CA3AF' : undefined} /><span>Bulk Actions{selected.size > 0 ? ` (${selected.size})` : ''}</span>
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 7, border: '1px solid #D1D5DB', background: bulkMenuOpen ? '#F3F4F6' : '#fff', color: selected.size === 0 ? '#374151' : '#374151', fontSize: 13, fontWeight: 500, cursor: selected.size === 0 ? 'default' : 'pointer', opacity: bulkPending ? 0.6 : 1 }}>
+              <MI name="checklist" size={16} color={selected.size === 0 ? '#374151' : undefined} /><span>Bulk Actions{selected.size > 0 ? ` (${selected.size})` : ''}</span>
             </button>
             <button ref={savedFiltersBtnRef} onClick={openSavedFilters}
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 7, border: '1px solid #D1D5DB', background: savedFiltersOpen ? '#F3F4F6' : '#fff', color: '#374151', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
@@ -677,194 +686,42 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
             </button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontSize: 12, color: '#6B7280' }}>
-              {filtered.length === 0 ? 'No results' : `${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, filtered.length)} of ${filtered.length}`}
+            <span style={{ fontSize: 12, color: '#374151' }}>
+              {filtered.length === 0 ? 'No results' : `${filtered.length} results`}
             </span>
-            <div style={{ display: 'flex', gap: 4 }}>
-              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #D1D5DB', background: page === 1 ? '#F9FAFB' : '#fff', cursor: page === 1 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <MI name="chevron_left" size={16} color={page === 1 ? '#D1D5DB' : '#374151'} />
-              </button>
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => i + 1).map(p => (
-                <button key={p} onClick={() => setPage(p)}
-                  style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #D1D5DB', background: page === p ? '#2563EB' : '#fff', color: page === p ? '#fff' : '#374151', fontSize: 12, fontWeight: page === p ? 600 : 400, cursor: 'pointer' }}>
-                  {p}
-                </button>
-              ))}
-              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #D1D5DB', background: page === totalPages ? '#F9FAFB' : '#fff', cursor: page === totalPages ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <MI name="chevron_right" size={16} color={page === totalPages ? '#D1D5DB' : '#374151'} />
-              </button>
-            </div>
           </div>
         </div>
 
-        {/* ── Table area fills remaining space; only this scrolls, with its own visible scrollbar. Pagination below stays fixed, never scrolls away. ── */}
-        <div ref={scrollWrapRef} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', width: '100%' }}>
-
-          <div className="xl-visible-scrollbar" style={{ flex: '1 1 auto', width: '100%', minHeight: 0, overflow: 'auto', background: '#fff', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.07)', border: '1px solid #E5E7EB' }}>
-            <table style={{ width: Math.max(containerWidth - 2, totalTableWidth), tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid #D8DEEA', background: '#F9FAFB' }}>
-                  <th style={{ padding: '13px 12px', width: CHECKBOX_WIDTH, position: 'sticky', top: 0, zIndex: 10, background: '#F9FAFB', boxShadow: '0 1px 0 #D8DEEA' }}>
-                    <input type="checkbox" checked={paginated.length > 0 && selected.size === paginated.length} onChange={toggleAll} />
-                  </th>
-                  {tableCols.map((col, i) => {
-                    const cw = colWidths[i] || MIN_COL_WIDTH
-                    return (
-                      <th key={col.key} onClick={() => toggleSort(col.key)}
-                        style={{
-                          padding: '13px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap',
-                          width: cw, maxWidth: cw, overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer', userSelect: 'none',
-                          position: 'sticky', top: 0, zIndex: 10, background: '#F9FAFB', boxShadow: '0 1px 0 #D8DEEA',
-                        }}>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{col.label}</span>
-                          <MI name={sortKey === col.key ? (sortDir === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more'}
-                            size={13} color={sortKey === col.key ? '#2563EB' : '#9CA3AF'} />
-                        </span>
-                      </th>
-                    )
-                  })}
-                  <th style={{ padding: '13px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap', width: ACTIONS_WIDTH, maxWidth: ACTIONS_WIDTH, position: 'sticky', top: 0, zIndex: 10, background: '#F9FAFB', boxShadow: '0 1px 0 #D8DEEA' }}>Actions</th>
-                  <th style={{ padding: '13px 12px', width: MENU_WIDTH, maxWidth: MENU_WIDTH, position: 'sticky', top: 0, zIndex: 10, background: '#F9FAFB', boxShadow: '0 1px 0 #D8DEEA' }} />
-                </tr>
-              </thead>
-              <tbody>
-                {paginated.length === 0 ? (
-                  <tr><td colSpan={tableCols.length + 3} style={{ padding: '40px', textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>No samples found.</td></tr>
-                ) : paginated.map((s, idx) => {
-                  const badge = getSampleStatusDisplay(s)
-                  const pBadge = PRIORITY_BADGE[s.priority] ?? { bg: '#F3F4F6', color: '#374151' }
-                  const condColor = CONDITION_BADGE[s.condition]?.color ?? '#6B7280'
-                  const tat = tatDays(s.received_date, nowMs)
-                  const isOverdue = isOverdueSample(s)
-                  const canReceive = s.status === 'registered'
-                  const rowBg = idx % 2 === 0 ? '#fff' : '#FAFAFA'
-
-                  function cellContent(key: SortKey) {
-                    switch (key) {
-                      case 'sample_id':
-                        return (
-                          <span style={{ color: '#2563EB', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', whiteSpace: 'nowrap', display: 'inline-block' }}
-                            onClick={() => openDetail(s.senaite_uid, s.id)}>
-                            {displayId(s)}
-                          </span>
-                        )
-                      case 'client':        return <span style={{ color: '#374151' }}>{s.client_name}</span>
-                      case 'sample_type':   return <span style={{ color: '#374151' }}>{s.sample_type_name}</span>
-                      case 'condition':
-                        return s.condition ? (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: condColor, flexShrink: 0 }} />
-                            <span style={{ color: condColor, textTransform: 'capitalize', fontWeight: 500 }}>{s.condition.replace('_', ' ')}</span>
-                          </span>
-                        ) : <span style={{ color: '#9CA3AF' }}>—</span>
-                      case 'status': {
-                        const isNearingRetStatus = isNearingRetentionSample(s)
-                        return (
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ background: badge.bg, color: badge.color, borderRadius: 20, padding: '3px 9px', fontWeight: 600, fontSize: 11, whiteSpace: 'nowrap' }}>
-                              {badge.label}
-                            </span>
-                            {isNearingRetStatus ? (
-                              <span style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A', borderRadius: 12, padding: '2px 7px', fontWeight: 600, fontSize: 10, whiteSpace: 'nowrap' }}>
-                                Nearing Retention
-                              </span>
-                            ) : null}
-                          </div>
-                        )
-                      }
-                      case 'priority':
-                        return s.priority ? (
-                          <span style={{ background: pBadge.bg, color: pBadge.color, borderRadius: 20, padding: '3px 9px', fontWeight: 600, fontSize: 11, textTransform: 'capitalize' }}>
-                            {s.priority}
-                          </span>
-                        ) : <span style={{ color: '#9CA3AF' }}>—</span>
-                      case 'received_date': return <span style={{ color: '#374151', whiteSpace: 'nowrap' }}>{fmt(s.received_date)}</span>
-                      case 'due_date': {
-                        const isNearingRetDue = isNearingRetentionSample(s)
-                        return (
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ color: isOverdue ? '#EF4444' : '#374151', fontWeight: isOverdue ? 600 : 400, whiteSpace: 'nowrap' }}>{fmt(s.expiry_date)}</span>
-                            {isNearingRetDue ? (
-                              <span style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A', borderRadius: 12, padding: '2px 7px', fontWeight: 600, fontSize: 10, whiteSpace: 'nowrap' }}>
-                                Nearing Retention
-                              </span>
-                            ) : null}
-                          </div>
-                        )
-                      }
-                      case 'tat':
-                        return tat !== null ? <span style={{ fontWeight: 600, color: tat > 7 ? '#EF4444' : '#374151' }}>{tat}</span> : <span style={{ color: '#9CA3AF' }}>—</span>
-                      case 'analyst':       return s.received_by_name || <span style={{ color: '#9CA3AF' }}>—</span>
-                      case 'storage':       return s.storage_location || <span style={{ color: '#9CA3AF' }}>—</span>
-                      default: return null
-                    }
-                  }
-
-                  return (
-                    <tr key={s.id} style={{ borderBottom: '1px solid #F3F4F6', background: rowBg }}>
-                      <td style={{ padding: '11px 12px', width: CHECKBOX_WIDTH }}>
-                        <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleRow(s.id)} />
-                      </td>
-                      {tableCols.map((col, i) => {
-                        const cw = colWidths[i] || MIN_COL_WIDTH
-                        return (
-                          <td key={col.key}
-                            style={{
-                              padding: '11px 12px', overflow: 'hidden', textOverflow: 'ellipsis', width: cw, maxWidth: cw,
-                            }}>
-                            {cellContent(col.key)}
-                          </td>
-                        )
-                      })}
-                      <td style={{ padding: '11px 12px', width: ACTIONS_WIDTH, maxWidth: ACTIONS_WIDTH, whiteSpace: 'nowrap' }}>
-                        {canReceive ? (
-                          <button
-                            onClick={() => router.push(`/dashboard/sample-receipts?id=${s.id}`)}
-                            title="Receive sample"
-
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 6, border: '1px solid #0154FC', background: '#DBEAFE', color: '#0154FC', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                            <MI name="move_to_inbox" size={13} color="#0154FC" />
-                            Receive
-                          </button>
-                        ) : null}
-                      </td>
-                      <td style={{ padding: '11px 12px', width: MENU_WIDTH, maxWidth: MENU_WIDTH, textAlign: 'center' }}>
-                        <button onClick={e => openActionMenu(e, s.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', borderRadius: 4, color: '#6B7280' }}>
-                          <MI name="more_vert" size={16} />
-                        </button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Bottom pagination — fixed below the scrollable table, never scrolls away */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingBottom: 24, flexShrink: 0 }}>
-            <span style={{ fontSize: 12, color: '#6B7280' }}>
-              Showing {filtered.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1} to {Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length} results
-            </span>
-            <div style={{ display: 'flex', gap: 4 }}>
-              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #D1D5DB', background: page === 1 ? '#F9FAFB' : '#fff', cursor: page === 1 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <MI name="chevron_left" size={16} color={page === 1 ? '#D1D5DB' : '#374151'} />
-              </button>
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => i + 1).map(p => (
-                <button key={p} onClick={() => setPage(p)}
-                  style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #D1D5DB', background: page === p ? '#2563EB' : '#fff', color: page === p ? '#fff' : '#374151', fontSize: 12, fontWeight: page === p ? 600 : 400, cursor: 'pointer' }}>
-                  {p}
-                </button>
-              ))}
-              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #D1D5DB', background: page === totalPages ? '#F9FAFB' : '#fff', cursor: page === totalPages ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <MI name="chevron_right" size={16} color={page === totalPages ? '#D1D5DB' : '#374151'} />
-              </button>
-            </div>
-          </div>
+        {/* ── Table area fills remaining space; the shared DataTable owns scroll, sort, and pagination. ── */}
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <DataTable<OverviewRow>
+            data={overviewRows}
+            columns={overviewColumns}
+            selectable
+            onSelectionChange={ids => setSelected(new Set(ids as number[]))}
+            persistKey="samples-overview"
+            emptyMessage="No samples found."
+            rowActions={r => {
+              const s = r._s
+              const canReceive = s.status === 'registered'
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {canReceive ? (
+                    <button
+                      onClick={() => router.push(`/dashboard/sample-receipts?id=${s.id}`)}
+                      title="Receive sample"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 6, border: '1px solid #0154FC', background: '#DBEAFE', color: '#0154FC', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      <MI name="move_to_inbox" size={13} color="#0154FC" />
+                      Receive
+                    </button>
+                  ) : null}
+                  <button onClick={e => openActionMenu(e, s.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', borderRadius: 4, color: '#374151' }}>
+                    <MI name="more_vert" size={16} />
+                  </button>
+                </div>
+              )
+            }}
+          />
         </div>
         {/* end table area */}
       </div>
@@ -875,7 +732,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
           <div style={{ position: 'fixed', inset: 0, zIndex: 9990 }} onClick={() => setColMenuOpen(false)} />
           <div style={{ position: 'fixed', top: colMenuPos.top, right: colMenuPos.right, zIndex: 9999, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 200, padding: '8px 0', overflow: 'hidden' }}>
             <div style={{ padding: '6px 14px 8px', borderBottom: '1px solid #F3F4F6' }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Toggle Columns</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#374151', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Toggle Columns</span>
             </div>
             {ALL_COLUMNS.map(col => (
               <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', cursor: 'pointer', fontSize: 13, color: '#374151' }}
@@ -896,7 +753,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
           <div style={{ position: 'fixed', inset: 0, zIndex: 9990 }} onClick={() => setBulkMenuOpen(false)} />
           <div style={{ position: 'fixed', top: bulkMenuPos.top, right: bulkMenuPos.right, zIndex: 9999, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 220, padding: '8px 0', overflow: 'hidden' }}>
             <div style={{ padding: '6px 14px 8px', borderBottom: '1px solid #F3F4F6' }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', letterSpacing: '0.05em', textTransform: 'uppercase' }}>{selected.size} Selected</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#374151', letterSpacing: '0.05em', textTransform: 'uppercase' }}>{selected.size} Selected</span>
             </div>
             <button onClick={() => runBulkPatch({ hold_for_qa: true })}
               style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#374151', textAlign: 'left' }}>
@@ -910,7 +767,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
             {PRIORITY_OPTIONS.filter(o => o.value).map(o => (
               <button key={o.value} onClick={() => runBulkPatch({ priority: o.value })}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#374151', textAlign: 'left' }}>
-                <MI name="flag" size={15} color={PRIORITY_BADGE[o.value]?.color ?? '#6B7280'} /> Set Priority: {o.label}
+                <MI name="flag" size={15} color={PRIORITY_BADGE[o.value]?.color ?? '#374151'} /> Set Priority: {o.label}
               </button>
             ))}
             <div style={{ borderTop: '1px solid #F3F4F6', margin: '4px 0' }} />
@@ -928,10 +785,10 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
           <div style={{ position: 'fixed', inset: 0, zIndex: 9990 }} onClick={() => setSavedFiltersOpen(false)} />
           <div style={{ position: 'fixed', top: savedFiltersPos.top, right: savedFiltersPos.right, zIndex: 9999, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 240, padding: '8px 0', overflow: 'hidden' }}>
             <div style={{ padding: '6px 14px 8px', borderBottom: '1px solid #F3F4F6' }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Saved Filters</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#374151', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Saved Filters</span>
             </div>
             {savedFilters.length === 0 ? (
-              <p style={{ padding: '10px 14px', fontSize: 12, color: '#9CA3AF' }}>No saved filters yet.</p>
+              <p style={{ padding: '10px 14px', fontSize: 12, color: '#374151' }}>No saved filters yet.</p>
             ) : savedFilters.map(f => (
               <div key={f.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 6px' }}>
                 <button onClick={() => applySavedFilter(f)}
@@ -939,7 +796,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
                   <MI name="bookmark" size={15} color="#2563EB" /> {f.name}
                 </button>
                 <button onClick={() => deleteSavedFilter(f.name)} title="Delete"
-                  style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 6, borderRadius: 4, color: '#9CA3AF' }}>
+                  style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 6, borderRadius: 4, color: '#374151' }}>
                   <MI name="close" size={14} />
                 </button>
               </div>
@@ -989,14 +846,14 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
           <div style={{ position: 'fixed', inset: 0, zIndex: 9990 }} onClick={() => setActionMenu(null)} />
           <div style={{ position: 'fixed', top: actionMenu.top, right: actionMenu.right, zIndex: 9999, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 160, overflow: 'hidden' }}>
             {[
-              { icon: 'visibility',     label: 'View Details',   action: () => openDetail(paginated.find(s => s.id === actionMenu.id)?.senaite_uid, actionMenu.id) },
+              { icon: 'visibility',     label: 'View Details',   action: () => openDetail(filtered.find(s => s.id === actionMenu.id)?.senaite_uid, actionMenu.id) },
               { icon: 'move_to_inbox',  label: 'Receive Sample', action: () => { router.push(`/dashboard/sample-receipts?id=${actionMenu.id}`); setActionMenu(null) } },
               { icon: 'edit',           label: 'Edit Sample',    action: () => router.push(`/dashboard/samples-overview/new?edit=${actionMenu.id}`) },
               { icon: 'delete_outline', label: 'Dispose', action: () => setDisposeTarget(samples.find(s => s.id === actionMenu.id) ?? null), danger: true },
             ].map(item => (
               <button key={item.label} onClick={() => { item.action(); setActionMenu(null) }}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: (item as { danger?: boolean }).danger ? '#EF4444' : '#374151', textAlign: 'left' }}>
-                <MI name={item.icon} size={15} color={(item as { danger?: boolean }).danger ? '#EF4444' : '#6B7280'} />
+                <MI name={item.icon} size={15} color={(item as { danger?: boolean }).danger ? '#EF4444' : '#374151'} />
                 {item.label}
               </button>
             ))}
@@ -1048,7 +905,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
             <SampleOverviewDetailWrapper djangoId={selectedDjangoId} onClose={closeDetail} />
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', backgroundColor: '#F9FAFB' }}>
-              <div style={{ fontSize: 13, color: '#6B7280' }}>Loading sample details...</div>
+              <div style={{ fontSize: 13, color: '#374151' }}>Loading sample details...</div>
             </div>
           )}
         </div>

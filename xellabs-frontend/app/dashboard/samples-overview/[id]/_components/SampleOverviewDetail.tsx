@@ -41,7 +41,7 @@ const STATUS_BADGE: Record<string, { bg: string; color: string; label: string }>
   reviewed:        { bg: '#E0E7FF', color: '#3730A3', label: 'Reviewed' },
   published:       { bg: '#DBEAFE', color: '#0154FC', label: 'Completed' },
   rejected:        { bg: '#FEE2E2', color: '#991B1B', label: 'Rejected' },
-  disposed:        { bg: '#F3F4F6', color: '#6B7280', label: 'Disposed' },
+  disposed:        { bg: '#F3F4F6', color: '#374151', label: 'Disposed' },
 }
 
 const PRIORITY_BADGE: Record<string, { bg: string; color: string }> = {
@@ -74,13 +74,13 @@ function fmtShort(d: string | null): string {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #F3F4F6' }}>
-      <span style={{ fontSize: 12, color: '#6B7280' }}>{label}</span>
+      <span style={{ fontSize: 12, color: '#374151' }}>{label}</span>
       <span style={{ fontSize: 12, fontWeight: 600, color: '#111827', textAlign: 'right', maxWidth: '60%', wordBreak: 'break-word' }}>{value || '—'}</span>
     </div>
   )
 }
 
-const th: CSSProperties = { padding: '9px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.03em', borderBottom: '1px solid #E5E7EB', whiteSpace: 'nowrap' }
+const th: CSSProperties = { padding: '9px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.03em', borderBottom: '1px solid #E5E7EB', whiteSpace: 'nowrap' }
 const td: CSSProperties = { padding: '10px 12px', fontSize: 12, color: '#374151', borderBottom: '1px solid #F3F4F6', whiteSpace: 'nowrap' }
 
 const inp: CSSProperties = { border: '1px solid #D1D5DB', borderRadius: 7, padding: '8px 10px', fontSize: 12, color: '#111827', background: '#fff', width: '100%', outline: 'none', boxSizing: 'border-box' }
@@ -135,10 +135,10 @@ function EditDrawer({ sample, onClose, onSaved }: { sample: LabSample; onClose: 
         <div style={{ padding: '16px 20px', borderBottom: '1px solid #F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <div>
             <h3 style={{ fontSize: 15, fontWeight: 700, color: '#14265E', margin: 0 }}>Edit Sample</h3>
-            <p style={{ fontSize: 11, color: '#9CA3AF', margin: '2px 0 0' }}>{displayId(sample)}</p>
+            <p style={{ fontSize: 11, color: '#374151', margin: '2px 0 0' }}>{displayId(sample)}</p>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
-            <MI name="close" size={18} color="#9CA3AF" />
+            <MI name="close" size={18} color="#374151" />
           </button>
         </div>
 
@@ -238,8 +238,8 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests, isD
     return (
       <div style={{ padding: 40, textAlign: 'center', background: '#F9FAFB', minHeight: '100%' }}>
         <MI name="science" size={48} color="#D1D5DB" />
-        <p style={{ fontSize: 15, color: '#6B7280', marginTop: 12 }}>Sample not found</p>
-        <p style={{ fontSize: 12, color: '#9CA3AF' }}>ID: {id}</p>
+        <p style={{ fontSize: 15, color: '#374151', marginTop: 12 }}>Sample not found</p>
+        <p style={{ fontSize: 12, color: '#374151' }}>ID: {id}</p>
         {!isDrawer && (
           <Link href="/dashboard/samples-overview" style={{ fontSize: 13, color: '#2563EB', marginTop: 16, display: 'inline-block' }}>← Back to Samples</Link>
         )}
@@ -265,7 +265,7 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests, isD
     <div style={{ padding: isDrawer ? '40px 24px 24px' : 24, minHeight: '100%', background: '#F9FAFB' }}>
       {/* Breadcrumb */}
       {!isDrawer && (
-        <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 6 }}>
+        <div style={{ fontSize: 12, color: '#374151', marginBottom: 6 }}>
           <span style={{ cursor: 'pointer' }} onClick={() => router.push('/dashboard/samples-overview')}>Samples</span>
           <span style={{ margin: '0 6px' }}>›</span>
           <span style={{ fontWeight: 600, color: '#111827' }}>Sample Detail</span>
@@ -324,12 +324,12 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests, isD
             </button>
             {printOpen && (
               <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 20, width: 260, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.1)', padding: 14 }}>
-                <label style={{ fontSize: 11, color: '#6B7280', display: 'block', marginBottom: 4 }}>Template</label>
+                <label style={{ fontSize: 11, color: '#374151', display: 'block', marginBottom: 4 }}>Template</label>
                 <select value={templateId} onChange={e => setTemplateId(e.target.value)}
                   style={{ width: '100%', fontSize: 12, padding: '6px 8px', border: '1px solid #E5E7EB', borderRadius: 6, marginBottom: 10 }}>
                   {STICKER_TEMPLATES.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
-                <label style={{ fontSize: 11, color: '#6B7280', display: 'block', marginBottom: 4 }}>Copies</label>
+                <label style={{ fontSize: 11, color: '#374151', display: 'block', marginBottom: 4 }}>Copies</label>
                 <input type="number" min={1} max={50} value={copies}
                   onChange={e => setCopies(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
                   style={{ width: '100%', fontSize: 12, padding: '6px 8px', border: '1px solid #E5E7EB', borderRadius: 6, marginBottom: 10 }} />
@@ -362,7 +362,7 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests, isD
                 <span style={{ fontSize: 22, fontWeight: 800, color: '#14265E' }}>{displayId(sample)}</span>
                 <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2 }}
                   onClick={() => navigator.clipboard?.writeText(displayId(sample))}>
-                  <MI name="content_copy" size={14} color="#9CA3AF" />
+                  <MI name="content_copy" size={14} color="#374151" />
                 </button>
               </div>
               <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
@@ -382,7 +382,7 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests, isD
               { label: 'Priority', value: sample.priority },
             ].map((m, i, arr) => (
               <div key={m.label} style={{ flex: 1, textAlign: 'center', borderRight: i < arr.length - 1 ? '1px solid #E8EAF2' : 'none', padding: '0 14px' }}>
-                <p style={{ fontSize: 11, color: '#9CA3AF', margin: '0 0 4px' }}>{m.label}</p>
+                <p style={{ fontSize: 11, color: '#374151', margin: '0 0 4px' }}>{m.label}</p>
                 <p style={{ fontSize: 13, fontWeight: 700, color: m.label === 'Priority' && sample.priority === 'high' ? '#DC2626' : '#14265E', margin: 0, textTransform: 'capitalize' }}>{m.value || '—'}</p>
               </div>
             ))}
@@ -390,7 +390,7 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests, isD
 
           {/* Barcode */}
           <div style={{ textAlign: 'center', paddingLeft: 20, borderLeft: '1px solid #E8EAF2' }}>
-            <p style={{ fontSize: 11, color: '#9CA3AF', margin: '0 0 6px' }}>Sample Bar Code</p>
+            <p style={{ fontSize: 11, color: '#374151', margin: '0 0 6px' }}>Sample Bar Code</p>
             <div style={{ height: 32, width: 160 }}><LiveBarcode value={sample.barcode || displayId(sample)} height={32} /></div>
             <p style={{ fontSize: 11, fontWeight: 600, color: '#14265E', margin: '4px 0 0', letterSpacing: '0.05em' }}>{displayId(sample)}</p>
           </div>
@@ -408,9 +408,9 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests, isD
             { label: 'TAT (Days)', value: sample.received_date && nowMs !== null ? String(Math.max(0, Math.floor((nowMs - new Date(sample.received_date).getTime()) / (1000 * 60 * 60 * 24)))) : '—' },
           ].map((m, i, arr) => (
             <div key={m.label} style={{ flex: 1, minWidth: 130, textAlign: 'center', borderRight: i < arr.length - 1 ? '1px solid #E8EAF2' : 'none' }}>
-              <p style={{ fontSize: 11, color: '#9CA3AF', margin: '0 0 4px' }}>{m.label}</p>
+              <p style={{ fontSize: 11, color: '#374151', margin: '0 0 4px' }}>{m.label}</p>
               <p style={{ fontSize: 13, fontWeight: 700, color: m.label === 'Due Date' && pastRetention ? '#DC2626' : '#14265E', margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                {m.icon && <MI name={m.icon} size={13} color={m.label === 'Due Date' && pastRetention ? '#DC2626' : '#9CA3AF'} />}{m.value || '—'}
+                {m.icon && <MI name={m.icon} size={13} color={m.label === 'Due Date' && pastRetention ? '#DC2626' : '#374151'} />}{m.value || '—'}
               </p>
             </div>
           ))}
@@ -445,7 +445,7 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests, isD
               </thead>
               <tbody>
                 {analysisRows.length === 0 ? (
-                  <tr><td colSpan={5} style={{ ...td, textAlign: 'center', color: '#9CA3AF', padding: '24px 12px' }}>No analyses requested yet.</td></tr>
+                  <tr><td colSpan={5} style={{ ...td, textAlign: 'center', color: '#374151', padding: '24px 12px' }}>No analyses requested yet.</td></tr>
                 ) : analysisRows.map(({ test, ar }, i) => {
                   const arBadge = AR_STATUS_BADGE[ar.status] ?? { bg: '#F3F4F6', color: '#374151', label: ar.status }
                   const prBadge = PRIORITY_BADGE[ar.priority] ?? { bg: '#F3F4F6', color: '#374151' }
@@ -482,7 +482,7 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests, isD
                     <td style={td}><span style={{ background: '#DBEAFE', color: '#0154FC', borderRadius: 20, padding: '3px 9px', fontWeight: 600, fontSize: 11 }}>Active</span></td>
                   </tr>
                 ) : (
-                  <tr><td colSpan={3} style={{ ...td, textAlign: 'center', color: '#9CA3AF', padding: '24px 12px' }}>No storage location assigned yet.</td></tr>
+                  <tr><td colSpan={3} style={{ ...td, textAlign: 'center', color: '#374151', padding: '24px 12px' }}>No storage location assigned yet.</td></tr>
                 )}
               </tbody>
             </table>
@@ -499,10 +499,10 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests, isD
               <span style={{ fontSize: 12, fontWeight: 600, color: '#2563EB', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {decodeURIComponent(docUrl.split('/').pop() ?? 'Attachment')}
               </span>
-              <MI name="open_in_new" size={13} color="#9CA3AF" />
+              <MI name="open_in_new" size={13} color="#374151" />
             </a>
           ) : (
-            <div style={{ textAlign: 'center', padding: '18px 0', color: '#9CA3AF' }}>
+            <div style={{ textAlign: 'center', padding: '18px 0', color: '#374151' }}>
               <MI name="description" size={28} color="#D1D5DB" />
               <p style={{ fontSize: 12, marginTop: 8 }}>No documents uploaded for this sample yet.</p>
               <p style={{ fontSize: 11, marginTop: 4 }}>Attach a disposal certificate when disposing the sample.</p>

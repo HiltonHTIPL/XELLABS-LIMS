@@ -40,7 +40,7 @@ function CheckboxList({ label, options, selected, onChange }: {
       <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>{label}</label>
       <div className="rounded-lg overflow-y-auto" style={{ border: '1px solid #D1D5DB', maxHeight: 120 }}>
         {options.length === 0
-          ? <p className="px-3 py-2 text-xs" style={{ color: '#9CA3AF' }}>None available</p>
+          ? <p className="px-3 py-2 text-xs" style={{ color: '#374151' }}>None available</p>
           : options.map(o => (
               <label key={o.id} className="flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer hover:bg-gray-50" style={{ color: '#374151' }}>
                 <input type="checkbox" checked={selected.includes(o.id)} onChange={() => toggle(o.id)} />
@@ -135,10 +135,10 @@ export default function MethodFormDrawer({ open, onClose, editing, calculations,
             </div>
             <div>
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>{isEdit ? `Edit — ${editing!.name}` : 'New Method'}</h2>
-              <p style={{ fontSize: 10, color: '#9CA3AF' }}>{isEdit ? 'Update method details' : 'Create a new analytical method'}</p>
+              <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>{isEdit ? 'Update method details' : 'Create a new analytical method'}</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#9CA3AF" /></button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#374151" /></button>
         </div>
 
         <form action={action} className="flex-1 overflow-y-auto flex flex-col min-h-0">
@@ -171,7 +171,7 @@ export default function MethodFormDrawer({ open, onClose, editing, calculations,
                   style={{ border: '1px solid #D1D5DB', color: '#374151', backgroundColor: '#F9FAFB', cursor: 'pointer' }}>
                   Choose File
                 </button>
-                <span className="text-xs truncate" style={{ color: fileName ? '#374151' : '#9CA3AF' }}>
+                <span className="text-xs truncate" style={{ color: fileName ? '#374151' : '#374151' }}>
                   {fileName || 'No file chosen'}
                 </span>
               </div>

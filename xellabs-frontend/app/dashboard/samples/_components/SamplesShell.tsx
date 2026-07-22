@@ -6,7 +6,8 @@ import { receiveSample, verifySample, publishSample, type WorkflowResult } from 
 import { SenaiteSample, SenaiteSampleType, SenaiteAnalysisService, SenaiteSampleTemplate, SenaiteRefOption, mapSenaiteState, mapSenaitePriority } from '@/app/lib/senaite'
 import { DjangoClient } from '@/app/actions/clients'
 import { AnalysisProfile } from '@/app/actions/analysis-profiles'
-import { T, MI, PageHeader, StatCard, Chip, StatusChip, Btn, IconBtn, Card, thStyle, tdStyle, linkStyle, Pagination, EmptyState } from '../../_components/ui'
+import { T, MI, PageHeader, StatCard, Chip, StatusChip, Btn, IconBtn, Card, linkStyle, EmptyState } from '../../_components/ui'
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
 import NewSamplePage from '../new/_components/NewSamplePage'
 import SampleDetailClient from '../[id]/_components/SampleDetailClient'
 
@@ -79,8 +80,65 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
     return true
   })
 
-  const pages = Math.ceil(filtered.length / PAGE_SIZE)
-  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  // Derived rows for the shared DataTable: `id` becomes the SENAITE uid (the
+  // identity bulk actions/selection key on) and every column gets a primitive
+  // sort field alongside its rich render. Dates sort by epoch ms.
+  type SampleRow = SenaiteSample & {
+    sample_id: string; client: string; sample_type: string; condition: string
+    status: string; priority: string; received: number; due: number; tat: string; analyst: string
+  }
+  const sampleRows: SampleRow[] = filtered.map(s => ({
+    ...s,
+    id: s.uid,
+    sample_id: s.id || s.uid.slice(0, 8),
+    client: s.ClientTitle || '',
+    sample_type: s.SampleTypeTitle || '',
+    condition: !['invalid', 'cancelled'].includes(s.review_state) ? 'Acceptable' : 'Compromised',
+    status: mapSenaiteState(s.review_state),
+    priority: mapSenaitePriority(s.Priority),
+    received: s.DateSampled ? new Date(s.DateSampled).getTime() : -Infinity,
+    due: s.DateDue ? new Date(s.DateDue).getTime() : -Infinity,
+    tat: '', analyst: '',
+  }))
+
+  const sampleColumns: DataTableColumn<SampleRow>[] = [
+    {
+      id: 'sample_id', label: 'Sample ID', sortable: true, minWidth: 120,
+      render: s => (
+        <button onClick={() => openDetail(s.uid)} style={{ ...linkStyle, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+          {s.sample_id}
+        </button>
+      ),
+    },
+    {
+      id: 'client', label: 'Client', sortable: true, minWidth: 160,
+      render: s => (
+        <div>
+          <div style={{ fontSize: 13, color: T.text }}>{s.ClientTitle || '—'}</div>
+          {s.ClientID && <div style={{ fontSize: 11, color: T.faint }}>{s.ClientID}</div>}
+        </div>
+      ),
+    },
+    { id: 'sample_type', label: 'Sample Type', sortable: true, minWidth: 140, render: s => <>{s.SampleTypeTitle || '—'}</> },
+    {
+      id: 'condition', label: 'Condition', sortable: true, minWidth: 120,
+      render: s => {
+        const acceptable = !['invalid', 'cancelled'].includes(s.review_state)
+        return (
+          <span className="inline-flex items-center gap-1.5" style={{ fontSize: 12.5, color: T.text }}>
+            <span className="rounded-full shrink-0" style={{ width: 7, height: 7, backgroundColor: acceptable ? T.success : T.danger }} />
+            {acceptable ? 'Acceptable' : 'Compromised'}
+          </span>
+        )
+      },
+    },
+    { id: 'status', label: 'Status', sortable: true, minWidth: 120, render: s => <StatusChip status={mapSenaiteState(s.review_state)} /> },
+    { id: 'priority', label: 'Priority', sortable: true, minWidth: 110, render: s => <StatusChip status={mapSenaitePriority(s.Priority)} /> },
+    { id: 'received', label: 'Received Date', sortable: true, minWidth: 130, render: s => <span style={{ fontSize: 12, color: T.muted, whiteSpace: 'nowrap' }}>{fmtDate(s.DateSampled)}</span> },
+    { id: 'due', label: 'Due Date', sortable: true, minWidth: 130, render: s => <span style={{ fontSize: 12, color: T.muted, whiteSpace: 'nowrap' }}>{fmtDate(s.DateDue)}</span> },
+    { id: 'tat', label: 'TAT', sortable: true, minWidth: 80, render: () => <span style={{ fontSize: 12, color: T.text }}>—</span> },
+    { id: 'analyst', label: 'Analyst', sortable: true, minWidth: 120, render: () => <span style={{ fontSize: 12, color: T.muted }}>—</span> },
+  ]
 
   function openDetail(uid: string) {
     setSelectedSampleUid(uid)
@@ -108,14 +166,6 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
     setKebabPos({ top: rect.bottom + 4, left: rect.left - 120 })
     setKebabOpen(uid === kebabOpen ? null : uid)
     kebabRef.current = e.currentTarget
-  }
-
-  function toggleAll() {
-    if (selected.size === paged.length) setSelected(new Set())
-    else setSelected(new Set(paged.map(s => s.uid)))
-  }
-  function toggleRow(uid: string) {
-    setSelected(prev => { const n = new Set(prev); n.has(uid) ? n.delete(uid) : n.add(uid); return n })
   }
 
   function handleReceiveSelected() {
@@ -325,79 +375,33 @@ export default function SamplesShell({ initialSamples, clients, sampleTypes, ana
               </button>
             </div>
             <span style={{ fontSize: 12, color: T.muted }}>
-              {filtered.length === 0 ? '0 results' : `${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, filtered.length)} of ${filtered.length}`}
+              {filtered.length === 0 ? '0 results' : `${filtered.length} results`}
             </span>
           </div>
           </div>
 
-          <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           {/* Table */}
           {filtered.length === 0 ? (
             <Card pad={false}>
               <EmptyState icon="science" title="No samples found" sub="Adjust your filters or create a new sample." />
             </Card>
           ) : (
-            <Card pad={false}>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
-                  <thead>
-                    <tr>
-                      <th style={thStyle}><input type="checkbox" checked={paged.length > 0 && selected.size === paged.length} onChange={toggleAll} style={{ accentColor: T.primary }} /></th>
-                      {['Sample ID','Client','Sample Type','Condition','Status','Priority','Received Date','Due Date','TAT','Analyst','Actions'].map(h => (
-                        <th key={h} style={thStyle}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paged.map(s => {
-                      const stateLabel    = mapSenaiteState(s.review_state)
-                      const priorityLabel = mapSenaitePriority(s.Priority)
-                      const acceptable = !['invalid','cancelled'].includes(s.review_state)
-                      return (
-                        <tr key={s.uid}
-                          onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#FAFBFE')}
-                          onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}>
-                          <td style={tdStyle}><input type="checkbox" checked={selected.has(s.uid)} onChange={() => toggleRow(s.uid)} style={{ accentColor: T.primary }} /></td>
-                          <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                            <button onClick={() => openDetail(s.uid)} style={{ ...linkStyle, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                              {s.id || s.uid.slice(0, 8)}
-                            </button>
-                          </td>
-                          <td style={tdStyle}>
-                            <div style={{ fontSize: 13, color: T.text }}>{s.ClientTitle || '—'}</div>
-                            {s.ClientID && <div style={{ fontSize: 11, color: T.faint }}>{s.ClientID}</div>}
-                          </td>
-                          <td style={tdStyle}>{s.SampleTypeTitle || '—'}</td>
-                          <td style={tdStyle}>
-                            <span className="inline-flex items-center gap-1.5" style={{ fontSize: 12.5, color: T.text }}>
-                              <span className="rounded-full shrink-0" style={{ width: 7, height: 7, backgroundColor: acceptable ? T.success : T.danger }} />
-                              {acceptable ? 'Acceptable' : 'Compromised'}
-                            </span>
-                          </td>
-                          <td style={tdStyle}><StatusChip status={stateLabel} /></td>
-                          <td style={tdStyle}><StatusChip status={priorityLabel} /></td>
-                          <td style={{ ...tdStyle, fontSize: 12, color: T.muted, whiteSpace: 'nowrap' }}>{fmtDate(s.DateSampled)}</td>
-                          <td style={{ ...tdStyle, fontSize: 12, color: T.muted, whiteSpace: 'nowrap' }}>{fmtDate(s.DateDue)}</td>
-                          <td style={{ ...tdStyle, fontSize: 12, color: T.text, textAlign: 'center' }}>—</td>
-                          <td style={{ ...tdStyle, fontSize: 12, color: T.muted }}>—</td>
-                          <td style={tdStyle}>
-                            <button onClick={e => openKebab(e, s.uid)}
-                              className="p-1 rounded-lg hover:bg-gray-100"
-                              style={{ cursor: 'pointer', background: 'none', border: 'none' }}>
-                              <MI name="more_vert" size={16} color={T.muted} />
-                            </button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: `1px solid ${T.cardBorder}` }}>
-                <span style={{ fontSize: 12, color: T.muted }}>Showing {(page-1)*PAGE_SIZE+1} to {Math.min(page*PAGE_SIZE, filtered.length)} of {filtered.length} results</span>
-                <Pagination page={page} pages={pages} onPage={p => { setPage(p); window.scrollTo(0, 0) }} />
-              </div>
-            </Card>
+            <DataTable<SampleRow>
+              data={sampleRows}
+              columns={sampleColumns}
+              selectable
+              onSelectionChange={ids => setSelected(new Set(ids as string[]))}
+              persistKey="samples"
+              emptyMessage="No samples found."
+              rowActions={s => (
+                <button onClick={e => openKebab(e, s.uid)}
+                  className="p-1 rounded-lg hover:bg-gray-100"
+                  style={{ cursor: 'pointer', background: 'none', border: 'none' }}>
+                  <MI name="more_vert" size={16} color={T.muted} />
+                </button>
+              )}
+            />
           )}
           </div>
         </div>

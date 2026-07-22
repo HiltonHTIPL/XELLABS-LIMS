@@ -44,7 +44,7 @@ const REPORT_TYPE_LABELS: Record<ReportType, string> = {
 const STATUS_STYLES: Record<string, { bg: string; color: string; label: string }> = {
   draft:      { bg: '#FEF9C3', color: '#854D0E', label: 'Draft' },
   final:      { bg: '#DCFCE7', color: '#166534', label: 'Final' },
-  cancelled:  { bg: '#F3F4F6', color: '#6B7280', label: 'Cancelled' },
+  cancelled:  { bg: '#F3F4F6', color: '#374151', label: 'Cancelled' },
   generating: { bg: '#DBEAFE', color: '#1D4ED8', label: 'Generating…' },
   failed:     { bg: '#FEE2E2', color: '#991B1B', label: 'Failed' },
 }
@@ -60,10 +60,10 @@ function SampleTooltip({ sample }: { sample: LabSample }) {
     }}>
       <p style={{ fontSize: 11, color: '#F9FAFB', fontWeight: 600, marginBottom: 4 }}>{sample.sample_id}</p>
       <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2px 8px', fontSize: 10, color: '#D1D5DB' }}>
-        <span style={{ color: '#9CA3AF' }}>Client</span>     <span>{sample.client_name || '—'}</span>
-        <span style={{ color: '#9CA3AF' }}>Type</span>       <span>{sample.sample_type_name || '—'}</span>
-        <span style={{ color: '#9CA3AF' }}>Collected</span>  <span>{sample.collection_date ? new Date(sample.collection_date).toLocaleDateString('en-GB') : '—'}</span>
-        <span style={{ color: '#9CA3AF' }}>Status</span>     <span style={{ textTransform: 'capitalize' }}>{sample.status}</span>
+        <span style={{ color: '#374151' }}>Client</span>     <span>{sample.client_name || '—'}</span>
+        <span style={{ color: '#374151' }}>Type</span>       <span>{sample.sample_type_name || '—'}</span>
+        <span style={{ color: '#374151' }}>Collected</span>  <span>{sample.collection_date ? new Date(sample.collection_date).toLocaleDateString('en-GB') : '—'}</span>
+        <span style={{ color: '#374151' }}>Status</span>     <span style={{ textTransform: 'capitalize' }}>{sample.status}</span>
       </div>
     </div>
   )
@@ -83,7 +83,7 @@ function PdfViewer({ reportId, title, onClose }: { reportId: number; title: stri
             <MI name="picture_as_pdf" size={18} color="#EF4444" />
             <div>
               <p className="text-sm font-semibold" style={{ color: '#111827' }}>{title}</p>
-              <p style={{ fontSize: 10, color: '#9CA3AF' }}>PDF Preview</p>
+              <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>PDF Preview</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -97,7 +97,7 @@ function PdfViewer({ reportId, title, onClose }: { reportId: number; title: stri
               Download
             </a>
             <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100">
-              <MI name="close" size={16} color="#9CA3AF" />
+              <MI name="close" size={16} color="#374151" />
             </button>
           </div>
         </div>
@@ -192,11 +192,11 @@ function NewReportModal({
             </div>
             <div>
               <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>New Report</h2>
-              <p style={{ fontSize: 10, color: '#9CA3AF' }}>Generate a report for a lab sample</p>
+              <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>Generate a report for a lab sample</p>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100">
-            <MI name="close" size={16} color="#9CA3AF" />
+            <MI name="close" size={16} color="#374151" />
           </button>
         </div>
 
@@ -238,9 +238,9 @@ function NewReportModal({
                 return (
                   <div className="mt-1.5 px-2.5 py-2 rounded-lg" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0', fontSize: 11 }}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2px 10px', color: '#374151' }}>
-                      <span style={{ color: '#9CA3AF' }}>Type</span>       <span>{s.sample_type_name || '—'}</span>
-                      <span style={{ color: '#9CA3AF' }}>Collected</span>  <span>{s.collection_date ? new Date(s.collection_date).toLocaleDateString('en-GB') : '—'}</span>
-                      <span style={{ color: '#9CA3AF' }}>Status</span>     <span style={{ textTransform: 'capitalize' }}>{s.status}</span>
+                      <span style={{ color: '#374151' }}>Type</span>       <span>{s.sample_type_name || '—'}</span>
+                      <span style={{ color: '#374151' }}>Collected</span>  <span>{s.collection_date ? new Date(s.collection_date).toLocaleDateString('en-GB') : '—'}</span>
+                      <span style={{ color: '#374151' }}>Status</span>     <span style={{ textTransform: 'capitalize' }}>{s.status}</span>
                     </div>
                   </div>
                 )
@@ -441,7 +441,7 @@ function ReportRow({
       <td className="px-3 py-2.5">
         <p className="text-xs font-medium" style={{ color: '#111827' }}>{report.title}</p>
         {report.client_name && (
-          <p style={{ fontSize: 10, color: '#9CA3AF', marginTop: 1 }}>{report.client_name}</p>
+          <p style={{ fontSize: 10, color: '#374151', marginTop: 1 }}>{report.client_name}</p>
         )}
       </td>
       <td className="px-3 py-2.5">
@@ -450,7 +450,7 @@ function ReportRow({
           {polling && <MI name="sync" size={12} color="#2563EB" />}
         </div>
       </td>
-      <td className="px-3 py-2.5 text-xs" style={{ color: '#9CA3AF' }}>
+      <td className="px-3 py-2.5 text-xs" style={{ color: '#374151' }}>
         {new Date(report.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
       </td>
       <td className="px-3 py-2.5">
@@ -481,11 +481,11 @@ function ReportRow({
               <MI name="refresh" size={12} color="#991B1B" />Retry
             </button>
           )}
-          {polling && <span className="text-xs" style={{ color: '#6B7280' }}>Generating…</span>}
+          {polling && <span className="text-xs" style={{ color: '#374151' }}>Generating…</span>}
           {/* Cancel — always rightmost, separated by auto margin so it never displaces primary actions */}
           {canCancel && (
             <button onClick={handleCancel} disabled={cancelling} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', padding: 2, opacity: cancelling ? 0.5 : 0.6, lineHeight: 1 }} title="Cancel report">
-              <MI name="close" size={14} color="#9CA3AF" />
+              <MI name="close" size={14} color="#374151" />
             </button>
           )}
         </div>
@@ -644,7 +644,7 @@ export default function ReportsShell({
       <div className="flex items-center justify-between mb-4" style={{ flexShrink: 0 }}>
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Reports</h1>
-          <p className="text-sm mt-0.5" style={{ color: '#6B7280' }}>Generate and manage laboratory reports and Certificates of Analysis</p>
+          <p className="text-sm mt-0.5" style={{ color: '#374151' }}>Generate and manage laboratory reports and Certificates of Analysis</p>
         </div>
         <div className="flex items-center gap-2">
           {filtered.length > 0 && (
@@ -654,7 +654,7 @@ export default function ReportsShell({
               style={{ backgroundColor: '#fff', border: '1px solid #E5E7EB', color: '#374151', cursor: 'pointer' }}
               title="Export visible rows to CSV"
             >
-              <MI name="download" size={14} color="#6B7280" />
+              <MI name="download" size={14} color="#374151" />
               Export CSV
             </button>
           )}
@@ -684,7 +684,7 @@ export default function ReportsShell({
             </div>
             <div>
               <p style={{ fontSize: 20, fontWeight: 800, color: '#111827', lineHeight: 1 }}>{stat.value}</p>
-              <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>{stat.label}</p>
+              <p style={{ fontSize: 11, color: '#374151', marginTop: 2 }}>{stat.label}</p>
             </div>
           </div>
         ))}
@@ -692,7 +692,7 @@ export default function ReportsShell({
 
       {/* Filters bar */}
       <div className="bg-white rounded-xl px-4 py-3 mb-3 flex flex-wrap items-center gap-2" style={{ border: '1px solid #E8EAF2', flexShrink: 0 }}>
-        <MI name="search" size={16} color="#9CA3AF" />
+        <MI name="search" size={16} color="#374151" />
         <input
           type="text"
           placeholder="Search by ID or title…"
@@ -719,24 +719,24 @@ export default function ReportsShell({
           ))}
         </select>
         <div className="flex items-center gap-1.5">
-          <span style={{ fontSize: 11, color: '#9CA3AF' }}>From</span>
+          <span style={{ fontSize: 11, color: '#374151' }}>From</span>
           <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)} style={{ ...inputBase, fontSize: 11 }} />
         </div>
         <div className="flex items-center gap-1.5">
-          <span style={{ fontSize: 11, color: '#9CA3AF' }}>To</span>
+          <span style={{ fontSize: 11, color: '#374151' }}>To</span>
           <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} style={{ ...inputBase, fontSize: 11 }} />
         </div>
         {hasFilters && (
           <button
             onClick={() => { setFilterStatus(''); setFilterClient(''); setFilterType(''); setFilterSearch(''); setFilterDateFrom(''); setFilterDateTo('') }}
             className="flex items-center gap-1 text-xs"
-            style={{ color: '#6B7280', cursor: 'pointer', background: 'none', border: 'none', padding: '4px 6px', borderRadius: 6 }}
+            style={{ color: '#374151', cursor: 'pointer', background: 'none', border: 'none', padding: '4px 6px', borderRadius: 6 }}
           >
-            <MI name="close" size={13} color="#6B7280" />
+            <MI name="close" size={13} color="#374151" />
             Clear
           </button>
         )}
-        <span style={{ marginLeft: 'auto', fontSize: 11, color: '#9CA3AF' }}>
+        <span style={{ marginLeft: 'auto', fontSize: 11, color: '#374151' }}>
           {filtered.length} of {reports.length}
         </span>
       </div>
@@ -763,16 +763,16 @@ export default function ReportsShell({
             onClick={handleBulkGenerate}
             disabled={bulkWorking || bulkEligible.length === 0}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
-            style={{ backgroundColor: bulkEligible.length ? '#0154FC' : '#E5E7EB', color: bulkEligible.length ? '#fff' : '#9CA3AF', border: 'none', cursor: bulkEligible.length ? 'pointer' : 'not-allowed', opacity: bulkWorking ? 0.7 : 1 }}
+            style={{ backgroundColor: bulkEligible.length ? '#0154FC' : '#E5E7EB', color: bulkEligible.length ? '#fff' : '#374151', border: 'none', cursor: bulkEligible.length ? 'pointer' : 'not-allowed', opacity: bulkWorking ? 0.7 : 1 }}
             title={bulkEligible.length === 0 ? 'No eligible COA reports selected' : `Generate ${bulkEligible.length} COA report(s)`}
           >
-            <MI name={bulkWorking ? 'hourglass_top' : 'play_arrow'} size={13} color={bulkEligible.length ? '#fff' : '#9CA3AF'} />
+            <MI name={bulkWorking ? 'hourglass_top' : 'play_arrow'} size={13} color={bulkEligible.length ? '#fff' : '#374151'} />
             {bulkWorking ? 'Starting…' : `Generate ${bulkEligible.length} COA`}
           </button>
           <button
             onClick={() => setSelected(new Set())}
             className="text-xs"
-            style={{ color: '#6B7280', cursor: 'pointer', background: 'none', border: 'none' }}
+            style={{ color: '#374151', cursor: 'pointer', background: 'none', border: 'none' }}
           >
             Clear selection
           </button>
@@ -796,7 +796,7 @@ export default function ReportsShell({
             <MI name={hasFilters ? 'filter_list_off' : 'description'} size={28} color="#93C5FD" />
           </div>
           <p className="text-sm font-semibold" style={{ color: '#374151' }}>{hasFilters ? 'No reports match your filters' : 'No reports yet'}</p>
-          <p className="text-xs mt-1" style={{ color: '#9CA3AF' }}>
+          <p className="text-xs mt-1" style={{ color: '#374151' }}>
             {hasFilters ? 'Try adjusting the filters above' : 'Generate your first Certificate of Analysis to get started'}
           </p>
           {!hasFilters && (
@@ -833,7 +833,7 @@ export default function ReportsShell({
                 </th>
                 {['Report ID', 'Type', 'Title / Client', 'Status', 'Created', 'Actions'].map(h => (
                   <th key={h} className="px-3 py-2 text-left uppercase tracking-wide"
-                    style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em' }}>
+                    style={{ fontSize: 10, fontWeight: 600, color: '#374151', letterSpacing: '0.05em' }}>
                     {h}
                   </th>
                 ))}
@@ -856,8 +856,8 @@ export default function ReportsShell({
             </tbody>
           </table>
           <div className="px-3 py-2 flex items-center justify-between" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-            <p style={{ fontSize: 10, color: '#9CA3AF' }}>{filtered.length} report{filtered.length !== 1 ? 's' : ''}</p>
-            <p style={{ fontSize: 10, color: '#9CA3AF' }}>Press <kbd style={{ fontSize: 10, padding: '1px 5px', borderRadius: 4, border: '1px solid #E5E7EB', backgroundColor: '#F9FAFB' }}>N</kbd> to create a new report</p>
+            <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>{filtered.length} report{filtered.length !== 1 ? 's' : ''}</p>
+            <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>Press <kbd style={{ fontSize: 10, padding: '1px 5px', borderRadius: 4, border: '1px solid #E5E7EB', backgroundColor: '#F9FAFB' }}>N</kbd> to create a new report</p>
             {draftCount > 0 && (
               <p style={{ fontSize: 10, color: '#D97706' }}>
                 <MI name="hourglass_top" size={11} color="#D97706" /> {draftCount} pending generation

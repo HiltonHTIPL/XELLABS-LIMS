@@ -13,7 +13,7 @@ export default async function WorksheetDetailPage({ params }: { params: Promise<
 
   if (!worksheet) {
     return (
-      <div style={{ padding: 40, textAlign: 'center', color: '#6B7280' }}>
+      <div style={{ padding: 40, textAlign: 'center', color: '#374151' }}>
         <p>Worksheet not found</p>
       </div>
     )

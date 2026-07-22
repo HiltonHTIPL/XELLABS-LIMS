@@ -315,23 +315,23 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
       <div style={{ backgroundColor: '#fff', borderBottom: '1px solid #E5E7EB', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <form onSubmit={handleScan} style={{ flex: 1, minWidth: 240 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderRadius: 10, padding: '7px 12px', border: '1px solid #D1D5DB', backgroundColor: '#FAFAFA' }}>
-            <MI name="qr_code_scanner" size={16} color="#9CA3AF" />
+            <MI name="qr_code_scanner" size={16} color="#374151" />
             <input
               value={barcodeInput}
               onChange={e => setBarcodeInput(e.target.value)}
               placeholder="Scan Sample / Container / Location Barcode"
               style={{ flex: 1, outline: 'none', fontSize: 13, color: '#111827', backgroundColor: 'transparent', border: 'none' }}
             />
-            {scanLoading && <MI name="hourglass_top" size={14} color="#9CA3AF" />}
+            {scanLoading && <MI name="hourglass_top" size={14} color="#374151" />}
             <button type="button" onClick={() => setCameraScanOpen(true)} title="Scan with camera"
               style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
-              <MI name="crop_free" size={16} color="#9CA3AF" />
+              <MI name="crop_free" size={16} color="#374151" />
             </button>
           </div>
         </form>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 500 }}>Mode</span>
+          <span style={{ fontSize: 12, color: '#374151', fontWeight: 500 }}>Mode</span>
           <select
             value={mode}
             onChange={e => setMode(e.target.value as Mode)}
@@ -384,12 +384,12 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
           <div style={{ padding: '10px 12px 8px', borderBottom: '1px solid #F3F4F6' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: '#111827' }}>Sample Storage Navigator</span>
-              <MI name="keyboard_arrow_up" size={16} color="#9CA3AF" />
+              <MI name="keyboard_arrow_up" size={16} color="#374151" />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, borderRadius: 8, padding: '6px 10px', border: '1px solid #E5E7EB', backgroundColor: '#FAFAFA' }}>
-              <MI name="search" size={13} color="#9CA3AF" />
+              <MI name="search" size={13} color="#374151" />
               <input placeholder="Search locations..." style={{ flex: 1, outline: 'none', fontSize: 11, color: '#374151', backgroundColor: 'transparent', border: 'none' }} />
-              <MI name="filter_list" size={13} color="#9CA3AF" />
+              <MI name="filter_list" size={13} color="#374151" />
             </div>
           </div>
 
@@ -408,21 +408,21 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
             <div style={{ borderTop: '1px solid #F3F4F6', padding: '10px 12px', fontSize: 11 }}>
               <p style={{ fontWeight: 600, color: '#374151', marginBottom: 5 }}>Selected Location</p>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 6px' }}>
-                <span style={{ color: '#9CA3AF' }}>Location Type</span>
+                <span style={{ color: '#374151' }}>Location Type</span>
                 <span style={{ color: '#374151', fontWeight: 500, textTransform: 'capitalize' }}>{selected.location_type.replace('_', ' ')}</span>
                 {selected.temperature && (
                   <>
-                    <span style={{ color: '#9CA3AF' }}>Storage Cond.</span>
+                    <span style={{ color: '#374151' }}>Storage Cond.</span>
                     <span style={{ color: '#374151', fontWeight: 500 }}>{selected.temperature}</span>
                   </>
                 )}
                 {capacity && (
                   <>
-                    <span style={{ color: '#9CA3AF' }}>Capacity</span>
+                    <span style={{ color: '#374151' }}>Capacity</span>
                     <span style={{ color: '#374151', fontWeight: 500 }}>{capacity.total} positions</span>
-                    <span style={{ color: '#9CA3AF' }}>Occupied</span>
+                    <span style={{ color: '#374151' }}>Occupied</span>
                     <span style={{ color: '#374151', fontWeight: 500 }}>{capacity.occupied} ({capacity.total > 0 ? Math.round(capacity.occupied / capacity.total * 100) : 0}%)</span>
-                    <span style={{ color: '#9CA3AF' }}>Available</span>
+                    <span style={{ color: '#374151' }}>Available</span>
                     <span style={{ color: '#10B981', fontWeight: 600 }}>{capacity.free} ({capacity.total > 0 ? Math.round(capacity.free / capacity.total * 100) : 0}%)</span>
                   </>
                 )}
@@ -436,7 +436,7 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
           <div style={{ padding: '12px 16px', borderBottom: '1px solid #F3F4F6', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                <MI name="info_outline" size={13} color="#9CA3AF" />
+                <MI name="info_outline" size={13} color="#374151" />
                 <span style={{ fontSize: 12, fontWeight: 700, color: '#111827' }}>Visual Box View</span>
               </div>
               {breadcrumb.length > 0 && (
@@ -462,8 +462,8 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
                 <button key={v.label} disabled={v.disabled} title={v.disabled ? 'Coming soon' : undefined}
                   style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 500, padding: '5px 10px', borderRadius: 7,
                     border: `1px solid ${v.active ? '#0154FC' : '#E5E7EB'}`, backgroundColor: v.active ? '#EFF6FF' : '#fff',
-                    color: v.active ? '#0154FC' : '#6B7280', cursor: v.disabled ? 'not-allowed' : 'pointer', opacity: v.disabled ? 0.5 : 1 }}>
-                  <MI name={v.icon} size={13} color={v.active ? '#0154FC' : '#6B7280'} />
+                    color: v.active ? '#0154FC' : '#374151', cursor: v.disabled ? 'not-allowed' : 'pointer', opacity: v.disabled ? 0.5 : 1 }}>
+                  <MI name={v.icon} size={13} color={v.active ? '#0154FC' : '#374151'} />
                   {v.label}
                 </button>
               ))}
@@ -478,7 +478,7 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
                     <span style={{ fontSize: 12, fontWeight: 600, color: '#1D4ED8' }}>{selectedSlotIds.size} slots selected</span>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button type="button" onClick={() => setSelectedSlotIds(new Set())}
-                        style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', borderRadius: 7, border: '1px solid #D1D5DB', background: '#fff', color: '#6B7280', cursor: 'pointer' }}>
+                        style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', borderRadius: 7, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', cursor: 'pointer' }}>
                         Clear
                       </button>
                       <button type="button" onClick={openBulkStoreForSelection}
@@ -512,10 +512,10 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
                         </div>
                         <span style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>{child.name}</span>
                       </div>
-                      <p style={{ fontSize: 10, color: '#9CA3AF', textTransform: 'capitalize' }}>{child.location_type.replace('_', ' ')}</p>
-                      {child.temperature && <p style={{ fontSize: 10, color: '#6B7280', marginTop: 2 }}>{child.temperature}</p>}
+                      <p style={{ fontSize: 10, color: '#374151', textTransform: 'capitalize' }}>{child.location_type.replace('_', ' ')}</p>
+                      {child.temperature && <p style={{ fontSize: 10, color: '#374151', marginTop: 2 }}>{child.temperature}</p>}
                       {child.location_type === 'box' && child.rows && child.columns && (
-                        <p style={{ fontSize: 10, color: '#6B7280', marginTop: 2 }}>{child.rows}×{child.columns} slots</p>
+                        <p style={{ fontSize: 10, color: '#374151', marginTop: 2 }}>{child.rows}×{child.columns} slots</p>
                       )}
                     </button>
                   ))}
@@ -523,7 +523,7 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 200 }}>
                   <MI name="inbox" size={32} color="#D1D5DB" />
-                  <p style={{ fontSize: 12, color: '#9CA3AF', marginTop: 8 }}>No sub-locations</p>
+                  <p style={{ fontSize: 12, color: '#374151', marginTop: 8 }}>No sub-locations</p>
                   <button onClick={() => setModal({ editing: null, defaultParentId: selectedId })}
                     style={{ marginTop: 8, fontSize: 11, color: '#0154FC', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}>
                     + Add location inside {selected.name}
@@ -533,8 +533,8 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
                 <MI name="grid_view" size={40} color="#D1D5DB" />
-                <p style={{ fontSize: 13, fontWeight: 500, color: '#6B7280', marginTop: 12 }}>Select a storage location</p>
-                <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4 }}>Choose a location from the navigator on the left</p>
+                <p style={{ fontSize: 13, fontWeight: 500, color: '#374151', marginTop: 12 }}>Select a storage location</p>
+                <p style={{ fontSize: 11, color: '#374151', marginTop: 4 }}>Choose a location from the navigator on the left</p>
               </div>
             )}
           </div>
@@ -542,15 +542,15 @@ export default function StorageShell({ initialLocations }: { initialLocations: S
           {/* Bottom action bar */}
           {(selectedBox || mode === 'retrieve') && (
             <div style={{ borderTop: '1px solid #F3F4F6', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#9CA3AF' }}>
-                <MI name="drag_indicator" size={14} color="#9CA3AF" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#374151' }}>
+                <MI name="drag_indicator" size={14} color="#374151" />
                 <span>{MODE_STRATEGY[mode].helper}</span>
               </div>
               <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                 <button
                   onClick={handlePrimaryAction}
                   disabled={!canDoPrimary}
-                  style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, padding: '7px 14px', borderRadius: 8, backgroundColor: canDoPrimary ? '#0154FC' : '#9CA3AF', color: '#fff', border: 'none', cursor: canDoPrimary ? 'pointer' : 'not-allowed' }}>
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, padding: '7px 14px', borderRadius: 8, backgroundColor: canDoPrimary ? '#0154FC' : '#374151', color: '#fff', border: 'none', cursor: canDoPrimary ? 'pointer' : 'not-allowed' }}>
                   <MI name={MODE_STRATEGY[mode].actionIcon} size={13} color="#fff" />
                   {MODE_STRATEGY[mode].actionLabel}
                 </button>

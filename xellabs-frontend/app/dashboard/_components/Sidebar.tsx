@@ -259,13 +259,13 @@ export default function Sidebar({ onToggle, role, reportDraftCount, isSuperuser 
       </nav>
 
       {/* Need Help */}
-      <div className="mx-3 mb-2 p-3" style={{ borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }}>
+      <div className="mx-3 mb-2 p-3" style={{ borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.22)' }}>
         <div className="flex items-center gap-2 mb-1" style={{ color: '#fff' }}>
           <MI name="support_agent" size={14} />
           <p className="text-xs font-semibold" style={{ color: '#fff' }}>Need Help?</p>
         </div>
-        <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)', lineHeight: 1.4 }}>Contact support for assistance.</p>
-        <p style={{ fontSize: 10, color: '#0154FC', marginTop: 3 }}>support@xellabs.com</p>
+        <p style={{ fontSize: 10.5, color: '#FFFFFF', lineHeight: 1.4 }}>Contact support for assistance.</p>
+        <a href="mailto:support@xellabs.com" style={{ fontSize: 10.5, color: '#BFDBFE', marginTop: 3, display: 'inline-block', fontWeight: 700, textDecoration: 'underline' }}>support@xellabs.com</a>
       </div>
 
       {/* Collapse */}

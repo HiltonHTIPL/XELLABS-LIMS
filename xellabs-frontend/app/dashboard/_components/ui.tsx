@@ -24,7 +24,7 @@ export function PageHeader({ title, subtitle, right, backHref }: { title: string
       <div className="flex items-end gap-3">
         {backHref && (
           <Link href={backHref} className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0 mb-0.5" style={{ border: '1px solid #E8EAF2' }}>
-            <MI name="arrow_back" size={16} color="#6B7280" />
+            <MI name="arrow_back" size={16} color="#374151" />
           </Link>
         )}
         <div>

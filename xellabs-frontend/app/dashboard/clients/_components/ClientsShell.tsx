@@ -12,6 +12,8 @@ import { StatCard, Pagination, EmptyState } from '@/app/dashboard/_components/ui
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
 
 // ── Column config ─────────────────────────────────────────────────────────────
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
+
 const ALL_COLUMNS = [
   { key: 'client_id',   label: 'Client ID',       defaultVisible: true  },
   { key: 'name',        label: 'Client Name',     defaultVisible: true  },
@@ -556,6 +558,86 @@ export default function ClientsShell({ initialClients }: { initialClients: Senai
   }
 
 
+  // ── Adapt to shared DataTable ──────────────────────────────────────────────
+  // Row adds `id` (uid) + one plain sortable value per column id. NOTE the
+  // contact column's sort id is `contact_name`, NOT `contact` — `contact` is an
+  // object field on SenaiteClientFull and must never be overwritten with a string.
+  type ClientRow = SenaiteClientFull & {
+    id: string; client_id: string; name: string; contact_name: string; phone: string
+    email: string; status: string; tax_number: string; account_name: string
+    account_number: string; physical_address: string; billing_address: string
+  }
+  const columnDefs: Record<ColKey, DataTableColumn<ClientRow>> = {
+    client_id: {
+      id: 'client_id', label: 'Client ID', sortable: true, minWidth: 120,
+      render: c => <Link href={`/dashboard/samples-overview?client=${c.uid}`} className="font-mono text-xs font-medium" style={{ color: '#0154FC', textDecoration: 'none', whiteSpace: 'nowrap' }} title={`View samples logged under ${c.title}`}>{c.ClientID || '—'}</Link>,
+    },
+    name: {
+      id: 'name', label: 'Client Name', sortable: true, minWidth: 200,
+      render: c => (
+        <Link href={`/dashboard/clients/${c.uid}`} className="flex items-center gap-2" title="View client details">
+          <div className="w-6 h-6 rounded-full flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 10, backgroundColor: '#0154FC' }}>{c.title.slice(0, 1).toUpperCase()}</div>
+          <span className="text-xs font-medium truncate" style={{ color: '#111827' }}>{c.title}</span>
+        </Link>
+      ),
+    },
+    contact: {
+      id: 'contact_name', label: 'Primary Contact', sortable: true, minWidth: 160,
+      render: c => <span className="text-xs" style={{ color: '#374151' }}>{primaryContactName(c) || '—'}</span>,
+    },
+    phone: {
+      id: 'phone', label: 'Phone', sortable: true, minWidth: 130,
+      render: c => <span className="text-xs" style={{ color: '#6B7280', whiteSpace: 'nowrap' }}>{c.Phone || '—'}</span>,
+    },
+    email: {
+      id: 'email', label: 'Email', sortable: true, minWidth: 200,
+      render: c => <span className="text-xs" style={{ color: '#6B7280' }}>{c.EmailAddress || '—'}</span>,
+    },
+    status: {
+      id: 'status', label: 'Status', sortable: true, minWidth: 110,
+      render: c => {
+        const active = c.review_state === 'active'
+        return <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ backgroundColor: active ? '#ECFDF5' : '#FFFBEB', color: active ? '#059669' : '#D97706' }}>{active ? 'Active' : 'Inactive'}</span>
+      },
+    },
+    tax_number: {
+      id: 'tax_number', label: 'Tax Number', sortable: true, minWidth: 130,
+      render: c => <span className="text-xs" style={{ color: '#6B7280', whiteSpace: 'nowrap' }}>{c.TaxNumber || '—'}</span>,
+    },
+    account_name: {
+      id: 'account_name', label: 'Account Name', sortable: true, minWidth: 160,
+      render: c => <span className="text-xs" style={{ color: '#6B7280' }}>{c.AccountName || '—'}</span>,
+    },
+    account_number: {
+      id: 'account_number', label: 'Account Number', sortable: true, minWidth: 150,
+      render: c => <span className="text-xs" style={{ color: '#6B7280', whiteSpace: 'nowrap' }}>{c.AccountNumber || '—'}</span>,
+    },
+    physical_address: {
+      id: 'physical_address', label: 'Physical Address', sortable: true, minWidth: 220,
+      render: c => <span className="text-xs" style={{ color: '#6B7280' }} title={fmtAddress(c.PhysicalAddress)}>{fmtAddress(c.PhysicalAddress) || '—'}</span>,
+    },
+    billing_address: {
+      id: 'billing_address', label: 'Billing Address', sortable: true, minWidth: 220,
+      render: c => <span className="text-xs" style={{ color: '#6B7280' }} title={fmtAddress(c.BillingAddress)}>{fmtAddress(c.BillingAddress) || '—'}</span>,
+    },
+  }
+  const columns: DataTableColumn<ClientRow>[] = ALL_COLUMNS.filter(col => vis(col.key)).map(col => columnDefs[col.key])
+  const tableData: ClientRow[] = filtered.map(c => ({
+    ...c,
+    id: c.uid,
+    client_id: c.ClientID || '',
+    name: c.title,
+    contact_name: primaryContactName(c),
+    phone: c.Phone || '',
+    email: c.EmailAddress || '',
+    status: c.review_state,
+    tax_number: c.TaxNumber || '',
+    account_name: c.AccountName || '',
+    account_number: c.AccountNumber || '',
+    physical_address: fmtAddress(c.PhysicalAddress),
+    billing_address: fmtAddress(c.BillingAddress),
+  }))
+
   return (
     <div style={{ padding: 20, height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Header */}
@@ -971,7 +1053,7 @@ export default function ClientsShell({ initialClients }: { initialClients: Senai
       </div>
 
       {/* Table — only this area scrolls; header/stat cards/filter bar above stay fixed. */}
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {initialClients.length === 0 ? (
         <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
           <MI name="people" size={36} color="#D1D5DB" />
@@ -986,121 +1068,14 @@ export default function ClientsShell({ initialClients }: { initialClients: Senai
           <EmptyState icon="search_off" title="No clients match your filters" sub="Try a different search or clear the filters." />
         </div>
       ) : (
-        <div className="bg-white rounded-xl" style={{ border: '1px solid #E8EAF2', overflow: 'hidden' }}>
-          <div style={{ overflowX: 'auto' }}>
-          <table className="w-full" style={{ tableLayout: 'auto', borderCollapse: 'collapse', minWidth: 900 }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                <th className="px-3 py-2" style={{ width: 36 }}>
-                  <input type="checkbox" checked={pageRows.length > 0 && pageRows.every(c => selected.has(c.uid))}
-                    onChange={() => {
-                      const allSelected = pageRows.every(c => selected.has(c.uid))
-                      setSelected(prev => {
-                        const n = new Set(prev)
-                        pageRows.forEach(c => (allSelected ? n.delete(c.uid) : n.add(c.uid)))
-                        return n
-                      })
-                    }} />
-                </th>
-                {vis('client_id') && <th className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Client ID</th>}
-                {vis('name') && (
-                  <th onClick={() => toggleSort('name')} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                    <span className="inline-flex items-center gap-0.5">Client Name
-                      {sortKey === 'name' && <MI name={sortDir === 'asc' ? 'arrow_upward' : 'arrow_downward'} size={11} color="#6B7280" />}
-                    </span>
-                  </th>
-                )}
-                {vis('contact') && <th className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Primary Contact</th>}
-                {vis('phone') && <th className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Phone</th>}
-                {vis('email') && <th className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Email</th>}
-                {vis('status') && (
-                  <th onClick={() => toggleSort('status')} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                    <span className="inline-flex items-center gap-0.5">Status
-                      {sortKey === 'status' && <MI name={sortDir === 'asc' ? 'arrow_upward' : 'arrow_downward'} size={11} color="#6B7280" />}
-                    </span>
-                  </th>
-                )}
-                {vis('tax_number') && <th className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Tax Number</th>}
-                {vis('account_name') && <th className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Account Name</th>}
-                {vis('account_number') && <th className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Account Number</th>}
-                {vis('physical_address') && <th className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Physical Address</th>}
-                {vis('billing_address') && <th className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Billing Address</th>}
-                <th className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pageRows.map((c, i) => {
-                const active = c.review_state === 'active'
-                return (
-                  <tr key={c.uid} style={{ borderBottom: i < pageRows.length - 1 ? '1px solid #F9FAFB' : 'none' }} className="hover:bg-gray-50">
-                    <td className="px-3 py-2">
-                      <input type="checkbox" checked={selected.has(c.uid)} onChange={() => toggleRow(c.uid)} />
-                    </td>
-                    {vis('client_id') && (
-                      <td className="px-3 py-2">
-                        <Link
-                          href={`/dashboard/samples-overview?client=${c.uid}`}
-                          className="font-mono text-xs font-medium"
-                          style={{ color: '#0154FC', textDecoration: 'none', whiteSpace: 'nowrap' }}
-                          title={`View samples logged under ${c.title}`}
-                        >{c.ClientID || '—'}</Link>
-                      </td>
-                    )}
-                    {vis('name') && (
-                      <td className="px-3 py-2">
-                        <Link
-                          href={`/dashboard/clients/${c.uid}`}
-                          className="flex items-center gap-2"
-                          title="View client details"
-                        >
-                          <div className="w-6 h-6 rounded-full flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 10, backgroundColor: '#0154FC' }}>
-                            {c.title.slice(0, 1).toUpperCase()}
-                          </div>
-                          <span className="text-xs font-medium truncate" style={{ color: '#111827' }}>{c.title}</span>
-                        </Link>
-                      </td>
-                    )}
-                    {vis('contact') && <td className="px-3 py-2 text-xs truncate" style={{ color: '#374151' }}>{primaryContactName(c) || '—'}</td>}
-                    {vis('phone') && <td className="px-3 py-2 text-xs" style={{ color: '#6B7280', whiteSpace: 'nowrap' }}>{c.Phone || '—'}</td>}
-                    {vis('email') && <td className="px-3 py-2 text-xs truncate" style={{ color: '#6B7280' }}>{c.EmailAddress || '—'}</td>}
-                    {vis('status') && (
-                      <td className="px-3 py-2">
-                        <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ backgroundColor: active ? '#ECFDF5' : '#FFFBEB', color: active ? '#059669' : '#D97706' }}>
-                          {active ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                    )}
-                    {vis('tax_number') && <td className="px-3 py-2 text-xs" style={{ color: '#6B7280', whiteSpace: 'nowrap' }}>{c.TaxNumber || '—'}</td>}
-                    {vis('account_name') && <td className="px-3 py-2 text-xs truncate" style={{ color: '#6B7280' }}>{c.AccountName || '—'}</td>}
-                    {vis('account_number') && <td className="px-3 py-2 text-xs" style={{ color: '#6B7280', whiteSpace: 'nowrap' }}>{c.AccountNumber || '—'}</td>}
-                    {vis('physical_address') && <td className="px-3 py-2 text-xs truncate" style={{ color: '#6B7280', maxWidth: 220 }} title={fmtAddress(c.PhysicalAddress)}>{fmtAddress(c.PhysicalAddress) || '—'}</td>}
-                    {vis('billing_address') && <td className="px-3 py-2 text-xs truncate" style={{ color: '#6B7280', maxWidth: 220 }} title={fmtAddress(c.BillingAddress)}>{fmtAddress(c.BillingAddress) || '—'}</td>}
-                    <td className="px-3 py-2">
-                      <ActionsMenu client={c} onEdit={openEdit} onDone={() => router.refresh()} />
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-          </div>
-          <div className="px-3 py-2.5 flex items-center justify-between gap-3 flex-wrap" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-            <p style={{ fontSize: 12, color: '#6B7280' }}>
-              Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, filtered.length)} of {filtered.length} result{filtered.length !== 1 ? 's' : ''}
-            </p>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5" style={{ fontSize: 12, color: '#6B7280' }}>
-                Show
-                <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }}
-                  style={{ height: 28, borderRadius: 8, border: '1px solid #D1D5DB', fontSize: 12, padding: '0 6px', outline: 'none', color: '#374151' }}>
-                  {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
-                </select>
-                per page
-              </div>
-              <Pagination page={page} pages={pages} onPage={setPage} alwaysShow />
-            </div>
-          </div>
-        </div>
+        <DataTable<ClientRow>
+          data={tableData}
+          columns={columns}
+          selectable
+          onSelectionChange={ids => setSelected(new Set(ids as string[]))}
+          emptyMessage="No clients match your filters."
+          rowActions={c => <ActionsMenu client={c} onEdit={openEdit} onDone={() => router.refresh()} />}
+        />
       )}
       </div>
     </div>
