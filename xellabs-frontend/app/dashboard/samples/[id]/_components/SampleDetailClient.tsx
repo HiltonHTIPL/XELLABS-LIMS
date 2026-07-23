@@ -3,7 +3,7 @@ import { useState, useTransition, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { SenaiteSample, mapSenaiteState, mapSenaitePriority } from '@/app/lib/senaite'
-import { receiveSample, verifySample, publishSample, getSampleReviewHistory } from '@/app/actions/samples'
+import { receiveSample, verifySample, getSampleReviewHistory } from '@/app/actions/samples'
 import { getAuditEvents } from '@/app/actions/audit-trail'
 import { getLabSampleBySenaiteUid, type LabSample } from '@/app/actions/lab-samples'
 import { EditDrawer } from '../../../samples-overview/[id]/_components/SampleOverviewDetail'
@@ -184,7 +184,11 @@ export default function SampleDetailClient({ sample, uid, loading }: Props) {
           <Btn variant="outline" icon="print" onClick={() => window.print()}>Print</Btn>
           {canReceive && <Btn variant="success" icon="move_to_inbox" onClick={() => doAction(receiveSample)} disabled={isPending}>Receive</Btn>}
           {canVerify  && <Btn style={{ backgroundColor: '#6366F1', color: '#fff' }} icon="verified" onClick={() => doAction(verifySample)} disabled={isPending}>Verify</Btn>}
-          {canPublish && <Btn variant="success" icon="publish" onClick={() => doAction(publishSample)} disabled={isPending}>Publish</Btn>}
+          {canPublish && (
+            <span className="flex items-center gap-1.5" style={{ fontSize: 12, fontWeight: 600, color: '#B45309', backgroundColor: '#FEF3C7', border: '1px solid #FDE68A', padding: '7px 12px', borderRadius: 8 }}>
+              <MI name="pending_actions" size={15} color="#B45309" /> Awaiting Approval
+            </span>
+          )}
         </div>
       </div>
 

@@ -27,7 +27,8 @@ def make_user(username, role="analyst"):
 
 class SampleRegistrationTest(TenantAPITestCase):
     def setUp(self):
-        self.analyst, self.key = make_user("lims_analyst", "analyst")
+        # admin can both register and receive (receive_sample = lab_clerk/admin only)
+        self.analyst, self.key = make_user("lims_reg_admin", "admin")
         self.client_obj = Client.objects.create(name="Test Client")
         self.st = SampleType.objects.create(name="Blood", prefix="BLD")
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.key}")
@@ -73,7 +74,7 @@ class SampleRegistrationTest(TenantAPITestCase):
 class ResultWorkflowTest(TenantAPITestCase):
     def setUp(self):
         self.analyst, self.analyst_key = make_user("res_analyst", "analyst")
-        self.reviewer, self.reviewer_key = make_user("res_reviewer", "reviewer")
+        self.reviewer, self.reviewer_key = make_user("res_reviewer", "verifier")
         self.client_obj = Client.objects.create(name="Result Client")
         st = SampleType.objects.create(name="Urine", prefix="URN")
         Method.objects.create(name="Titration", code="TITR")

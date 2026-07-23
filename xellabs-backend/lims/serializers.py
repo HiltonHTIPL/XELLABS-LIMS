@@ -126,6 +126,10 @@ class AnalysisSpecificationSerializer(serializers.ModelSerializer):
     was designed from). create()/update() replace the full row set rather
     than diffing, since the frontend always submits the complete grid."""
     rows = SpecificationSerializer(many=True)
+    # Lets the frontend match a Specification to the SENAITE SampleType uid a
+    # sample is actually being created with, without a second round-trip —
+    # mirrors the existing sample_type_name pattern on SampleSerializer.
+    sample_type_senaite_uid = serializers.CharField(source="sample_type.senaite_uid", read_only=True)
 
     class Meta:
         model = AnalysisSpecification

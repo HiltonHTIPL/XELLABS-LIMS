@@ -69,6 +69,24 @@ export async function deactivateSetupItem(token: string, path: string): Promise<
   } catch (e) { return { success: false, error: String(e) } }
 }
 
+// Re-activate a previously deactivated Dexterity setup object — the inverse
+// Plone workflow transition of deactivateSetupItem, same reliability profile.
+export async function activateSetupItem(token: string, path: string): Promise<SetupWriteResult> {
+  try {
+    const res = await fetch(`${SENAITE_ORIGIN}${path}/@workflow/activate`, {
+      method: 'POST',
+      headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+      body: '{}',
+      cache: 'no-store',
+    })
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as SetupRecord
+      return { success: false, error: restapiError(data, res.status) }
+    }
+    return { success: true, path }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
 // Some Dexterity setup fields are never returned by the v1 list API no matter
 // what's actually stored (confirmed live for Supplier.email/Supplier.phone —
 // PATCH via restapi persists them correctly, `modified` timestamp updates,

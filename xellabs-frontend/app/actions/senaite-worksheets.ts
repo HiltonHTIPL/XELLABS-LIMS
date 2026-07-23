@@ -5,7 +5,7 @@ import { getSession } from '@/app/lib/session'
 import {
   createSenaiteWorksheet, applyTemplateToWorksheet, fetchWorksheetInfo,
   listSenaiteWorksheets, transitionSenaiteWorksheet,
-  submitAnalysisResult, transitionAnalysis,
+  submitAnalysisResult, submitAnalysisInterimResult, transitionAnalysis,
   addWorksheetAnalyses, removeWorksheetAnalyses, addWorksheetDuplicate,
   addWorksheetReference, updateWorksheet, fetchUnassignedAnalyses, fetchLabAnalysts,
   type WorksheetInfo, type WorksheetListItem, type UnassignedAnalysis, type LabAnalyst,
@@ -17,12 +17,14 @@ import { listReferenceSamples } from '@/app/actions/reference-samples'
 import { SENAITE_SITE_PATH } from '@/app/lib/senaite'
 import type { RefOption } from '@/app/dashboard/_components/AdminRefShell'
 import { logExternalAuditEvent } from '@/app/actions/audit-trail'
+import { refreshSampleStatus } from '@/app/actions/sample-status'
 
 // A QC material selectable on a worksheet. `serviceUids` are the analysis
 // services the sample carries expected results for — the services QC gets
 // added for when the sample is dropped onto the worksheet.
 export type ReferenceSampleOption = {
   uid: string; title: string; supplierTitle: string; blank: boolean; serviceUids: string[]
+  created: string
 }
 
 // Lab members eligible to be assigned as worksheet analyst.
@@ -75,6 +77,7 @@ export async function getReferenceSampleOptions(): Promise<ReferenceSampleOption
     supplierTitle: r.supplierTitle,
     blank: r.blank,
     serviceUids: r.results.map(x => x.uid).filter(Boolean),
+    created: r.created,
   }))
 }
 
@@ -137,6 +140,25 @@ export async function submitWorksheetResult(
   if (!r.success) return { success: false, error: r.error ?? 'Failed to submit result.' }
   revalidatePath(`/dashboard/worksheets/${id}`)
   logExternalAuditEvent('submit', id, { analysisUid, result: trimmed }, 'worksheet')
+  await refreshSampleStatus({ analysisUid })
+  return { success: true }
+}
+
+// Compute a Calculation-backed row's Result from entered interim values
+// (e.g. Ca/Mg readings) via SENAITE's real calculateResult() engine, then
+// submit — the interim-field counterpart of submitWorksheetResult above.
+export async function submitWorksheetInterimResult(
+  id: string,
+  analysisUid: string,
+  analysisPath: string,
+  interimValues: { keyword: string; value: string }[],
+): Promise<WorksheetActionResult> {
+  const session = await getSession()
+  const r = await submitAnalysisInterimResult(sessionToken(session), analysisPath, analysisUid, interimValues)
+  if (!r.success) return { success: false, error: r.error ?? 'Failed to calculate/submit result.' }
+  revalidatePath(`/dashboard/worksheets/${id}`)
+  logExternalAuditEvent('submit', id, { analysisUid, interimValues }, 'worksheet')
+  await refreshSampleStatus({ analysisUid })
   return { success: true }
 }
 
@@ -150,6 +172,7 @@ export async function verifyWorksheetAnalysis(
   if (!r.success) return { success: false, error: r.error ?? 'Failed to verify.' }
   revalidatePath(`/dashboard/worksheets/${id}`)
   logExternalAuditEvent('verify', id, { analysisUid }, 'worksheet')
+  await refreshSampleStatus({ analysisUid })
   return { success: true }
 }
 

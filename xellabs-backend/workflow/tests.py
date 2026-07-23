@@ -64,7 +64,7 @@ class TaskAssignmentTest(TenantAPITestCase):
 
 class ElectronicSignatureTest(TenantAPITestCase):
     def setUp(self):
-        self.reviewer, self.key = make_user("wf_reviewer", "reviewer")
+        self.reviewer, self.key = make_user("wf_reviewer", "verifier")
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.key}")
         from core.models import Client
         from lims.models import SampleType, Sample

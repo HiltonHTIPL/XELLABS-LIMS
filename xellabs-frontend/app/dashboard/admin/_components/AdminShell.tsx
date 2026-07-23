@@ -6,6 +6,7 @@ import { getSenaiteGroups, deleteSenaiteGroup, toggleSenaiteGroupRole, type Sena
 import { STAFF_ROLE_LABELS, SENAITE_USER_ROLES } from '@/app/lib/roles'
 import UserModal from './UserModal'
 import GroupModal from './GroupModal'
+import RoleMatrixModal from './RoleMatrixModal'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -13,10 +14,14 @@ function MI({ name, size = 16, color }: { name: string; size?: number; color?: s
 
 const ROLE_BADGE: Record<string, { bg: string; color: string }> = {
   admin:        { bg: '#EDE9FE', color: '#6D28D9' },
+  manager:      { bg: '#E0E7FF', color: '#4338CA' },
   lab_manager:  { bg: '#DBEAFE', color: '#1D4ED8' },
+  publisher:    { bg: '#CFFAFE', color: '#0E7490' },
+  verifier:     { bg: '#FEF3C7', color: '#B45309' },
   analyst:      { bg: '#DCFCE7', color: '#15803D' },
-  reviewer:     { bg: '#FEF3C7', color: '#B45309' },
-  receptionist: { bg: '#F3F4F6', color: '#374151' },
+  sampler:      { bg: '#FCE7F3', color: '#BE185D' },
+  lab_clerk:    { bg: '#F3F4F6', color: '#374151' },
+  client:       { bg: '#FEE2E2', color: '#991B1B' },
 }
 
 function fmtDate(iso: string) {
@@ -30,6 +35,7 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
   const [groupsLoaded, setGroupsLoaded] = useState(false)
   const [modal, setModal] = useState<{ editing: StaffUser | null } | null>(null)
   const [groupModal, setGroupModal] = useState(false)
+  const [showRoleMatrix, setShowRoleMatrix] = useState(false)
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
 
   function showToast(ok: boolean, msg: string) {
@@ -140,6 +146,14 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
               New Group
             </button>
           )}
+          <button
+            onClick={() => setShowRoleMatrix(true)}
+            title="What can each role do?"
+            className="flex items-center justify-center rounded-lg hover:bg-gray-100"
+            style={{ width: 32, height: 32, border: '1px solid #E5E7EB', background: 'none', cursor: 'pointer' }}
+          >
+            <MI name="help" size={16} color="#374151" />
+          </button>
         </div>
       </div>
 
@@ -153,8 +167,8 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
 
       <div style={{ flex: 1, overflow: 'auto', margin: '12px 20px 20px' }}>
       {tab === 'users' ? (
-        <div style={{ backgroundColor: '#fff', borderRadius: 12, border: '1px solid #E5E7EB', overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <div className="xl-visible-scrollbar" style={{ backgroundColor: '#fff', borderRadius: 12, border: '1px solid #E5E7EB', overflowX: 'auto' }}>
+          <table style={{ width: '100%', minWidth: 720 + SENAITE_USER_ROLES.length * 70, borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ backgroundColor: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
                 {['Name', 'Username', 'Email', 'Role', 'Status', 'Joined'].map(h => (
@@ -222,8 +236,8 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
           </table>
         </div>
       ) : (
-        <div style={{ backgroundColor: '#fff', borderRadius: 12, border: '1px solid #E5E7EB', overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <div className="xl-visible-scrollbar" style={{ backgroundColor: '#fff', borderRadius: 12, border: '1px solid #E5E7EB', overflowX: 'auto' }}>
+          <table style={{ width: '100%', minWidth: 220 + SENAITE_USER_ROLES.length * 70, borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ backgroundColor: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
                 <th style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>Group Name</th>
@@ -292,6 +306,8 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
           onDone={async (msg) => { showToast(true, msg); await refreshGroups() }}
         />
       )}
+
+      {showRoleMatrix && <RoleMatrixModal onClose={() => setShowRoleMatrix(false)} />}
     </div>
   )
 }

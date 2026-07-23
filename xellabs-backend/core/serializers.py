@@ -42,12 +42,12 @@ class UserSerializer(serializers.ModelSerializer):
         return obj.get_full_name() or obj.username
 
 
-STAFF_ROLES = ['admin', 'lab_manager', 'analyst', 'reviewer', 'receptionist']
+STAFF_ROLES = ['lab_clerk', 'sampler', 'analyst', 'verifier', 'lab_manager', 'publisher', 'manager', 'admin']
 
 
 class StaffUserSerializer(serializers.ModelSerializer):
-    """CRUD for staff accounts (admin/lab_manager/analyst/reviewer/receptionist) — excludes 'client' role,
-    which is only created as a side effect of ClientViewSet (see core/views.py ClientViewSet.perform_create).
+    """CRUD for staff accounts (every role except 'client') — 'client' is only created as a side
+    effect of ClientViewSet (see core/views.py ClientViewSet.perform_create).
 
     `role` is optional here (defaults to 'analyst' in UserViewSet.perform_create) — matching SENAITE's own
     "Add New User" form, which has no role concept at creation at all; the lab-permission-style role is

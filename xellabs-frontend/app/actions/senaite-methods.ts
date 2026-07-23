@@ -2,7 +2,8 @@
 import { revalidatePath } from 'next/cache'
 import { serverToken } from '@/app/lib/senaite-auth'
 import {
-  fetchSetupList, createSetupItem, updateSetupItem, deactivateSetupItem, type SetupRecord,
+  fetchSetupList, createSetupItem, updateSetupItem, deactivateSetupItem, activateSetupItem,
+  fetchRestapiOverlay, type SetupRecord,
 } from '@/app/lib/senaite-setup'
 import { fetchSenaiteInstruments, type SenaiteInstrument } from '@/app/lib/senaite'
 
@@ -37,8 +38,19 @@ function mapRow(d: SetupRecord): SenaiteMethodRow {
 }
 
 export async function listSenaiteMethods(): Promise<SenaiteMethodRow[]> {
-  const items = await fetchSetupList(serverToken(), 'Method')
-  return items.map(mapRow)
+  const token = serverToken()
+  const items = await fetchSetupList(token, 'Method')
+  // The v1 list API silently returns {} for Method.Instruments even when a
+  // real, correctly-persisted uid list is stored (confirmed live 2026-07-23
+  // by cross-checking a direct restapi GET on the same object) — same class
+  // of bug as Supplier's dropped fields (CLAUDE.md §16e). Overlay a per-object
+  // restapi GET for just this field so the "Linked Instruments" column and
+  // edit form don't silently show empty for a Method that really has one.
+  const rows = await Promise.all(items.map(async d => {
+    const overlay = await fetchRestapiOverlay(token, (d.url as string) ?? '', ['Instruments'])
+    return mapRow({ ...d, Instruments: overlay.Instruments ?? d.Instruments })
+  }))
+  return rows
 }
 
 export async function listSenaiteInstrumentOptions(): Promise<SenaiteInstrument[]> {
@@ -63,11 +75,22 @@ function buildBody(fd: FormData) {
   return { body, errors }
 }
 
+// Applies the form's Status selection via the Plone workflow transition —
+// idempotent (activating an already-active object / deactivating an already-
+// inactive one is a harmless no-op), so it's safe to call unconditionally
+// after every create/update rather than diffing against the prior state.
+async function applyStatus(path: string, fd: FormData) {
+  const wantInactive = (fd.get('reviewState') as string) === 'inactive'
+  if (wantInactive) await deactivateSetupItem(serverToken(), path)
+  else await activateSetupItem(serverToken(), path)
+}
+
 export async function createSenaiteMethodRecord(_p: SenaiteMethodFormState, fd: FormData): Promise<SenaiteMethodFormState> {
   const { body, errors } = buildBody(fd)
   if (Object.keys(errors).length) return { errors }
   const r = await createSetupItem(serverToken(), 'Method', 'methods', body)
   if (!r.success) return { message: r.error ?? 'Failed to create method.' }
+  if (r.path) await applyStatus(r.path, fd)
   revalidatePath('/dashboard/methods')
   return { success: true, message: `Method "${body.title as string}" created.` }
 }
@@ -79,6 +102,7 @@ export async function updateSenaiteMethodRecord(_uid: string, _p: SenaiteMethodF
   if (!path) return { message: 'Missing record path — cannot update.' }
   const r = await updateSetupItem(serverToken(), path, body)
   if (!r.success) return { message: r.error ?? 'Failed to update method.' }
+  await applyStatus(path, fd)
   revalidatePath('/dashboard/methods')
   return { success: true, message: `Method "${body.title as string}" updated.` }
 }

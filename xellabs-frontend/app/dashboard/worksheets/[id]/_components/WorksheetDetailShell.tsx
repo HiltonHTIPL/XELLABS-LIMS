@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import * as XLSX from 'xlsx'
 import {
-  transitionWorksheet, submitWorksheetResult, verifyWorksheetAnalysis,
+  transitionWorksheet, submitWorksheetResult, submitWorksheetInterimResult, verifyWorksheetAnalysis,
   addAnalysesToWorksheet, removeAnalysesFromWorksheet, addDuplicateToWorksheet,
   addReferenceToWorksheet, updateWorksheetFields,
   type ReferenceSampleOption,
@@ -71,6 +71,14 @@ export default function WorksheetDetailShell({
   const slotRows: SlotRow[] = slots.map((s, i) => ({ ...s, id: `${s.position}-${s.analysisUid || i}` }))
 
   const [results, setResults] = useState<Record<string, string>>({})
+  // Per-analysis, per-interim-keyword raw readings (e.g. CA/MG for Soil
+  // Calcium and Magnesium) — keyed by analysisUid then keyword. Only
+  // populated for the handful of Calculation-backed rows; a plain-Result row
+  // never touches this.
+  const [interimValues, setInterimValues] = useState<Record<string, Record<string, string>>>({})
+  function setInterim(analysisUid: string, keyword: string, v: string) {
+    setInterimValues(p => ({ ...p, [analysisUid]: { ...p[analysisUid], [keyword]: v } }))
+  }
   const [showAdd, setShowAdd] = useState(false)
   const [picked, setPicked] = useState<Record<string, boolean>>({})
   const [analyst, setAnalyst] = useState(worksheet.analyst)
@@ -164,9 +172,24 @@ export default function WorksheetDetailShell({
     return text.split(/\r?\n/).filter(l => l.trim() !== '').map(parseCsvLine)
   }
 
+  // Union of every distinct interim keyword used across this worksheet's rows
+  // (e.g. CA/MG for Soil Calcium and Magnesium, FE/ZN/MN/CU for Soil Available
+  // Minerals) — most worksheets have none; a mixed worksheet gets one column
+  // per keyword, blank on rows that don't use it.
+  const interimKeywords = useMemo(() => {
+    const seen: string[] = []
+    for (const s of slots) {
+      for (const f of s.analysis?.interimFields ?? []) {
+        if (!seen.includes(f.keyword)) seen.push(f.keyword)
+      }
+    }
+    return seen
+  }, [slots])
+
   // Import an instrument/results CSV or Excel file and pre-fill the editable
-  // result inputs. Accepts the file this page's Export/Template downloads
-  // produce (Position + Result columns) — fill in Result, re-import, review,
+  // inputs. Accepts the file this page's Export/Template downloads produce
+  // (Position + Result, plus one column per interim keyword when this
+  // worksheet has any Calculation-backed rows) — fill in, re-import, review,
   // then Submit. Matches rows to worksheet positions; only staged onto
   // `assigned` rows.
   async function importFile(file: File) {
@@ -179,29 +202,62 @@ export default function WorksheetDetailShell({
       setToast({ ok: false, msg: 'File needs "Position" and "Result" columns (use Export or Download Template).' })
       return
     }
-    const byPos = new Map(slots.filter(s => s.analysis?.reviewState === 'assigned').map(s => [s.position, s.analysisUid]))
-    const staged: Record<string, string> = {}
+    const interimIdx = new Map<string, number>(
+      interimKeywords
+        .map((kw): [string, number] => [kw, header.indexOf(kw.toLowerCase())])
+        .filter(([, i]) => i !== -1),
+    )
+    const byPos = new Map(slots.filter(s => s.analysis?.reviewState === 'assigned').map(s => [s.position, s]))
+    const stagedResults: Record<string, string> = {}
+    const stagedInterims: Record<string, Record<string, string>> = {}
     let matched = 0
     for (const cells of lines.slice(1)) {
       const pos = Number((cells[posIdx] ?? '').trim())
-      const val = (cells[resIdx] ?? '').trim()
-      const uid = byPos.get(pos)
-      if (uid && val) { staged[uid] = val; matched++ }
+      const slot = byPos.get(pos)
+      if (!slot?.analysis) continue
+      const hasInterims = (slot.analysis.interimFields ?? []).length > 0
+      if (hasInterims) {
+        const row: Record<string, string> = {}
+        let any = false
+        for (const [kw, idx] of interimIdx) {
+          const v = (cells[idx] ?? '').trim()
+          if (v) { row[kw] = v; any = true }
+        }
+        if (any) { stagedInterims[slot.analysisUid] = row; matched++ }
+      } else {
+        const val = (cells[resIdx] ?? '').trim()
+        if (val) { stagedResults[slot.analysisUid] = val; matched++ }
+      }
     }
     if (!matched) { setToast({ ok: false, msg: 'No results matched an editable position.' }); return }
-    setResults(p => ({ ...p, ...staged }))
+    setResults(p => ({ ...p, ...stagedResults }))
+    setInterimValues(p => {
+      const next = { ...p }
+      for (const [uid, row] of Object.entries(stagedInterims)) next[uid] = { ...next[uid], ...row }
+      return next
+    })
     setToast({ ok: true, msg: `Imported ${matched} result${matched !== 1 ? 's' : ''} — review, then Submit.` })
     setTimeout(() => setToast(null), 5000)
   }
 
-  // Submit every editable row that has a (staged or typed) result.
+  // Submit every editable row that has a (staged or typed) result — plain
+  // Result rows via submitWorksheetResult, Calculation-backed rows via
+  // submitWorksheetInterimResult (real SENAITE engine computes the Result).
   function submitAll() {
-    const pending = slots.filter(s => s.analysis?.reviewState === 'assigned' && (results[s.analysisUid] ?? '').trim())
+    const pending = slots.filter(s => {
+      if (s.analysis?.reviewState !== 'assigned') return false
+      const fields = s.analysis?.interimFields ?? []
+      if (fields.length > 0) return fields.every(f => (interimValues[s.analysisUid]?.[f.keyword] ?? '').trim())
+      return !!(results[s.analysisUid] ?? '').trim()
+    })
     if (!pending.length) { setToast({ ok: false, msg: 'No entered results to submit.' }); return }
     startTransition(async () => {
       let ok = 0
       for (const s of pending) {
-        const r = await submitWorksheetResult(worksheet.id, s.analysisUid, results[s.analysisUid] ?? '')
+        const fields = s.analysis?.interimFields ?? []
+        const r = fields.length > 0
+          ? await submitWorksheetInterimResult(worksheet.id, s.analysisUid, s.analysis!.path, fields.map(f => ({ keyword: f.keyword, value: interimValues[s.analysisUid]?.[f.keyword] ?? '' })))
+          : await submitWorksheetResult(worksheet.id, s.analysisUid, results[s.analysisUid] ?? '')
         if (r.success) ok++
       }
       setToast({ ok: ok > 0, msg: `Submitted ${ok}/${pending.length} result${pending.length !== 1 ? 's' : ''}.` })
@@ -213,13 +269,21 @@ export default function WorksheetDetailShell({
   // Shared row shape for CSV export, Excel export, and the result-entry
   // template — one column layout, one place it's defined (DRY), reused by all
   // three actions below. `blankResult`: the template is meant to be filled in
-  // fresh, so it always clears Result even if the worksheet already has one.
+  // fresh, so it always clears Result/interim values even if the worksheet
+  // already has them.
   function buildExportRows(blankResult: boolean): string[][] {
-    const rows = [['Position', 'Type', 'Analysis', 'Sample', 'Result', 'Unit', 'State']]
+    const rows = [['Position', 'Type', 'Analysis', 'Sample', ...interimKeywords, 'Result', 'Unit', 'State']]
     for (const s of slots) {
+      const fieldByKw = new Map((s.analysis?.interimFields ?? []).map(f => [f.keyword, f]))
+      const interimCells = interimKeywords.map(kw => {
+        const f = fieldByKw.get(kw)
+        if (!f) return ''
+        return blankResult ? '' : f.value
+      })
       rows.push([
         String(s.position), TYPE_LABEL[s.type] ?? s.type,
         s.analysis?.title ?? '', s.analysis?.sampleId ?? '',
+        ...interimCells,
         blankResult ? '' : (s.analysis?.result ?? ''),
         '', s.analysis?.reviewState ?? '',
       ])
@@ -280,6 +344,27 @@ export default function WorksheetDetailShell({
       id: 'result', label: 'Result', minWidth: 140,
       render: s => {
         const editable = (s.analysis?.reviewState ?? '') === 'assigned'
+        const interimFields = s.analysis?.interimFields ?? []
+        if (editable && interimFields.length > 0) {
+          // Calculation-backed row (e.g. Soil Calcium and Magnesium: CA+MG) —
+          // one small box per raw reading; the final Result is computed by
+          // SENAITE's own engine on Submit, not typed in directly.
+          return (
+            <div className="flex flex-wrap items-center gap-1">
+              {interimFields.map(f => (
+                <input
+                  key={f.keyword}
+                  value={interimValues[s.analysisUid]?.[f.keyword] ?? ''}
+                  onChange={e => setInterim(s.analysisUid, f.keyword, e.target.value)}
+                  placeholder={f.keyword}
+                  title={`${f.title}${f.unit ? ` (${f.unit})` : ''}`}
+                  className="px-1.5 py-1 text-xs rounded-lg outline-none"
+                  style={{ border: '1px solid #D1D5DB', color: '#111827', width: 52 }}
+                />
+              ))}
+            </div>
+          )
+        }
         return editable ? (
           <input value={results[s.analysisUid] ?? ''} onChange={e => setResult(s.analysisUid, e.target.value)} placeholder="Enter result…" className="px-2 py-1 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827', width: 110 }} />
         ) : <span className="text-xs font-medium" style={{ color: '#111827' }}>{s.analysis?.result || '—'}</span>
@@ -292,18 +377,58 @@ export default function WorksheetDetailShell({
         return <span className="text-xs" style={{ color: state === 'verified' ? '#166534' : state === 'to_be_verified' ? '#92400E' : '#374151' }}>{state || '—'}</span>
       },
     },
+    {
+      id: 'status', label: 'Status', minWidth: 160,
+      render: s => {
+        const a = s.analysis
+        // Nothing to grade yet — no result submitted (or row not editable's
+        // opposite, i.e. still 'unassigned').
+        if (!a || !a.result) return <span className="text-xs" style={{ color: '#9CA3AF' }}>—</span>
+        const chips: { label: string; bg: string; color: string }[] = []
+        chips.push(
+          a.outOfRange
+            ? { label: 'Failed', bg: '#FEE2E2', color: '#991B1B' }
+            : { label: 'Passed', bg: '#DCFCE7', color: '#166534' },
+        )
+        if (a.belowLod) chips.push({ label: '< LOD', bg: '#FEF3C7', color: '#92400E' })
+        if (a.aboveUdl) chips.push({ label: '> UDL', bg: '#FEF3C7', color: '#92400E' })
+        if (a.belowLoq) chips.push({ label: '< LOQ', bg: '#E0E7FF', color: '#3730A3' })
+        if (a.aboveUoq) chips.push({ label: '> ULOQ', bg: '#E0E7FF', color: '#3730A3' })
+        return (
+          <div className="flex flex-wrap items-center gap-1">
+            {chips.map(c => (
+              <span key={c.label} className="text-xs font-semibold rounded-full" style={{ padding: '2px 8px', backgroundColor: c.bg, color: c.color }}>
+                {c.label}
+              </span>
+            ))}
+          </div>
+        )
+      },
+    },
   ]
 
   function slotRowActions(s: SlotRow) {
     const a = s.analysis
     const state = a?.reviewState ?? ''
     const editable = state === 'assigned'
+    const interimFields = a?.interimFields ?? []
+    const hasInterims = interimFields.length > 0
+    const interimVals = interimValues[s.analysisUid] ?? {}
+    const interimsFilled = hasInterims && interimFields.every(f => (interimVals[f.keyword] ?? '').trim())
+    const canSubmit = hasInterims ? interimsFilled : !!(results[s.analysisUid] ?? '').trim()
+    function submitRow() {
+      if (hasInterims && a) {
+        const payload = interimFields.map(f => ({ keyword: f.keyword, value: interimVals[f.keyword] ?? '' }))
+        return submitWorksheetInterimResult(worksheet.id, s.analysisUid, a.path, payload)
+      }
+      return submitWorksheetResult(worksheet.id, s.analysisUid, results[s.analysisUid] ?? '')
+    }
     return (
       <div className="whitespace-nowrap">
         {editable && a && (
           <>
-            <button onClick={() => run(() => submitWorksheetResult(worksheet.id, s.analysisUid, results[s.analysisUid] ?? ''), 'Result submitted.')} disabled={busy || !(results[s.analysisUid] ?? '').trim()}
-              className="inline-flex items-center gap-1 mr-1" style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', borderRadius: 6, backgroundColor: '#0154FC', color: '#fff', border: 'none', cursor: 'pointer', opacity: busy || !(results[s.analysisUid] ?? '').trim() ? 0.5 : 1 }}>
+            <button onClick={() => run(submitRow, 'Result submitted.')} disabled={busy || !canSubmit}
+              className="inline-flex items-center gap-1 mr-1" style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', borderRadius: 6, backgroundColor: '#0154FC', color: '#fff', border: 'none', cursor: 'pointer', opacity: busy || !canSubmit ? 0.5 : 1 }}>
               <MI name="send" size={12} color="#fff" /> Submit
             </button>
             {isOpen && (

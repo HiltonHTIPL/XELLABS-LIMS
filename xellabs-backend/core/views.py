@@ -14,7 +14,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 from .authentication import TenantAwareTokenAuthentication as TokenAuthentication
 from .models import Client, Tenant
-from .permissions import IsLabManagerOrAbove, IsSuperAdmin
+from .permissions import IsLabManagerOrAbove, IsSuperAdmin, requires
 from .serializers import ClientSerializer, UserSerializer, StaffUserSerializer, TenantSerializer, TenantLogoSerializer
 
 User = get_user_model()
@@ -114,7 +114,7 @@ class UserViewSet(ModelViewSet):
     Client accounts are managed exclusively via ClientViewSet — never through this endpoint."""
     serializer_class = StaffUserSerializer
     authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated, IsLabManagerOrAbove]
+    permission_classes = [requires("user_management", allow_read=False)]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['role', 'is_active']
     search_fields = ['username', 'email', 'first_name', 'last_name']
@@ -212,7 +212,7 @@ class SenaiteGroupsView(APIView):
     mirroring senaite_service.list_senaite_users()'s relationship to UserViewSet.
     """
     authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated, IsLabManagerOrAbove]
+    permission_classes = [requires("user_management", allow_read=False)]
 
     def get(self, request):
         from .senaite_service import list_senaite_groups
@@ -235,7 +235,7 @@ class SenaiteGroupsView(APIView):
 class SenaiteGroupDetailView(APIView):
     """DELETE /api/senaite-groups/{id}/ -> remove a SENAITE group."""
     authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated, IsLabManagerOrAbove]
+    permission_classes = [requires("user_management", allow_read=False)]
 
     def delete(self, request, group_id=None):
         from .senaite_service import delete_senaite_group
@@ -250,7 +250,7 @@ class SenaiteGroupRoleView(APIView):
     Grants or revokes one SENAITE role on this group — the same operation as
     ticking a checkbox on SENAITE's own Groups matrix."""
     authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated, IsLabManagerOrAbove]
+    permission_classes = [requires("user_management", allow_read=False)]
 
     def post(self, request, group_id=None):
         from .senaite_service import set_senaite_group_role, SENAITE_USER_ROLES
@@ -271,7 +271,7 @@ class ClientViewSet(ModelViewSet):
     """CRUD for Clients, scoped to the authenticated user's tenant."""
     serializer_class = ClientSerializer
     authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = [requires("create_client")]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['is_active', 'tenant', 'senaite_uid']
     search_fields = ['name', 'client_id', 'email', 'contact_person']

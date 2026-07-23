@@ -29,6 +29,7 @@ export type ReferenceSampleRow = {
   expiryDate: string; results: RefResult[]
   catalogueNumber: string; lotNumber: string; remarks: string
   dateSampled: string; dateReceived: string; dateOpened: string
+  created: string
 }
 
 export type RefSampleFormState = { success?: boolean; message?: string; errors?: Record<string, string[]> }
@@ -96,6 +97,7 @@ export async function listReferenceSamples(): Promise<ReferenceSampleRow[]> {
       dateSampled: isoDate(d.DateSampled),
       dateReceived: isoDate(d.DateReceived),
       dateOpened: isoDate(d.DateOpened),
+      created: (d.created as string) ?? '',
     }
   })
 }

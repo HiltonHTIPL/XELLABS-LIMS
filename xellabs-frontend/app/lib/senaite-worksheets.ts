@@ -18,9 +18,17 @@ const authHeaders = (token: string) => ({
   Accept: 'application/json',
 })
 
+export type WorksheetInterimField = {
+  keyword: string
+  title: string
+  value: string
+  unit: string
+}
+
 export type WorksheetAnalysisInfo = {
   uid: string
   id: string
+  path: string
   title: string
   keyword: string
   portalType: string
@@ -28,6 +36,23 @@ export type WorksheetAnalysisInfo = {
   result: string
   sampleId: string
   sampleUid: string
+  // Only non-empty when this analysis's Service has a Calculation configured
+  // with Interim Fields (e.g. Soil Calcium and Magnesium: CA/MG) — most
+  // analyses have none. See calculateAnalysisResult() below.
+  interimFields: WorksheetInterimField[]
+  calculationUid: string
+  // Grading flags — only meaningful once a result exists (all false/blank
+  // before then). outOfRange comes from SENAITE's real is_out_of_range(),
+  // working uniformly for both a routine Analysis (graded against
+  // ResultsRange, pushed from our Django Specification) and a QC
+  // ReferenceAnalysis (graded against its ReferenceSample's own
+  // ReferenceResults). The four *Lod/*Uoq flags come from the Analysis
+  // Service's own configured detection/quantification limits.
+  outOfRange: boolean
+  belowLod: boolean
+  aboveUdl: boolean
+  belowLoq: boolean
+  aboveUoq: boolean
 }
 
 export type WorksheetSlot = {
@@ -72,9 +97,11 @@ type RawView = Record<string, unknown>
 
 function mapAnalysis(a: RawView | null): WorksheetAnalysisInfo | null {
   if (!a) return null
+  const interimFields = Array.isArray(a.interim_fields) ? (a.interim_fields as RawView[]) : []
   return {
     uid: (a.uid as string) ?? '',
     id: (a.id as string) ?? '',
+    path: (a.path as string) ?? '',
     title: (a.title as string) ?? '',
     keyword: (a.keyword as string) ?? '',
     portalType: (a.portal_type as string) ?? '',
@@ -82,6 +109,18 @@ function mapAnalysis(a: RawView | null): WorksheetAnalysisInfo | null {
     result: a.result == null ? '' : String(a.result),
     sampleId: (a.sample_id as string) ?? '',
     sampleUid: (a.sample_uid as string) ?? '',
+    interimFields: interimFields.map(f => ({
+      keyword: (f.keyword as string) ?? '',
+      title: (f.title as string) ?? '',
+      value: f.value == null ? '' : String(f.value),
+      unit: (f.unit as string) ?? '',
+    })),
+    calculationUid: (a.calculation_uid as string) ?? '',
+    outOfRange: Boolean(a.out_of_range),
+    belowLod: Boolean(a.below_lod),
+    aboveUdl: Boolean(a.above_udl),
+    belowLoq: Boolean(a.below_loq),
+    aboveUoq: Boolean(a.above_uoq),
   }
 }
 
@@ -316,6 +355,48 @@ export async function submitAnalysisResult(token: string, analysisUid: string, r
   return transitionAnalysis(token, analysisUid, 'submit')
 }
 
+// Invoke SENAITE's own Analysis.calculateResult() engine over REST via the
+// @@calculate-analysis-result custom view (senaite-rebrand/analysis_calculate_view.py).
+// A flat jsonapi {Result} write never triggers this — in SENAITE's own widget
+// it only fires on a JS-driven interim-cell-change event, which our REST
+// calls have no equivalent of. This view is that equivalent: it writes the
+// submitted interim values onto the Analysis's own InterimFields, then calls
+// the real calculateResult(override=True) so the formula (e.g. [CA]+[MG])
+// computes the Result exactly as SENAITE's own engine would.
+export async function calculateAnalysisResult(
+  token: string,
+  analysisPath: string,
+  interimValues: { keyword: string; value: string }[],
+): Promise<{ success: boolean; result?: string; error?: string }> {
+  try {
+    const res = await fetch(`${SENAITE_ORIGIN}${analysisPath}/@@calculate-analysis-result`, {
+      method: 'POST',
+      headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ interim_fields: interimValues }),
+      cache: 'no-store',
+    })
+    const data = (await res.json().catch(() => ({}))) as RawView
+    if (!res.ok || data.success === false) {
+      return { success: false, error: (data.error as string) ?? `HTTP ${res.status}` }
+    }
+    return { success: true, result: (data.result as string) ?? '' }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+// Combined action for a Calculation-backed analysis row: compute the Result
+// from the entered interim values via SENAITE's real engine, then submit —
+// the interim-field equivalent of submitAnalysisResult() above.
+export async function submitAnalysisInterimResult(
+  token: string,
+  analysisPath: string,
+  analysisUid: string,
+  interimValues: { keyword: string; value: string }[],
+) {
+  const calc = await calculateAnalysisResult(token, analysisPath, interimValues)
+  if (!calc.success) return calc
+  return transitionAnalysis(token, analysisUid, 'submit')
+}
+
 // Fire a worksheet workflow transition (submit / verify / reject / retract /
 // rollback_to_open) via plone.restapi's @workflow endpoint.
 export async function transitionSenaiteWorksheet(
@@ -337,14 +418,22 @@ export async function transitionSenaiteWorksheet(
       // Submit before every analysis has a submitted result).
       const nested = (data.error as RawView | undefined)?.message as string | undefined
       const raw = nested ?? (data.message as string) ?? `HTTP ${res.status}`
-      const guardBlocked = /no workflow provides|not available|guard/i.test(raw)
+      // "Invalid transition 'verify'. Valid transitions are: reject retract"
+      // is SENAITE's literal wording when the worksheet-level Verify cascades
+      // into one underlying Analysis that can't be verified right now — by
+      // far the most common cause is the self-verification guard (the same
+      // user who submitted the result can't also verify it). Confirmed live:
+      // this exact message appears with no "guard"/"not available" substring,
+      // so the original regex missed it and let the raw Zope object repr
+      // ("<Analysis at SOILMIN>") leak straight to the user.
+      const guardBlocked = /no workflow provides|not available|guard|invalid transition/i.test(raw)
       // Different unmet precondition per transition — the worksheet-level guard
       // for 'verify' only opens once every individual analysis row has ALREADY
       // been verified one-by-one (it's a rollup, not the actual verify action);
       // 'submit' is the one that actually depends on unsubmitted results.
       const friendly = guardBlocked
         ? transition === 'verify'
-          ? "This worksheet can't be verified yet — verify every analysis row individually first (or you may be the same user who submitted a result, which self-verification disallows)."
+          ? "This worksheet can't be verified yet — at least one analysis row can't be verified right now. The most common reason is self-verification: the same user who submitted a result can't also verify it, so someone else needs to verify that row (or every row must be verified individually first)."
           : `This worksheet can't be ${transition}ed yet — every analysis must have a submitted result first.`
         : raw
       return { success: false, error: friendly }

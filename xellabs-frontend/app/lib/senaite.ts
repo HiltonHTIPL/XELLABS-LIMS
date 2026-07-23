@@ -81,10 +81,14 @@ export async function senaiteLogin(username: string, password: string): Promise<
 
 /** Map SENAITE roles to our internal role string */
 export function mapSenaiteRole(roles: string[]): string {
-  if (roles.includes('Manager') || roles.includes('Site Administrator')) return 'admin'
+  if (roles.includes('Site Administrator')) return 'admin'
+  if (roles.includes('Manager')) return 'manager'
   if (roles.includes('LabManager')) return 'lab_manager'
-  if (roles.includes('Reviewer') || roles.includes('Verifier')) return 'reviewer'
+  if (roles.includes('Publisher')) return 'publisher'
+  if (roles.includes('Verifier') || roles.includes('Reviewer')) return 'verifier'
   if (roles.includes('Analyst')) return 'analyst'
+  if (roles.includes('Sampler')) return 'sampler'
+  if (roles.includes('LabClerk')) return 'lab_clerk'
   if (roles.includes('Client')) return 'client'
   return 'analyst'
 }
@@ -2077,12 +2081,22 @@ export async function fetchSenaiteAnalysisServices(token: string): Promise<Senai
     // either — so filter blanks and dedupe by title here rather than depending on a
     // clean SENAITE dataset. Keeps the first (oldest) UID per title.
     const seen = new Set<string>()
-    const cleaned: typeof all = []
+    const cleaned: SenaiteAnalysisService[] = []
     for (const svc of all) {
       const key = svc.title.trim().toLowerCase()
       if (!key || seen.has(key)) continue
       seen.add(key)
       cleaned.push(svc)
+    }
+    // The embedded `Category` reference is a bare {uid} ref — `.title` and
+    // `getCategoryTitle` both come back empty/None (confirmed live), same
+    // class of gap as Client on Batch/AnalysisRequest. Resolve via the shared
+    // title-map helper instead of trusting the embedded ref's own title.
+    if (cleaned.some(svc => svc.CategoryUid && !svc.Category)) {
+      const categoryTitles = await fetchSenaiteTitleMap(token, 'AnalysisCategory')
+      for (const svc of cleaned) {
+        if (svc.CategoryUid && !svc.Category) svc.Category = categoryTitles[svc.CategoryUid] ?? svc.Category
+      }
     }
     return cleaned
   } catch { return [] }
@@ -2428,6 +2442,33 @@ export async function updateSenaiteAnalysisService(
   } catch (e) { return { success: false, error: String(e) } }
 }
 
+// Pushes per-service ResultsRange (min/max/warn_min/warn_max) onto a live
+// AnalysisRequest via the @@set-results-range custom view (senaite-rebrand/
+// analysisrequest_specification_view.py), which calls SENAITE's own real
+// AnalysisRequest.setResultsRange() — the same mechanism a native
+// Specification-linked sample uses, confirmed by reading analysisrequest.py
+// directly. Our Django-side Specification has no SENAITE-native AnalysisSpec
+// counterpart; this is how its ranges reach SENAITE's real is_out_of_range()
+// grading instead of syncing a whole separate content type.
+export async function pushResultsRangeToSample(
+  token: string,
+  samplePath: string,
+  ranges: { uid: string; keyword?: string; min: string; max: string; warn_min?: string; warn_max?: string }[],
+): Promise<{ success: boolean; error?: string }> {
+  if (!ranges.length) return { success: true }
+  try {
+    const res = await fetch(`${SENAITE_ORIGIN}${samplePath}/@@set-results-range`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ results_ranges: ranges }),
+      cache: 'no-store',
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok || data.success === false) return { success: false, error: (data.error as string) ?? `HTTP ${res.status}` }
+    return { success: true }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
 // ─── Samples (AnalysisRequests) ───────────────────────────────────────────────
 
 export type SenaiteSample = {
@@ -2506,7 +2547,19 @@ export async function fetchSenaiteSamples(token: string, params: Record<string, 
     })
     if (!res.ok) return []
     const data = await res.json()
-    return (data.items ?? []).map(mapSample)
+    const samples = (data.items ?? []).map(mapSample) as SenaiteSample[]
+    // The embedded `Client` reference on an AR is a bare {uid} ref — its own
+    // `.title` and the AR's `ClientTitle` metadata field are both never
+    // populated here (confirmed live), same class of gap already documented
+    // for Instrument/other reference fields elsewhere in this file. Resolve
+    // via the shared title-map helper instead of trusting the embedded ref.
+    if (samples.some(s => s.ClientUID && !s.ClientTitle)) {
+      const clientTitles = await fetchSenaiteTitleMap(token, 'Client')
+      for (const s of samples) {
+        if (s.ClientUID && !s.ClientTitle) s.ClientTitle = clientTitles[s.ClientUID] ?? s.ClientTitle
+      }
+    }
+    return samples
   } catch { return [] }
 }
 
@@ -2922,6 +2975,69 @@ export async function senaiteWorkflowAction(
   } catch (e) { return { success: false, error: String(e) } }
 }
 
+// Samples currently at review_state "verified" — i.e. all analyses verified,
+// awaiting final approval/publish. Used to reconcile the Approvals queue
+// (see reconcileSampleApprovals): the sample's verified state is the single
+// source of truth, regardless of which UI path did the verifying.
+export type VerifiedSampleForApproval = {
+  senaite_uid: string; sample_id: string; client_name: string; title: string; priority: string
+}
+export async function fetchVerifiedSamplesForApproval(token: string): Promise<VerifiedSampleForApproval[]> {
+  try {
+    const res = await fetch(
+      `${SENAITE_URL}/@@API/senaite/v1/AnalysisRequest?review_state=verified&complete=true&limit=500`,
+      { headers: { Authorization: `Basic ${token}`, Accept: 'application/json' }, cache: 'no-store' }
+    )
+    if (!res.ok) return []
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    const items = (data.items as Record<string, unknown>[]) ?? []
+    return items.map(it => {
+      const client = (it.Client as Record<string, unknown>) ?? {}
+      const st = (it.SampleType as Record<string, unknown>) ?? {}
+      const p = parseInt((it.Priority as string) ?? '', 10)
+      const priority = Number.isNaN(p) ? 'Medium' : p <= 2 ? 'High' : p === 3 ? 'Medium' : 'Low'
+      return {
+        senaite_uid: (it.uid as string) ?? '',
+        sample_id: (it.id as string) ?? '',
+        client_name: (client.title as string) ?? (it.ClientTitle as string) ?? '',
+        title: (st.title as string) ?? (it.SampleTypeTitle as string) ?? '',
+        priority,
+      }
+    }).filter(s => s.senaite_uid)
+  } catch { return [] }
+}
+
+// Publish a verified sample → published (= Completed). IMPORTANT: SENAITE's
+// `publish` transition silently no-ops via content_status_modify (returns HTTP
+// 200 but review_state never changes — confirmed live), which is why
+// senaiteWorkflowAction(...,'publish') fails. The restapi @workflow endpoint is
+// the one that actually commits it (same mechanism as worksheet transitions).
+// Confirmation is by re-reading review_state, never the HTTP status alone (§16h).
+export async function publishSenaiteSample(token: string, uid: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const look = await fetch(`${SENAITE_URL}/@@API/senaite/v1/AnalysisRequest/${uid}?complete=true`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' }, cache: 'no-store',
+    })
+    const item = (((await look.json().catch(() => ({}))) as Record<string, unknown>).items as Record<string, unknown>[] ?? [])[0]
+    const path = item?.path as string | undefined
+    if (!path) return { success: false, error: 'Sample not found in XelLabs.' }
+    if (item?.review_state === 'published') return { success: true }
+
+    const res = await fetch(`${SENAITE_ORIGIN}${path}/@workflow/publish`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: '{}', cache: 'no-store',
+    })
+    const after = await fetch(`${SENAITE_URL}/@@API/senaite/v1/AnalysisRequest/${uid}?complete=true`, {
+      headers: { Authorization: `Basic ${token}`, Accept: 'application/json' }, cache: 'no-store',
+    })
+    const stateAfter = (((await after.json().catch(() => ({}))) as Record<string, unknown>).items as Record<string, unknown>[] ?? [])[0]?.review_state as string | undefined
+    if (stateAfter === 'published') return { success: true }
+    const err = (await res.json().catch(() => ({}))) as { error?: { message?: string }, message?: string }
+    return { success: false, error: err.error?.message ?? err.message ?? `Publish did not complete (state: ${stateAfter ?? 'unknown'}).` }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
 
 export function mapSenaiteState(review_state: string): string {
   const MAP: Record<string, string> = {
@@ -2930,7 +3046,7 @@ export function mapSenaiteState(review_state: string): string {
     sample_received: 'Received',
     to_be_verified:  'To Be Verified',
     verified:        'Verified',
-    published:       'Published',
+    published:       'Completed',
     invalid:         'Invalid',
     cancelled:       'Cancelled',
     rejected:        'Rejected',
@@ -3370,7 +3486,7 @@ export async function fetchSenaiteBatches(token: string): Promise<SenaiteBatch[]
     })
     if (!res.ok) return []
     const data = await res.json()
-    return (data.items ?? []).map((b: Record<string, unknown>) => {
+    const batches = (data.items ?? []).map((b: Record<string, unknown>) => {
       const client = (b.Client as Record<string, unknown>) ?? {}
       return {
         uid:           (b.uid as string) ?? '',
@@ -3388,7 +3504,16 @@ export async function fetchSenaiteBatches(token: string): Promise<SenaiteBatch[]
         created:       (b.created as string) ?? '',
         getProgress:   Number(b.getProgress ?? 0),
       }
-    })
+    }) as SenaiteBatch[]
+    // getClientTitle is unreliable here too (confirmed live: comes back '' even
+    // when Client is genuinely set) — same fix as fetchSenaiteSamples.
+    if (batches.some(b => b.ClientUID && !b.ClientTitle)) {
+      const clientTitles = await fetchSenaiteTitleMap(token, 'Client')
+      for (const b of batches) {
+        if (b.ClientUID && !b.ClientTitle) b.ClientTitle = clientTitles[b.ClientUID] ?? b.ClientTitle
+      }
+    }
+    return batches
   } catch { return [] }
 }
 

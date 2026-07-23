@@ -13,7 +13,7 @@ export type AdminFormState = { success?: boolean; message?: string; errors?: Rec
 
 export type RefOption = { uid: string; title: string }
 
-export type FieldKind = 'text' | 'textarea' | 'number' | 'select' | 'multiselect' | 'select-or-add'
+export type FieldKind = 'text' | 'textarea' | 'number' | 'select' | 'multiselect' | 'select-or-add' | 'checkbox'
 
 export type QuickField = { key: string; label: string; required?: boolean; placeholder?: string }
 
@@ -385,6 +385,19 @@ function FieldInput({ field, value, options, error, onChange, onToggleMulti, onO
           {options.map(o => <option key={o.uid} value={o.uid}>{o.title}</option>)}
           <option value="__add__">+ Add new {entityLabel.toLowerCase()}…</option>
         </select>
+        {field.help && <p className="mt-0.5" style={{ fontSize: 10, color: '#374151' }}>{field.help}</p>}
+        {error && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{error}</p>}
+      </div>
+    )
+  }
+
+  if (field.kind === 'checkbox') {
+    return (
+      <div>
+        <label className="flex items-center gap-2 text-xs font-medium cursor-pointer" style={{ color: '#374151' }}>
+          <input type="checkbox" checked={value === 'true'} onChange={e => onChange(e.target.checked ? 'true' : 'false')} />
+          {field.label}{field.required && <span style={{ color: '#EF4444' }}> *</span>}
+        </label>
         {field.help && <p className="mt-0.5" style={{ fontSize: 10, color: '#374151' }}>{field.help}</p>}
         {error && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{error}</p>}
       </div>

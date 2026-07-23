@@ -3,10 +3,11 @@ import logging
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from core.permissions import (
-    IsReviewerOrAbove, IsLabManagerOrAbove, CanReceiveOrStoreSamples,
+    IsLabManagerOrAbove, requires,
     ReadOnlyOrLabManager, ReadOnlyOrAnalystOrAbove, ReadOnlyOrSampleHandler,
 )
 from .models import (
@@ -244,6 +245,24 @@ class SampleViewSet(viewsets.ModelViewSet):
         )
         return Response(agg)
 
+    @action(detail=False, methods=["post"], url_path="refresh-status",
+            permission_classes=[IsAuthenticated])
+    def refresh_status(self, request):
+        """Sync ONE sample's status from live SENAITE state into Django, on
+        demand. Called by the frontend right after any workflow transition
+        (receive / results submit / verify / publish) so the Django mirror the
+        dashboard + overview read is always current — the synchronous
+        counterpart of the 5-min pull task, keyed off senaite_uid (reliable).
+        Body: {senaite_uid} (AnalysisRequest uid) or {analysis_uid}."""
+        from lims.senaite_sync import refresh_one_sample_status
+        senaite_uid = request.data.get("senaite_uid") or ""
+        analysis_uid = request.data.get("analysis_uid") or ""
+        if not senaite_uid and not analysis_uid:
+            return Response({"detail": "senaite_uid or analysis_uid is required."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        result = refresh_one_sample_status(ar_uid=senaite_uid, analysis_uid=analysis_uid)
+        return Response(result)
+
     @action(detail=False, methods=["get"])
     def tat_trend(self, request):
         from django.utils import timezone
@@ -406,7 +425,7 @@ class SampleViewSet(viewsets.ModelViewSet):
             "message": f"Successfully disposed {len(disposed_ids)} sample(s)." + (f" Skipped {len(skipped)} sample(s)." if skipped else "")
         })
 
-    @action(detail=True, methods=["post"], permission_classes=[CanReceiveOrStoreSamples])
+    @action(detail=True, methods=["post"], permission_classes=[requires("receive_sample", allow_read=False)])
     def receive(self, request, pk=None):
         from .services import receive_sample
         sample = self.get_object()
@@ -473,7 +492,7 @@ class WorksheetViewSet(viewsets.ModelViewSet):
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(WorksheetSerializer(ws).data)
 
-    @action(detail=True, methods=["post"], permission_classes=[IsLabManagerOrAbove])
+    @action(detail=True, methods=["post"], permission_classes=[requires("verify_results", allow_read=False)])
     def verify(self, request, pk=None):
         from .services import verify_worksheet
         ws = self.get_object()
@@ -483,7 +502,7 @@ class WorksheetViewSet(viewsets.ModelViewSet):
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(WorksheetSerializer(ws).data)
 
-    @action(detail=True, methods=["post"], permission_classes=[IsLabManagerOrAbove])
+    @action(detail=True, methods=["post"], permission_classes=[requires("reject_results", allow_read=False)])
     def reject(self, request, pk=None):
         from .services import reject_worksheet
         ws = self.get_object()
@@ -531,7 +550,15 @@ class ResultViewSet(viewsets.ModelViewSet):
             worksheet_assignment__analysis_request__sample__status="disposed"
         )
 
-    @action(detail=True, methods=["post"], permission_classes=[ReadOnlyOrAnalystOrAbove])
+    def get_permissions(self):
+        # Entering / editing a result is restricted to the roles in the matrix
+        # (analyst, admin) — narrower than the class default. Reads stay open;
+        # @action endpoints (submit/verify/reject) keep their own gates.
+        if self.action in ("create", "update", "partial_update"):
+            return [requires("edit_results")()]
+        return super().get_permissions()
+
+    @action(detail=True, methods=["post"], permission_classes=[requires("enter_results", allow_read=False)])
     def submit(self, request, pk=None):
         from .services import submit_result
         result = self.get_object()
@@ -541,7 +568,7 @@ class ResultViewSet(viewsets.ModelViewSet):
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(ResultSerializer(result).data)
 
-    @action(detail=True, methods=["post"], permission_classes=[IsReviewerOrAbove])
+    @action(detail=True, methods=["post"], permission_classes=[requires("verify_results", allow_read=False)])
     def verify(self, request, pk=None):
         from .services import verify_result
         result = self.get_object()
@@ -551,7 +578,7 @@ class ResultViewSet(viewsets.ModelViewSet):
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(ResultSerializer(result).data)
 
-    @action(detail=True, methods=["post"], permission_classes=[IsReviewerOrAbove])
+    @action(detail=True, methods=["post"], permission_classes=[requires("reject_results", allow_read=False)])
     def reject(self, request, pk=None):
         from .services import reject_result
         result = self.get_object()
@@ -571,7 +598,7 @@ class QCSampleViewSet(viewsets.ModelViewSet):
     filterset_fields = ["qc_type", "status", "senaite_service_uid", "worksheet"]
     search_fields = ["qc_id"]
 
-    @action(detail=True, methods=["post"], permission_classes=[IsReviewerOrAbove])
+    @action(detail=True, methods=["post"], permission_classes=[requires("verify_results", allow_read=False)])
     def review(self, request, pk=None):
         from django.db import transaction
         from django.utils import timezone

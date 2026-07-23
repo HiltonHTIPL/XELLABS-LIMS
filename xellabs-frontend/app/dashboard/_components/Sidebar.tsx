@@ -23,36 +23,36 @@ export function isGroup(entry: NavEntry): entry is NavGroup {
 
 export const NAV: NavEntry[] = [
   { label: 'Dashboard',        href: '/dashboard',                   icon: 'dashboard',               roles: null },
-  { label: 'Clients',          href: '/dashboard/clients',           icon: 'business',                roles: ['admin', 'lab_manager', 'receptionist'] },
-  // Sample workflow
+  { label: 'Clients',          href: '/dashboard/clients',           icon: 'business',                roles: ['admin', 'manager', 'lab_manager', 'lab_clerk'] },
+  // Sample workflow — visible to every role that touches a sample
   {
     group: 'Samples',
     icon: 'format_list_bulleted',
-    roles: ['admin', 'lab_manager', 'receptionist', 'analyst', 'reviewer'],
+    roles: ['admin', 'manager', 'lab_manager', 'lab_clerk', 'sampler', 'analyst', 'verifier', 'publisher'],
     children: [
-      { label: 'Samples Overview', href: '/dashboard/samples-overview', icon: 'list_alt',      roles: ['admin', 'lab_manager', 'receptionist', 'analyst', 'reviewer'], exact: true },
-      { label: 'New Samples',      href: '/dashboard/samples-overview/new', icon: 'add_circle', roles: ['admin', 'lab_manager', 'receptionist'] },
+      { label: 'Samples Overview', href: '/dashboard/samples-overview', icon: 'list_alt',      roles: ['admin', 'manager', 'lab_manager', 'lab_clerk', 'sampler', 'analyst', 'verifier', 'publisher'], exact: true },
+      { label: 'New Samples',      href: '/dashboard/samples-overview/new', icon: 'add_circle', roles: ['admin', 'manager', 'lab_manager', 'lab_clerk'] },
     ],
   },
-  { label: 'Methods',           href: '/dashboard/methods',           icon: 'biotech',     roles: ['admin', 'lab_manager', 'analyst'] },
-  { label: 'Batches',           href: '/dashboard/batches',           icon: 'layers',      roles: ['admin', 'lab_manager', 'analyst'] },
-  { label: 'Worksheet',         href: '/dashboard/worksheets',        icon: 'table_chart', roles: ['admin', 'lab_manager', 'analyst', 'reviewer'] },
-  { label: 'Quality',           href: '/dashboard/quality',           icon: 'verified',    roles: ['admin', 'lab_manager', 'analyst', 'reviewer', 'client'] },
-  { label: 'Storage Manager',   href: '/dashboard/storage',           icon: 'inventory_2', roles: ['admin', 'lab_manager', 'analyst', 'client'] },
+  { label: 'Methods',           href: '/dashboard/methods',           icon: 'biotech',     roles: ['admin', 'manager', 'lab_manager', 'analyst'] },
+  { label: 'Batches',           href: '/dashboard/batches',           icon: 'layers',      roles: ['admin', 'manager', 'lab_manager', 'analyst'] },
+  { label: 'Worksheet',         href: '/dashboard/worksheets',        icon: 'table_chart', roles: ['admin', 'manager', 'lab_manager', 'analyst', 'verifier'] },
+  { label: 'Quality',           href: '/dashboard/quality',           icon: 'verified',    roles: ['admin', 'manager', 'lab_manager', 'analyst', 'verifier'] },
+  { label: 'Storage Manager',   href: '/dashboard/storage',           icon: 'inventory_2', roles: ['admin', 'manager', 'lab_manager', 'lab_clerk', 'sampler', 'analyst'] },
   // Inventory
   {
     group: 'Instruments',
     icon: 'science',
-    roles: ['admin', 'lab_manager', 'analyst'],
+    roles: ['admin', 'manager', 'lab_manager', 'analyst'],
     children: [
-      { label: 'Test Schedule', href: '/dashboard/schedule', icon: 'event_note', roles: ['admin', 'lab_manager', 'analyst'] },
-      { label: 'Inventory Dashboard', href: '/dashboard/inventory-dashboard', icon: 'insert_chart', roles: ['admin', 'lab_manager', 'analyst'] },
-      { label: 'Reagents & Standards', href: '/dashboard/inventory-items', icon: 'biotech', roles: ['admin', 'lab_manager', 'analyst'] },
-      { label: 'Lots & Transactions', href: '/dashboard/inventory-lots', icon: 'inventory', roles: ['admin', 'lab_manager', 'analyst'] },
-      { label: 'Instrument Maintenance', href: '/dashboard/instrument-maintenance', icon: 'build', roles: ['admin', 'lab_manager', 'analyst'] },
+      { label: 'Test Schedule', href: '/dashboard/schedule', icon: 'event_note', roles: ['admin', 'manager', 'lab_manager', 'analyst'] },
+      { label: 'Inventory Dashboard', href: '/dashboard/inventory-dashboard', icon: 'insert_chart', roles: ['admin', 'manager', 'lab_manager', 'analyst'] },
+      { label: 'Reagents & Standards', href: '/dashboard/inventory-items', icon: 'biotech', roles: ['admin', 'manager', 'lab_manager', 'analyst'] },
+      { label: 'Lots & Transactions', href: '/dashboard/inventory-lots', icon: 'inventory', roles: ['admin', 'manager', 'lab_manager', 'analyst'] },
+      { label: 'Instrument Maintenance', href: '/dashboard/instrument-maintenance', icon: 'build', roles: ['admin', 'manager', 'lab_manager', 'analyst'] },
     ],
   },
-  { label: 'Reports',          href: '/dashboard/reports',           icon: 'bar_chart',               roles: null },
+  { label: 'Reports',          href: '/dashboard/reports',           icon: 'bar_chart',               roles: ['admin', 'manager', 'lab_manager', 'publisher', 'verifier', 'analyst'] },
   // Data Analytics and Compliance (Approvals, Audit Trail) intentionally not top-level —
   // reachable via the Administration group/grid instead, to keep the top-level
   // sidebar limited to: Dashboard, Clients, Samples, Methods, Batches, Worksheet,

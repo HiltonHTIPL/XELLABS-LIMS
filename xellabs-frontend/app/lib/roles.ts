@@ -1,11 +1,17 @@
-export type StaffRole = 'admin' | 'lab_manager' | 'analyst' | 'reviewer' | 'receptionist'
+export type StaffRole =
+  | 'client' | 'lab_clerk' | 'sampler' | 'analyst' | 'verifier'
+  | 'lab_manager' | 'publisher' | 'manager' | 'admin'
 
 export const STAFF_ROLE_LABELS: Record<StaffRole, string> = {
-  admin:        'Administrator',
-  lab_manager:  'Lab Manager',
+  client:       'Client',
+  lab_clerk:    'Lab Clerk',
+  sampler:      'Sampler',
   analyst:      'Analyst',
-  reviewer:     'Reviewer',
-  receptionist: 'Receptionist',
+  verifier:     'Verifier',
+  lab_manager:  'Lab Manager',
+  publisher:    'Publisher',
+  manager:      'Manager',
+  admin:        'Administrator',
 }
 
 // The exact SENAITE roles a user can be granted directly — mirrors

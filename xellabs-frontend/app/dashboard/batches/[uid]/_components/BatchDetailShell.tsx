@@ -6,6 +6,7 @@ import { type SenaiteBatch, type SenaiteSample, type SenaiteAnalysisFull, mapSen
 import { receiveSample, cancelSample } from '@/app/actions/samples'
 import { getAnalysesByUids, submitBatchResult, getUnassignedSamples, assignSamplesToBatch } from '@/app/actions/batches'
 import DataTable, { type DataTableColumn } from '@/app/dashboard/_components/DataTable'
+import BatchWorksheetWizard from './BatchWorksheetWizard'
 
 type BatchSampleRow = SenaiteSample & { id: string; sampleCode: string }
 type AddSampleRow = SenaiteSample & { id: string; sampleCode: string }
@@ -83,6 +84,9 @@ export default function BatchDetailShell({
   const [addSearch, setAddSearch] = useState('')
   const [addSubmitting, setAddSubmitting] = useState(false)
   const [addTableKey, setAddTableKey] = useState(0)
+
+  // Create Worksheet(s) from batch — one worksheet per distinct analysis requested
+  const [wizardOpen, setWizardOpen] = useState(false)
 
   function showToast(ok: boolean, msg: string) {
     setToast({ ok, msg })
@@ -258,6 +262,11 @@ export default function BatchDetailShell({
           <button onClick={openAdd} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ backgroundColor: '#fff', color: '#374151', border: '1px solid #D1D5DB', cursor: 'pointer' }}>
             <MI name="playlist_add" size={15} color="#374151" /> Add Samples
           </button>
+          {samples.length > 0 && (
+            <button onClick={() => setWizardOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ backgroundColor: '#fff', color: '#374151', border: '1px solid #D1D5DB', cursor: 'pointer' }}>
+              <MI name="table_chart" size={15} color="#374151" /> Create Worksheet
+            </button>
+          )}
           <Link href={`/dashboard/samples-overview/new?batch=${batch.uid}`} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC', textDecoration: 'none' }}>
             <MI name="add" size={15} color="#fff" /> Create Sample
           </Link>
@@ -502,6 +511,8 @@ export default function BatchDetailShell({
           </div>
         </div>
       )}
+
+      {wizardOpen && <BatchWorksheetWizard batchUid={batch.uid} onClose={() => setWizardOpen(false)} />}
     </div>
   )
 }

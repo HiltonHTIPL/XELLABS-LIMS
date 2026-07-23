@@ -23,6 +23,9 @@ export type AnalysisSpecification = {
   title: string
   description: string
   sample_type: number
+  // Lets a caller match this spec against the SENAITE SampleType uid a
+  // sample is being created with, without a second lookup.
+  sample_type_senaite_uid: string
   dynamic_spec: number | null
   is_active: boolean
   created_at: string

@@ -27,7 +27,8 @@ export default function SupersetDashboard({ dashboardId }: SupersetDashboardProp
       });
 
       if (!response.ok) {
-        throw new Error("Failed to fetch guest token");
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || `Failed to fetch guest token (HTTP ${response.status})`);
       }
 
       const data = await response.json();

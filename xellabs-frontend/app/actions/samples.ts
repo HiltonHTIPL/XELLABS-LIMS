@@ -11,6 +11,7 @@ import {
 
 import { serverToken, sessionToken } from '@/app/lib/senaite-auth'
 import { logExternalAuditEvent } from '@/app/actions/audit-trail'
+import { refreshSampleStatus } from '@/app/actions/sample-status'
 
 // ─── List ─────────────────────────────────────────────────────────────────────
 
@@ -111,7 +112,10 @@ export async function receiveSample(uid: string): Promise<WorkflowResult> {
   const session = await getSession()
   const result = await senaiteWorkflowAction(sessionToken(session), uid, 'receive')
   revalidatePath('/dashboard/samples-overview')
-  if (result.success) logExternalAuditEvent('receive', uid, undefined, 'sample')
+  if (result.success) {
+    logExternalAuditEvent('receive', uid, undefined, 'sample')
+    await refreshSampleStatus({ uid })
+  }
   return { success: result.success, message: result.success ? 'Sample received.' : (result.error ?? 'Failed to receive sample.') }
 }
 
@@ -119,8 +123,15 @@ export async function verifySample(uid: string): Promise<WorkflowResult> {
   const session = await getSession()
   const result = await senaiteWorkflowAction(sessionToken(session), uid, 'verify')
   revalidatePath('/dashboard/samples-overview')
-  if (result.success) logExternalAuditEvent('verify', uid, undefined, 'sample')
-  return { success: result.success, message: result.success ? 'Sample verified.' : (result.error ?? 'Failed to verify sample.') }
+  if (result.success) {
+    logExternalAuditEvent('verify', uid, undefined, 'sample')
+    await refreshSampleStatus({ uid })
+  }
+  // The approval is created by reconcileSampleApprovals when the Approvals page
+  // loads (path-agnostic — see app/actions/approvals.ts), not here, so this same
+  // "verified → awaiting approval" behaviour also applies to worksheet-driven
+  // verification which never calls this function.
+  return { success: result.success, message: result.success ? 'Sample verified and sent for approval.' : (result.error ?? 'Failed to verify sample.') }
 }
 
 export async function publishSample(uid: string): Promise<WorkflowResult> {

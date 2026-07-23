@@ -35,6 +35,13 @@ STATUS_MAP = {
     "invalid":            "rejected",
 }
 
+# Forward-only ordering of the lab-progress stages (Django owns the worksheet
+# stages in_progress/results_pending/reviewed; SENAITE's AR just sits at
+# sample_received while worksheets run). A sync must never move a sample
+# backwards through these.
+STATUS_RANK = {"registered": 0, "received": 1, "in_progress": 2,
+               "results_pending": 3, "reviewed": 4, "published": 5}
+
 
 def _session() -> requests.Session:
     _, user, password = _senaite_creds()
@@ -76,6 +83,81 @@ def _get_all_pages(session, url, params=None) -> list:
     return results
 
 
+def _fetch_ar(session, ar_uid):
+    """Fetch a single AnalysisRequest by uid → its item dict (or None)."""
+    try:
+        r = session.get(f"{_api('AnalysisRequest')}/{ar_uid}", params={"complete": "true"}, timeout=20)
+        r.raise_for_status()
+        items = r.json().get("items", [])
+        return items[0] if items else None
+    except requests.RequestException as exc:
+        logger.error("refresh: AR fetch failed for %s: %s", ar_uid, exc)
+        return None
+
+
+def refresh_one_sample_status(ar_uid: str = "", analysis_uid: str = "") -> dict:
+    """On-demand single-sample status sync (the synchronous counterpart of the
+    5-min pull task). Reads one sample's live SENAITE review_state and updates
+    its Django Sample.status (forward-only), matched by senaite_uid/senaite_ar_id.
+    Accepts an AnalysisRequest uid, OR an Analysis uid (resolves its parent AR —
+    used by worksheet result/verify actions, which act on analyses).
+    Returns {uid, sample_id, status, review_state} or {error}.
+    """
+    from django.db.models import Q
+    from lims.models import Sample
+
+    url, _, _ = _senaite_creds()
+    if not url:
+        return {"error": "SENAITE_URL not configured"}
+    session = _session()
+
+    # Resolve an analysis uid up to its parent AR.
+    if not ar_uid and analysis_uid:
+        try:
+            r = session.get(f"{_api('Analysis')}/{analysis_uid}", params={"complete": "true"}, timeout=20)
+            r.raise_for_status()
+            items = r.json().get("items", [])
+            if items:
+                ar_uid = items[0].get("getRequestUID") or items[0].get("getParentUID") or ""
+        except requests.RequestException as exc:
+            return {"error": f"analysis lookup failed: {exc}"}
+    if not ar_uid:
+        return {"error": "no AnalysisRequest uid"}
+
+    ar = _fetch_ar(session, ar_uid)
+    if not ar:
+        return {"error": "AnalysisRequest not found"}
+
+    review_state = ar.get("review_state", "")
+    senaite_ar_id = ar.get("id", "")
+    new_status = STATUS_MAP.get(review_state, "")
+    if not new_status:
+        return {"error": f"unmapped review_state '{review_state}'", "review_state": review_state}
+
+    with transaction.atomic():
+        sample = (Sample.objects.select_for_update()
+                  .filter(Q(senaite_uid=ar_uid) | Q(senaite_ar_id=senaite_ar_id))
+                  .first())
+        if not sample:
+            return {"error": "no matching Django sample", "review_state": review_state}
+
+        changed = ["last_synced_from_senaite"]
+        sample.last_synced_from_senaite = timezone.now()
+        if not sample.senaite_uid:
+            sample.senaite_uid = ar_uid
+            changed.append("senaite_uid")
+        moves_forward = (
+            new_status not in STATUS_RANK or sample.status not in STATUS_RANK
+            or STATUS_RANK[new_status] > STATUS_RANK[sample.status]
+        )
+        if sample.status != new_status and not sample.is_locked and moves_forward:
+            logger.info("refresh %s: %s → %s", sample.sample_id, sample.status, new_status)
+            sample.status = new_status
+            changed.append("status")
+        sample.save(update_fields=changed)
+        return {"uid": ar_uid, "sample_id": sample.sample_id, "status": sample.status, "review_state": review_state}
+
+
 def pull_samples_and_results():
     """
     Main sync entry point.
@@ -103,52 +185,48 @@ def pull_samples_and_results():
         review_state = ar_data.get("review_state", "")
         senaite_ar_id = ar_data.get("id", "")
 
-        if not client_sample_id:
+        # 2. Match the Django Sample by SENAITE uid → id → ClientSampleID.
+        # uid/id are always present and stable; ClientSampleID frequently isn't
+        # set, which previously made this sync silently skip most samples.
+        from django.db.models import Q
+        match = Q()
+        if senaite_uid:
+            match |= Q(senaite_uid=senaite_uid)
+        if senaite_ar_id:
+            match |= Q(senaite_ar_id=senaite_ar_id)
+        if client_sample_id:
+            match |= Q(sample_id=client_sample_id)
+        if not match:
             skipped += 1
             continue
 
-        # 2. Find matching Django Sample by sample_id (= ClientSampleID in SENAITE),
-        # locking the row so a concurrent lock/status change can't race with this sync.
-        try:
-            with transaction.atomic():
-                sample = Sample.objects.select_for_update().get(sample_id=client_sample_id)
+        with transaction.atomic():
+            sample = Sample.objects.select_for_update().filter(match).first()
+            if sample is None:
+                skipped += 1
+                continue
 
-                # 3. Update Sample status + senaite_uid
-                new_status = STATUS_MAP.get(review_state, "")
-                changed_fields = ["last_synced_from_senaite"]
-                sample.last_synced_from_senaite = timezone.now()
+            # 3. Update Sample status + senaite ids (forward-only)
+            new_status = STATUS_MAP.get(review_state, "")
+            changed_fields = ["last_synced_from_senaite"]
+            sample.last_synced_from_senaite = timezone.now()
 
-                if senaite_uid and not sample.senaite_uid:
-                    sample.senaite_uid = senaite_uid
-                    changed_fields.append("senaite_uid")
-                if senaite_ar_id and not sample.senaite_ar_id:
-                    sample.senaite_ar_id = senaite_ar_id
-                    changed_fields.append("senaite_ar_id")
-                # Forward-only: Django owns the worksheet-progress stages
-                # (in_progress/results_pending/reviewed) because lab worksheets
-                # never touch SENAITE, whose AR just sits at sample_received.
-                # Without this rank guard, every sync tick reverted those
-                # derived statuses back to "received".
-                RANK = {"registered": 0, "received": 1, "in_progress": 2,
-                        "results_pending": 3, "reviewed": 4, "published": 5}
-                moves_forward = (
-                    new_status not in RANK or sample.status not in RANK
-                    or RANK[new_status] > RANK[sample.status]
-                )
-                if new_status and sample.status != new_status and not sample.is_locked and moves_forward:
-                    logger.info("Sample %s: %s → %s", sample.sample_id, sample.status, new_status)
-                    sample.status = new_status
-                    changed_fields.append("status")
+            if senaite_uid and not sample.senaite_uid:
+                sample.senaite_uid = senaite_uid
+                changed_fields.append("senaite_uid")
+            if senaite_ar_id and not sample.senaite_ar_id:
+                sample.senaite_ar_id = senaite_ar_id
+                changed_fields.append("senaite_ar_id")
+            moves_forward = (
+                new_status not in STATUS_RANK or sample.status not in STATUS_RANK
+                or STATUS_RANK[new_status] > STATUS_RANK[sample.status]
+            )
+            if new_status and sample.status != new_status and not sample.is_locked and moves_forward:
+                logger.info("Sample %s: %s → %s", sample.sample_id, sample.status, new_status)
+                sample.status = new_status
+                changed_fields.append("status")
 
-                sample.save(update_fields=changed_fields)
-        except Sample.DoesNotExist:
-            logger.debug("No Django sample for SENAITE ClientSampleID=%s", client_sample_id)
-            skipped += 1
-            continue
-        except Sample.MultipleObjectsReturned:
-            logger.warning("Multiple samples for ClientSampleID=%s — skipping", client_sample_id)
-            errors += 1
-            continue
+            sample.save(update_fields=changed_fields)
 
         # 4. Pull analyses (results) for this AR
         ar_uid = senaite_uid

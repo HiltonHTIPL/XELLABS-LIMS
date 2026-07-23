@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from django_filters import rest_framework as df_filters
 from django.contrib.contenttypes.models import ContentType
-from core.permissions import AuditReadOnly
+from core.permissions import requires
 from .models import AuditEvent, LoginEvent, SecurityEvent, RecordVersion, ImportLog
 from .serializers import (
     AuditEventSerializer, LoginEventSerializer,
@@ -38,7 +38,7 @@ class AuditEventFilter(df_filters.FilterSet):
 class AuditEventViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = AuditEvent.objects.select_related("user", "content_type").prefetch_related("changes").all()
     serializer_class = AuditEventSerializer
-    permission_classes = [AuditReadOnly]
+    permission_classes = [requires("view_audit_trail", allow_read=False)]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_class = AuditEventFilter
     ordering_fields = ["timestamp"]
@@ -86,7 +86,7 @@ class AuditEventViewSet(viewsets.ReadOnlyModelViewSet):
 class LoginEventViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = LoginEvent.objects.select_related("user").all()
     serializer_class = LoginEventSerializer
-    permission_classes = [AuditReadOnly]
+    permission_classes = [requires("view_audit_trail", allow_read=False)]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ["success", "user"]
     ordering_fields = ["timestamp"]
@@ -95,7 +95,7 @@ class LoginEventViewSet(viewsets.ReadOnlyModelViewSet):
 class SecurityEventViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = SecurityEvent.objects.select_related("user").all()
     serializer_class = SecurityEventSerializer
-    permission_classes = [AuditReadOnly]
+    permission_classes = [requires("view_audit_trail", allow_read=False)]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ["severity", "event_type"]
 
@@ -103,7 +103,7 @@ class SecurityEventViewSet(viewsets.ReadOnlyModelViewSet):
 class RecordVersionViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = RecordVersion.objects.select_related("content_type", "changed_by").all()
     serializer_class = RecordVersionSerializer
-    permission_classes = [AuditReadOnly]
+    permission_classes = [requires("view_audit_trail", allow_read=False)]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ["content_type", "object_id"]
     ordering_fields = ["version_number", "created_at"]

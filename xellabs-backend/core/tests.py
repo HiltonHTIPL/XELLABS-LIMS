@@ -100,7 +100,7 @@ class RBACTest(TenantAPITestCase):
         )
         result = Result.objects.create(worksheet_assignment=wa, value="5.2", status="submitted")
 
-        self._auth("reviewer")
+        self._auth("verifier")
         r = self.client.post(f"/api/lims/results/{result.pk}/verify/")
         self.assertEqual(r.status_code, status.HTTP_200_OK)
         self.assertEqual(r.data["status"], "verified")

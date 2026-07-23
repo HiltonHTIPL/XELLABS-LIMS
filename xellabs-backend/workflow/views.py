@@ -4,16 +4,21 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 
-from core.permissions import IsReviewerOrAbove, IsLabManagerOrAbove, IsAnalystOrAbove
-from audittrail.models import AuditEvent
+from core.permissions import IsLabManagerOrAbove, IsAnalystOrAbove, requires
+from audittrail.models import AuditEvent, SecurityEvent
 from audittrail.middleware import get_current_request
 from .models import WorkflowState, WorkflowTransition, Task, TaskAssignment, Approval, ElectronicSignature
 from .serializers import (
     WorkflowStateSerializer, WorkflowTransitionSerializer,
     TaskSerializer, TaskAssignmentSerializer,
-    ApprovalSerializer, ApprovalActionSerializer,
+    ApprovalSerializer, ApprovalActionSerializer, SampleApprovalRequestSerializer,
     ElectronicSignatureSerializer, SignRequestSerializer,
 )
+
+
+def _client_ip(request):
+    xff = request.META.get("HTTP_X_FORWARDED_FOR")
+    return xff.split(",")[0].strip() if xff else request.META.get("REMOTE_ADDR")
 
 
 class WorkflowStateViewSet(viewsets.ModelViewSet):
@@ -92,11 +97,13 @@ class TaskAssignmentViewSet(viewsets.ModelViewSet):
 class ApprovalViewSet(viewsets.ModelViewSet):
     queryset = Approval.objects.select_related("requested_by", "reviewed_by", "content_type").all()
     serializer_class = ApprovalSerializer
-    permission_classes = [IsReviewerOrAbove]
+    # Listing the queue is open to any authenticated user; deciding is gated to
+    # the roles allowed to approve results (see decide()).
+    permission_classes = [requires("approve_results")]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ["status", "content_type"]
 
-    @action(detail=True, methods=["post"], permission_classes=[IsReviewerOrAbove])
+    @action(detail=True, methods=["post"], permission_classes=[requires("approve_results", allow_read=False)])
     def decide(self, request, pk=None):
         approval = self.get_object()
         if approval.status != "pending":
@@ -105,26 +112,43 @@ class ApprovalViewSet(viewsets.ModelViewSet):
         serializer = ApprovalActionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         action_choice = serializer.validated_data["action"]
+        comments = serializer.validated_data.get("comments", "")
+        password = serializer.validated_data["password"]
+        ip = _client_ip(request)
 
-        # Compliance rule (CLAUDE.md §6): an e-signature by the deciding user on
-        # the target object is required before an approval can be granted.
-        if action_choice == "approve":
-            has_signature = ElectronicSignature.objects.filter(
-                content_type=approval.content_type,
-                object_id=approval.object_id,
-                signed_by=request.user,
-            ).exists()
-            if not has_signature:
-                return Response(
-                    {"detail": "An electronic signature is required before approving. "
-                               "Sign the record first via the signatures/sign endpoint."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+        # Electronic signature (CLAUDE.md §6): the deciding user must re-enter
+        # their own password. This is the signature — verified here, not merely
+        # collected. A wrong password blocks the decision and is logged.
+        if not request.user.check_password(password):
+            SecurityEvent.objects.create(
+                user=request.user,
+                event_type="esignature_failed",
+                severity="medium",
+                description=(
+                    f"Failed e-signature on approval #{approval.pk} "
+                    f"(sample {approval.sample_id or approval.senaite_uid or '—'}) — incorrect password."
+                ),
+                ip_address=ip,
+            )
+            return Response(
+                {"password": ["Incorrect password. Your decision was not applied."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Record the signature (both approve and reject are signed decisions).
+        ElectronicSignature.objects.create(
+            content_type=approval.content_type,
+            object_id=approval.object_id,
+            senaite_uid=approval.senaite_uid,
+            signed_by=request.user,
+            reason=comments or f"{action_choice.capitalize()} approval #{approval.pk}",
+            ip_address=ip,
+        )
 
         approval.status = "approved" if action_choice == "approve" else "rejected"
         approval.reviewed_by = request.user
         approval.reviewed_at = timezone.now()
-        approval.comments = serializer.validated_data.get("comments", "")
+        approval.comments = comments
         approval.save()
 
         AuditEvent.objects.create(
@@ -132,15 +156,76 @@ class ApprovalViewSet(viewsets.ModelViewSet):
             action=action_choice,
             content_type=approval.content_type,
             object_id=approval.object_id,
-            object_repr=f"Approval #{approval.pk}",
+            object_repr=f"Approval #{approval.pk} — sample {approval.sample_id or approval.senaite_uid or '—'}",
+            ip_address=ip,
         )
         return Response(ApprovalSerializer(approval).data)
+
+    @action(detail=False, methods=["post"], url_path="request-sample",
+            permission_classes=[IsAnalystOrAbove])
+    def request_sample(self, request):
+        """Create a pending approval for a verified SENAITE sample (by UID).
+        Idempotent — if a pending approval already exists for this UID it is
+        returned unchanged, so a re-verify never produces duplicates."""
+        serializer = SampleApprovalRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        vd = serializer.validated_data
+
+        existing = Approval.objects.filter(senaite_uid=vd["senaite_uid"], status="pending").first()
+        if existing:
+            return Response(ApprovalSerializer(existing).data, status=status.HTTP_200_OK)
+
+        approval = Approval.objects.create(
+            senaite_uid=vd["senaite_uid"],
+            sample_id=vd.get("sample_id", ""),
+            client_name=vd.get("client_name", ""),
+            title=vd.get("title", ""),
+            priority=vd.get("priority", ""),
+            requested_by=request.user,
+        )
+        AuditEvent.objects.create(
+            user=request.user,
+            action="submit",
+            object_repr=f"Approval #{approval.pk} requested — sample {approval.sample_id or approval.senaite_uid}",
+            ip_address=_client_ip(request),
+        )
+        return Response(ApprovalSerializer(approval).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["post"], url_path="reconcile-samples",
+            permission_classes=[IsAnalystOrAbove])
+    def reconcile_samples(self, request):
+        """Ensure every currently-verified SENAITE sample has an approval row.
+        The frontend passes the set of samples at review_state="verified"; any
+        UID with no approval (in ANY status — so a rejected/approved sample is
+        never re-created) gets a fresh pending approval. This is the single,
+        path-agnostic trigger: it fires no matter how the sample got verified
+        (worksheet, sample detail, bulk, or SENAITE's own UI)."""
+        serializer = SampleApprovalRequestSerializer(data=request.data.get("samples", []), many=True)
+        serializer.is_valid(raise_exception=True)
+        samples = serializer.validated_data
+        uids = [s["senaite_uid"] for s in samples]
+        existing = set(Approval.objects.filter(senaite_uid__in=uids).values_list("senaite_uid", flat=True))
+
+        to_create = [
+            Approval(
+                senaite_uid=s["senaite_uid"], sample_id=s.get("sample_id", ""),
+                client_name=s.get("client_name", ""), title=s.get("title", ""),
+                priority=s.get("priority", ""), requested_by=None,
+            )
+            for s in samples if s["senaite_uid"] not in existing
+        ]
+        if to_create:
+            Approval.objects.bulk_create(to_create)
+        return Response({"created": len(to_create)})
 
 
 class ElectronicSignatureViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = ElectronicSignature.objects.select_related("signed_by", "content_type").all()
     serializer_class = ElectronicSignatureSerializer
-    permission_classes = [IsReviewerOrAbove]
+    # A signature can only ever be created for the signer themselves (the sign
+    # action re-verifies request.user's own password), so this stays open to any
+    # lab analyst-or-above; identity is enforced by the password, not the role.
+    permission_classes = [IsAnalystOrAbove]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ["content_type", "object_id", "signed_by"]
 

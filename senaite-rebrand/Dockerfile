@@ -75,6 +75,31 @@ RUN chown senaite:senaite \
     ${CORE}/adapters/worksheet_views.py \
     ${CORE}/adapters/configure.zcml
 
+# Analysis.calculateResult() (the real formula-from-interim-fields engine) only
+# ever fires via SENAITE's own JS-driven AJAX call on interim-cell-change — a
+# flat REST write of {Result, InterimFields} never triggers it. This view
+# invokes the real method directly so a Calculation-backed Analysis (e.g. Soil
+# Calcium and Magnesium: [CA]+[MG]) actually computes its Result from entered
+# interim values — see analysis_calculate_view.py docstring.
+COPY analysis_calculate_view.py ${CORE}/adapters/analysis_calculate_view.py
+COPY patch_analysis_calculate_zcml.py /tmp/patch_analysis_calculate_zcml.py
+RUN python2.7 /tmp/patch_analysis_calculate_zcml.py
+RUN chown senaite:senaite \
+    ${CORE}/adapters/analysis_calculate_view.py \
+    ${CORE}/adapters/configure.zcml
+
+# Pushes our Django-side AnalysisSpecification's per-service ranges onto a
+# live AnalysisRequest via SENAITE's own real setResultsRange() (confirmed by
+# reading analysisrequest.py directly) so isOutOfRange()/getResultsRange()
+# work exactly as they would for a native Specification-linked sample - see
+# analysisrequest_specification_view.py docstring.
+COPY analysisrequest_specification_view.py ${CORE}/adapters/analysisrequest_specification_view.py
+COPY patch_analysisrequest_specification_zcml.py /tmp/patch_analysisrequest_specification_zcml.py
+RUN python2.7 /tmp/patch_analysisrequest_specification_zcml.py
+RUN chown senaite:senaite \
+    ${CORE}/adapters/analysisrequest_specification_view.py \
+    ${CORE}/adapters/configure.zcml
+
 # Replace branding templates
 COPY logo.pt          ${BASE}/viewlets/templates/logo.pt
 COPY toolbar.pt       ${BASE}/viewlets/templates/toolbar.pt

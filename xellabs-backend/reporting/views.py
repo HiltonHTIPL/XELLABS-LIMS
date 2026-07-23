@@ -9,7 +9,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 
-from core.permissions import ReadOnlyOrLabManager, ReadOnlyOrAnalystOrAbove
+from core.permissions import ReadOnlyOrLabManager, ReadOnlyOrAnalystOrAbove, requires
 from .models import Report, ReportTemplate, DEFAULT_COA_FIELDS
 from .serializers import ReportSerializer, ReportTemplateSerializer
 from .tasks import generate_coa_pdf
@@ -121,7 +121,8 @@ class ReportViewSet(viewsets.ModelViewSet):
     search_fields = ["report_id", "title"]
     ordering_fields = ["created_at", "published_at"]
 
-    @action(detail=True, methods=["post"], url_path="generate")
+    @action(detail=True, methods=["post"], url_path="generate",
+            permission_classes=[requires("generate_reports", allow_read=False)])
     def generate(self, request, pk=None):
         """Dispatch a Celery task to generate the COA PDF for this report."""
         report = self.get_object()
@@ -282,7 +283,8 @@ class ReportViewSet(viewsets.ModelViewSet):
         report.save(update_fields=["status"])
         return Response(self.get_serializer(report).data)
 
-    @action(detail=True, methods=["post"], url_path="regenerate")
+    @action(detail=True, methods=["post"], url_path="regenerate",
+            permission_classes=[requires("generate_reports", allow_read=False)])
     def regenerate(self, request, pk=None):
         """Reset a final/failed/cancelled COA report to draft and re-dispatch generation."""
         report = self.get_object()

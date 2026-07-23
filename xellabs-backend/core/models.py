@@ -67,12 +67,15 @@ class Domain(DomainMixin):
 
 class User(AbstractUser):
     ROLES = [
-        ("admin", "Administrator"),
-        ("lab_manager", "Lab Manager"),
-        ("analyst", "Analyst"),
-        ("reviewer", "Reviewer"),
         ("client", "Client"),
-        ("receptionist", "Receptionist"),
+        ("lab_clerk", "Lab Clerk"),
+        ("sampler", "Sampler"),
+        ("analyst", "Analyst"),
+        ("verifier", "Verifier"),
+        ("lab_manager", "Lab Manager"),
+        ("publisher", "Publisher"),
+        ("manager", "Manager"),
+        ("admin", "Administrator"),
     ]
     role = models.CharField(max_length=20, choices=ROLES, default="analyst")
     phone = models.CharField(max_length=20, blank=True)

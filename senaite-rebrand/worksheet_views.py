@@ -24,6 +24,7 @@ rather than reimplementing any of that layout/QC logic (KISS: reuse the engine).
 import json
 
 from bika.lims import api
+from bika.lims.api.analysis import is_out_of_range
 from bika.lims.utils import tmpID
 from Products.CMFPlone.utils import _createObjectByType
 from Products.Five.browser import BrowserView
@@ -52,15 +53,87 @@ def _analysis_info(analysis):
             request = analysis.getRequest()
         except Exception:
             request = None
+    # QC analyses (Blank/Control) have no Request — getRequest() returns None
+    # for them since their real parent is a ReferenceSample, not an
+    # AnalysisRequest. Fall back to the analysis's own physical parent, which
+    # is always correct regardless of type (an Analysis lives inside its AR,
+    # a ReferenceAnalysis lives inside its ReferenceSample) — this shows the
+    # QC material's own SENAITE id (e.g. "QC-SOILMIN-2026-001") in the same
+    # "sample" slot a routine row uses for its real sample id.
+    if request is None:
+        try:
+            parent = api.get_parent(analysis)
+            if parent is not None and api.get_portal_type(parent) != "Worksheet":
+                request = parent
+        except Exception:
+            request = None
     result = ""
     if hasattr(analysis, "getResult"):
         try:
             result = analysis.getResult()
         except Exception:
             result = ""
+    # Interim fields (e.g. CA/MG for "Soil Calcium and Magnesium") only exist
+    # when the Analysis Service configured a Calculation with them — most
+    # analyses have none, so this stays an empty list. See
+    # analysis_calculate_view.py for how these get turned into a computed
+    # Result via SENAITE's own calculateResult() engine.
+    interim_fields = []
+    if hasattr(analysis, "getInterimFields"):
+        try:
+            interim_fields = analysis.getInterimFields() or []
+        except Exception:
+            interim_fields = []
+    calculation = None
+    if hasattr(analysis, "getCalculation"):
+        try:
+            calculation = analysis.getCalculation()
+        except Exception:
+            calculation = None
+
+    # Grading flags - only meaningful once a result has been entered, and
+    # only computed from real SENAITE mechanisms (never guessed/derived
+    # client-side): is_out_of_range() works uniformly for both a routine
+    # Analysis (graded against its own ResultsRange, pushed by
+    # @@set-results-range from our Django-side Specification) and a QC
+    # ReferenceAnalysis (graded against its ReferenceSample's own
+    # ReferenceResults) - confirmed by reading bika/lims/api/analysis.py.
+    # Detection/quantification limit flags come straight from the Analysis
+    # Service's own configured thresholds.
+    out_of_range = False
+    below_lod = False
+    above_udl = False
+    below_loq = False
+    above_uoq = False
+    if result not in (None, ""):
+        try:
+            out_of_range, _ = is_out_of_range(analysis)
+        except Exception:
+            out_of_range = False
+        for attr, box in (
+            ("isBelowLowerDetectionLimit", "below_lod"),
+            ("isAboveUpperDetectionLimit", "above_udl"),
+            ("isBelowLimitOfQuantification", "below_loq"),
+            ("isAboveLimitOfQuantification", "above_uoq"),
+        ):
+            if hasattr(analysis, attr):
+                try:
+                    value = getattr(analysis, attr)()
+                except Exception:
+                    value = False
+                if box == "below_lod":
+                    below_lod = value
+                elif box == "above_udl":
+                    above_udl = value
+                elif box == "below_loq":
+                    below_loq = value
+                elif box == "above_uoq":
+                    above_uoq = value
+
     return {
         "uid": api.get_uid(analysis),
         "id": api.get_id(analysis),
+        "path": analysis.absolute_url_path(),
         "title": analysis.Title(),
         "keyword": analysis.getKeyword() if hasattr(analysis, "getKeyword") else "",
         "portal_type": analysis.portal_type,
@@ -68,6 +141,13 @@ def _analysis_info(analysis):
         "result": result if result is not None else "",
         "sample_id": api.get_id(request) if request else "",
         "sample_uid": api.get_uid(request) if request else "",
+        "interim_fields": interim_fields,
+        "calculation_uid": api.get_uid(calculation) if calculation else "",
+        "out_of_range": bool(out_of_range),
+        "below_lod": bool(below_lod),
+        "above_udl": bool(above_udl),
+        "below_loq": bool(below_loq),
+        "above_uoq": bool(above_uoq),
     }
 
 
