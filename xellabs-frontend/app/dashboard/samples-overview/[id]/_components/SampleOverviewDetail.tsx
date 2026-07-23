@@ -62,13 +62,13 @@ const AR_STATUS_BADGE: Record<string, { bg: string; color: string; label: string
 
 function fmt(d: string | null): string {
   if (!d) return '—'
-  try { return new Date(d).toLocaleString('en-US', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) }
+  try { return new Date(d).toLocaleString('en-US', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'UTC' }) }
   catch { return d }
 }
 
 function fmtShort(d: string | null): string {
   if (!d) return '—'
-  try { return new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) }
+  try { return new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) }
   catch { return d }
 }
 

@@ -6,7 +6,7 @@ import {
 } from '../../_components/ui'
 import DataTable, { type DataTableColumn } from '../../_components/DataTable'
 import type { AuditEvent, LoginEvent, SecurityEvent, RecordVersion } from '@/app/actions/audit-trail'
-import { recordTypeLabel, downloadAuditCsv } from './auditCsv'
+import { recordTypeLabel, downloadAuditCsv, fieldNameLabel } from './auditCsv'
 
 type Tab = 'events' | 'logins' | 'security' | 'versions'
 
@@ -113,7 +113,7 @@ export function EventDetailsDropdown({ event }: { event: AuditEvent }) {
               <tbody>
                 {event.changes!.map(c => (
                   <tr key={c.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                    <td style={{ ...tdStyleLocal, fontWeight: 600 }}>{c.field_name}</td>
+                    <td style={{ ...tdStyleLocal, fontWeight: 600 }}>{fieldNameLabel(c.field_name)}</td>
                     <td style={{ ...tdStyleLocal, color: '#EF4444', textDecoration: 'line-through' }}>{c.old_value ?? '—'}</td>
                     <td style={{ ...tdStyleLocal, color: '#10B981', fontWeight: 600 }}>{c.new_value ?? '—'}</td>
                     <td style={{ ...tdStyleLocal, color: '#6B7280' }}>{c.reason || '—'}</td>
@@ -160,7 +160,7 @@ function EventDetailsDrawer({ event, history, onClose }: { event: AuditEvent; hi
                 <tbody>
                   {event.changes.map(c => (
                     <tr key={c.id}>
-                      <td style={tdStyleLocal}>{c.field_name}</td>
+                      <td style={tdStyleLocal}>{fieldNameLabel(c.field_name)}</td>
                       <td style={{ ...tdStyleLocal, color: T.danger }}>{c.old_value ?? '—'}</td>
                       <td style={{ ...tdStyleLocal, color: T.success }}>{c.new_value ?? '—'}</td>
                       <td style={tdStyleLocal}>{c.reason || '—'}</td>

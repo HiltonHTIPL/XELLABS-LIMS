@@ -6,48 +6,55 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { NAV, isGroup } from './Sidebar'
 import { ADMIN_SECTIONS } from './adminNav'
+import { mapSenaiteRolesAll } from '@/app/lib/roles'
 import { T } from './tokens'
 
 type ResultItem = { label: string; href: string; icon: string; group?: string }
 
 interface Props {
   role?: string
+  senaiteRoles?: string[]
   isSuperuser?: boolean
   open: boolean
   onClose: () => void
 }
 
-function isVisible(roles: string[] | null, role: string | undefined, superuserOnly: boolean | undefined, isSuperuser: boolean | undefined) {
+// Visible if the required roles list includes ANY of the user's full granted
+// role set (primary role + every SENAITE role matrix checkbox), matching
+// Sidebar.tsx's isVisible — kept in sync so palette results never disagree
+// with what the sidebar itself shows.
+function isVisible(roles: string[] | null, allRoles: Set<string>, superuserOnly: boolean | undefined, isSuperuser: boolean | undefined) {
   if (superuserOnly && !isSuperuser) return false
-  return !roles || (!!role && roles.includes(role))
+  return !roles || roles.some(r => allRoles.has(r))
 }
 
-export default function CommandPalette({ role, isSuperuser, open, onClose }: Props) {
+export default function CommandPalette({ role, senaiteRoles, isSuperuser, open, onClose }: Props) {
   const router = useRouter()
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const allItems = useMemo<ResultItem[]>(() => {
+    const allRoles = new Set([role, ...mapSenaiteRolesAll(senaiteRoles)].filter((r): r is string => !!r))
     const items: ResultItem[] = []
     for (const entry of NAV) {
       if (isGroup(entry)) {
         for (const child of entry.children) {
-          if (isVisible(child.roles, role, child.superuserOnly, isSuperuser)) {
+          if (isVisible(child.roles, allRoles, child.superuserOnly, isSuperuser)) {
             items.push({ label: child.label, href: child.href, icon: child.icon, group: entry.group })
           }
         }
-      } else if (isVisible(entry.roles, role, entry.superuserOnly, isSuperuser)) {
+      } else if (isVisible(entry.roles, allRoles, entry.superuserOnly, isSuperuser)) {
         items.push({ label: entry.label, href: entry.href, icon: entry.icon })
       }
     }
     for (const section of ADMIN_SECTIONS) {
-      if (section.roles === null || (!!role && section.roles.includes(role))) {
+      if (section.roles === null || section.roles.some(r => allRoles.has(r))) {
         items.push({ label: section.label, href: section.href, icon: section.icon, group: 'Administration' })
       }
     }
     return items
-  }, [role, isSuperuser])
+  }, [role, senaiteRoles, isSuperuser])
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase()

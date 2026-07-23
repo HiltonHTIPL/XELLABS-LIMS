@@ -5,7 +5,8 @@ import { createSampleWithAnalyses, updateSampleWithAnalyses, type DjangoSampleTy
 import { type DjangoClient } from '@/app/actions/clients'
 import { type AnalysisSpecification } from '@/app/actions/specifications'
 import { type AnalysisRequest } from '@/app/actions/analysis-requests'
-import { type SenaiteBatch, type SenaiteSampleTemplate, type SenaiteRefOption, type SenaiteAnalysisService } from '@/app/lib/senaite'
+import { getContactsForClient } from '@/app/actions/samples'
+import { type SenaiteBatch, type SenaiteSampleTemplate, type SenaiteRefOption, type SenaiteAnalysisService, type SenaiteContact } from '@/app/lib/senaite'
 import StorageLocationInput from '@/app/dashboard/_components/StorageLocationInput'
 
 const CONTAINER_OPTIONS = [
@@ -246,6 +247,15 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
   const [attachments, setAttachments] = useState<AttachmentEntry[]>([])
   const [toast, setToast] = useState('')
   function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(''), 3000) }
+
+  // Real SENAITE contacts for the currently-selected client, keyed by
+  // client id so switching between sample tabs doesn't refetch — used to
+  // give Contact/CC Contact live suggestions instead of only ever
+  // auto-filling from the Django Client mirror's single stored contact.
+  const [clientContacts, setClientContacts] = useState<Record<string, SenaiteContact[]>>({})
+  function contactFullName(c: SenaiteContact): string {
+    return [c.Firstname, c.Surname].filter(Boolean).join(' ') || c.EmailAddress
+  }
 
   // Ctrl+Left/Right to move between sample tabs — scoped to this component's
   // own keydown listener (not a page-wide shortcut) so it never fights other
@@ -496,16 +506,35 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
   function handleClientChange(clientId: string) {
     const client = clients.find(c => String(c.id) === clientId)
     if (!client) { set('clientId', ''); return }
-    const contactName = [client.contact_first_name, client.contact_last_name].filter(Boolean).join(' ') || client.contact_person || ''
+    const mirrorContactName = [client.contact_first_name, client.contact_last_name].filter(Boolean).join(' ') || client.contact_person || ''
     const ccFromClient = (client.cc_emails ?? '').split(',').map(s => s.trim()).filter(Boolean)
     const emails: string[] = [...ccFromClient]
     if (client.contact_email && !emails.includes(client.contact_email)) emails.push(client.contact_email)
     if (client.email && !emails.includes(client.email)) emails.push(client.email)
     setForms(prev => prev.map((form, i) => i === activeTab ? {
       ...form, clientId,
-      contactName: contactName || form.contactName,
+      contactName: mirrorContactName || form.contactName,
       ccEmails: form.ccEmails.length === 0 ? emails : form.ccEmails,
     } : form))
+
+    // The Django Client mirror only ever stores ONE contact — it has no
+    // concept of a second "CC contact" at all, which is why that field never
+    // auto-filled before. Fetch this client's REAL SENAITE contact list (can
+    // be several) and use it for both: the first as Contact (overriding the
+    // mirror's guess if SENAITE actually has more current data), the second
+    // as CC Contact.
+    if (client.senaite_uid && !clientContacts[clientId]) {
+      getContactsForClient(client.senaite_uid).then(contacts => {
+        setClientContacts(prev => ({ ...prev, [clientId]: contacts }))
+        if (contacts.length === 0) return
+        setForms(prev => prev.map((form, i) => {
+          if (i !== activeTab || form.clientId !== clientId) return form
+          const primary = contactFullName(contacts[0])
+          const cc = contacts[1] ? contactFullName(contacts[1]) : form.ccContact
+          return { ...form, contactName: primary || form.contactName, ccContact: cc }
+        }))
+      })
+    }
   }
 
   // Arrived via a Batch's "Add Samples" button with the Batch pre-selected
@@ -785,9 +814,12 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
                     </select>
                   )}</div>
                 <div style={field}><label style={lbl}>Contact <span style={{ color: '#EF4444' }}>*</span></label>
-                  <input value={f.contactName} onChange={e => set('contactName', e.target.value)} placeholder="e.g. Jane Doe" style={inp} /></div>
+                  <input list="contact-suggestions" value={f.contactName} onChange={e => set('contactName', e.target.value)} placeholder="e.g. Jane Doe" style={inp} /></div>
                 <div style={field}><label style={lbl}>CC Contact</label>
-                  <input value={f.ccContact} onChange={e => set('ccContact', e.target.value)} placeholder="e.g. John Smith" style={inp} /></div>
+                  <input list="contact-suggestions" value={f.ccContact} onChange={e => set('ccContact', e.target.value)} placeholder="e.g. John Smith" style={inp} /></div>
+                <datalist id="contact-suggestions">
+                  {(clientContacts[f.clientId] ?? []).map(c => <option key={c.uid} value={contactFullName(c)} />)}
+                </datalist>
               </div>
               <div style={{ ...grid2, marginBottom: 16 }}>
                 <div style={field}><label style={lbl}>CC Emails</label>

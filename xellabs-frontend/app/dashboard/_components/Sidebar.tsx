@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { T } from './tokens'
 import { ADMIN_SECTIONS } from './adminNav'
+import { mapSenaiteRolesAll } from '@/app/lib/roles'
 
 function MI({ name, size = 16 }: { name: string; size?: number }) {
   return <span className="material-icons" style={{ fontSize: size, lineHeight: 1 }}>{name}</span>
@@ -70,11 +71,12 @@ export const NAV: NavEntry[] = [
 interface Props {
   onToggle?: () => void
   role?: string
+  senaiteRoles?: string[]
   reportDraftCount?: number
   isSuperuser?: boolean
 }
 
-export default function Sidebar({ onToggle, role, reportDraftCount, isSuperuser }: Props) {
+export default function Sidebar({ onToggle, role, senaiteRoles, reportDraftCount, isSuperuser }: Props) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   // /dashboard/samples-overview/new doubles as the Edit Sample page
@@ -100,9 +102,14 @@ export default function Sidebar({ onToggle, role, reportDraftCount, isSuperuser 
     })
   }
 
+  // Visible if the required roles list includes the user's single "primary"
+  // role OR any of their full set of granted SENAITE roles — someone checked
+  // as both LabManager and Verifier in the role matrix should see everything
+  // either role grants, not just whichever one login picked as primary.
+  const allRoles = new Set([role, ...mapSenaiteRolesAll(senaiteRoles)].filter(Boolean))
   function isVisible(roles: string[] | null, superuserOnly?: boolean) {
     if (superuserOnly && !isSuperuser) return false
-    return !roles || (!!role && roles.includes(role))
+    return !roles || roles.some(r => allRoles.has(r))
   }
 
   const linkStyle = (active: boolean): React.CSSProperties => ({

@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { getSampleAuditEvents } from '@/app/actions/sample-audit'
 import type { AuditEvent } from '@/app/actions/audit-trail'
+import { fieldNameLabel } from '@/app/dashboard/audit-trail/_components/auditCsv'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -9,7 +10,7 @@ function MI({ name, size = 16, color }: { name: string; size?: number; color?: s
 
 function fmt(d: string | null): string {
   if (!d) return '—'
-  try { return new Date(d).toLocaleString('en-US', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) }
+  try { return new Date(d).toLocaleString('en-US', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'UTC' }) }
   catch { return d }
 }
 
@@ -86,7 +87,7 @@ export default function SampleAuditDrawer({ sampleId, open, onClose }: { sampleI
                               <tbody>
                                 {entry.changes.map((c, i) => (
                                   <tr key={i} style={{ borderBottom: i < entry.changes.length - 1 ? '1px solid #F3F4F6' : 'none' }}>
-                                    <td style={{ padding: '6px 10px', fontWeight: 500, whiteSpace: 'nowrap', color: '#111827' }}>{c.field_name}</td>
+                                    <td style={{ padding: '6px 10px', fontWeight: 500, whiteSpace: 'nowrap', color: '#111827' }}>{fieldNameLabel(c.field_name)}</td>
                                     <td style={{ padding: '6px 10px', color: '#EF4444', textDecoration: 'line-through', overflowWrap: 'anywhere' }}>{c.old_value || '—'}</td>
                                     <td style={{ padding: '6px 10px', color: '#10B981', overflowWrap: 'anywhere' }}>{c.new_value || '—'}</td>
                                     <td style={{ padding: '6px 10px', color: '#6B7280', overflowWrap: 'anywhere', fontSize: 11.5 }}>{c.reason || '—'}</td>

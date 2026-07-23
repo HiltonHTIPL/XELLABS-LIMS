@@ -175,7 +175,7 @@ const blank = (): FV => ({
   Precision: '', ExponentialFormatPrecision: '', AttachmentRequired: false,
   MaxTimeAllowedDays: '', MaxTimeAllowedHours: '', MaxTimeAllowedMinutes: '',
   MaxHoldingTimeDays: '', MaxHoldingTimeHours: '', MaxHoldingTimeMinutes: '',
-  DuplicateVariation: '', Hidden: false, SelfVerification: '0', NumberOfRequiredVerifications: '1',
+  DuplicateVariation: '', Hidden: false, SelfVerification: '-1', NumberOfRequiredVerifications: '1',
   Conditions: [],
 })
 
@@ -197,7 +197,7 @@ function serviceToFV(s: SenaiteAnalysisService): FV {
     Precision: s.Precision, ExponentialFormatPrecision: s.ExponentialFormatPrecision, AttachmentRequired: s.AttachmentRequired,
     MaxTimeAllowedDays: s.MaxTimeAllowedDays, MaxTimeAllowedHours: s.MaxTimeAllowedHours, MaxTimeAllowedMinutes: s.MaxTimeAllowedMinutes,
     MaxHoldingTimeDays: s.MaxHoldingTimeDays, MaxHoldingTimeHours: s.MaxHoldingTimeHours, MaxHoldingTimeMinutes: s.MaxHoldingTimeMinutes,
-    DuplicateVariation: s.DuplicateVariation, Hidden: s.Hidden, SelfVerification: s.SelfVerification || '0',
+    DuplicateVariation: s.DuplicateVariation, Hidden: s.Hidden, SelfVerification: s.SelfVerification || '-1',
     NumberOfRequiredVerifications: s.NumberOfRequiredVerifications || '1',
     Conditions: s.Conditions,
   }
@@ -616,9 +616,9 @@ export default function AnalysesShell({
                     <Field label="Duplicate Variation %" name="DuplicateVariation" value={vals.DuplicateVariation} onChange={v => setVal('DuplicateVariation', v)} />
                     <CheckboxToggle label="Hidden" hint="Analysis and results won't be displayed by default in reports" checked={vals.Hidden} onChange={v => setVal('Hidden', v)} />
                     <SelectField label="Self-verification of results" name="SelfVerification" value={vals.SelfVerification} onChange={v => setVal('SelfVerification', v)}>
-                      <option value="0">System default (No)</option>
+                      <option value="-1">System default</option>
                       <option value="1">Yes</option>
-                      <option value="2">No</option>
+                      <option value="0">No</option>
                     </SelectField>
                     <SelectField label="Number of required verifications" name="NumberOfRequiredVerifications" value={vals.NumberOfRequiredVerifications} onChange={v => setVal('NumberOfRequiredVerifications', v)}>
                       {[1, 2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}

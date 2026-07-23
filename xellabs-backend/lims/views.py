@@ -6,10 +6,12 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
+from django.contrib.contenttypes.models import ContentType
 from core.permissions import (
     IsLabManagerOrAbove, requires,
     ReadOnlyOrLabManager, ReadOnlyOrAnalystOrAbove, ReadOnlyOrSampleHandler,
 )
+from audittrail.models import AuditEvent
 from .models import (
     SampleType, SampleTemplate, Method, Specification,
     DynamicAnalysisSpecification, AnalysisSpecification,
@@ -208,7 +210,7 @@ class SampleViewSet(viewsets.ModelViewSet):
     serializer_class = SampleSerializer
     permission_classes = [ReadOnlyOrSampleHandler]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["status", "sample_type", "client", "priority", "hold_for_qa", "senaite_uid"]
+    filterset_fields = ["status", "sample_type", "client", "priority", "hold_for_qa", "senaite_uid", "sample_id"]
     search_fields = ["sample_id", "barcode", "description"]
     ordering_fields = ["created_at", "collection_date", "received_date", "expiry_date"]
 
@@ -667,3 +669,21 @@ class ChainOfCustodyViewSet(viewsets.ModelViewSet):
     permission_classes = [ReadOnlyOrSampleHandler]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ["sample", "action"]
+
+    def perform_create(self, serializer):
+        # The person releasing custody is whoever is logged in and performing
+        # this handoff — never a value the client should be trusted to set.
+        instance = serializer.save(transferred_by=self.request.user)
+        AuditEvent.objects.create(
+            user=self.request.user,
+            action="custody_transfer",
+            content_type=ContentType.objects.get_for_model(Sample),
+            object_id=instance.sample_id,
+            object_repr=instance.sample.sample_id,
+            extra_data={
+                "action": instance.action, "from_location": instance.from_location,
+                "to_location": instance.to_location, "purpose": instance.purpose,
+                "condition": instance.condition, "seal_status": instance.seal_status,
+                "received_by": instance.received_by_id,
+            },
+        )

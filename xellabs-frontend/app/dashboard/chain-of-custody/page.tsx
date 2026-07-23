@@ -6,10 +6,21 @@ import {
   lookupChainOfCustody, resolveStorageLabel, assignSampleByLabel,
   type ChainOfCustodyResult, type ResolvedLabel,
 } from '@/app/actions/storage'
+import { logCustodyEvent, type CustodyAction, type CustodyCondition, type SealStatus } from '@/app/actions/chain-of-custody'
+import { getStaffUsers, type StaffUser } from '@/app/actions/users'
 import { STICKER_TEMPLATES, renderSticker, stickerPageCss, printSticker, type StickerTemplate } from '@/app/lib/stickerTemplates'
 import QrScanModal from '@/app/dashboard/_components/QrScanModal'
 import { sampleDisplayId } from '@/app/lib/sampleDisplay'
 import { MI, CustodyTimelineList, FullHistoryModal } from './_components/CustodyTimeline'
+
+const CUSTODY_ACTIONS: { value: CustodyAction; label: string }[] = [
+  { value: 'collected', label: 'Collected' },
+  { value: 'transferred', label: 'Transferred' },
+  { value: 'received', label: 'Received' },
+  { value: 'analysed', label: 'Released for Analysis' },
+  { value: 'retrieved', label: 'Retrieved from Storage' },
+  { value: 'stored', label: 'Returned to Storage' },
+]
 
 function fmtDate(iso: string | null | undefined) {
   if (!iso) return '—'
@@ -72,6 +83,49 @@ export default function ChainOfCustodyPage() {
   const [historyOpen, setHistoryOpen]   = useState(false)
   const [morePos, setMorePos]           = useState<{ top: number; right: number } | null>(null)
   const moreBtnRef = useRef<HTMLButtonElement>(null)
+
+  // Log Custody Event modal — the actual write-side for a manual handoff
+  // (collector -> courier -> accessioner -> analyst -> storage), separate
+  // from "Transfer Custody" above which only moves a storage slot.
+  const [custodyOpen, setCustodyOpen] = useState(false)
+  const [custodySaving, setCustodySaving] = useState(false)
+  const [staffUsers, setStaffUsers] = useState<StaffUser[]>([])
+  const [custodyForm, setCustodyForm] = useState({
+    action: 'transferred' as CustodyAction,
+    fromLocation: '', toLocation: '', receivedById: '',
+    temperatureC: '', condition: '' as CustodyCondition | '', sealStatus: '' as SealStatus | '',
+    purpose: '', notes: '',
+  })
+  function resetCustodyForm() {
+    setCustodyForm({ action: 'transferred', fromLocation: '', toLocation: '', receivedById: '', temperatureC: '', condition: '', sealStatus: '', purpose: '', notes: '' })
+  }
+  async function openCustodyModal() {
+    setCustodyOpen(true)
+    if (staffUsers.length === 0) setStaffUsers(await getStaffUsers())
+  }
+  async function submitCustodyEvent() {
+    if (!sample || custodySaving) return
+    setCustodySaving(true)
+    const res = await logCustodyEvent({
+      sampleId: sample.sample_id,
+      action: custodyForm.action,
+      fromLocation: custodyForm.fromLocation || undefined,
+      toLocation: custodyForm.toLocation || undefined,
+      receivedById: custodyForm.receivedById ? Number(custodyForm.receivedById) : undefined,
+      temperatureC: custodyForm.temperatureC || undefined,
+      condition: custodyForm.condition || undefined,
+      sealStatus: custodyForm.sealStatus || undefined,
+      purpose: custodyForm.purpose || undefined,
+      notes: custodyForm.notes || undefined,
+    })
+    setCustodySaving(false)
+    showToast(res.success, res.success ? 'Custody event logged.' : (res.message ?? 'Failed to log custody event.'))
+    if (res.success) {
+      setCustodyOpen(false)
+      resetCustodyForm()
+      await handleLookup(sample.sample_id)
+    }
+  }
 
   function showToast(ok: boolean, msg: string) {
     setToast({ ok, msg })
@@ -277,6 +331,7 @@ export default function ChainOfCustodyPage() {
                 <div style={{ position: 'fixed', top: morePos.top, right: morePos.right, zIndex: 9999, width: 200, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', padding: 4 }}>
                   {[
                     { label: 'Print Label', icon: 'print', disabled: !sample, run: () => setStickerPickerOpen(true) },
+                    { label: 'Log Custody Event', icon: 'swap_horiz', disabled: !sample, run: () => openCustodyModal() },
                     { label: 'View Full History', icon: 'history', disabled: !sample, run: () => setHistoryOpen(true) },
                     { label: 'Clear Sample', icon: 'close', disabled: !sample, run: () => { setResult(null); setSampleInput(''); setError(''); setPendingLabel(null) } },
                   ].map(item => (
@@ -626,6 +681,113 @@ export default function ChainOfCustodyPage() {
               style={{ color: '#0154FC', background: 'none', border: 'none', cursor: 'pointer' }}>
               <MI name="qr_code_scanner" size={14} color="#0154FC" /> Scan a location label instead
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Log Custody Event modal ── */}
+      {custodyOpen && sample && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100 }}>
+          <div onClick={() => setCustodyOpen(false)} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(17,24,39,0.55)' }} />
+          <div className="bg-white" style={{ position: 'absolute', top: 'var(--dashboard-header-h)', right: 0, bottom: 'var(--dashboard-footer-h)', width: 440, maxWidth: '92vw', padding: 20, boxShadow: '-6px 0 32px rgba(0,0,0,0.15)', overflowY: 'auto' }}>
+            <div className="flex items-center justify-between mb-1">
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Log Custody Event</span>
+              <button onClick={() => setCustodyOpen(false)} style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
+                <MI name="close" size={16} color="#374151" />
+              </button>
+            </div>
+            <p style={{ fontSize: 11, color: '#374151', margin: '0 0 14px' }}>
+              Record a handoff for {sampleDisplayId(sample)} — who released it, who received it, where it moved, and its condition.
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Action</label>
+                <select value={custodyForm.action} onChange={e => setCustodyForm(p => ({ ...p, action: e.target.value as CustodyAction }))}
+                  className="w-full outline-none text-sm px-3 py-2 rounded-lg" style={{ border: '1px solid #D1D5DB', color: '#111827' }}>
+                  {CUSTODY_ACTIONS.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>From</label>
+                  <input value={custodyForm.fromLocation} onChange={e => setCustodyForm(p => ({ ...p, fromLocation: e.target.value }))}
+                    placeholder="e.g. Field site, Receiving"
+                    className="w-full outline-none text-sm px-3 py-2 rounded-lg" style={{ border: '1px solid #D1D5DB', color: '#111827' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>To</label>
+                  <input value={custodyForm.toLocation} onChange={e => setCustodyForm(p => ({ ...p, toLocation: e.target.value }))}
+                    placeholder="e.g. FZ-02/R3/B12"
+                    className="w-full outline-none text-sm px-3 py-2 rounded-lg" style={{ border: '1px solid #D1D5DB', color: '#111827' }} />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Received By</label>
+                <select value={custodyForm.receivedById} onChange={e => setCustodyForm(p => ({ ...p, receivedById: e.target.value }))}
+                  className="w-full outline-none text-sm px-3 py-2 rounded-lg" style={{ border: '1px solid #D1D5DB', color: '#111827' }}>
+                  <option value="">— Not specified —</option>
+                  {staffUsers.map(u => <option key={u.id} value={u.id}>{u.full_name || u.username}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Purpose</label>
+                <input value={custodyForm.purpose} onChange={e => setCustodyForm(p => ({ ...p, purpose: e.target.value }))}
+                  placeholder="e.g. Released for testing, Courier transfer"
+                  className="w-full outline-none text-sm px-3 py-2 rounded-lg" style={{ border: '1px solid #D1D5DB', color: '#111827' }} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Condition</label>
+                  <select value={custodyForm.condition} onChange={e => setCustodyForm(p => ({ ...p, condition: e.target.value as CustodyCondition | '' }))}
+                    className="w-full outline-none text-sm px-3 py-2 rounded-lg" style={{ border: '1px solid #D1D5DB', color: '#111827' }}>
+                    <option value="">— Not specified —</option>
+                    <option value="intact">Intact</option>
+                    <option value="damaged">Damaged</option>
+                    <option value="compromised">Compromised</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Seal Status</label>
+                  <select value={custodyForm.sealStatus} onChange={e => setCustodyForm(p => ({ ...p, sealStatus: e.target.value as SealStatus | '' }))}
+                    className="w-full outline-none text-sm px-3 py-2 rounded-lg" style={{ border: '1px solid #D1D5DB', color: '#111827' }}>
+                    <option value="">— Not specified —</option>
+                    <option value="intact">Seal Intact</option>
+                    <option value="broken">Seal Broken</option>
+                    <option value="not_sealed">Not Sealed</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Temperature (°C) <span style={{ fontWeight: 400 }}>(optional)</span></label>
+                <input value={custodyForm.temperatureC} onChange={e => setCustodyForm(p => ({ ...p, temperatureC: e.target.value }))}
+                  placeholder="e.g. 4.2"
+                  className="w-full outline-none text-sm px-3 py-2 rounded-lg" style={{ border: '1px solid #D1D5DB', color: '#111827' }} />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Notes <span style={{ fontWeight: 400 }}>(optional)</span></label>
+                <textarea rows={2} value={custodyForm.notes} onChange={e => setCustodyForm(p => ({ ...p, notes: e.target.value }))}
+                  className="w-full outline-none text-sm px-3 py-2 rounded-lg resize-none" style={{ border: '1px solid #D1D5DB', color: '#111827' }} />
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setCustodyOpen(false)}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium" style={{ border: '1px solid #D1D5DB', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button onClick={submitCustodyEvent} disabled={custodySaving}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
+                style={{ backgroundColor: '#0154FC', border: 'none', cursor: custodySaving ? 'not-allowed' : 'pointer', opacity: custodySaving ? 0.6 : 1 }}>
+                {custodySaving ? 'Logging…' : 'Log Event'}
+              </button>
+            </div>
           </div>
         </div>
       )}

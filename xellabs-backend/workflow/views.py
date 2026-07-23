@@ -204,7 +204,7 @@ class ApprovalViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         samples = serializer.validated_data
         uids = [s["senaite_uid"] for s in samples]
-        existing = set(Approval.objects.filter(senaite_uid__in=uids).values_list("senaite_uid", flat=True))
+        existing_by_uid = {a.senaite_uid: a for a in Approval.objects.filter(senaite_uid__in=uids)}
 
         to_create = [
             Approval(
@@ -212,11 +212,32 @@ class ApprovalViewSet(viewsets.ModelViewSet):
                 client_name=s.get("client_name", ""), title=s.get("title", ""),
                 priority=s.get("priority", ""), requested_by=None,
             )
-            for s in samples if s["senaite_uid"] not in existing
+            for s in samples if s["senaite_uid"] not in existing_by_uid
         ]
         if to_create:
             Approval.objects.bulk_create(to_create)
-        return Response({"created": len(to_create)})
+
+        # Self-heal: a still-pending approval created before a SENAITE
+        # data-mapping fix (e.g. client title resolution) can be left holding
+        # blank display fields forever, since this endpoint only ever created
+        # new rows — never revisited existing ones. Refresh blanks on pending
+        # rows only; decided approvals are a historical record and left as-is.
+        updated = 0
+        for s in samples:
+            approval = existing_by_uid.get(s["senaite_uid"])
+            if not approval or approval.status != "pending":
+                continue
+            changed = []
+            for field in ("sample_id", "client_name", "title", "priority"):
+                incoming = s.get(field, "")
+                if incoming and not getattr(approval, field):
+                    setattr(approval, field, incoming)
+                    changed.append(field)
+            if changed:
+                approval.save(update_fields=changed)
+                updated += 1
+
+        return Response({"created": len(to_create), "updated": updated})
 
 
 class ElectronicSignatureViewSet(viewsets.ReadOnlyModelViewSet):

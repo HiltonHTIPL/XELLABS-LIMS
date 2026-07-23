@@ -24,4 +24,8 @@ export async function refreshSampleStatus(params: { uid?: string; analysisUid?: 
   revalidatePath('/dashboard')
   revalidatePath('/dashboard/samples')
   revalidatePath('/dashboard/samples-overview')
+  // Batch detail pages show each sample's status too (getBatchSamples) — without
+  // this, a status change from outside the batch page (worksheet result entry,
+  // verify) leaves Next's router cache serving a stale Batch detail on return.
+  revalidatePath('/dashboard/batches', 'layout')
 }

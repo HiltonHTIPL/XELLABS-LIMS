@@ -453,4 +453,7 @@ class ChainOfCustodySerializer(serializers.ModelSerializer):
     class Meta:
         model = ChainOfCustody
         fields = "__all__"
-        read_only_fields = ("timestamp",)
+        # transferred_by is never client-supplied — the view's perform_create
+        # always sets it to the requesting user (the person releasing custody
+        # is whoever is actually logged in and performing the handoff).
+        read_only_fields = ("timestamp", "transferred_by")

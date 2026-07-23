@@ -2,19 +2,26 @@
 import { useState, useTransition, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import JsBarcode from 'jsbarcode'
 import { SenaiteSample, mapSenaiteState, mapSenaitePriority } from '@/app/lib/senaite'
-import { receiveSample, verifySample, getSampleReviewHistory } from '@/app/actions/samples'
-import { getAuditEvents } from '@/app/actions/audit-trail'
+import { receiveSample, verifySample } from '@/app/actions/samples'
 import { getLabSampleBySenaiteUid, type LabSample } from '@/app/actions/lab-samples'
+import { getAnalysisRequestsForSample } from '@/app/actions/analysis-requests'
 import { EditDrawer } from '../../../samples-overview/[id]/_components/SampleOverviewDetail'
 import ChainOfCustodyDrawer from '../../../samples-overview/[id]/_components/ChainOfCustodyDrawer'
 import LiveBarcode from '../../../_components/LiveBarcode'
 import { T, MI, Breadcrumb, Btn, StatusChip } from '../../../_components/ui'
 import type { CSSProperties } from 'react'
 
+// Pin timeZone explicitly — without it, toLocaleString() uses the runtime's
+// own local timezone, which is UTC on the server (Docker container) but the
+// browser's local zone (e.g. IST, UTC+5:30) on the client. That produces two
+// different strings for the exact same date and fails SSR hydration (React
+// "server rendered text didn't match the client", confirmed live — a
+// consistent ~5.5hr offset). Fixing the zone makes server and client agree.
 function fmtDate(d: string | null): string {
   if (!d) return '—'
-  try { return new Date(d).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) }
+  try { return new Date(d).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) }
   catch { return d }
 }
 
@@ -40,63 +47,12 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-// Friendly labels for the Django-bridged action names (see
-// logExternalAuditEvent call sites in app/actions/samples.ts and
-// senaite-worksheets.ts) — shown in place of the raw "Transition: <action>"
-// SENAITE's own review-history entries get.
-const BRIDGED_ACTION_LABEL: Record<string, string> = {
-  assign_to_worksheet: 'Analysis Assigned to Worksheet',
-  remove_from_worksheet: 'Analysis Removed from Worksheet',
-  receive: 'Sample Received',
-  verify: 'Sample Verified',
-  publish: 'Sample Published',
-  cancel: 'Sample Cancelled',
-  create: 'Sample Created',
-  submit: 'Result Submitted',
-}
-
-function bridgedEventComment(ev: { extra_data: Record<string, unknown> | null }): string {
-  const extra = ev.extra_data ?? {}
-  const title = extra.title as string | undefined
-  const worksheetId = extra.worksheetId as string | undefined
-  if (title && worksheetId) return `${title} — Worksheet ${worksheetId}`
-  if (worksheetId) return `Worksheet ${worksheetId}`
-  return ''
-}
-
 type Props = { sample: SenaiteSample | null; uid: string; loading?: boolean; onClose?: () => void }
 
 export default function SampleDetailClient({ sample, uid, loading }: Props) {
   const router = useRouter()
-  const [showAuditTrail, setShowAuditTrail] = useState(false)
   const [actionMsg, setActionMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const [isPending, startTransition] = useTransition()
-  const [auditHistory, setAuditHistory] = useState<any[]>([])
-
-  useEffect(() => {
-    if (!sample?.uid) return
-    // Two sources, merged: SENAITE's own @history (workflow transitions —
-    // receive/verify/publish/etc. driven through the AR itself) and Django's
-    // AuditEvent table (bridged log_external rows — actions like assigning
-    // this sample's analysis to a Worksheet happen entirely against
-    // SENAITE's REST API and never touch the AR's own history at all, so
-    // without this second source they'd never show up here).
-    Promise.all([
-      getSampleReviewHistory(sample.uid),
-      sample.id ? getAuditEvents({ object_repr_contains: sample.id }) : Promise.resolve([]),
-    ]).then(([reviewHistory, bridgedEvents]) => {
-      const bridged = bridgedEvents.map(ev => ({
-        action: ev.action,
-        actor: ev.user_display ?? 'System',
-        comments: bridgedEventComment(ev),
-        review_state: '',
-        time: ev.timestamp,
-      }))
-      const merged = [...(reviewHistory || []), ...bridged]
-      merged.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
-      setAuditHistory(merged)
-    })
-  }, [sample?.uid, sample?.id])
 
   // The Django-mirrored LabSample (same record this SENAITE sample syncs
   // with) — resolved from the SENAITE uid (neither caller of this component
@@ -104,6 +60,12 @@ export default function SampleDetailClient({ sample, uid, loading }: Props) {
   // button row already offered on the Django-only Sample Detail view
   // (SampleOverviewDetail).
   const [labSample, setLabSample] = useState<LabSample | null>(null)
+  // The Django-local AnalysisRequest record for this sample — its ar_id
+  // (e.g. "AR-20260723-0007") is the real per-sample request identifier
+  // used elsewhere in the app (Administration > Analysis Requests). SENAITE
+  // itself has no separate "AR id" concept (Sample and AnalysisRequest are
+  // the same object there), so this only exists in the Django mirror.
+  const [arId, setArId] = useState<string | null>(null)
   const [showEdit, setShowEdit] = useState(false)
   const [showChainOfCustody, setShowChainOfCustody] = useState(false)
   // Set client-side only so TAT (which depends on "now") never causes an
@@ -119,9 +81,52 @@ export default function SampleDetailClient({ sample, uid, loading }: Props) {
     }
     return () => { active = false }
   }, [sample?.uid])
+  useEffect(() => {
+    let active = true
+    if (labSample?.id) {
+      getAnalysisRequestsForSample(labSample.id).then(ars => { if (active) setArId(ars[0]?.ar_id ?? null) })
+    } else {
+      setArId(null)
+    }
+    return () => { active = false }
+  }, [labSample?.id])
 
   function openStorageHistory() {
     setTimeout(() => document.getElementById('storage-info')?.scrollIntoView({ behavior: 'smooth' }), 0)
+  }
+
+  // Dedicated barcode-label print — mirrors Storage Manager's Print Location
+  // Label pattern (render off-screen, hand a data URL to a small popup that
+  // auto-prints) instead of window.print()-ing the whole Sample Detail page.
+  function handlePrintBarcode() {
+    if (!sample) return
+    const code = labSample?.barcode || sample.id
+    const canvas = document.createElement('canvas')
+    try {
+      JsBarcode(canvas, code, { format: 'CODE128', height: 60, width: 2, displayValue: false, margin: 0 })
+    } catch {
+      setActionMsg({ text: 'Unable to generate barcode for this sample.', ok: false })
+      setTimeout(() => setActionMsg(null), 3000)
+      return
+    }
+    const dataUrl = canvas.toDataURL('image/png')
+    const w = window.open('', '_blank', 'width=420,height=320')
+    if (!w) {
+      setActionMsg({ text: 'Pop-up blocked — allow pop-ups to print the barcode.', ok: false })
+      setTimeout(() => setActionMsg(null), 3000)
+      return
+    }
+    w.document.write(`<!doctype html><html><head><title>Sample Barcode</title>
+      <style>body{font-family:Arial,sans-serif;text-align:center;padding:24px}img{width:260px;height:60px}
+      h2{margin:8px 0 2px;font-size:16px}p{margin:2px 0;color:#444;font-size:12px}.code{font-size:14px;font-weight:700;letter-spacing:1px;margin-top:6px}</style>
+      </head><body>
+      <img src="${dataUrl}" />
+      <h2>${sample.id}</h2>
+      <p>${sample.ClientTitle || ''}${sample.ClientTitle ? ' · ' : ''}${sample.SampleTypeTitle || ''}</p>
+      <div class="code">${code}</div>
+      <script>window.onload=function(){window.print()}</script>
+      </body></html>`)
+    w.document.close()
   }
 
   function doAction(fn: (uid: string) => Promise<{ success: boolean; message: string }>) {
@@ -179,9 +184,9 @@ export default function SampleDetailClient({ sample, uid, loading }: Props) {
         <div className="flex items-center gap-2">
           <Btn variant="primary" icon="edit" onClick={() => router.push(`/dashboard/samples-overview/new?edit=${labSample!.id}`)} disabled={!labSample}>Edit Sample</Btn>
           <Btn variant="outline" icon="inventory_2" onClick={openStorageHistory}>Storage History</Btn>
-          <Btn variant="outline" icon="shield" onClick={() => setShowAuditTrail(true)}>Audit Trail</Btn>
+          <Btn variant="outline" icon="shield" onClick={() => router.push(`/dashboard/samples/${uid}/audit-trail`)}>Audit Trail</Btn>
           <Btn variant="outline" icon="link" onClick={() => setShowChainOfCustody(true)}>Chain of Custody</Btn>
-          <Btn variant="outline" icon="print" onClick={() => window.print()}>Print</Btn>
+          <Btn variant="outline" icon="print" onClick={handlePrintBarcode}>Print</Btn>
           {canReceive && <Btn variant="success" icon="move_to_inbox" onClick={() => doAction(receiveSample)} disabled={isPending}>Receive</Btn>}
           {canVerify  && <Btn style={{ backgroundColor: '#6366F1', color: '#fff' }} icon="verified" onClick={() => doAction(verifySample)} disabled={isPending}>Verify</Btn>}
           {canPublish && (
@@ -302,12 +307,21 @@ export default function SampleDetailClient({ sample, uid, loading }: Props) {
           <p style={{ ...secTitle, padding: '14px 18px 10px' }}>Requested Analyses ({sample.Analyses.length})</p>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr>{['Test / Method', 'Keyword', 'Status'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+              <thead><tr>{['Analysis Request ID', 'Test / Method', 'Keyword', 'Status'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
               <tbody>
                 {sample.Analyses.length === 0 ? (
-                  <tr><td colSpan={3} style={{ ...td, textAlign: 'center', color: T.faint, padding: '24px 12px' }}>No analyses requested yet.</td></tr>
+                  <tr><td colSpan={4} style={{ ...td, textAlign: 'center', color: T.faint, padding: '24px 12px' }}>No analyses requested yet.</td></tr>
                 ) : sample.Analyses.map((a, i) => (
                   <tr key={`${a.uid}-${i}`}>
+                    {/* getRequestID() on every SENAITE Analysis just returns
+                        the parent sample's own id (correct per SENAITE's
+                        model — Sample and AnalysisRequest are one object
+                        there — but useless to show here since it's
+                        identical to this page's own title on every row).
+                        The real per-sample "AR ID" (e.g. "AR-20260723-0007",
+                        matching Administration > Analysis Requests) lives on
+                        the Django-local AnalysisRequest record instead. */}
+                    <td style={{ ...td, color: T.primary, fontWeight: 600 }}>{arId ?? sample.id}</td>
                     <td style={{ ...td, fontWeight: 600 }}>{a.title}</td>
                     <td style={{ ...td, color: T.muted }}>{a.Keyword}</td>
                     <td style={td}><StatusChip status={mapSenaiteState(a.review_state)} /></td>
@@ -362,74 +376,6 @@ export default function SampleDetailClient({ sample, uid, loading }: Props) {
         </div>
       </div>
 
-      {/* Audit Trail Drawer */}
-      <div style={{ position: 'fixed', top: 'var(--dashboard-header-h)', bottom: 'var(--dashboard-footer-h)', left: 0, right: 0, zIndex: 300, pointerEvents: showAuditTrail ? 'auto' : 'none' }}>
-        <div
-          style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', opacity: showAuditTrail ? 1 : 0, transition: 'opacity 0.2s ease-in-out' }}
-          onClick={() => setShowAuditTrail(false)}
-        />
-        <div style={{
-          position: 'absolute', top: 0, right: 0, bottom: 0, width: 'min(560px, 92%)', backgroundColor: '#fff',
-          boxShadow: '-6px 0 32px rgba(0,0,0,0.15)', display: 'flex', flexDirection: 'column',
-          transform: showAuditTrail ? 'translateX(0)' : 'translateX(100%)', transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)' 
-        }}>
-          <div className="px-6 py-5 flex items-center justify-between" style={{ borderBottom: '1px solid #E5E7EB', backgroundColor: '#F9FAFB' }}>
-            <div className="flex items-center gap-2 text-[#14265E]">
-              <MI name="shield" size={20} />
-              <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Audit Trail</h2>
-            </div>
-            <button onClick={() => setShowAuditTrail(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#374151' }}>
-              <MI name="close" size={20} />
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-6 bg-white">
-            {auditHistory.length === 0 ? (
-              <div className="text-center py-10">
-                <MI name="history" size={48} color="#D1D5DB" />
-                <p className="text-sm font-medium text-gray-900 mt-4">No History</p>
-                <p className="text-xs text-gray-500 mt-1">There are no audit events recorded for this sample.</p>
-              </div>
-            ) : (
-              <div className="flex flex-col">
-                {auditHistory.map((entry, idx) => (
-                  <div key={idx} className="flex gap-4 group">
-                    <div className="flex flex-col items-center">
-                      <div className="w-3 h-3 rounded-full border-2 border-white box-content z-10 mt-1" style={{ backgroundColor: '#0154FC' }} />
-                      {idx < auditHistory.length - 1 && (
-                        <div className="w-[2px] flex-1 bg-gray-200 my-1" />
-                      )}
-                    </div>
-                    <div className="pb-6 flex-1">
-                      <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', marginBottom: 2 }}>
-                        {BRIDGED_ACTION_LABEL[entry.action] ?? entry.transition_title
-                          ?? (entry.action ? `Transition: ${entry.action}` : 'Created')}
-                      </div>
-                      <div style={{ fontSize: 12, color: '#374151', marginBottom: 4 }}>
-                        {fmtDate(entry.time)} by <span style={{ fontWeight: 500 }}>{entry.actor}</span>
-                      </div>
-                      {(entry.state_title || entry.review_state) && (
-                        <div style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 12, fontSize: 11, backgroundColor: '#EFF6FF', color: T.primary, fontWeight: 500 }}>
-                          Status: {entry.state_title || mapSenaiteState(entry.review_state)}
-                        </div>
-                      )}
-                      {entry.detail && (
-                        <div style={{ marginTop: 6, fontSize: 12, color: T.text }}>
-                          {entry.detail}
-                        </div>
-                      )}
-                      {entry.comments && (
-                        <div style={{ marginTop: 6, fontSize: 12, color: T.text, backgroundColor: '#F9FAFB', padding: '6px 10px', borderRadius: 6, fontStyle: 'italic' }}>
-                          "{entry.comments}"
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
     </div>
   )
 }

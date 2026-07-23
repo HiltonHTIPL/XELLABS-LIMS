@@ -12,16 +12,24 @@ function MI({ name, size = 16, color }: { name: string; size?: number; color?: s
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
 }
 
-const ROLE_BADGE: Record<string, { bg: string; color: string }> = {
-  admin:        { bg: '#EDE9FE', color: '#6D28D9' },
-  manager:      { bg: '#E0E7FF', color: '#4338CA' },
-  lab_manager:  { bg: '#DBEAFE', color: '#1D4ED8' },
-  publisher:    { bg: '#CFFAFE', color: '#0E7490' },
-  verifier:     { bg: '#FEF3C7', color: '#B45309' },
-  analyst:      { bg: '#DCFCE7', color: '#15803D' },
-  sampler:      { bg: '#FCE7F3', color: '#BE185D' },
-  lab_clerk:    { bg: '#F3F4F6', color: '#374151' },
-  client:       { bg: '#FEE2E2', color: '#991B1B' },
+// Role column now reflects the actual SENAITE role-matrix checkboxes (the
+// ground truth of what a user can do) rather than the single Django `role`
+// field, which could show just one label ("Verifier") even when the matrix
+// had multiple roles checked ("LabManager" + "Verifier") for that same user.
+// Colors reused/extended from ROLE_BADGE where the naming overlaps
+// (case differs: SENAITE's own PascalCase vs Django's snake_case).
+const SENAITE_ROLE_BADGE: Record<string, { bg: string; color: string }> = {
+  Manager:              { bg: '#E0E7FF', color: '#4338CA' },
+  LabManager:           { bg: '#DBEAFE', color: '#1D4ED8' },
+  Publisher:            { bg: '#CFFAFE', color: '#0E7490' },
+  Verifier:             { bg: '#FEF3C7', color: '#B45309' },
+  Analyst:              { bg: '#DCFCE7', color: '#15803D' },
+  Sampler:              { bg: '#FCE7F3', color: '#BE185D' },
+  SamplingCoordinator:  { bg: '#FCE7F3', color: '#BE185D' },
+  LabClerk:             { bg: '#F3F4F6', color: '#374151' },
+  Client:               { bg: '#FEE2E2', color: '#991B1B' },
+  Preserver:            { bg: '#FFEDD5', color: '#9A3412' },
+  RegulatoryInspector:  { bg: '#EDE9FE', color: '#6D28D9' },
 }
 
 function fmtDate(iso: string) {
@@ -189,16 +197,28 @@ export default function AdminShell({ initialUsers }: { initialUsers: StaffUser[]
                 </tr>
               ) : (
                 users.map(u => {
-                  const badge = ROLE_BADGE[u.role] ?? { bg: '#F3F4F6', color: '#374151' }
                   return (
                     <tr key={u.id} style={{ borderBottom: '1px solid #F3F4F6' }}>
                       <td style={{ padding: '10px 14px', fontWeight: 500, color: '#111827' }}>{u.full_name}</td>
                       <td style={{ padding: '10px 14px', color: '#374151' }}>{u.username}</td>
                       <td style={{ padding: '10px 14px', color: '#374151' }}>{u.email || '—'}</td>
                       <td style={{ padding: '10px 14px' }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 999, backgroundColor: badge.bg, color: badge.color }}>
-                          {STAFF_ROLE_LABELS[u.role]}
-                        </span>
+                        {u.senaite_roles.length === 0 ? (
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 999, backgroundColor: '#F3F4F6', color: '#374151' }}>
+                            {STAFF_ROLE_LABELS[u.role]}
+                          </span>
+                        ) : (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                            {u.senaite_roles.map(role => {
+                              const badge = SENAITE_ROLE_BADGE[role] ?? { bg: '#F3F4F6', color: '#374151' }
+                              return (
+                                <span key={role} style={{ fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 999, backgroundColor: badge.bg, color: badge.color, whiteSpace: 'nowrap' }}>
+                                  {role}
+                                </span>
+                              )
+                            })}
+                          </div>
+                        )}
                       </td>
                       <td style={{ padding: '10px 14px' }}>
                         <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 999, backgroundColor: u.is_active ? '#ECFDF5' : '#FEF2F2', color: u.is_active ? '#065F46' : '#991B1B' }}>

@@ -36,6 +36,11 @@ export type SessionPayload = {
   userId: string
   username: string
   role: string
+  // Raw SENAITE roles from login (e.g. ["LabManager","Verifier","Authenticated"]) —
+  // `role` above is only the single "primary" one mapSenaiteRole() picked;
+  // nav/page visibility checks that need to honor EVERY role a user was
+  // granted (not just the primary) use this instead — see mapSenaiteRolesAll().
+  senaiteRoles?: string[]
   isSuperuser?: boolean   // platform superadmin — gates Tenant Management
   djangoToken: string
   senaiteToken?: string
