@@ -18,7 +18,7 @@ export function MI({ name, size = 16, color, className }: { name: string; size?:
 
 /* ---------------------------------- Page header ---------------------------------- */
 
-export function PageHeader({ title, subtitle, right, backHref }: { title: string; subtitle?: string; right?: React.ReactNode; backHref?: string }) {
+export function PageHeader({ title, subtitle, right, backHref }: { title: React.ReactNode; subtitle?: string; right?: React.ReactNode; backHref?: string }) {
   return (
     <div className="flex items-end justify-between gap-4 mb-5 flex-wrap">
       <div className="flex items-end gap-3">
