@@ -156,7 +156,7 @@ function EventDetailsDrawer({ event, history, onClose }: { event: AuditEvent; hi
 const thStyleLocal = { textAlign: 'left' as const, fontSize: 11, fontWeight: 700, color: T.muted, padding: '6px 10px', borderBottom: `1px solid ${T.cardBorder}` }
 const tdStyleLocal = { fontSize: 12, color: T.text, padding: '6px 10px', borderBottom: `1px solid ${T.rowBorder}` }
 
-function AuditEventsTable({ events }: { events: AuditEvent[] }) {
+export function AuditEventsTable({ events }: { events: AuditEvent[] }) {
   const [search, setSearch] = useState('')
   const [action, setAction] = useState('')
   const [dateFrom, setDateFrom] = useState('')

@@ -13,7 +13,7 @@ function fmt(d: string | null): string {
   catch { return d }
 }
 
-export default function SampleAuditDrawer({ sampleId, open, onClose }: { sampleId: string; open: boolean; onClose: () => void }) {
+export default function SampleAuditDrawer({ sampleId, open, onClose }: { sampleId: number | string; open: boolean; onClose: () => void }) {
   const [events, setEvents] = useState<AuditEvent[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -80,23 +80,20 @@ export default function SampleAuditDrawer({ sampleId, open, onClose }: { sampleI
                                   <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: '#374151' }}>Field</th>
                                   <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: '#374151' }}>Old Value</th>
                                   <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: '#374151' }}>New Value</th>
+                                  <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: '#374151' }}>Reason</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {entry.changes.map((c, i) => (
                                   <tr key={i} style={{ borderBottom: i < entry.changes.length - 1 ? '1px solid #F3F4F6' : 'none' }}>
-                                    <td style={{ padding: '6px 10px', fontWeight: 500, whiteSpace: 'nowrap' }}>{c.field_name}</td>
+                                    <td style={{ padding: '6px 10px', fontWeight: 500, whiteSpace: 'nowrap', color: '#111827' }}>{c.field_name}</td>
                                     <td style={{ padding: '6px 10px', color: '#EF4444', textDecoration: 'line-through', overflowWrap: 'anywhere' }}>{c.old_value || '—'}</td>
                                     <td style={{ padding: '6px 10px', color: '#10B981', overflowWrap: 'anywhere' }}>{c.new_value || '—'}</td>
+                                    <td style={{ padding: '6px 10px', color: '#6B7280', overflowWrap: 'anywhere', fontSize: 11.5 }}>{c.reason || '—'}</td>
                                   </tr>
                                 ))}
                               </tbody>
                             </table>
-                            {entry.changes.some(c => c.reason) && (
-                              <div style={{ padding: '8px 10px', backgroundColor: '#FEF2F2', borderTop: '1px solid #FECACA', color: '#991B1B', fontSize: 11.5 }}>
-                                <strong>Reason:</strong> {entry.changes.find(c => c.reason)?.reason}
-                              </div>
-                            )}
                           </div>
                         )}
                       </div>
