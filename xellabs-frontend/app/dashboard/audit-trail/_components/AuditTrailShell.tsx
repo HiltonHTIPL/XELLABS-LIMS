@@ -257,7 +257,7 @@ export function AuditEventsTable({ events }: { events: AuditEvent[] }) {
     { id: 'action', label: 'Action', sortable: true, minWidth: 120, render: e => <ActionPill action={e.action} /> },
     { id: 'source', label: 'Source', sortable: true, minWidth: 100, render: e => e.source || 'manual' },
     { id: 'content_type_label', label: 'Record Type', sortable: true, minWidth: 140, render: e => recordTypeLabel(e.content_type_label) },
-    { id: 'object_repr', label: 'Object', sortable: true, minWidth: 160, render: e => e.object_repr || (e.object_id ?? '—') },
+    { id: 'object_repr', label: 'Object', sortable: true, minWidth: 160, render: e => <span style={{ color: '#0154FC', fontWeight: 600 }}>{e.object_repr || (e.object_id ?? '—')}</span> },
     { id: 'ip_address', label: 'IP Address', sortable: true, minWidth: 120, render: e => e.ip_address ?? '—' },
   ]
 
