@@ -1,8 +1,24 @@
 'use client'
 import { useRef, useState } from 'react'
 import Link from 'next/link'
-import { PageHeader, Card, Btn, MI, StatCard, thStyle, tdStyle, T } from '../../_components/ui'
+import { PageHeader, Card, Btn, MI, StatCard, T } from '../../_components/ui'
 import { useStreamingImport } from './useStreamingImport'
+import DataTable, { type DataTableColumn } from '@/app/dashboard/_components/DataTable'
+import type { ImportRowResult } from './useStreamingImport'
+
+const importRowColumns: DataTableColumn<ImportRowResult & { id: number }>[] = [
+  { id: 'row', label: 'Row', sortable: true, width: 70 },
+  { id: 'title', label: 'Title', sortable: true, render: r => <>{r.title ?? '—'}</> },
+  {
+    id: 'ok', label: 'Status', sortable: true, minWidth: 100,
+    render: r => r.ok === true
+      ? <span style={{ color: T.success, fontWeight: 600 }}>Created</span>
+      : r.ok === false
+        ? <span style={{ color: T.danger, fontWeight: 600 }}>Failed</span>
+        : <span style={{ color: T.muted, fontWeight: 600 }}>Skipped</span>,
+  },
+  { id: 'detail', label: 'Detail', minWidth: 160, render: r => <>{r.uid ?? r.error ?? '—'}</> },
+]
 
 function ImportPanel({
   title, icon, description, columns, endpoint, viewListHref, viewListLabel,
@@ -118,31 +134,14 @@ function ImportPanel({
           )}
 
           {state.result.rows.length > 0 && (
-            <div style={{ maxHeight: 320, overflowY: 'auto', border: `1px solid ${T.cardBorder}`, borderRadius: 10, marginTop: 8 }}>
-              <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    <th style={thStyle}>Row</th>
-                    <th style={thStyle}>Title</th>
-                    <th style={thStyle}>Status</th>
-                    <th style={thStyle}>Detail</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {state.result.rows.map(r => (
-                    <tr key={r.row}>
-                      <td style={tdStyle}>{r.row}</td>
-                      <td style={tdStyle}>{r.title ?? '—'}</td>
-                      <td style={tdStyle}>
-                        {r.ok === true && <span style={{ color: T.success, fontWeight: 600 }}>Created</span>}
-                        {r.ok === false && <span style={{ color: T.danger, fontWeight: 600 }}>Failed</span>}
-                        {r.ok === null && <span style={{ color: T.muted, fontWeight: 600 }}>Skipped</span>}
-                      </td>
-                      <td style={tdStyle}>{r.uid ?? r.error ?? '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="mt-2">
+              <DataTable<ImportRowResult & { id: number }>
+                data={state.result.rows.map(r => ({ ...r, id: r.row }))}
+                columns={importRowColumns}
+                searchable
+                maxHeight={320}
+                emptyMessage="No rows processed."
+              />
             </div>
           )}
         </div>

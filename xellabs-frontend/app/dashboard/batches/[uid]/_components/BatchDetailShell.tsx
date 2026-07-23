@@ -5,6 +5,10 @@ import Link from 'next/link'
 import { type SenaiteBatch, type SenaiteSample, type SenaiteAnalysisFull, mapSenaiteState, mapSenaitePriority } from '@/app/lib/senaite'
 import { receiveSample, cancelSample } from '@/app/actions/samples'
 import { getAnalysesByUids, submitBatchResult, getUnassignedSamples, assignSamplesToBatch } from '@/app/actions/batches'
+import DataTable, { type DataTableColumn } from '@/app/dashboard/_components/DataTable'
+
+type BatchSampleRow = SenaiteSample & { id: string; sampleCode: string }
+type AddSampleRow = SenaiteSample & { id: string; sampleCode: string }
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -59,6 +63,7 @@ export default function BatchDetailShell({
 }) {
   const router = useRouter()
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [samplesTableKey, setSamplesTableKey] = useState(0)
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
   const [, startTransition] = useTransition()
@@ -77,22 +82,11 @@ export default function BatchDetailShell({
   const [addSelected, setAddSelected] = useState<Set<string>>(new Set())
   const [addSearch, setAddSearch] = useState('')
   const [addSubmitting, setAddSubmitting] = useState(false)
+  const [addTableKey, setAddTableKey] = useState(0)
 
   function showToast(ok: boolean, msg: string) {
     setToast({ ok, msg })
     setTimeout(() => setToast(null), 4000)
-  }
-
-  function toggle(uid: string) {
-    setSelected(prev => {
-      const next = new Set(prev)
-      if (next.has(uid)) next.delete(uid); else next.add(uid)
-      return next
-    })
-  }
-
-  function toggleAll() {
-    setSelected(prev => prev.size === samples.length ? new Set() : new Set(samples.map(s => s.uid)))
   }
 
   // Only samples still in "Sample Due" can be received — matches SENAITE's own
@@ -109,6 +103,7 @@ export default function BatchDetailShell({
       const failed = results.filter(r => !r.success)
       setBusy(false)
       setSelected(new Set())
+      setSamplesTableKey(k => k + 1)
       if (failed.length > 0) {
         showToast(false, `${failed.length} of ${eligible.length} failed: ${failed[0].message}`)
       } else {
@@ -158,6 +153,7 @@ export default function BatchDetailShell({
       showToast(true, `${entries.length} result${entries.length > 1 ? 's' : ''} submitted.`)
     }
     setSelected(new Set())
+    setSamplesTableKey(k => k + 1)
     router.refresh()
   }
 
@@ -177,14 +173,7 @@ export default function BatchDetailShell({
     setAddOpen(false)
     setAddCandidates([])
     setAddSelected(new Set())
-  }
-
-  function toggleAddSelected(uid: string) {
-    setAddSelected(prev => {
-      const next = new Set(prev)
-      if (next.has(uid)) next.delete(uid); else next.add(uid)
-      return next
-    })
+    setAddTableKey(k => k + 1)
   }
 
   const addFiltered = addCandidates.filter(s => {
@@ -208,6 +197,39 @@ export default function BatchDetailShell({
     border: '1px solid #D1D5DB', background: '#fff', color: '#374151', cursor: 'pointer',
     display: 'flex', alignItems: 'center', gap: 6,
   }
+
+  const batchSampleRows: BatchSampleRow[] = samples.map(s => ({ ...s, id: s.uid, sampleCode: s.id }))
+  const batchSampleColumns: DataTableColumn<BatchSampleRow>[] = [
+    {
+      id: 'sampleCode', label: 'Sample ID', sortable: true, minWidth: 130,
+      render: row => {
+        const djangoId = djangoIdByUid[row.id]
+        return djangoId ? (
+          <Link href={`/dashboard/samples-overview/${djangoId}`} className="text-xs font-mono px-2 py-0.5 rounded-full hover:underline" style={{ backgroundColor: '#EFF6FF', color: '#2563EB', fontWeight: 600, textDecoration: 'none' }}>
+            {row.sampleCode || row.title}
+          </Link>
+        ) : (
+          <span className="text-xs font-mono px-2 py-0.5 rounded-full" style={{ backgroundColor: '#F3F4F6', color: '#374151', fontWeight: 600 }}>
+            {row.sampleCode || row.title}
+          </span>
+        )
+      },
+    },
+    { id: 'ClientTitle', label: 'Client', sortable: true, minWidth: 130, render: row => <span className="text-xs" style={{ color: '#374151' }}>{row.ClientTitle || '—'}</span> },
+    { id: 'SampleTypeTitle', label: 'Sample Type', sortable: true, minWidth: 130, render: row => <span className="text-xs" style={{ color: '#374151' }}>{row.SampleTypeTitle || '—'}</span> },
+    { id: 'DateSampled', label: 'Date Sampled', sortable: true, minWidth: 120, render: row => <span className="text-xs" style={{ color: '#374151' }}>{fmtDate(row.DateSampled)}</span> },
+    { id: 'Priority', label: 'Priority', sortable: true, minWidth: 90, render: row => <span className="text-xs" style={{ color: '#374151' }}>{mapSenaitePriority(row.Priority)}</span> },
+    { id: 'review_state', label: 'Status', sortable: true, minWidth: 120, render: row => <SampleStateBadge state={row.review_state} /> },
+  ]
+
+  const addSampleRows: AddSampleRow[] = addFiltered.map(s => ({ ...s, id: s.uid, sampleCode: s.id }))
+  const addSampleColumns: DataTableColumn<AddSampleRow>[] = [
+    { id: 'sampleCode', label: 'Sample ID', sortable: true, minWidth: 130, render: row => <span className="text-xs font-mono font-semibold" style={{ color: '#2563EB' }}>{row.sampleCode || row.title}</span> },
+    { id: 'ClientTitle', label: 'Client', sortable: true, minWidth: 130, render: row => <span className="text-xs" style={{ color: '#374151' }}>{row.ClientTitle || '—'}</span> },
+    { id: 'SampleTypeTitle', label: 'Sample Type', sortable: true, minWidth: 130, render: row => <span className="text-xs" style={{ color: '#374151' }}>{row.SampleTypeTitle || '—'}</span> },
+    { id: 'DateSampled', label: 'Date Sampled', sortable: true, minWidth: 120, render: row => <span className="text-xs" style={{ color: '#374151' }}>{fmtDate(row.DateSampled)}</span> },
+    { id: 'review_state', label: 'Status', sortable: true, minWidth: 120, render: row => <SampleStateBadge state={row.review_state} /> },
+  ]
 
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -317,46 +339,19 @@ export default function BatchDetailShell({
             </div>
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
-                <th className="px-3 py-2" style={{ width: 32 }}>
-                  <input type="checkbox" checked={selected.size === samples.length} onChange={toggleAll} style={{ cursor: 'pointer' }} />
-                </th>
-                {['Sample ID', 'Client', 'Sample Type', 'Date Sampled', 'Priority', 'Status'].map(h => (
-                  <th key={h} className="px-3 py-2 text-left uppercase tracking-wide" style={{ fontSize: 10, fontWeight: 600, color: '#374151', letterSpacing: '0.05em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {samples.map((s, i) => {
-                const djangoId = djangoIdByUid[s.uid]
-                return (
-                  <tr key={s.uid} style={{ borderBottom: i < samples.length - 1 ? '1px solid #F9FAFB' : 'none', backgroundColor: selected.has(s.uid) ? '#F0F7FF' : undefined }} className="hover:bg-gray-50">
-                    <td className="px-3 py-2.5">
-                      <input type="checkbox" checked={selected.has(s.uid)} onChange={() => toggle(s.uid)} style={{ cursor: 'pointer' }} />
-                    </td>
-                    <td className="px-3 py-2.5">
-                      {djangoId ? (
-                        <Link href={`/dashboard/samples-overview/${djangoId}`} className="text-xs font-mono px-2 py-0.5 rounded-full hover:underline" style={{ backgroundColor: '#EFF6FF', color: '#2563EB', fontWeight: 600, textDecoration: 'none' }}>
-                          {s.id || s.title}
-                        </Link>
-                      ) : (
-                        <span className="text-xs font-mono px-2 py-0.5 rounded-full" style={{ backgroundColor: '#F3F4F6', color: '#374151', fontWeight: 600 }}>
-                          {s.id || s.title}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#374151' }}>{s.ClientTitle || '—'}</td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#374151' }}>{s.SampleTypeTitle || '—'}</td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#374151' }}>{fmtDate(s.DateSampled)}</td>
-                    <td className="px-3 py-2.5 text-xs" style={{ color: '#374151' }}>{mapSenaitePriority(s.Priority)}</td>
-                    <td className="px-3 py-2.5"><SampleStateBadge state={s.review_state} /></td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          <div className="px-3 pb-3">
+            <DataTable<BatchSampleRow>
+              key={samplesTableKey}
+              data={batchSampleRows}
+              columns={batchSampleColumns}
+              selectable
+              searchable
+              persistKey="batch-detail-samples"
+              bare
+              onSelectionChange={ids => setSelected(new Set(ids as string[]))}
+              emptyMessage="No samples in batch."
+            />
+          </div>
         )}
         <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
           <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>{samples.length} sample{samples.length !== 1 ? 's' : ''}{selected.size > 0 ? ` · ${selected.size} selected` : ''}</p>
@@ -479,37 +474,16 @@ export default function BatchDetailShell({
                   </p>
                 </div>
               ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid #F3F4F6' }}>
-                      <th className="px-2 py-2" style={{ width: 28 }}>
-                        <input
-                          type="checkbox"
-                          checked={addFiltered.length > 0 && addFiltered.every(s => addSelected.has(s.uid))}
-                          onChange={() => setAddSelected(prev => prev.size === addFiltered.length ? new Set() : new Set(addFiltered.map(s => s.uid)))}
-                          style={{ cursor: 'pointer' }}
-                        />
-                      </th>
-                      {['Sample ID', 'Client', 'Sample Type', 'Date Sampled', 'Status'].map(h => (
-                        <th key={h} className="px-2 py-2 text-left" style={{ fontSize: 10, fontWeight: 600, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {addFiltered.map(s => (
-                      <tr key={s.uid} style={{ borderBottom: '1px solid #F9FAFB', backgroundColor: addSelected.has(s.uid) ? '#F0F7FF' : undefined, cursor: 'pointer' }} onClick={() => toggleAddSelected(s.uid)}>
-                        <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
-                          <input type="checkbox" checked={addSelected.has(s.uid)} onChange={() => toggleAddSelected(s.uid)} style={{ cursor: 'pointer' }} />
-                        </td>
-                        <td className="px-2 py-2 text-xs font-mono font-semibold" style={{ color: '#2563EB' }}>{s.id || s.title}</td>
-                        <td className="px-2 py-2 text-xs" style={{ color: '#374151' }}>{s.ClientTitle || '—'}</td>
-                        <td className="px-2 py-2 text-xs" style={{ color: '#374151' }}>{s.SampleTypeTitle || '—'}</td>
-                        <td className="px-2 py-2 text-xs" style={{ color: '#374151' }}>{fmtDate(s.DateSampled)}</td>
-                        <td className="px-2 py-2"><SampleStateBadge state={s.review_state} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <DataTable<AddSampleRow>
+                  key={addTableKey}
+                  data={addSampleRows}
+                  columns={addSampleColumns}
+                  selectable
+                  bare
+                  paginated={false}
+                  onSelectionChange={ids => setAddSelected(new Set(ids as string[]))}
+                  emptyMessage="No unassigned samples found."
+                />
               )}
             </div>
 

@@ -30,7 +30,7 @@ export default function MethodsSelectOrAdd({
     <div>
       <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Supported methods</label>
       {tip && <p style={{ fontSize: 10, color: '#374151', marginBottom: 4 }}>{tip}</p>}
-      <div className="rounded-lg p-2 max-h-36 overflow-y-auto mb-2" style={{ border: `1px solid ${error ? '#EF4444' : '#D1D5DB'}` }}>
+      <div className="rounded-lg p-2 max-h-36 overflow-y-auto mb-2 xl-visible-scrollbar" style={{ border: `1px solid ${error ? '#EF4444' : '#D1D5DB'}` }}>
         {items.length === 0 && (
           <p style={{ fontSize: 11, color: '#374151' }}>No methods yet. Add one below.</p>
         )}

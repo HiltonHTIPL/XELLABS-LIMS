@@ -369,6 +369,8 @@ export default function ClientsShell({ initialClients }: { initialClients: Senai
   const [savedFiltersOpen, setSavedFiltersOpen] = useState(false)
   const [savedFiltersPos, setSavedFiltersPos] = useState<{ top: number; right: number } | null>(null)
   const savedFiltersBtnRef = useRef<HTMLButtonElement>(null)
+  // Slot the shared DataTable portals its layout controls (Reset layout + Views) into.
+  const tableControlsRef = useRef<HTMLDivElement>(null)
   const [saveFilterModalOpen, setSaveFilterModalOpen] = useState(false)
   const [newFilterName, setNewFilterName] = useState('')
 
@@ -459,6 +461,9 @@ export default function ClientsShell({ initialClients }: { initialClients: Senai
   const activeCount = initialClients.filter(c => c.review_state === 'active').length
   const inactiveCount = total - activeCount
   const contactsCount = initialClients.filter(c => c.contact && (c.contact.Firstname || c.contact.Surname)).length
+  // A filter is "active" only if something is actually set — used to stop users
+  // saving an empty (no-op) filter that would look broken when applied.
+  const hasActiveFilter = search.trim() !== '' || statusFilter !== 'all' || contactsOnly
 
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize)
@@ -665,7 +670,7 @@ export default function ClientsShell({ initialClients }: { initialClients: Senai
       )}
 
       {/* Stat cards — first 3 act as quick status filters */}
-      <div className="grid grid-cols-4 gap-3 mb-4" style={{ flexShrink: 0 }}>
+      <div className="grid grid-cols-4 gap-3 mb-2" style={{ flexShrink: 0 }}>
         <button onClick={() => { setStatusFilter('all'); setPage(1) }} className="text-left rounded-xl"
           style={{ cursor: 'pointer', border: 'none', background: 'none', padding: 0, outline: statusFilter === 'all' ? '2px solid #0154FC' : 'none' }}>
           <StatCard icon="groups" label="Total Clients" value={total} sub="All time" />
@@ -700,7 +705,7 @@ export default function ClientsShell({ initialClients }: { initialClients: Senai
             style={{ width: '100%', height: 36, borderRadius: 10, border: '1px solid #D1D5DB', fontSize: 13, padding: '0 12px 0 32px', outline: 'none' }} />
         </div>
         <div>
-          <label className="block" style={{ fontSize: 10, color: '#9CA3AF' }}>Status</label>
+          <label className="block" style={{ fontSize: 10, color: 'transparent' }}>Status</label>
           <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value as 'all' | 'active' | 'inactive'); setPage(1) }}
             style={{ height: 36, borderRadius: 10, border: '1px solid #D1D5DB', fontSize: 13, padding: '0 10px', outline: 'none', color: '#374151' }}>
             <option value="all">All Statuses</option>
@@ -729,6 +734,8 @@ export default function ClientsShell({ initialClients }: { initialClients: Senai
             <MI name="filter_list" size={14} color="#374151" /> Saved Filters
           </button>
         </div>
+        {/* Slot for the DataTable's Reset layout + Views controls (portaled in). */}
+        <div ref={tableControlsRef} className="flex items-center gap-2" style={{ height: 36 }} />
         {selected.size > 0 && (
           <div>
             <label className="block" style={{ fontSize: 10, color: 'transparent' }}>Bulk</label>
@@ -802,23 +809,29 @@ export default function ClientsShell({ initialClients }: { initialClients: Senai
             </div>
             {savedFilters.length === 0 ? (
               <p style={{ padding: '10px 14px', fontSize: 12, color: '#9CA3AF' }}>No saved filters yet.</p>
-            ) : savedFilters.map(f => (
-              <div key={f.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 6px' }}>
+            ) : savedFilters.map(f => {
+              const isActive = f.filters.search === search && f.filters.status === statusFilter && f.filters.contactsOnly === contactsOnly
+              return (
+              <div key={f.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 6px', backgroundColor: isActive ? '#EFF6FF' : 'transparent' }}>
                 <button onClick={() => applySavedFilter(f)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, padding: '9px 8px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#374151', textAlign: 'left' }}>
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, padding: '9px 8px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: isActive ? '#2563EB' : '#374151', fontWeight: isActive ? 600 : 400, textAlign: 'left' }}>
                   <MI name="bookmark" size={15} color="#2563EB" /> {f.name}
+                  {isActive && <MI name="check" size={14} color="#2563EB" />}
                 </button>
                 <button onClick={() => deleteSavedFilter(f.name)} title="Delete"
                   style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 6, borderRadius: 4, color: '#9CA3AF' }}>
                   <MI name="close" size={14} />
                 </button>
               </div>
-            ))}
+              )
+            })}
             <div style={{ borderTop: '1px solid #F3F4F6', marginTop: 4 }}>
-              <button onClick={saveCurrentFilters}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#2563EB', fontWeight: 600, textAlign: 'left' }}>
-                <MI name="add" size={15} color="#2563EB" /> Save Current Filters
+              <button onClick={saveCurrentFilters} disabled={!hasActiveFilter}
+                title={hasActiveFilter ? 'Save the current search/status as a reusable filter' : 'Set a search or status filter first'}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', border: 'none', background: 'none', cursor: hasActiveFilter ? 'pointer' : 'not-allowed', fontSize: 13, color: hasActiveFilter ? '#2563EB' : '#9CA3AF', fontWeight: 600, textAlign: 'left' }}>
+                <MI name="add" size={15} color={hasActiveFilter ? '#2563EB' : '#9CA3AF'} /> Save Current Filters
               </button>
+              {!hasActiveFilter && <p style={{ padding: '0 14px 8px', fontSize: 11, color: '#9CA3AF' }}>Set a search or status filter first, then save it.</p>}
             </div>
           </div>
         </>
@@ -1071,7 +1084,9 @@ export default function ClientsShell({ initialClients }: { initialClients: Senai
         <DataTable<ClientRow>
           data={tableData}
           columns={columns}
+          persistKey="clients"
           selectable
+          controlsTargetRef={tableControlsRef}
           onSelectionChange={ids => setSelected(new Set(ids as string[]))}
           emptyMessage="No clients match your filters."
           rowActions={c => <ActionsMenu client={c} onEdit={openEdit} onDone={() => router.refresh()} />}

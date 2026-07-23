@@ -1,5 +1,5 @@
 'use client'
-import { useState, useActionState } from 'react'
+import { useState, useActionState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -228,9 +228,11 @@ export default function SampleTemplatesShell({
             <p className="text-sm mt-0.5" style={{ color: '#374151' }}>Predefined sample type, partitions, and analysis combinations for quick sample registration</p>
           </div>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
-          <MI name="add" size={15} color="#fff" /> New Sample Template
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
+            <MI name="add" size={15} color="#fff" /> New Sample Template
+          </button>
+        </div>
       </div>
 
       {toast && (

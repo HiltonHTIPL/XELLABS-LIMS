@@ -48,21 +48,6 @@ class SampleTemplate(models.Model):
         return self.name
 
 
-class Calculation(models.Model):
-    name = models.CharField(max_length=200)
-    code = models.CharField(max_length=50, unique=True)
-    formula = models.TextField(blank=True)
-    description = models.TextField(blank=True)
-    is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table = "calculations"
-
-    def __str__(self):
-        return self.name
-
-
 class Method(models.Model):
     name = models.CharField(max_length=200)
     code = models.CharField(max_length=50, unique=True)
@@ -70,7 +55,11 @@ class Method(models.Model):
     accredited = models.BooleanField(default=False)
     instructions = models.TextField(blank=True)
     document = models.FileField(upload_to="method_documents/", blank=True, null=True)
-    calculations = models.ManyToManyField(Calculation, blank=True, related_name="methods")
+    # UIDs of real SENAITE Calculation objects (Administration > Calculations)
+    # this method supports. Previously an M2M to a Django-local `Calculation`
+    # model that had no relation to SENAITE at all — replaced so this field
+    # actually points at the same calculations the lab manages.
+    senaite_calculation_uids = models.JSONField(default=list, blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

@@ -1,7 +1,7 @@
 'use client'
 import { useState, useActionState, useRef, useEffect } from 'react'
 import { createMethod, updateMethod, type Method, type MethodFormState } from '@/app/actions/methods'
-import type { Calculation } from '@/app/actions/calculations'
+import type { SenaiteCalculation } from '@/app/lib/senaite'
 import type { InstrumentOption } from '@/app/actions/instrument-maintenance'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
@@ -30,15 +30,15 @@ function Field({ label, name, placeholder, required, error, value, onChange, as 
 }
 
 function CheckboxList({ label, options, selected, onChange }: {
-  label: string; options: { id: number; name: string }[]; selected: number[]; onChange: (ids: number[]) => void
+  label: string; options: { id: string | number; name: string }[]; selected: (string | number)[]; onChange: (ids: (string | number)[]) => void
 }) {
-  function toggle(id: number) {
+  function toggle(id: string | number) {
     onChange(selected.includes(id) ? selected.filter(x => x !== id) : [...selected, id])
   }
   return (
     <div>
       <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>{label}</label>
-      <div className="rounded-lg overflow-y-auto" style={{ border: '1px solid #D1D5DB', maxHeight: 120 }}>
+      <div className="rounded-lg overflow-y-auto xl-visible-scrollbar" style={{ border: '1px solid #D1D5DB', maxHeight: 120 }}>
         {options.length === 0
           ? <p className="px-3 py-2 text-xs" style={{ color: '#374151' }}>None available</p>
           : options.map(o => (
@@ -54,14 +54,14 @@ function CheckboxList({ label, options, selected, onChange }: {
 
 type FV = {
   name: string; code: string; description: string; instructions: string
-  accredited: boolean; instrumentIds: number[]; calculationIds: number[]
+  accredited: boolean; instrumentIds: number[]; calculationUids: string[]
 }
-const blank = (): FV => ({ name: '', code: '', description: '', instructions: '', accredited: false, instrumentIds: [], calculationIds: [] })
+const blank = (): FV => ({ name: '', code: '', description: '', instructions: '', accredited: false, instrumentIds: [], calculationUids: [] })
 
 function fromMethod(m: Method): FV {
   return {
     name: m.name, code: m.code, description: m.description ?? '', instructions: m.instructions ?? '',
-    accredited: m.accredited ?? false, instrumentIds: m.instruments ?? [], calculationIds: m.calculations ?? [],
+    accredited: m.accredited ?? false, instrumentIds: m.instruments ?? [], calculationUids: m.senaite_calculation_uids ?? [],
   }
 }
 
@@ -69,7 +69,7 @@ type Props = {
   open: boolean
   onClose: () => void
   editing: Method | null
-  calculations: Calculation[]
+  calculations: SenaiteCalculation[]
   instruments: InstrumentOption[]
   /** Called after a successful create/update with the saved method. */
   onSaved: (method: Method | null, message: string) => void
@@ -110,7 +110,7 @@ export default function MethodFormDrawer({ open, onClose, editing, calculations,
         const saved: Method | null = result.id
           ? { id: result.id, name: vals.name, code: vals.code, description: vals.description, accredited: vals.accredited,
               instructions: vals.instructions, document: editing?.document ?? null, instruments: vals.instrumentIds,
-              calculations: vals.calculationIds, is_active: editing?.is_active ?? true, created_at: editing?.created_at ?? '' }
+              senaite_calculation_uids: vals.calculationUids, is_active: editing?.is_active ?? true, created_at: editing?.created_at ?? '' }
           : null
         onSaved(saved, result.message ?? (isEdit ? 'Method updated.' : 'Method created.'))
       } else if (result.errors) {
@@ -184,11 +184,11 @@ export default function MethodFormDrawer({ open, onClose, editing, calculations,
 
             {vals.instrumentIds.map(id => <input key={id} type="hidden" name="instrument_ids" value={id} />)}
             <CheckboxList label="Instruments" options={instruments} selected={vals.instrumentIds}
-              onChange={ids => setVals(prev => ({ ...prev, instrumentIds: ids }))} />
+              onChange={ids => setVals(prev => ({ ...prev, instrumentIds: ids as number[] }))} />
 
-            {vals.calculationIds.map(id => <input key={id} type="hidden" name="calculation_ids" value={id} />)}
-            <CheckboxList label="Calculations" options={calculations} selected={vals.calculationIds}
-              onChange={ids => setVals(prev => ({ ...prev, calculationIds: ids }))} />
+            {vals.calculationUids.map(uid => <input key={uid} type="hidden" name="calculation_uids" value={uid} />)}
+            <CheckboxList label="Calculations" options={calculations.map(c => ({ id: c.uid, name: c.title }))} selected={vals.calculationUids}
+              onChange={ids => setVals(prev => ({ ...prev, calculationUids: ids as string[] }))} />
           </div>
 
           <div className="px-5 py-4 flex items-center justify-end gap-2 shrink-0" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#fff' }}>

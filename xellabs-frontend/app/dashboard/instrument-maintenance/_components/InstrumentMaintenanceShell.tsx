@@ -570,7 +570,7 @@ export default function InstrumentMaintenanceShell({
         ))}
       </div>
 
-      <div className="mb-3">
+      <div className="mb-3 flex items-center gap-2">
         <InstrumentFilter instruments={instruments} value={instrumentFilter} onChange={setInstrumentFilter} />
       </div>
       </div>

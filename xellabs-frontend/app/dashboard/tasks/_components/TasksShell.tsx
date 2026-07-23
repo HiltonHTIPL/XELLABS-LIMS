@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo, useActionState, useTransition, useEffect } from 'react'
+import { useState, useMemo, useActionState, useTransition, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -361,9 +361,11 @@ export default function TasksShell({ initialTasks, initialAssignments, users }: 
             <p className="mt-1" style={{ fontSize: 13, color: '#374151' }}>Create, assign, and track laboratory tasks</p>
           </div>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#2563EB', border: 'none', cursor: 'pointer' }}>
-          <MI name="add" size={15} color="#fff" /> New Task
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={openCreate} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#2563EB', border: 'none', cursor: 'pointer' }}>
+            <MI name="add" size={15} color="#fff" /> New Task
+          </button>
+        </div>
       </div>
 
       {toast && (

@@ -113,7 +113,7 @@ export async function createSampleTemplate(
     return { message: result.error ?? 'Failed to create sample template.' }
   }
   revalidatePath('/dashboard/sample-templates')
-  revalidatePath('/dashboard/samples/new')
+  revalidatePath('/dashboard/samples-overview/new')
   return {
     success: true,
     message: result.warning
@@ -135,7 +135,7 @@ export async function updateSampleTemplate(
     return { message: result.error ?? 'Failed to update sample template.' }
   }
   revalidatePath('/dashboard/sample-templates')
-  revalidatePath('/dashboard/samples/new')
+  revalidatePath('/dashboard/samples-overview/new')
   return { success: true, message: `Sample template "${payload.title}" updated.` }
 }
 
@@ -145,7 +145,7 @@ export async function deleteSampleTemplate(url: string): Promise<{ success: bool
     return { success: false, message: result.error ?? 'Failed to delete sample template.' }
   }
   revalidatePath('/dashboard/sample-templates')
-  revalidatePath('/dashboard/samples/new')
+  revalidatePath('/dashboard/samples-overview/new')
   return { success: true }
 }
 

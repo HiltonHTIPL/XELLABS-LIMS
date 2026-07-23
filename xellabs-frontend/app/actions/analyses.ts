@@ -232,7 +232,7 @@ export async function createAnalysis(
 
   revalidatePath('/dashboard/analyses')
   revalidatePath('/dashboard/analysis-profiles')
-  revalidatePath('/dashboard/samples/new')
+  revalidatePath('/dashboard/samples-overview/new')
   return { success: true, message: `Analysis "${payload.title}" created.` }
 }
 
@@ -252,6 +252,6 @@ export async function updateAnalysis(
 
   revalidatePath('/dashboard/analyses')
   revalidatePath('/dashboard/analysis-profiles')
-  revalidatePath('/dashboard/samples/new')
+  revalidatePath('/dashboard/samples-overview/new')
   return { success: true, message: `Analysis "${payload.title}" updated.` }
 }

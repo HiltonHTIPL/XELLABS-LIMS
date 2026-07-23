@@ -1,10 +1,12 @@
+# syntax=docker/dockerfile:1
 FROM node:20-alpine AS runner
 WORKDIR /app
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY package.json package-lock.json ./
-RUN npm ci --prefer-offline --include=dev
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --prefer-offline --include=dev --no-audit --no-fund
 
 COPY . .
 

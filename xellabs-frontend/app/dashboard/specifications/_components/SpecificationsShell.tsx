@@ -1,5 +1,5 @@
 'use client'
-import { useState, useActionState, useTransition, useMemo } from 'react'
+import { useState, useActionState, useTransition, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -304,9 +304,11 @@ export default function SpecificationsShell({ initialSpecifications, services, s
             <p className="mt-1" style={{ fontSize: 13, color: '#374151' }}>Define pass/fail ranges per test and sample type</p>
           </div>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#2563EB', border: 'none', cursor: 'pointer' }}>
-          <MI name="add" size={15} color="#fff" /> New Specification
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={openCreate} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#2563EB', border: 'none', cursor: 'pointer' }}>
+            <MI name="add" size={15} color="#fff" /> New Specification
+          </button>
+        </div>
       </div>
 
       {toast && (

@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { exportRowsToCsv } from '@/app/lib/exportCsv'
 import { logImportBatch, getImportHistory } from '@/app/actions/import-logs'
+import DataTable, { type DataTableColumn } from '@/app/dashboard/_components/DataTable'
 
 export type ImportColumn = { key: string; label: string }
 
@@ -30,6 +31,32 @@ type Props = {
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
 }
+
+type ImportPreviewRow = { id: number; title: string; res: RowStatus }
+
+const importPreviewColumns: DataTableColumn<ImportPreviewRow>[] = [
+  { id: 'id', label: '#', width: 50, render: r => <>{r.id + 1}</> },
+  { id: 'title', label: 'Row Identifier', minWidth: 160 },
+  {
+    id: 'status', label: 'Status', minWidth: 180,
+    render: r => {
+      const { res } = r
+      const isErr = res.status === 'error'
+      const isSkip = res.status === 'skipped'
+      const isOk = res.status === 'success'
+      return (
+        <div className="inline-flex flex-col">
+          <span className={`font-medium ${isOk ? 'text-green-600' : isErr ? 'text-red-600' : isSkip ? 'text-orange-500' : 'text-gray-500'}`}>
+            {isOk ? 'Created' : isErr ? 'Error' : isSkip ? 'Skipped' : res.message || 'Pending'}
+          </span>
+          {(isErr || isSkip) && res.message && (
+            <span className="text-[10px] text-gray-500 mt-0.5 leading-tight">{res.message}</span>
+          )}
+        </div>
+      )
+    },
+  },
+]
 
 function parseCSV(text: string): string[][] {
   const lines: string[][] = []
@@ -339,43 +366,16 @@ export default function ImportButton({ columns, existingTitles = [], templateFil
                   </div>
                 </div>
 
-                <div className="rounded-lg border border-gray-200 overflow-hidden">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-gray-50 border-b border-gray-200">
-                        <th className="px-3 py-2 text-[10px] uppercase tracking-wide font-semibold text-gray-500 w-8">#</th>
-                        <th className="px-3 py-2 text-[10px] uppercase tracking-wide font-semibold text-gray-500">Row Identifier</th>
-                        <th className="px-3 py-2 text-[10px] uppercase tracking-wide font-semibold text-gray-500">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {parsedRows.map((row, i) => {
-                        const res = results[i]
-                        const isErr = res.status === 'error'
-                        const isSkip = res.status === 'skipped'
-                        const isOk = res.status === 'success'
-                        const title = row['title'] || row['Title'] || row['Name'] || row['name'] || `Row ${i + 1}`
-                        
-                        return (
-                          <tr key={i} className="border-b border-gray-100 last:border-none hover:bg-gray-50">
-                            <td className="px-3 py-2 text-xs text-gray-400">{i + 1}</td>
-                            <td className="px-3 py-2 text-xs font-medium text-gray-700 truncate max-w-[200px]">{title}</td>
-                            <td className="px-3 py-2 text-xs">
-                              <div className={`inline-flex flex-col`}>
-                                <span className={`font-medium ${isOk ? 'text-green-600' : isErr ? 'text-red-600' : isSkip ? 'text-orange-500' : 'text-gray-500'}`}>
-                                  {isOk ? 'Created' : isErr ? 'Error' : isSkip ? 'Skipped' : res.message || 'Pending'}
-                                </span>
-                                {(isErr || isSkip) && res.message && (
-                                  <span className="text-[10px] text-gray-500 mt-0.5 leading-tight">{res.message}</span>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                <DataTable<ImportPreviewRow>
+                  data={parsedRows.map((row, i) => ({
+                    id: i,
+                    title: row['title'] || row['Title'] || row['Name'] || row['name'] || `Row ${i + 1}`,
+                    res: results[i],
+                  }))}
+                  columns={importPreviewColumns}
+                  searchable
+                  emptyMessage="No rows parsed."
+                />
               </>
             )}
           </div>

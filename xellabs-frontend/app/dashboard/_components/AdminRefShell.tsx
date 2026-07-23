@@ -395,7 +395,7 @@ function FieldInput({ field, value, options, error, onChange, onToggleMulti, onO
     const selected = (value as string[]) ?? []
     return (
       <div>{label}
-        <div className="rounded-lg p-2 space-y-1 max-h-40 overflow-y-auto" style={{ border: `1px solid ${error ? '#FCA5A5' : '#D1D5DB'}` }}>
+        <div className="rounded-lg p-2 space-y-1 max-h-40 overflow-y-auto xl-visible-scrollbar" style={{ border: `1px solid ${error ? '#FCA5A5' : '#D1D5DB'}` }}>
           {(field.options ?? []).length === 0
             ? <p style={{ fontSize: 11, color: '#374151' }}>None available</p>
             : (field.options ?? []).map(o => (

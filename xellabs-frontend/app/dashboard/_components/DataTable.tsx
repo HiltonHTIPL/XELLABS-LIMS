@@ -22,7 +22,8 @@
  * file changes — no feature page does.
  */
 
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type DragEvent, type ReactNode, type RefObject } from 'react'
+import { createPortal } from 'react-dom'
 import { useLijiTable } from '@liji-table/react'
 import type { TableColumn, GroupRow } from '@liji-table/core'
 
@@ -64,6 +65,12 @@ type Props<T extends { id: string | number }> = {
   maxHeight?: number
   /** Fires whenever the selected row-id set changes (for external bulk actions). */
   onSelectionChange?: (ids: (string | number)[]) => void
+  /**
+   * When set, the layout controls (Reset layout + Views) render into this DOM
+   * node via a portal instead of the component's own toolbar row — lets a page
+   * place them in its existing toolbar. All control logic still lives here (SoC).
+   */
+  controlsTargetRef?: RefObject<HTMLElement | null>
 }
 
 const CHECKBOX_WIDTH = 40
@@ -75,7 +82,24 @@ function isGroup<T>(r: T | GroupRow<T>): r is GroupRow<T> {
   return typeof r === 'object' && r !== null && (r as GroupRow<T>).isGroup === true
 }
 
-export default function DataTable<T extends { id: string | number }>({
+// Flips true after the first client mount anywhere in the app. Lets remounted
+// instances (e.g. when the column set changes) skip the SSR placeholder so a
+// column toggle doesn't flash an empty table.
+let hasHydrated = false
+
+/**
+ * Public component. The underlying `useLijiTable` hook reads its columns only
+ * once (on init) and never re-syncs them, so adding/removing a column in a
+ * parent's column chooser wouldn't show up. We remount the inner table whenever
+ * the SET of column ids changes — persistence (layout/sort/page/search) restores
+ * on remount, so nothing is lost.
+ */
+export default function DataTable<T extends { id: string | number }>(props: Props<T>) {
+  const colKey = props.columns.map(c => c.id).join('|')
+  return <DataTableInner<T> key={colKey} {...props} />
+}
+
+function DataTableInner<T extends { id: string | number }>({
   data,
   columns,
   selectable = false,
@@ -90,6 +114,7 @@ export default function DataTable<T extends { id: string | number }>({
   dense = false,
   maxHeight,
   onSelectionChange,
+  controlsTargetRef,
 }: Props<T>) {
   // Strip our render field down to what the engine understands.
   const engineColumns: TableColumn[] = columns.map(c => ({
@@ -140,8 +165,8 @@ export default function DataTable<T extends { id: string | number }>({
   // anything that depends on it must render only after the client has mounted,
   // otherwise the server (no button) and client (button) HTML disagree and React
   // throws a hydration mismatch. Gate such UI on this flag.
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => { setMounted(true) }, [])
+  const [mounted, setMounted] = useState(hasHydrated)
+  useEffect(() => { hasHydrated = true; setMounted(true) }, [])
 
   // Persist sort / page / search per page. The library only auto-persists column
   // layout (order/width/pin/hidden) under `persistKey`; sort direction, current
@@ -299,14 +324,17 @@ export default function DataTable<T extends { id: string | number }>({
   const totalWidth = leftBase + rightBase + vis.reduce((s, c) => s + widthOf(c.id), 0)
 
   // Sizing (compact when `dense`). Header keeps extra right padding for the resizer.
-  const fontSize = dense ? 13 : 12
-  const headPad = dense ? '8px 14px 8px 10px' : '13px 16px 13px 12px'
-  const cellPad = dense ? '6px 10px' : '11px 12px'
+  const headFontSize = 12
+  const bodyFontSize = dense ? 11 : 10
+  const headPad = dense ? '6px 14px 6px 10px' : '9px 16px 9px 12px'
+  const cellPad = dense ? '5px 10px' : '7px 12px'
 
-  // ── Saved Views: named presets (sort + search + column widths) per page ──
+  // ── Saved Views: named presets (sort + search + column layout) per page ──
+  // `order` (column id sequence) is captured/restored alongside width/hidden/pin —
+  // previously missing, so switching views never actually moved columns around.
   type SavedView = {
     name: string; sortColumn: string | null; sortDirection: 'asc' | 'desc'; globalSearch: string
-    widths: Record<string, number>; hidden: string[]; pins: Record<string, 'left' | 'right'>
+    widths: Record<string, number>; hidden: string[]; pins: Record<string, 'left' | 'right'>; order: string[]
   }
   const viewsKey = persistKey ? `${persistKey}:views` : ''
   const [views, setViews] = useState<SavedView[]>([])
@@ -315,7 +343,15 @@ export default function DataTable<T extends { id: string | number }>({
   const [viewName, setViewName] = useState('')
   useEffect(() => {
     if (!viewsKey) return
-    try { const raw = localStorage.getItem(viewsKey); if (raw) setViews(JSON.parse(raw)) } catch { /* ignore */ }
+    try {
+      const raw = localStorage.getItem(viewsKey)
+      if (!raw) return
+      const parsed = JSON.parse(raw)
+      // Migrate views saved before order-tracking was added — old rows have no
+      // `order` field; default to current order (a no-op reorder on apply).
+      const migrated: SavedView[] = parsed.map((v: SavedView) => ({ ...v, order: v.order ?? [] }))
+      setViews(migrated)
+    } catch { /* ignore */ }
   }, [viewsKey])
   useEffect(() => {
     if (!viewsOpen) return
@@ -341,12 +377,37 @@ export default function DataTable<T extends { id: string | number }>({
       widths: { ...localWidths },
       hidden: cols.filter(c => c.hidden).map(c => c.id),
       pins,
+      order: cols.map(c => c.id),
     }
     writeViews([...views.filter(x => x.name !== n), v])
     setNaming(false); setViewName('')
   }
   function applyView(v: SavedView) {
     const cols = table.allColumns as { id: string; hidden?: boolean; pinned?: 'left' | 'right' }[]
+    // Column order — the hook exposes no direct "set order" API, only the
+    // drag-and-drop handlers (`getHeaderProps().onDrop`) that reorder internally
+    // via `reorderColumn(fromIndex, toIndex)`. Replay the same swap sequence a
+    // real drag would produce with a synthetic drop event, computed against a
+    // local simulation of the column array so each successive move's indices
+    // stay correct.
+    if (v.order?.length) {
+      const sim = cols.map(c => c.id)
+      const target = v.order.filter(id => sim.includes(id))
+      target.push(...sim.filter(id => !target.includes(id)))
+      target.forEach((id, toIndex) => {
+        const fromIndex = sim.indexOf(id)
+        if (fromIndex !== toIndex) {
+          const fakeDrop = {
+            preventDefault: () => {},
+            dataTransfer: { getData: () => String(fromIndex) },
+            currentTarget: { classList: { add() {}, remove() {} } },
+          } as unknown as DragEvent
+          table.getHeaderProps(toIndex, id).onDrop(fakeDrop)
+          const [moved] = sim.splice(fromIndex, 1)
+          sim.splice(toIndex, 0, moved)
+        }
+      })
+    }
     // Column visibility — toggle any column whose shown/hidden state differs.
     cols.forEach(c => {
       const shouldHide = (v.hidden ?? []).includes(c.id)
@@ -381,19 +442,11 @@ export default function DataTable<T extends { id: string | number }>({
     )
   }
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, width: '100%' }}>
-      {(searchable || persistKey) && (
-        <div style={{ marginBottom: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
-          {searchable && (
-            <div style={{ position: 'relative', maxWidth: 320, flex: '1 1 auto' }}>
-              <span style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
-                <MI name="search" size={14} color="#374151" />
-              </span>
-              <input value={table.state.globalSearch} onChange={e => table.setSearch(e.target.value)} placeholder="Search…"
-                style={{ border: '1px solid #D1D5DB', borderRadius: 6, padding: '6px 10px 6px 30px', fontSize: 12, width: '100%', boxSizing: 'border-box', outline: 'none' }} />
-            </div>
-          )}
+  // Layout controls (Reset layout + Views). Shared between the built-in toolbar
+  // row and the optional `controlsTargetRef` portal — same logic, either place.
+  const portalControls = !!controlsTargetRef
+  const layoutControls = (
+    <>
           {mounted && persistKey && table.hasSavedLayout() && (
             <button onClick={() => table.resetLayout()} title="Restore default column order/width/pins"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '6px 10px', borderRadius: 6, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 12, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' }}>
@@ -435,13 +488,36 @@ export default function DataTable<T extends { id: string | number }>({
               )}
             </div>
           )}
+    </>
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, width: '100%' }}>
+      {/* Built-in toolbar row: search (if enabled) + layout controls (unless the
+          controls have been portaled elsewhere via controlsTargetRef). */}
+      {(searchable || (persistKey && !portalControls)) && (
+        <div style={{ marginBottom: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
+          {searchable && (
+            <div style={{ position: 'relative', maxWidth: 320, flex: '1 1 auto' }}>
+              <span style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
+                <MI name="search" size={14} color="#374151" />
+              </span>
+              <input value={table.state.globalSearch} onChange={e => table.setSearch(e.target.value)} placeholder="Search…"
+                style={{ border: '1px solid #D1D5DB', borderRadius: 6, padding: '6px 10px 6px 30px', fontSize: 12, width: '100%', boxSizing: 'border-box', outline: 'none' }} />
+            </div>
+          )}
+          {!portalControls && layoutControls}
         </div>
       )}
+
+      {/* Portal the layout controls into the page-supplied slot when requested. */}
+      {portalControls && mounted && controlsTargetRef?.current
+        && createPortal(layoutControls, controlsTargetRef.current)}
 
       <div ref={table.containerRef as React.RefObject<HTMLDivElement>} className="xl-visible-scrollbar"
         style={{ flex: '1 1 auto', width: '100%', minHeight: 0, maxHeight, overflow: 'auto',
           ...(bare ? {} : { background: '#fff', borderRadius: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.07)', border: '1px solid #E5E7EB' }) }}>
-        <table style={{ width: totalWidth, minWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', fontSize }}>
+        <table style={{ width: totalWidth, minWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: bodyFontSize }}>
           <colgroup>
             {selectable && <col style={{ width: CHECKBOX_WIDTH }} />}
             {vis.map(c => <col key={c.id} style={{ width: widthOf(c.id) }} />)}
@@ -468,7 +544,7 @@ export default function DataTable<T extends { id: string | number }>({
                     title="Drag to reorder · drag right edge to resize · right-click to pin"
                     style={{
                       position: 'sticky', top: 0, zIndex: pinned ? 30 : 10, background: HEADER_BG, boxShadow: '0 1px 0 #D8DEEA',
-                      padding: headPad, textAlign: meta?.align ?? 'left', fontWeight: 600, color: '#374151',
+                      padding: headPad, fontSize: headFontSize, textAlign: meta?.align ?? 'left', fontWeight: 600, color: '#374151',
                       whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', userSelect: 'none', cursor: 'grab',
                       ...pinStyle(col.id, HEADER_BG),
                     }}
@@ -498,7 +574,7 @@ export default function DataTable<T extends { id: string | number }>({
                 )
               })}
               {rowActions && (
-                <th style={{ padding: headPad, textAlign: 'left', fontWeight: 600, color: '#374151', position: 'sticky', top: 0, zIndex: 10, background: HEADER_BG, boxShadow: '0 1px 0 #D8DEEA' }}>
+                <th style={{ padding: headPad, fontSize: headFontSize, textAlign: 'left', fontWeight: 600, color: '#374151', position: 'sticky', top: 0, zIndex: 10, background: HEADER_BG, boxShadow: '0 1px 0 #D8DEEA' }}>
                   Actions
                 </th>
               )}

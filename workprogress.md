@@ -57,3 +57,8 @@
 - Confirmed (not yet fixed): HP-0004 has no Django `Sample` row — created directly in SENAITE's native UI, bypassing the Next.js mirroring flow (one-way sync architecture gap).
 - Root-caused and fixed a duplicate-AnalysisRequest bug (one Django sample created two SENAITE ARs) — `push_analysis_request()` had no idempotency check against a Celery retry; added a ClientSampleID lookup guard. Cleaned up the one already-broken pair (cancelled the orphan, corrected the mismatched `Sample.senaite_uid`/`senaite_ar_id`).
 - Coordinated with a second concurrently-running Claude Code instance touching the same repo — confirmed no file overlap before proceeding; merged in its Test-model-removal/Calculations work from `hephzibah/staging-development` via stash/pull/merge/pop, resolving the resulting conflicts (Test model, NewSampleShell pricing, this log, CLAUDE.md, migration numbering).
+
+## 2026-07-22
+- Built reusable DataTable on @liji-table 0.0.8-beta.0 (sort/pin/reorder/resize/autosize/persistence, SSR hydration guard, universality opt-outs). Mapped dashboard Recent Samples via RecentSamplesTable wrapper.
+- Wrote LIJI-TABLE-FEEDBACK.md for the library author.
+- Pushed everything as-is (96 files, incl. concurrent session work + full table rollout) to hephzibah staging-development as commit 799d079 (--no-verify, per user request).

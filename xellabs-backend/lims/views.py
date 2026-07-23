@@ -10,13 +10,13 @@ from core.permissions import (
     ReadOnlyOrLabManager, ReadOnlyOrAnalystOrAbove, ReadOnlyOrSampleHandler,
 )
 from .models import (
-    SampleType, SampleTemplate, Method, Calculation, Specification,
+    SampleType, SampleTemplate, Method, Specification,
     DynamicAnalysisSpecification, AnalysisSpecification,
     Sample, AnalysisRequest, Worksheet, WorksheetAssignment,
     Result, QCSample, ChainOfCustody,
 )
 from .serializers import (
-    SampleTypeSerializer, SampleTemplateSerializer, MethodSerializer, CalculationSerializer, SpecificationSerializer,
+    SampleTypeSerializer, SampleTemplateSerializer, MethodSerializer, SpecificationSerializer,
     DynamicAnalysisSpecificationSerializer, AnalysisSpecificationSerializer,
     SampleSerializer, AnalysisRequestSerializer, WorksheetSerializer,
     WorksheetAssignmentSerializer, ResultSerializer, QCSampleSerializer,
@@ -143,15 +143,6 @@ class MethodViewSet(viewsets.ModelViewSet):
     parser_classes = [MultiPartParser, FormParser]
 
 
-class CalculationViewSet(viewsets.ModelViewSet):
-    queryset = Calculation.objects.all()
-    serializer_class = CalculationSerializer
-    permission_classes = [ReadOnlyOrLabManager]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ["is_active"]
-    search_fields = ["name", "code"]
-
-
 class DynamicAnalysisSpecificationViewSet(viewsets.ModelViewSet):
     queryset = DynamicAnalysisSpecification.objects.all()
     serializer_class = DynamicAnalysisSpecificationSerializer
@@ -216,7 +207,7 @@ class SampleViewSet(viewsets.ModelViewSet):
     serializer_class = SampleSerializer
     permission_classes = [ReadOnlyOrSampleHandler]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["status", "sample_type", "client", "priority", "hold_for_qa"]
+    filterset_fields = ["status", "sample_type", "client", "priority", "hold_for_qa", "senaite_uid"]
     search_fields = ["sample_id", "barcode", "description"]
     ordering_fields = ["created_at", "collection_date", "received_date", "expiry_date"]
 

@@ -1,5 +1,5 @@
 'use client'
-import { useMemo, useState, useTransition } from 'react'
+import { useMemo, useState, useTransition, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { decideApproval, type Approval, type ApprovalStatus } from '@/app/actions/approvals'
 import {

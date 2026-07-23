@@ -140,3 +140,20 @@ body {
   background-color: #E4EAF7;
   box-shadow: inset 0 -1px 0 0 #DCE3F0;
 }
+
+/* Dashboard "Recent Samples + Quick Actions" row. A hand-written rule (not a
+   compound Tailwind arbitrary-variant+arbitrary-value class, which the JIT
+   scanner does not reliably generate) so the layout is guaranteed to apply.
+   minmax(0, …) on the flexible track lets the samples table scroll inside its
+   own container instead of widening the page; Quick Actions stays a fixed
+   220px on the right and drops below the table under 1200px. */
+.dash-recent-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 1200px) {
+  .dash-recent-grid {
+    grid-template-columns: minmax(0, 1fr) 220px;
+  }
+}

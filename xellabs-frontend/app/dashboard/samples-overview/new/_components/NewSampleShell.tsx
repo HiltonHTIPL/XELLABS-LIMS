@@ -1113,27 +1113,34 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
           </div>
 
           {f.selectedTests.length > 0 && (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <table style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: 12 }}>
+              <colgroup>
+                <col style={{ width: 22 }} />
+                <col />
+                <col style={{ width: 62 }} />
+                <col style={{ width: 46 }} />
+                <col style={{ width: 26 }} />
+              </colgroup>
               <thead>
                 <tr style={{ background: '#F9FAFB', borderBottom: '1px solid #F3F4F6' }}>
-                  <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', width: 24 }}>#</th>
-                  <th style={{ padding: '8px 8px', textAlign: 'left', fontWeight: 600, color: '#374151' }}>Test / Analysis</th>
-                  <th style={{ padding: '8px 8px', textAlign: 'left', fontWeight: 600, color: '#374151' }}>Method</th>
-                  <th style={{ padding: '8px 8px', textAlign: 'right', fontWeight: 600, color: '#374151' }}>Price</th>
-                  <th style={{ width: 28 }} />
+                  <th style={{ padding: '8px 4px 8px 10px', textAlign: 'left', fontWeight: 600, color: '#374151' }}>#</th>
+                  <th style={{ padding: '8px 6px', textAlign: 'left', fontWeight: 600, color: '#374151' }}>Test / Analysis</th>
+                  <th style={{ padding: '8px 6px', textAlign: 'left', fontWeight: 600, color: '#374151' }}>Method</th>
+                  <th style={{ padding: '8px 4px', textAlign: 'right', fontWeight: 600, color: '#374151' }}>Price</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
                 {f.selectedTests.map((t, i) => (
                   <tr key={t.uid} style={{ borderBottom: '1px solid #F9FAFB' }}>
-                    <td style={{ padding: '8px 12px', color: '#374151', fontWeight: 600 }}>{i + 1}</td>
-                    <td style={{ padding: '8px 8px', color: '#111827', fontWeight: 500 }}>{t.title}</td>
-                    <td style={{ padding: '8px 8px', color: '#374151' }}>{t.Keyword}</td>
-                    <td style={{ padding: '8px 8px', textAlign: 'right', color: '#374151', fontWeight: 500 }}>{t.Price ? `$${parseFloat(t.Price).toFixed(2)}` : '—'}</td>
-                    <td style={{ padding: '8px 6px' }}>
+                    <td style={{ padding: '8px 4px 8px 10px', color: '#374151', fontWeight: 600, verticalAlign: 'top' }}>{i + 1}</td>
+                    <td style={{ padding: '8px 6px', color: '#111827', fontWeight: 500, verticalAlign: 'top', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{t.title}</td>
+                    <td style={{ padding: '8px 6px', color: '#374151', verticalAlign: 'top', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{t.Keyword}</td>
+                    <td style={{ padding: '8px 4px', textAlign: 'right', color: '#374151', fontWeight: 500, verticalAlign: 'top', whiteSpace: 'nowrap' }}>{t.Price ? `$${parseFloat(t.Price).toFixed(2)}` : '—'}</td>
+                    <td style={{ padding: '8px 2px', verticalAlign: 'top' }}>
                       {canEditAnalyses && (
-                        <button type="button" onClick={() => removeTest(t.uid)} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                          <MI name="delete_outline" size={16} color="#374151" />
+                        <button type="button" onClick={() => removeTest(t.uid)} title="Remove" style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 0 }}>
+                          <MI name="delete_outline" size={16} color="#EF4444" />
                         </button>
                       )}
                     </td>

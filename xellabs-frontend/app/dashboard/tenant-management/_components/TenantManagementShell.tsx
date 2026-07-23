@@ -97,14 +97,16 @@ export default function TenantManagementShell({ tenants }: { tenants: TenantDeta
             Lab organisations on the platform. Creating one provisions its workspace, portal address and admin account.
           </p>
         </div>
-        <button
-          onClick={() => setShowForm(v => !v)}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-white"
-          style={{ backgroundColor: '#0154FC' }}
-        >
-          <MI name={showForm ? 'close' : 'add'} size={14} color="#fff" />
-          {showForm ? 'Close' : 'New Organisation'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowForm(v => !v)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-white"
+            style={{ backgroundColor: '#0154FC' }}
+          >
+            <MI name={showForm ? 'close' : 'add'} size={14} color="#fff" />
+            {showForm ? 'Close' : 'New Organisation'}
+          </button>
+        </div>
       </div>
 
       {/* Create form */}

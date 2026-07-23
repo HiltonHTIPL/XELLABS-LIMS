@@ -1,6 +1,7 @@
 'use client'
 import type { PreviewRow, PreviewSummary } from '@/app/actions/instrument-import'
-import { Chip, MI, T, thStyle, tdStyle } from '@/app/dashboard/_components/ui'
+import { Chip, MI, T } from '@/app/dashboard/_components/ui'
+import DataTable, { type DataTableColumn } from '@/app/dashboard/_components/DataTable'
 
 function SummaryBar({ summary }: { summary: PreviewSummary }) {
   const skipped = summary.skipped ?? 0
@@ -36,6 +37,33 @@ function RowStatus({ status, detail }: { status: PreviewRow['status']; detail: s
   )
 }
 
+type Row = PreviewRow & { id: number }
+
+const columns: DataTableColumn<Row>[] = [
+  { id: 'row', label: 'Row', sortable: true, width: 70, render: r => <>{r.row || '-'}</> },
+  { id: 'sample_id', label: 'Sample', sortable: true, render: r => <>{r.sample_id || '-'}</> },
+  { id: 'test_code', label: 'Test', sortable: true, render: r => <>{r.test_code || '-'}</> },
+  { id: 'value', label: 'Value', render: r => <>{r.value || '-'}</> },
+  { id: 'unit', label: 'Unit', render: r => <>{r.unit || '-'}</> },
+  { id: 'flags', label: 'Flags', render: r => <>{r.flags || '-'}</> },
+  {
+    id: 'detail', label: 'Maps to', minWidth: 220,
+    render: r => {
+      const isError = r.status === 'error'
+      const isSkip = r.status === 'skip'
+      return isError || isSkip ? (
+        <span style={{ color: isError ? T.danger : '#D97706', fontSize: 12 }}>{r.detail}</span>
+      ) : (
+        <span style={{ color: T.text, fontSize: 12 }}>
+          {r.test_name}
+          {r.sample_status ? ` · sample ${r.sample_status}` : ''}
+        </span>
+      )
+    },
+  },
+  { id: 'status', label: '', width: 100, render: r => <RowStatus status={r.status} detail={r.detail} /> },
+]
+
 /** Shared preview table for bulk result imports (Instrument Result Import,
  * Quality Result Import) — one definition (DRY) since both produce the same
  * row/summary shape. */
@@ -43,51 +71,12 @@ export default function ImportPreviewTable({ rows, summary }: { rows: PreviewRow
   return (
     <div>
       <SummaryBar summary={summary} />
-      <div style={{ overflowX: 'auto', border: `1px solid ${T.cardBorder}`, borderRadius: 12 }}>
-        <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-          <thead>
-            <tr>
-              {['Row', 'Sample', 'Test', 'Value', 'Unit', 'Flags', 'Maps to', ''].map(h => (
-                <th key={h} style={thStyle}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => {
-              const isError = r.status === 'error'
-              const isSkip = r.status === 'skip'
-              return (
-                <tr
-                  key={`${r.row}-${i}`}
-                  style={{
-                    backgroundColor: isError ? '#FEF7F7' : isSkip ? '#FFFBEB' : undefined,
-                  }}
-                >
-                  <td style={tdStyle}>{r.row || '-'}</td>
-                  <td style={tdStyle}>{r.sample_id || '-'}</td>
-                  <td style={tdStyle}>{r.test_code || '-'}</td>
-                  <td style={tdStyle}>{r.value || '-'}</td>
-                  <td style={tdStyle}>{r.unit || '-'}</td>
-                  <td style={tdStyle}>{r.flags || '-'}</td>
-                  <td style={{ ...tdStyle, maxWidth: 280 }}>
-                    {isError || isSkip ? (
-                      <span style={{ color: isError ? T.danger : '#D97706', fontSize: 12 }}>{r.detail}</span>
-                    ) : (
-                      <span style={{ color: T.text, fontSize: 12 }}>
-                        {r.test_name}
-                        {r.sample_status ? ` · sample ${r.sample_status}` : ''}
-                      </span>
-                    )}
-                  </td>
-                  <td style={tdStyle}>
-                    <RowStatus status={r.status} detail={r.detail} />
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+      <DataTable<Row>
+        data={rows.map((r, i) => ({ ...r, id: i }))}
+        columns={columns}
+        searchable
+        emptyMessage="No rows to preview."
+      />
     </div>
   )
 }

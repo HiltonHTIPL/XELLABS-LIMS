@@ -3,13 +3,9 @@ import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import DataTable, { type DataTableColumn } from '../../_components/DataTable'
 import { type LabSample, type DjangoSampleType, patchLabSample } from '@/app/actions/lab-samples'
-import { type SenaiteSample } from '@/app/lib/senaite'
-import { getSample } from '@/app/actions/samples'
 import { sampleDisplayId as displayId } from '@/app/lib/sampleDisplay'
 import DisposeSampleModal from './DisposeSampleModal'
 import BulkDisposeSampleModal from './BulkDisposeSampleModal'
-import SampleDetailClient from '../../samples/[id]/_components/SampleDetailClient'
-import SampleOverviewDetailWrapper from './SampleOverviewDetailWrapper'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -104,7 +100,7 @@ const STAT_CARDS = [
   { key: 'on_hold_for_qa', label: 'On Hold for QA',   icon: 'pause_circle',    iconColor: '#F97316', iconBg: '#FFF7ED' },
   { key: 'completed',      label: 'Completed',        icon: 'check_circle',    iconColor: '#0154FC', iconBg: '#DBEAFE' },
   { key: 'overdue',        label: 'Overdue',          icon: 'schedule',        iconColor: '#EF4444', iconBg: '#FEF2F2' },
-  { key: 'past_retention', label: 'Past Retention',   icon: 'delete_sweep',    iconColor: '#991B1B', iconBg: '#FEE2E2' },
+  { key: 'past_retention', label: 'Disposed',         icon: 'delete_sweep',    iconColor: '#991B1B', iconBg: '#FEE2E2' },
 ] as const
 
 function tatDays(receivedDate: string | null, nowMs: number | null): number | null {
@@ -273,37 +269,13 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
     return STATUS_BADGE[s.status] ?? { bg: '#F3F4F6', color: '#374151', label: s.status }
   }
 
-  // ── Detail Drawer ──
-  // Opening a sample from the list slides its full detail in from the right
-  // instead of navigating away. SENAITE-backed samples show SampleDetailClient;
-  // Django-only samples reuse the overview detail via SampleOverviewDetailWrapper.
-  const [selectedSenaiteUid, setSelectedSenaiteUid] = useState<string | null>(null)
-  const [selectedSenaiteSample, setSelectedSenaiteSample] = useState<SenaiteSample | null>(null)
-  const [loadingSenaiteSample, setLoadingSenaiteSample] = useState(false)
-  const [selectedDjangoId, setSelectedDjangoId] = useState<number | null>(null)
-
-  useEffect(() => {
-    if (selectedSenaiteUid) {
-      // SampleDetailClient mounts immediately below (not gated on this fetch
-      // resolving first) so its own getLabSample() call starts in parallel
-      // with this one, instead of waiting for it — was a serial waterfall
-      // that made "Edit Sample" take ~2 round-trips to become usable.
-      setLoadingSenaiteSample(true)
-      getSample(selectedSenaiteUid).then(s => { setSelectedSenaiteSample(s); setLoadingSenaiteSample(false) })
-    } else {
-      setSelectedSenaiteSample(null)
-      setLoadingSenaiteSample(false)
-    }
-  }, [selectedSenaiteUid])
-
+  // ── Sample navigation ──
+  // Opening a sample from the list navigates to its own full page rather
+  // than an inline drawer — SENAITE-backed samples go to /dashboard/samples/[uid],
+  // Django-only samples go to /dashboard/samples-overview/[id].
   function openDetail(senaiteUid: string | undefined, djangoId: number) {
-    setSelectedSenaiteUid(senaiteUid ?? null)
-    setSelectedDjangoId(djangoId)
-  }
-
-  function closeDetail() {
-    setSelectedSenaiteUid(null)
-    setSelectedDjangoId(null)
+    if (senaiteUid) router.push(`/dashboard/samples/${senaiteUid}`)
+    else router.push(`/dashboard/samples-overview/${djangoId}`)
   }
 
   // ── Export to CSV ──
@@ -335,6 +307,9 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
   const [savedFiltersOpen, setSavedFiltersOpen] = useState(false)
   const [savedFiltersPos, setSavedFiltersPos] = useState<{ top: number; right: number } | null>(null)
   const savedFiltersBtnRef = useRef<HTMLButtonElement>(null)
+  // Slot the DataTable portals its layout controls (Reset layout + Views) into,
+  // so they sit inline next to Saved Filters instead of on their own row.
+  const tableControlsRef = useRef<HTMLDivElement>(null)
   const [saveFilterModalOpen, setSaveFilterModalOpen] = useState(false)
   const [newFilterName, setNewFilterName] = useState('')
 
@@ -691,6 +666,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 7, border: '1px solid #D1D5DB', background: savedFiltersOpen ? '#F3F4F6' : '#fff', color: '#374151', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
               <MI name="filter_list" size={16} /><span>Saved Filters</span>
             </button>
+            <div ref={tableControlsRef} style={{ display: 'flex', alignItems: 'center', gap: 8 }} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <span style={{ fontSize: 12, color: '#374151' }}>
@@ -707,6 +683,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
             selectable
             onSelectionChange={ids => setSelected(new Set(ids as number[]))}
             persistKey="samples-overview"
+            controlsTargetRef={tableControlsRef}
             emptyMessage="No samples found."
             rowActions={r => {
               const s = r._s
@@ -737,7 +714,7 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
       {colMenuOpen && colMenuPos && (
         <>
           <div style={{ position: 'fixed', inset: 0, zIndex: 9990 }} onClick={() => setColMenuOpen(false)} />
-          <div style={{ position: 'fixed', top: colMenuPos.top, right: colMenuPos.right, zIndex: 9999, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 200, padding: '8px 0', overflow: 'hidden' }}>
+          <div style={{ position: 'fixed', top: colMenuPos.top, right: colMenuPos.right, zIndex: 9999, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 200, padding: '8px 0', overflowY: 'auto', overflowX: 'hidden', maxHeight: `calc(100vh - ${colMenuPos.top + 12}px)` }}>
             <div style={{ padding: '6px 14px 8px', borderBottom: '1px solid #F3F4F6' }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: '#374151', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Toggle Columns</span>
             </div>
@@ -897,28 +874,6 @@ export default function SamplesOverviewShell({ initialSamples, sampleTypes, clie
           }}
         />
       )}
-
-      {/* ── Sample Detail drawer ── */}
-      <div style={{ position: 'fixed', top: 56, bottom: 0, left: 0, right: 0, zIndex: 200, pointerEvents: (selectedSenaiteUid || selectedDjangoId) ? 'auto' : 'none' }}>
-        <div onClick={closeDetail} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.30)', opacity: (selectedSenaiteUid || selectedDjangoId) ? 1 : 0, transition: 'opacity 0.25s ease' }} />
-        <div style={{ position: 'absolute', top: 0, bottom: 0, width: '75%', minWidth: 720, maxWidth: 1040, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.12)', right: (selectedSenaiteUid || selectedDjangoId) ? 0 : '-100%', transition: 'right 0.28s cubic-bezier(0.4,0,0.2,1)', overflowY: 'auto' }}>
-          {selectedSenaiteUid ? (
-            <SampleDetailClient
-              uid={selectedSenaiteUid}
-              sample={selectedSenaiteSample}
-              loading={loadingSenaiteSample}
-              djangoId={selectedDjangoId ?? undefined}
-              onClose={closeDetail}
-            />
-          ) : selectedDjangoId && !selectedSenaiteUid ? (
-            <SampleOverviewDetailWrapper djangoId={selectedDjangoId} onClose={closeDetail} />
-          ) : (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', backgroundColor: '#F9FAFB' }}>
-              <div style={{ fontSize: 13, color: '#374151' }}>Loading sample details...</div>
-            </div>
-          )}
-        </div>
-      </div>
 
     </div>
   )

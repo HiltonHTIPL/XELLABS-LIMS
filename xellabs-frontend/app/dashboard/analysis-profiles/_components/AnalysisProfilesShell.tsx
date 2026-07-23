@@ -1,5 +1,5 @@
 'use client'
-import { useState, useActionState } from 'react'
+import { useState, useActionState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   createAnalysisProfile, updateAnalysisProfile, deleteAnalysisProfile,
@@ -173,9 +173,11 @@ export default function AnalysisProfilesShell({ initialProfiles, analysisService
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Analysis Profiles</h1>
           <p className="text-sm mt-0.5" style={{ color: '#374151' }}>Reusable bundles of analyses you can apply to any sample, independent of sample type</p>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
-          <MI name="add" size={15} color="#fff" /> New Analysis Profile
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
+            <MI name="add" size={15} color="#fff" /> New Analysis Profile
+          </button>
+        </div>
       </div>
 
       {toast && (

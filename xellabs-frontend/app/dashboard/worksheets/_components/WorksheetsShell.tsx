@@ -1,5 +1,5 @@
 'use client'
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createWorksheet } from '@/app/actions/senaite-worksheets'
 import type { WorksheetListItem } from '@/app/lib/senaite-worksheets'
@@ -125,9 +125,11 @@ export default function WorksheetsShell({ initialWorksheets, templates, instrume
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Worksheets</h1>
           <p className="text-sm mt-0.5" style={{ color: '#374151' }}>Create worksheets from templates — routine analyses and QC positions are laid out automatically</p>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold text-white" style={{ backgroundColor: '#0154FC' }}>
-          <MI name="add" size={16} color="#fff" /> New Worksheet
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={openCreate} className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold text-white" style={{ backgroundColor: '#0154FC' }}>
+            <MI name="add" size={16} color="#fff" /> New Worksheet
+          </button>
+        </div>
       </div>
 
       {toast && (

@@ -84,7 +84,7 @@ export default function Sidebar({ onToggle, role, reportDraftCount, isSuperuser 
 
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
     const open = new Set<string>()
-    if (['/dashboard/samples-overview', '/dashboard/samples/new'].some(p => pathname.startsWith(p))) open.add('Samples')
+    if (['/dashboard/samples-overview', '/dashboard/samples/'].some(p => pathname.startsWith(p))) open.add('Samples')
     if (['/dashboard/inventory-items', '/dashboard/inventory-lots', '/dashboard/instrument-maintenance', '/dashboard/schedule', '/dashboard/inventory-dashboard'].some(p => pathname.startsWith(p))) open.add('Instruments')
     return open
   })

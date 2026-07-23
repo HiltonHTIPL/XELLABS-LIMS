@@ -1,6 +1,6 @@
 'use client'
 import { exportRowsToCsv } from '@/app/lib/exportCsv'
-import { useState, useActionState } from 'react'
+import { useState, useActionState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createAnalysis, updateAnalysis, type AnalysisFormState } from '@/app/actions/analyses'
@@ -121,7 +121,7 @@ function CheckboxList({ options, selected, onChange }: {
     onChange(selected.includes(uid) ? selected.filter(x => x !== uid) : [...selected, uid])
   }
   return (
-    <div className="rounded-lg overflow-y-auto" style={{ border: '1px solid #D1D5DB', maxHeight: 120 }}>
+    <div className="rounded-lg overflow-y-auto xl-visible-scrollbar" style={{ border: '1px solid #D1D5DB', maxHeight: 120 }}>
       {options.length === 0
         ? <p className="px-3 py-2 text-xs" style={{ color: '#374151' }}>None available</p>
         : options.map(o => (
@@ -672,7 +672,6 @@ export default function AnalysesShell({
         <DataTable<Row>
           data={rows}
           columns={columns}
-          searchable
           persistKey="analyses"
           emptyMessage="No analyses found."
           rowActions={s => (

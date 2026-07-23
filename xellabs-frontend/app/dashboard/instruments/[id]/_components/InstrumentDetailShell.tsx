@@ -11,6 +11,7 @@ import {
   transitionInstrument,
   type InstrumentTransition,
 } from '@/app/actions/instruments'
+import DataTable, { type DataTableColumn } from '@/app/dashboard/_components/DataTable'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, lineHeight: 1, color }}>{name}</span>
@@ -283,31 +284,21 @@ export default function InstrumentDetailShell(
         </button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-      <div className="bg-white" style={{ border: '1px solid #E8EAF2', borderRadius: 10, overflow: 'hidden' }}>
-        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ backgroundColor: '#F9FAFB', textAlign: 'left', color: '#374151' }}>
-              {tab.cols.map(c => <th key={c.key} style={{ padding: '9px 12px', fontWeight: 600 }}>{c.header}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 && (
-              <tr><td colSpan={tab.cols.length} style={{ padding: 20, textAlign: 'center', color: '#374151' }}>No {tab.label.toLowerCase()} recorded.</td></tr>
-            )}
-            {rows.map(r => (
-              <tr key={r.id} style={{ borderTop: '1px solid #F3F4F6', color: '#111827' }}>
-                {tab.cols.map(c => (
-                  <td key={c.key} style={{ padding: '9px 12px' }}>
-                    {c.kind === 'validity'
-                      ? <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999, backgroundColor: r[c.key] ? '#ECFDF5' : '#FEF2F2', color: r[c.key] ? '#059669' : '#991B1B' }}>{r[c.key] ? 'Valid' : 'Expired'}</span>
-                      : fmt(r[c.key], c.kind)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+        <DataTable<RecordRow>
+          key={tab.key}
+          data={rows}
+          columns={tab.cols.map((c): DataTableColumn<RecordRow> => ({
+            id: c.key,
+            label: c.header,
+            sortable: true,
+            render: r => c.kind === 'validity'
+              ? <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999, backgroundColor: r[c.key] ? '#ECFDF5' : '#FEF2F2', color: r[c.key] ? '#059669' : '#991B1B' }}>{r[c.key] ? 'Valid' : 'Expired'}</span>
+              : <>{fmt(r[c.key], c.kind)}</>,
+          }))}
+          searchable
+          persistKey={`instrument-detail-${tab.key}`}
+          emptyMessage={`No ${tab.label.toLowerCase()} recorded.`}
+        />
       </div>
 
       {/* Add drawer */}

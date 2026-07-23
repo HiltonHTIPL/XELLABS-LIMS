@@ -11,7 +11,7 @@ import {
 // same v1-read/restapi-write split as every other setup-content entity (§16d).
 const PORTAL_TYPE = 'AnalysisProfile'
 const PARENT_SUB_PATH = 'setup/analysisprofiles'
-const REVALIDATE_PATHS = ['/dashboard/analysis-profiles', '/dashboard/samples', '/dashboard/samples/new', '/dashboard/analyses']
+const REVALIDATE_PATHS = ['/dashboard/analysis-profiles', '/dashboard/samples-overview', '/dashboard/samples-overview/new', '/dashboard/analyses']
 
 export type ProfileServiceRef = { uid: string; hidden: boolean }
 

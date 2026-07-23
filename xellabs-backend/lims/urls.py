@@ -1,6 +1,6 @@
 from rest_framework.routers import DefaultRouter
 from .views import (
-    SampleTypeViewSet, SampleTemplateViewSet, MethodViewSet, CalculationViewSet, SpecificationViewSet,
+    SampleTypeViewSet, SampleTemplateViewSet, MethodViewSet, SpecificationViewSet,
     DynamicAnalysisSpecificationViewSet, AnalysisSpecificationViewSet,
     SampleViewSet, AnalysisRequestViewSet, WorksheetViewSet,
     WorksheetAssignmentViewSet, ResultViewSet, QCSampleViewSet,
@@ -13,7 +13,6 @@ router.register("analysis-specifications", AnalysisSpecificationViewSet)
 router.register("sample-types", SampleTypeViewSet)
 router.register("sample-templates", SampleTemplateViewSet)
 router.register("methods", MethodViewSet)
-router.register("calculations", CalculationViewSet)
 # specification-rows: read-only-in-practice per-test rows, primarily for
 # internal consumers (services.py check_result_against_spec) — the frontend
 # creates/edits rows exclusively through analysis-specifications' nested

@@ -12,12 +12,31 @@ function MI({ name, size = 16, color }: { name: string; size?: number; color?: s
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
 }
 
+// Sample lifecycle stages — mirrors the process-flow cards on Samples Overview
+// (Logged → Received → In Process → To Be Verified → On Hold for QA → Completed).
 const STEPS = [
-  { n: 1, label: 'Sample Details' },
-  { n: 2, label: 'Chain of Custody' },
-  { n: 3, label: 'Review & Confirm' },
-  { n: 4, label: 'Complete' },
+  { n: 1, label: 'Logged' },
+  { n: 2, label: 'Received' },
+  { n: 3, label: 'In Process' },
+  { n: 4, label: 'To Be Verified' },
+  { n: 5, label: 'On Hold for QA' },
+  { n: 6, label: 'Completed' },
 ]
+
+// Map a sample's raw status to its lifecycle step. `hold_for_qa` is a flag that
+// overrides the linear status, matching how Samples Overview surfaces it.
+function lifecycleStep(sample: LabSample | null, received: boolean): number {
+  if (!sample) return 1
+  if (received) return 2
+  if (sample.hold_for_qa) return 5
+  switch (sample.status) {
+    case 'received':         return 2
+    case 'in_progress':      return 3
+    case 'results_pending':  return 4
+    case 'published':        return 6
+    default:                 return 1 // registered / anything else = Logged
+  }
+}
 
 function StepBar({ active }: { active: number }) {
   return (
@@ -37,7 +56,7 @@ function StepBar({ active }: { active: number }) {
                 {s.label}
               </span>
             </div>
-            {!isLast && <div className="flex-1 mx-3" style={{ height: 1, backgroundColor: s.n < active ? '#2563EB' : '#E5E7EB' }} />}
+            {!isLast && <div className="flex-1 mx-3" style={{ height: 2, backgroundColor: s.n < active ? '#2563EB' : '#6B7280' }} />}
           </div>
         )
       })}
@@ -119,10 +138,9 @@ export default function SampleReceiptShell({ sample, hasId, samplingDeviations }
   // received — show its recorded receipt details read-only instead of the form.
   const alreadyReceived = !!sample && sample.status !== 'registered'
 
-  // Step indicator derived from actual progress instead of the old hard-coded 1:
-  // 1 = no sample selected, 2 = filling details/custody, 3 = submitting,
-  // 4 = received (success or reopened already-received sample).
-  const activeStep = success || alreadyReceived ? 4 : submitting ? 3 : sample ? 2 : 1
+  // Step indicator reflects the sample's real lifecycle position. A successful
+  // receipt (or a reopened already-received sample) advances it to "Received".
+  const activeStep = lifecycleStep(sample, !!success)
   const tatDays = sample?.received_date
     ? Math.max(0, Math.round((Date.now() - new Date(sample.received_date).getTime()) / 86400000))
     : null

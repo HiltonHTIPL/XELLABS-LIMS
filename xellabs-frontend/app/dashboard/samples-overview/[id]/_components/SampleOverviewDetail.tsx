@@ -36,7 +36,7 @@ function MI({ name, size = 16, color }: { name: string; size?: number; color?: s
 
 const STATUS_BADGE: Record<string, { bg: string; color: string; label: string }> = {
   registered:      { bg: '#EFF6FF', color: '#1D4ED8', label: 'Logged' },
-  received:        { bg: '#DBEAFE', color: '#0154FC', label: 'Received' },
+  received:        { bg: '#DCFCE7', color: '#166534', label: 'Received' },
   in_progress:     { bg: '#DBEAFE', color: '#1E40AF', label: 'In Process' },
   results_pending: { bg: '#FEF3C7', color: '#92400E', label: 'To Be Verified' },
   reviewed:        { bg: '#E0E7FF', color: '#3730A3', label: 'Reviewed' },
@@ -83,6 +83,9 @@ function Row({ label, value }: { label: string; value: string }) {
 
 const th: CSSProperties = { padding: '9px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.03em', borderBottom: '1px solid #E5E7EB', whiteSpace: 'nowrap' }
 const td: CSSProperties = { padding: '10px 12px', fontSize: 12, color: '#374151', borderBottom: '1px solid #F3F4F6', whiteSpace: 'nowrap' }
+
+const headerBtn: CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, padding: '7px 13px', borderRadius: 20, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }
+const headerBtnPrimary: CSSProperties = { ...headerBtn, border: 'none', background: '#0154FC', color: '#fff' }
 
 const inp: CSSProperties = { border: '1px solid #D1D5DB', borderRadius: 7, padding: '8px 10px', fontSize: 12, color: '#111827', background: '#fff', width: '100%', outline: 'none', boxSizing: 'border-box' }
 const lbl: CSSProperties = { fontSize: 11, fontWeight: 600, color: '#374151', marginBottom: 4, display: 'block' }
@@ -311,26 +314,24 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests, isD
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
         <h1 style={{ fontSize: 24, fontWeight: 800, color: '#14265E', margin: 0 }}>Sample Detail</h1>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button onClick={() => setShowEdit(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: 'none', background: '#0154FC', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            <MI name="edit" size={16} color="#fff" /><span>Edit Sample</span>
+          <button onClick={() => router.push(`/dashboard/samples-overview/new?edit=${sample.id}`)} style={headerBtnPrimary}>
+            <MI name="edit" size={15} color="#fff" /><span>Edit Sample</span>
           </button>
-          <button onClick={() => document.getElementById('storage-info')?.scrollIntoView({ behavior: 'smooth' })}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            <MI name="inventory_2" size={16} /><span>Storage History</span>
+          <button onClick={() => document.getElementById('storage-info')?.scrollIntoView({ behavior: 'smooth' })} style={headerBtn}>
+            <MI name="inventory_2" size={15} /><span>Storage History</span>
           </button>
-          <button onClick={() => setShowAuditTrail(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            <MI name="shield" size={16} /><span>Audit Trail</span>
+          <button onClick={() => setShowAuditTrail(true)} style={headerBtn}>
+            <MI name="shield" size={15} /><span>Audit Trail</span>
           </button>
-          <button onClick={() => setShowChainOfCustody(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            <MI name="link" size={16} /><span>Chain of Custody</span>
+          <button onClick={() => setShowChainOfCustody(true)} style={headerBtn}>
+            <MI name="link" size={15} /><span>Chain of Custody</span>
+          </button>
+          <button onClick={() => document.getElementById('requested-analyses')?.scrollIntoView({ behavior: 'smooth' })} style={headerBtn}>
+            <MI name="fact_check" size={15} /><span>View Results</span>
           </button>
           <div style={{ position: 'relative' }}>
-            <button onClick={() => setPrintOpen(v => !v)}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-              <MI name="print" size={16} /><span>Print Label</span>
+            <button onClick={() => setPrintOpen(v => !v)} style={headerBtn}>
+              <MI name="print" size={15} /><span>Print Label</span>
             </button>
             {printOpen && (
               <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 20, width: 260, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.1)', padding: 14 }}>
@@ -368,17 +369,15 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests, isD
               <MI name="science" size={28} color="#2563EB" />
             </div>
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 22, fontWeight: 800, color: '#14265E' }}>{displayId(sample)}</span>
                 <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2 }}
                   onClick={() => navigator.clipboard?.writeText(displayId(sample))}>
                   <MI name="content_copy" size={14} color="#374151" />
                 </button>
-              </div>
-              <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
                 <span style={{ background: badge.bg, color: badge.color, borderRadius: 20, padding: '3px 9px', fontWeight: 600, fontSize: 11 }}>{badge.label}</span>
                 {sample.priority && <span style={{ background: pBadge.bg, color: pBadge.color, borderRadius: 20, padding: '3px 9px', fontWeight: 600, fontSize: 11, textTransform: 'capitalize' }}>{sample.priority}</span>}
-                {sample.hold_for_qa && <span style={{ background: '#FFF7ED', color: '#C2410C', borderRadius: 20, padding: '3px 9px', fontWeight: 600, fontSize: 11 }}>On Hold for QA</span>}
+                {sample.hold_for_qa && <span style={{ background: '#F3F4F6', color: '#374151', borderRadius: 20, padding: '3px 9px', fontWeight: 600, fontSize: 11 }}>On Hold for QA</span>}
               </div>
             </div>
           </div>
@@ -428,8 +427,8 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests, isD
       </div>
 
       {/* Sample Info + Requested Analyses */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: 16, marginBottom: 16 }}>
-        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #E8EAF2', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: 18 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.4fr)', gap: 16, marginBottom: 16 }}>
+        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #E8EAF2', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: 18, minWidth: 0 }}>
           <p style={{ fontSize: 13, fontWeight: 700, color: '#14265E', margin: '0 0 8px' }}>Sample Information</p>
           <Row label="Matrix" value={sample.sample_type_name} />
           <Row label="Container" value={sample.container_type} />
@@ -444,7 +443,7 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests, isD
           <Row label="Sample Notes" value={sample.description} />
         </div>
 
-        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #E8EAF2', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', overflow: 'hidden' }}>
+        <div id="requested-analyses" style={{ background: '#fff', borderRadius: 12, border: '1px solid #E8EAF2', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', overflow: 'hidden', minWidth: 0 }}>
           <p style={{ fontSize: 13, fontWeight: 700, color: '#14265E', margin: 0, padding: '14px 18px 10px' }}>Requested Analyses</p>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -476,8 +475,8 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests, isD
       </div>
 
       {/* Storage Information + Documents */}
-      <div id="storage-info" style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 16 }}>
-        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #E8EAF2', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', overflow: 'hidden' }}>
+      <div id="storage-info" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1fr)', gap: 16 }}>
+        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #E8EAF2', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', overflow: 'hidden', minWidth: 0 }}>
           <p style={{ fontSize: 13, fontWeight: 700, color: '#14265E', margin: 0, padding: '14px 18px 10px' }}>Storage Information</p>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>

@@ -1,5 +1,5 @@
 'use client'
-import { useMemo, useState, useActionState, useTransition, useEffect } from 'react'
+import { useMemo, useState, useActionState, useTransition, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -311,7 +311,6 @@ export default function InventoryItemsShell({ initialReagents, initialStandards,
         <DataTable<AnyItem>
           data={filtered}
           columns={columns}
-          searchable
           persistKey={`inventory-items-${tab}`}
           emptyMessage={`No ${KIND_LABEL[tab].toLowerCase()}s found.`}
           rowActions={item => (

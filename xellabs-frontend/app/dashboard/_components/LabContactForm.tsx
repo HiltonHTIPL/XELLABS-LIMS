@@ -136,7 +136,7 @@ export function LabContactFormBody({
 
         <div>
           <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Departments</label>
-          <div className="rounded-lg p-2 space-y-1 max-h-32 overflow-y-auto" style={{ border: '1px solid #D1D5DB' }}>
+          <div className="rounded-lg p-2 space-y-1 max-h-32 overflow-y-auto xl-visible-scrollbar" style={{ border: '1px solid #D1D5DB' }}>
             {departments.length === 0
               ? <p style={{ fontSize: 11, color: '#374151' }}>No departments available</p>
               : departments.map(d => (

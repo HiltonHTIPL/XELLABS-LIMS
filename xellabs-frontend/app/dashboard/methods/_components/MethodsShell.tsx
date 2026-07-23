@@ -1,8 +1,7 @@
 'use client'
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { toggleMethodActive, type Method } from '@/app/actions/methods'
-import type { Calculation } from '@/app/actions/calculations'
 import type { InstrumentOption } from '@/app/actions/instrument-maintenance'
 import type { SenaiteMethodRow } from '@/app/actions/senaite-methods'
 import type { SenaiteInstrument, SenaiteCalculation } from '@/app/lib/senaite'
@@ -14,8 +13,8 @@ function MI({ name, size = 16, color }: { name: string; size?: number; color?: s
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
 }
 
-export default function MethodsShell({ initialMethods, calculations, instruments, senaiteMethods, senaiteInstruments, senaiteCalculations }: {
-  initialMethods: Method[]; calculations: Calculation[]; instruments: InstrumentOption[]
+export default function MethodsShell({ initialMethods, instruments, senaiteMethods, senaiteInstruments, senaiteCalculations }: {
+  initialMethods: Method[]; instruments: InstrumentOption[]
   senaiteMethods: SenaiteMethodRow[]; senaiteInstruments: SenaiteInstrument[]; senaiteCalculations: SenaiteCalculation[]
 }) {
   const [tab, setTab] = useState<'catalog' | 'docs'>('catalog')
@@ -114,9 +113,11 @@ export default function MethodsShell({ initialMethods, calculations, instruments
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Documentation Records</h1>
           <p className="mt-1" style={{ fontSize: 13, color: '#6B7280' }}>Local accreditation, instructions and document tracking per method</p>
         </div>
-        <button onClick={openCreate} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#2563EB', border: 'none', cursor: 'pointer' }}>
-          <MI name="add" size={15} color="#fff" /> New Method
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={openCreate} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ backgroundColor: '#2563EB', border: 'none', cursor: 'pointer' }}>
+            <MI name="add" size={15} color="#fff" /> New Method
+          </button>
+        </div>
       </div>
 
       {toast && (
@@ -131,7 +132,7 @@ export default function MethodsShell({ initialMethods, calculations, instruments
         open={showDrawer}
         onClose={closeDrawer}
         editing={editing}
-        calculations={calculations}
+        calculations={senaiteCalculations}
         instruments={instruments}
         onSaved={handleSaved}
       />

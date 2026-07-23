@@ -538,6 +538,21 @@ export async function getLabSample(id: number): Promise<LabSample | null> {
   } catch { return null }
 }
 
+/**
+ * Resolve the Django-mirrored LabSample from a SENAITE AR uid — used by the
+ * SENAITE-native Sample Detail page (`/dashboard/samples/[id]`), which only
+ * knows the sample by its SENAITE uid, to enable Edit Sample / Storage
+ * History (both need the Django `Sample.id`).
+ */
+export async function getLabSampleBySenaiteUid(senaiteUid: string): Promise<LabSample | null> {
+  try {
+    const res = await djangoFetch(`/api/lims/samples/?senaite_uid=${encodeURIComponent(senaiteUid)}`)
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.results?.[0] ?? null
+  } catch { return null }
+}
+
 export type ReceiptFormState = {
   success?: boolean
   message?: string

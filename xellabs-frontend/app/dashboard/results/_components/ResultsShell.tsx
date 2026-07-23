@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo, useTransition } from 'react'
+import { useState, useMemo, useTransition, useRef } from 'react'
 import Link from 'next/link'
 import { getResults, type EnrichedResult, type ResultFilters } from '@/app/actions/results'
 import {

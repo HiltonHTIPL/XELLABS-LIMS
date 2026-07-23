@@ -11,7 +11,8 @@ export type Method = {
   instructions: string
   document: string | null
   instruments: number[]
-  calculations: number[]
+  /** UIDs of real SENAITE Calculation objects this method supports. */
+  senaite_calculation_uids: string[]
   is_active: boolean
   created_at: string
 }
@@ -40,7 +41,7 @@ function buildMethodFormData(formData: FormData): FormData {
   fd.append('instructions', ((formData.get('instructions') as string) || '').trim())
   fd.append('accredited', formData.get('accredited') ? 'true' : 'false')
   for (const id of formData.getAll('instrument_ids')) fd.append('instrument_ids', id as string)
-  for (const id of formData.getAll('calculation_ids')) fd.append('calculations', id as string)
+  for (const uid of formData.getAll('calculation_uids')) fd.append('senaite_calculation_uids', uid as string)
   const doc = formData.get('document')
   if (doc instanceof File && doc.size > 0) fd.append('document', doc)
   return fd

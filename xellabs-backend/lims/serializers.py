@@ -2,7 +2,7 @@ from django.db import IntegrityError, transaction
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 from .models import (
-    SampleType, SampleTemplate, Method, Calculation, Specification,
+    SampleType, SampleTemplate, Method, Specification,
     DynamicAnalysisSpecification, AnalysisSpecification,
     Sample, AnalysisRequest, AnalysisRequestAnalysis, Worksheet, WorksheetAssignment,
     Result, QCSample, ChainOfCustody,
@@ -56,12 +56,6 @@ class SampleTemplateSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
-class CalculationSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Calculation
-        fields = "__all__"
-
-
 class MethodSerializer(serializers.ModelSerializer):
     instruments = serializers.SerializerMethodField(read_only=True)
 
@@ -75,6 +69,14 @@ class MethodSerializer(serializers.ModelSerializer):
         fields["instrument_ids"] = serializers.PrimaryKeyRelatedField(
             source="instruments", many=True, write_only=True, required=False,
             queryset=Instrument.objects.all(),
+        )
+        # Plain ModelSerializer would map the JSONField to a generic JSONField
+        # (expects one already-parsed JSON value), which multipart form data
+        # can't feed correctly. ListField.get_value() knows how to collect
+        # repeated `senaite_calculation_uids` form entries the way
+        # instrument_ids' PrimaryKeyRelatedField(many=True) already does.
+        fields["senaite_calculation_uids"] = serializers.ListField(
+            child=serializers.CharField(), required=False,
         )
         return fields
 
