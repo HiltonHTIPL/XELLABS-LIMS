@@ -6,6 +6,11 @@ export const RECORD_TYPE_LABELS: Record<string, string> = {
   'lims.result': 'Result',
   'lims.analysisrequest': 'Analysis Request',
   'lims.worksheet': 'Worksheet',
+  'lims.analysisspecification': 'Analysis Specification',
+  'lims.method': 'Method',
+  'lims.sampletemplate': 'Sample Template',
+  'lims.sampletype': 'Sample Type',
+  'lims.analysis': 'Analysis',
 }
 
 export function recordTypeLabel(raw: string | null | undefined): string {
