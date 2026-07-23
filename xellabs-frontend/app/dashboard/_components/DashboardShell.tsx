@@ -32,6 +32,7 @@ export type NotificationItem = {
   title: string
   priority?: string
   due_date?: string | null
+  status?: string
 }
 
 interface Props {
@@ -201,22 +202,27 @@ export default function DashboardShell({ children, initials, displayName, roleLa
           <div className="flex-1" />
 
           {/* Notifications — open workflow tasks */}
-          <button ref={notifBtnRef} onClick={toggleNotifications} className="relative p-1.5 rounded-lg hover:bg-gray-100" style={{ cursor: 'pointer' }} title="Notifications">
-            <span className="material-icons" style={{ fontSize: 20, color: '#374151' }}>notifications</span>
-            {notifications.length > 0 && (
-              <span
-                className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full text-white flex items-center justify-center font-bold"
-                style={{ backgroundColor: '#3B82F6', fontSize: 9 }}
-              >
-                {notifications.length > 9 ? '9+' : notifications.length}
-              </span>
-            )}
-          </button>
+          {(() => {
+            const hasOverdue = notifications.some(n => n.due_date && new Date(n.due_date) < new Date())
+            return (
+              <button ref={notifBtnRef} onClick={toggleNotifications} className="relative p-1.5 rounded-lg hover:bg-gray-100" style={{ cursor: 'pointer' }} title="Notifications">
+                <span className="material-icons" style={{ fontSize: 20, color: '#374151' }}>notifications</span>
+                {notifications.length > 0 && (
+                  <span
+                    className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full text-white flex items-center justify-center font-bold"
+                    style={{ backgroundColor: hasOverdue ? '#EF4444' : '#3B82F6', fontSize: 9 }}
+                  >
+                    {notifications.length > 9 ? '9+' : notifications.length}
+                  </span>
+                )}
+              </button>
+            )
+          })()}
 
           {/* Notifications dropdown — position:fixed so no overflow-hidden ancestor clips it */}
           {notifOpen && notifPos && (
             <div ref={notifPanelRef} className="rounded-xl overflow-hidden"
-              style={{ position: 'fixed', top: notifPos.top, right: notifPos.right, width: 300, zIndex: 9999, backgroundColor: '#fff', border: '1px solid #E5E7EB', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
+              style={{ position: 'fixed', top: notifPos.top, right: notifPos.right, width: 320, zIndex: 9999, backgroundColor: '#fff', border: '1px solid #E5E7EB', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
               <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid #F3F4F6' }}>
                 <span className="text-sm font-semibold" style={{ color: '#111827' }}>Notifications</span>
                 <span style={{ fontSize: 10, color: '#374151' }}>{notifications.length} open task{notifications.length !== 1 ? 's' : ''}</span>
@@ -228,18 +234,33 @@ export default function DashboardShell({ children, initials, displayName, roleLa
                     <p className="text-xs mt-2" style={{ color: '#374151' }}>No open tasks — you're all caught up.</p>
                   </div>
                 ) : (
-                  notifications.slice(0, 8).map(n => (
-                    <button key={n.id}
-                      className="flex items-start gap-2.5 w-full px-4 py-2.5 text-left hover:bg-gray-50"
-                      style={{ background: 'none', border: 'none', borderBottom: '1px solid #F9FAFB', cursor: 'pointer' }}
-                      onClick={() => { setNotifOpen(false); router.push('/dashboard/tasks') }}>
-                      <span className="material-icons" style={{ fontSize: 16, color: n.priority === 'urgent' || n.priority === 'high' ? '#EF4444' : '#0154FC', marginTop: 1 }}>assignment</span>
-                      <span style={{ minWidth: 0 }}>
-                        <span className="block text-xs font-medium truncate" style={{ color: '#111827' }}>{n.title}</span>
-                        {n.due_date && <span style={{ fontSize: 10, color: '#374151' }}>Due {new Date(n.due_date).toLocaleDateString('en-GB')}</span>}
-                      </span>
-                    </button>
-                  ))
+                  notifications.slice(0, 8).map(n => {
+                    const isOverdue = Boolean(n.due_date && new Date(n.due_date) < new Date())
+                    return (
+                      <button key={n.id}
+                        className="flex items-start gap-2.5 w-full px-4 py-2.5 text-left hover:bg-gray-50"
+                        style={{ background: 'none', border: 'none', borderBottom: '1px solid #F9FAFB', cursor: 'pointer' }}
+                        onClick={() => { setNotifOpen(false); router.push('/dashboard/tasks') }}>
+                        <span className="material-icons" style={{ fontSize: 16, color: isOverdue || n.priority === 'urgent' || n.priority === 'high' ? '#EF4444' : '#0154FC', marginTop: 1 }}>assignment</span>
+                        <span style={{ minWidth: 0, flex: 1 }}>
+                          <span className="block text-xs font-medium truncate" style={{ color: '#111827' }}>{n.title}</span>
+                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                            {n.due_date && (
+                              <span style={{ fontSize: 10, color: isOverdue ? '#EF4444' : '#6B7280', fontWeight: isOverdue ? 600 : 400 }}>
+                                Due {new Date(n.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                {isOverdue && ' (Overdue)'}
+                              </span>
+                            )}
+                            {n.status && (
+                              <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 4, backgroundColor: '#F3F4F6', color: '#4B5563', textTransform: 'capitalize' }}>
+                                {n.status.replace('_', ' ')}
+                              </span>
+                            )}
+                          </div>
+                        </span>
+                      </button>
+                    )
+                  })
                 )}
               </div>
               <button
