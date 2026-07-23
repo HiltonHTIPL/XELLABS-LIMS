@@ -22,7 +22,7 @@
  * file changes — no feature page does.
  */
 
-import { useEffect, useRef, useState, type DragEvent, type ReactNode, type RefObject } from 'react'
+import { Fragment, useEffect, useRef, useState, type DragEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { useLijiTable } from '@liji-table/react'
 import type { TableColumn, GroupRow } from '@liji-table/core'
@@ -70,6 +70,10 @@ type Props<T extends { id: string | number }> = {
    * node via a portal instead of the component's own toolbar row — lets a page
    * place them in its existing toolbar. All control logic still lives here (SoC).
    */
+  /** Optional array of row IDs that should render expanded row details inline. */
+  expandedRowIds?: (string | number)[]
+  /** Custom inline dropdown renderer for expanded rows. */
+  renderRowDetails?: (row: T) => ReactNode
   controlsTargetRef?: RefObject<HTMLElement | null>
 }
 
@@ -115,6 +119,8 @@ function DataTableInner<T extends { id: string | number }>({
   maxHeight,
   onSelectionChange,
   controlsTargetRef,
+  expandedRowIds,
+  renderRowDetails,
 }: Props<T>) {
   // Strip our render field down to what the engine understands.
   const engineColumns: TableColumn[] = columns.map(c => ({
@@ -585,36 +591,46 @@ function DataTableInner<T extends { id: string | number }>({
               <tr><td colSpan={totalCols} style={{ padding: 40, textAlign: 'center', color: '#374151', fontSize: 13 }}>{emptyMessage}</td></tr>
             ) : rows.map((row, idx) => {
               const rowBg = idx % 2 === 0 ? '#fff' : '#FAFAFA'
+              const isExpanded = expandedRowIds?.includes(row.id)
               return (
-                <tr key={row.id} onClick={() => onRowClick?.(row)}
-                  style={{ borderBottom: '1px solid #F3F4F6', background: rowBg, cursor: onRowClick ? 'pointer' : 'default' }}>
-                  {selectable && (
-                    <td style={{ padding: cellPad, position: 'sticky', left: 0, zIndex: 6, background: rowBg }} onClick={e => e.stopPropagation()}>
-                      <input type="checkbox" checked={table.selectedIds.includes(row.id)} onChange={() => table.toggleSelection(row.id as number)} />
-                    </td>
-                  )}
-                  {vis.map(col => {
-                    const meta = colById.get(col.id)
-                    const pinned = isPinned(col.id)
-                    return (
-                      <td key={col.id}
-                        style={{
-                          padding: cellPad, textAlign: meta?.align ?? 'left', color: '#374151',
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                          zIndex: pinned ? 6 : undefined, ...pinStyle(col.id, rowBg),
-                        }}>
-                        <span data-col={col.id} style={{ display: 'block', whiteSpace: 'nowrap', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {cell(row, col.id)}
-                        </span>
+                <Fragment key={row.id}>
+                  <tr onClick={() => onRowClick?.(row)}
+                    style={{ borderBottom: '1px solid #F3F4F6', background: rowBg, cursor: onRowClick ? 'pointer' : 'default' }}>
+                    {selectable && (
+                      <td style={{ padding: cellPad, position: 'sticky', left: 0, zIndex: 6, background: rowBg }} onClick={e => e.stopPropagation()}>
+                        <input type="checkbox" checked={table.selectedIds.includes(row.id)} onChange={() => table.toggleSelection(row.id as number)} />
                       </td>
-                    )
-                  })}
-                  {rowActions && (
-                    <td style={{ padding: cellPad, whiteSpace: 'nowrap', background: rowBg }} onClick={e => e.stopPropagation()}>
-                      {rowActions(row)}
-                    </td>
+                    )}
+                    {vis.map(col => {
+                      const meta = colById.get(col.id)
+                      const pinned = isPinned(col.id)
+                      return (
+                        <td key={col.id}
+                          style={{
+                            padding: cellPad, textAlign: meta?.align ?? 'left', color: '#374151',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            zIndex: pinned ? 6 : undefined, ...pinStyle(col.id, rowBg),
+                          }}>
+                          <span data-col={col.id} style={{ display: 'block', whiteSpace: 'nowrap', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {cell(row, col.id)}
+                          </span>
+                        </td>
+                      )
+                    })}
+                    {rowActions && (
+                      <td style={{ padding: cellPad, whiteSpace: 'nowrap', background: rowBg }} onClick={e => e.stopPropagation()}>
+                        {rowActions(row)}
+                      </td>
+                    )}
+                  </tr>
+                  {renderRowDetails && isExpanded && (
+                    <tr key={`${row.id}-details`} style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+                      <td colSpan={totalCols} style={{ padding: '14px 20px', background: '#F8FAFC' }}>
+                        {renderRowDetails(row)}
+                      </td>
+                    </tr>
                   )}
-                </tr>
+                </Fragment>
               )
             })}
           </tbody>

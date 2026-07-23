@@ -13,6 +13,27 @@ export function recordTypeLabel(raw: string | null | undefined): string {
   return RECORD_TYPE_LABELS[raw] ?? raw
 }
 
+// Raw DataChangeLog.field_name values are the literal Django model field
+// (e.g. "last_synced_from_senaite") — internal backend naming is fine (see
+// CLAUDE.md §11a), but it must never surface verbatim in this user-facing
+// audit UI/export. Known internal-only fields get a brand-neutral label;
+// anything else falls back to a humanized version with "senaite" stripped.
+const FIELD_NAME_LABELS: Record<string, string> = {
+  last_synced_from_senaite: 'Last Synced',
+  senaite_uid: 'External Reference ID',
+}
+
+export function fieldNameLabel(raw: string | null | undefined): string {
+  if (!raw) return '—'
+  if (FIELD_NAME_LABELS[raw]) return FIELD_NAME_LABELS[raw]
+  const humanized = raw
+    .replace(/_/g, ' ')
+    .replace(/\bsenaite\b/gi, '')
+    .trim()
+    .replace(/\s+/g, ' ')
+  return humanized.replace(/\b\w/g, ch => ch.toUpperCase())
+}
+
 // Wrap a field in quotes and escape internal quotes when it contains a comma,
 // quote, or newline — standard RFC-4180 CSV escaping.
 function csvCell(value: string): string {
@@ -26,7 +47,7 @@ function flattenChanges(e: AuditEvent): string {
   if (!e.changes || e.changes.length === 0) return ''
   return e.changes
     .map(c => {
-      const base = `${c.field_name}: ${c.old_value ?? ''} -> ${c.new_value ?? ''}`
+      const base = `${fieldNameLabel(c.field_name)}: ${c.old_value ?? ''} -> ${c.new_value ?? ''}`
       return c.reason ? `${base} [${c.reason}]` : base
     })
     .join('; ')

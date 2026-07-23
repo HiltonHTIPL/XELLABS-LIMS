@@ -255,9 +255,10 @@ export default function WorksheetDetailShell({
       let ok = 0
       for (const s of pending) {
         const fields = s.analysis?.interimFields ?? []
+        const sampleMeta = s.analysis?.sampleId ? { sampleId: s.analysis.sampleId, title: s.analysis.title } : undefined
         const r = fields.length > 0
-          ? await submitWorksheetInterimResult(worksheet.id, s.analysisUid, s.analysis!.path, fields.map(f => ({ keyword: f.keyword, value: interimValues[s.analysisUid]?.[f.keyword] ?? '' })))
-          : await submitWorksheetResult(worksheet.id, s.analysisUid, results[s.analysisUid] ?? '')
+          ? await submitWorksheetInterimResult(worksheet.id, s.analysisUid, s.analysis!.path, fields.map(f => ({ keyword: f.keyword, value: interimValues[s.analysisUid]?.[f.keyword] ?? '' })), sampleMeta)
+          : await submitWorksheetResult(worksheet.id, s.analysisUid, results[s.analysisUid] ?? '', sampleMeta)
         if (r.success) ok++
       }
       setToast({ ok: ok > 0, msg: `Submitted ${ok}/${pending.length} result${pending.length !== 1 ? 's' : ''}.` })
@@ -416,12 +417,13 @@ export default function WorksheetDetailShell({
     const interimVals = interimValues[s.analysisUid] ?? {}
     const interimsFilled = hasInterims && interimFields.every(f => (interimVals[f.keyword] ?? '').trim())
     const canSubmit = hasInterims ? interimsFilled : !!(results[s.analysisUid] ?? '').trim()
+    const sampleMeta = a?.sampleId ? { sampleId: a.sampleId, title: a.title } : undefined
     function submitRow() {
       if (hasInterims && a) {
         const payload = interimFields.map(f => ({ keyword: f.keyword, value: interimVals[f.keyword] ?? '' }))
-        return submitWorksheetInterimResult(worksheet.id, s.analysisUid, a.path, payload)
+        return submitWorksheetInterimResult(worksheet.id, s.analysisUid, a.path, payload, sampleMeta)
       }
-      return submitWorksheetResult(worksheet.id, s.analysisUid, results[s.analysisUid] ?? '')
+      return submitWorksheetResult(worksheet.id, s.analysisUid, results[s.analysisUid] ?? '', sampleMeta)
     }
     return (
       <div className="whitespace-nowrap">
@@ -440,7 +442,7 @@ export default function WorksheetDetailShell({
           </>
         )}
         {state === 'to_be_verified' && a && (
-          <button onClick={() => run(() => verifyWorksheetAnalysis(worksheet.id, s.analysisUid), 'Analysis verified.')} disabled={busy}
+          <button onClick={() => run(() => verifyWorksheetAnalysis(worksheet.id, s.analysisUid, sampleMeta), 'Analysis verified.')} disabled={busy}
             className="inline-flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', borderRadius: 6, backgroundColor: '#fff', color: '#166534', border: '1px solid #86EFAC', cursor: 'pointer', opacity: busy ? 0.5 : 1 }}>
             <MI name="verified" size={12} color="#166534" /> Verify
           </button>

@@ -21,6 +21,7 @@ class AuditEvent(models.Model):
         ("complete", "Completed"),
         ("store", "Store"),
         ("dispose", "Disposed"),
+        ("custody_transfer", "Custody Transferred"),
     ]
     user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
     action = models.CharField(max_length=30, choices=ACTION)

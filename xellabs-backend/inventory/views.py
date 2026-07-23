@@ -108,12 +108,22 @@ def _assign_sample_to_slot(slot, sample_id, user):
     # or scanned assign-by-label) was used.
     # instance.save() (not Queryset.update) so the audittrail post_save signals
     # record this storage change on the Sample itself (CLAUDE.md §5).
-    from lims.models import Sample
+    from lims.models import Sample, ChainOfCustody
     client_id = None
     for _sample in Sample.objects.filter(sample_id=sample_id):
         _sample.storage_location = storage_path
         _sample.save(update_fields=["storage_location", "updated_at"])
         client_id = _sample.client_id
+        # Real custody handoff into this slot — same lims.ChainOfCustody ledger
+        # the manual "Log Custody Event" UI and receive_sample()/dispose_sample()
+        # already write to. Previously this path only wrote the generic
+        # AuditEvent below, so a sample stored via QR/label assign never showed
+        # a "Stored" row in its own Chain of Custody drawer, unlike a sample
+        # whose storage was logged manually.
+        ChainOfCustody.objects.create(
+            sample=_sample, action="stored", to_location=storage_path,
+            transferred_by=user, purpose=f"Stored in {slot.slot_id}",
+        )
 
     _queue_sample_storage_transition(sample_id, "store", slot)
 
@@ -316,23 +326,62 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
                     "label": "Released from Storage",
                     "details": extra,
                 })
+            elif e.action == "submit" and extra.get("analysisUid"):
+                # Per-analysis result submit, bridged from a Worksheet action
+                # (app/actions/senaite-worksheets.ts's submitWorksheetResult/
+                # submitWorksheetInterimResult) — for a SENAITE-native sample no
+                # Django Result row is ever created, so section 5 above (which
+                # reads the Django Result table) never sees these at all. This
+                # was the reason a sample's Chain of Custody only ever showed
+                # the coarse Sample.status milestones and never its own
+                # per-analysis "Result Submitted" events.
+                history.append({
+                    "id": e.pk,
+                    "timestamp": e.timestamp.isoformat(),
+                    "user": e.user.get_full_name() or e.user.username if e.user else "System",
+                    "event_type": "result_submitted",
+                    "label": f"Result Submitted — {extra.get('title', '')}".rstrip(" —"),
+                    "details": {"test": extra.get("title", ""), "value": extra.get("result", ""), "unit": ""},
+                })
+            elif e.action == "verify" and extra.get("analysisUid"):
+                # Per-analysis verify, same bridge as submit above.
+                history.append({
+                    "id": e.pk,
+                    "timestamp": e.timestamp.isoformat(),
+                    "user": e.user.get_full_name() or e.user.username if e.user else "System",
+                    "event_type": "result_verified",
+                    "label": f"Result Verified — {extra.get('title', '')}".rstrip(" —"),
+                    "details": {"test": extra.get("title", ""), "value": "", "unit": ""},
+                })
 
         # 3b. Chain-of-custody ledger (lims.ChainOfCustody) — a dedicated
         # custody-transfer model (from/to location, temperature, condition,
         # regulatory-basis/notes) that this endpoint never read at all, even
         # though receive_sample()/dispose_sample() (lims/services.py) already
-        # write to it on every receive and every disposal. "received" is
-        # skipped here — section 2 above already synthesizes an equally
-        # detailed event straight from Sample fields, so including both would
-        # just duplicate the same moment twice in the timeline.
+        # write to it on every receive and every disposal.
+        #
+        # Only the ONE "received" row that lands within a minute of
+        # Sample.received_date is skipped — that's the auto-generated intake
+        # event receive_sample() writes, which section 2 above already
+        # synthesizes straight from Sample fields (showing both would
+        # duplicate the same moment). Any OTHER "received" row (e.g. an
+        # accessioner receiving the sample from a courier mid-chain, logged
+        # manually via "Log Custody Event") is a genuinely distinct handoff
+        # and must still show — a blanket `.exclude(action="received")` used
+        # to drop every one of these, which is the bug this comment replaces.
         from lims.models import ChainOfCustody
+        from datetime import timedelta
         custody_records = (
             ChainOfCustody.objects.filter(sample=sample_obj)
-            .exclude(action="received")
             .select_related("transferred_by", "received_by")
             .order_by("timestamp")
         )
+        intake_window = None
+        if sample_obj.received_date:
+            intake_window = (sample_obj.received_date - timedelta(minutes=1), sample_obj.received_date + timedelta(minutes=1))
         for c in custody_records:
+            if c.action == "received" and intake_window and intake_window[0] <= c.timestamp <= intake_window[1]:
+                continue
             actor = (c.transferred_by.get_full_name() or c.transferred_by.username) if c.transferred_by else "System"
             history.append({
                 "id": f"custody-{c.pk}",
@@ -345,6 +394,8 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
                     "to_location": c.to_location,
                     "temperature_c": str(c.temperature_c) if c.temperature_c is not None else None,
                     "condition": c.condition,
+                    "purpose": c.purpose,
+                    "seal_status": c.get_seal_status_display() if c.seal_status else None,
                     "notes": c.notes,
                     "received_by": (c.received_by.get_full_name() or c.received_by.username) if c.received_by else None,
                 },
@@ -603,11 +654,17 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
         released_client_id = None
         if released_sample_id:
             # instance.save() so the audittrail signals log the release on the Sample.
-            from lims.models import Sample
+            from lims.models import Sample, ChainOfCustody
             for _sample in Sample.objects.filter(sample_id=released_sample_id):
                 _sample.storage_location = ''
                 _sample.save(update_fields=["storage_location", "updated_at"])
                 released_client_id = _sample.client_id
+                # Real custody handoff out of this slot — mirrors the "stored"
+                # row created in _assign_sample_to_slot above.
+                ChainOfCustody.objects.create(
+                    sample=_sample, action="retrieved", from_location=slot.slot_id,
+                    transferred_by=request.user, purpose=f"Retrieved from {slot.slot_id}",
+                )
 
             _queue_sample_storage_transition(released_sample_id, "recover", slot)
 

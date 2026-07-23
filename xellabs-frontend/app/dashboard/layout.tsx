@@ -41,7 +41,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <div className="flex flex-col h-screen overflow-hidden" style={{ backgroundColor: '#F7F8FC' }}>
       <SessionRefresher />
-      <DashboardShell initials={initials} displayName={displayName} roleLabel={roleLabel} role={session.role} reportDraftCount={reportDraftCount} isSuperuser={Boolean(session.isSuperuser)} serverEnvLabel={runtimeEnvLabel()} notifications={openTasks}>
+      <DashboardShell initials={initials} displayName={displayName} roleLabel={roleLabel} role={session.role} senaiteRoles={session.senaiteRoles} reportDraftCount={reportDraftCount} isSuperuser={Boolean(session.isSuperuser)} serverEnvLabel={runtimeEnvLabel()} notifications={openTasks}>
         {children}
       </DashboardShell>
 

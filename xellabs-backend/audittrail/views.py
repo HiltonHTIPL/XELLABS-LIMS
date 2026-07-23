@@ -29,10 +29,22 @@ class AuditEventFilter(df_filters.FilterSet):
     # exactly — a per-sample lookup (e.g. the Sample Detail Audit Trail drawer)
     # needs a substring match instead.
     object_repr_contains = df_filters.CharFilter(field_name="object_repr", lookup_expr="icontains")
+    object_id = df_filters.NumberFilter(field_name="object_id", lookup_expr="exact")
+    record_type = df_filters.CharFilter(method="filter_record_type")
+
+    def filter_record_type(self, queryset, name, value):
+        if value in RECORD_TYPE_CONTENT_TYPES:
+            app, model = RECORD_TYPE_CONTENT_TYPES[value]
+            try:
+                ct = ContentType.objects.get(app_label=app, model=model)
+                return queryset.filter(content_type=ct)
+            except ContentType.DoesNotExist:
+                return queryset.none()
+        return queryset
 
     class Meta:
         model = AuditEvent
-        fields = ["action", "content_type", "user", "date_from", "date_to", "object_repr"]
+        fields = ["action", "content_type", "user", "date_from", "date_to", "object_repr", "object_id", "record_type"]
 
 
 class AuditEventViewSet(viewsets.ReadOnlyModelViewSet):

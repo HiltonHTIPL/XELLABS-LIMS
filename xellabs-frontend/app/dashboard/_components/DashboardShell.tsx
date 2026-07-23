@@ -41,6 +41,9 @@ interface Props {
   displayName: string
   roleLabel: string
   role: string
+  // Raw SENAITE roles from login — nav/admin visibility honors ALL of these,
+  // not just the single primary `role` (see mapSenaiteRolesAll in lib/roles.ts).
+  senaiteRoles?: string[]
   reportDraftCount?: number
   isSuperuser?: boolean
   /** Resolved server-side at request time — build-time NEXT_PUBLIC_* is stale in Docker */
@@ -48,7 +51,7 @@ interface Props {
   notifications?: NotificationItem[]
 }
 
-export default function DashboardShell({ children, initials, displayName, roleLabel, role, reportDraftCount, isSuperuser, serverEnvLabel, notifications = [] }: Props) {
+export default function DashboardShell({ children, initials, displayName, roleLabel, role, senaiteRoles, reportDraftCount, isSuperuser, serverEnvLabel, notifications = [] }: Props) {
   const router = useRouter()
   const pathname = usePathname()
   const naturalHeight = NATURAL_HEIGHT_ROUTES.some(p => pathname?.startsWith(p))
@@ -138,7 +141,7 @@ export default function DashboardShell({ children, initials, displayName, roleLa
         }}
       >
         <div style={{ width: 210, height: '100%' }}>
-          <Sidebar onToggle={() => setOpen(false)} role={role} reportDraftCount={reportDraftCount} isSuperuser={isSuperuser} />
+          <Sidebar onToggle={() => setOpen(false)} role={role} senaiteRoles={senaiteRoles} reportDraftCount={reportDraftCount} isSuperuser={isSuperuser} />
         </div>
       </div>
 
@@ -197,7 +200,7 @@ export default function DashboardShell({ children, initials, displayName, roleLa
             </span>
             <span className="text-xs px-1.5 py-0.5 rounded shrink-0" style={{ backgroundColor: '#E5E7EB', color: '#374151' }}>⌘ K</span>
           </button>
-          <CommandPalette role={role} isSuperuser={isSuperuser} open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+          <CommandPalette role={role} senaiteRoles={senaiteRoles} isSuperuser={isSuperuser} open={paletteOpen} onClose={() => setPaletteOpen(false)} />
 
           <div className="flex-1" />
 

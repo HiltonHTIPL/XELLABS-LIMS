@@ -343,6 +343,41 @@ export async function fetchSenaiteClientsFull(token: string): Promise<SenaiteCli
   } catch { return [] }
 }
 
+/**
+ * All real Contact objects under a client, for a Contact/CC Contact picker —
+ * unlike fetchSenaiteClientByUid/fetchSenaiteClientsFull, which only ever
+ * resolve the FIRST contact as "the" primary one. New Sample needs the full
+ * list so Contact and CC Contact can be genuine pickers instead of free-text
+ * inputs the user has to retype every time.
+ *
+ * Deliberately does NOT use `Contact?path=<client path>` — confirmed live
+ * that this filter param is silently ignored by SENAITE's v1 API (always
+ * returns zero items, even for a client with a real contact on file). This is
+ * also why fetchSenaiteClientByUid below showed "No primary contact on file"
+ * for clients that genuinely had one. Bulk-fetch every Contact instead and
+ * filter client-side by parent_path, the same proven pattern
+ * fetchSenaiteClientsFull already uses successfully.
+ */
+export async function fetchSenaiteContactsForClient(token: string, clientUid: string): Promise<SenaiteContact[]> {
+  const headers = { Authorization: `Basic ${token}`, Accept: 'application/json' }
+  try {
+    const clientRes = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Client?UID=${encodeURIComponent(clientUid)}&complete=true`, {
+      headers, cache: 'no-store',
+    })
+    if (!clientRes.ok) return []
+    const clientItem = ((await clientRes.json()).items ?? [])[0] as Record<string, unknown> | undefined
+    const path = (clientItem?.path as string) ?? ''
+    if (!path) return []
+    const cRes = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Contact?complete=true&limit=2000`, { headers, cache: 'no-store' })
+    if (!cRes.ok) return []
+    const items = ((await cRes.json()).items ?? []) as Record<string, unknown>[]
+    return items
+      .filter(c => (c.parent_path as string) === path)
+      .map(mapContact)
+      .filter(c => c.uid)
+  } catch { return [] }
+}
+
 /** Fetch a single client by UID, with its primary contact. */
 export async function fetchSenaiteClientByUid(token: string, uid: string): Promise<SenaiteClientFull | null> {
   const headers = { Authorization: `Basic ${token}`, Accept: 'application/json' }
@@ -354,12 +389,11 @@ export async function fetchSenaiteClientByUid(token: string, uid: string): Promi
     const item = ((await res.json()).items ?? [])[0]
     if (!item) return null
     const client = mapClient(item)
-    const cRes = await fetch(
-      `${SENAITE_URL}/@@API/senaite/v1/Contact?complete=true&limit=100&path=${encodeURIComponent(client.path)}`,
-      { headers, cache: 'no-store' },
-    )
+    // See fetchSenaiteContactsForClient above — `path=` is silently ignored
+    // by this endpoint, so this must bulk-fetch + filter client-side too.
+    const cRes = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Contact?complete=true&limit=2000`, { headers, cache: 'no-store' })
     if (cRes.ok) {
-      const first = ((await cRes.json()).items ?? [])[0]
+      const first = ((await cRes.json()).items ?? []).find((c: Record<string, unknown>) => (c.parent_path as string) === client.path)
       if (first) client.contact = mapContact(first as Record<string, unknown>)
     }
     return client
@@ -2028,7 +2062,7 @@ function mapSenaiteAnalysisService(s: Record<string, unknown>): SenaiteAnalysisS
     MaxHoldingTimeMinutes: timePart(maxHolding, 'minutes'),
     DuplicateVariation: (s.DuplicateVariation as string) ?? '',
     Hidden: Boolean(s.Hidden),
-    SelfVerification: (s.SelfVerification as string) ?? '0',
+    SelfVerification: (s.SelfVerification as string) ?? '-1',
     NumberOfRequiredVerifications: (s.NumberOfRequiredVerifications as string) ?? '1',
     Conditions: ((s.Conditions as Record<string, unknown>[]) ?? []).map(r => ({
       title: String(r.title ?? ''), description: String(r.description ?? ''), type: String(r.type ?? 'text'),
@@ -2362,7 +2396,14 @@ function analysisServiceBody(payload: AnalysisServicePayload): Record<string, un
     },
     DuplicateVariation: payload.DuplicateVariation ?? '',
     Hidden: payload.Hidden ?? false,
-    SelfVerification: payload.SelfVerification ?? '0',
+    // SENAITE's real vocabulary is -1=system default, 0=No, 1=Yes (confirmed
+    // by reading _getSelfVerificationVocabulary() directly) — defaulting to
+    // '0' here silently hardcoded "No" on every service ever created via
+    // this app, permanently overriding the lab-wide SelfVerificationEnabled
+    // policy toggle regardless of what it was set to. Default to '-1' so a
+    // new service actually defers to that lab-wide policy unless someone
+    // explicitly picks Yes/No for it.
+    SelfVerification: payload.SelfVerification ?? '-1',
     NumberOfRequiredVerifications: payload.NumberOfRequiredVerifications ?? '1',
     Conditions: payload.Conditions ?? [],
   }
@@ -2487,7 +2528,7 @@ export type SenaiteSample = {
   Priority: string
   ClientSampleID: string
   BatchUID: string
-  Analyses: { uid: string; title: string; Keyword: string; review_state: string }[]
+  Analyses: { uid: string; title: string; Keyword: string; review_state: string; RequestID: string }[]
   url: string
   // Display-only context for the Audit Trail drawer's per-event detail (e.g.
   // "storage location for Stored, condition for Received") — SENAITE's own
@@ -2529,6 +2570,7 @@ function mapSample(s: Record<string, unknown>): SenaiteSample {
           title:        (a.title as string) ?? '',
           Keyword:      (a.Keyword as string) ?? '',
           review_state: (a.review_state as string) ?? '',
+          RequestID:    (a.getRequestID as string) ?? (a.RequestID as string) ?? (s.id as string) ?? '',
         }))
       : [],
     url: (s.url as string) ?? '',
@@ -2574,6 +2616,14 @@ export async function fetchSenaiteSample(token: string, uid: string): Promise<Se
     const items = data.items ?? []
     if (items.length === 0) return null
     const sample = mapSample(items[0])
+    // Same embedded-Client-ref-has-no-title gap already fixed in
+    // fetchSenaiteSamples/fetchSenaiteBatches/fetchVerifiedSamplesForApproval —
+    // mapSample() is the shared root cause; this singular fetch calls it
+    // directly, so it needs its own backfill too.
+    if (sample.ClientUID && !sample.ClientTitle) {
+      const clientTitles = await fetchSenaiteTitleMap(token, 'Client')
+      sample.ClientTitle = clientTitles[sample.ClientUID] ?? sample.ClientTitle
+    }
     // The AR's own `Analyses` array is a list of bare reference objects
     // ({url, uid, api_url} only) even with `?complete=true` on the AR itself —
     // confirmed live: title/Keyword/review_state are never present there,
@@ -2599,6 +2649,7 @@ export async function fetchSenaiteSample(token: string, uid: string): Promise<Se
             title: (full.title as string) ?? a.title,
             Keyword: (full.Keyword as string) ?? a.Keyword,
             review_state: (full.review_state as string) ?? a.review_state,
+            RequestID: (full.getRequestID as string) ?? (full.RequestID as string) ?? a.RequestID,
           }
         } catch { return a }
       }))
@@ -2991,7 +3042,7 @@ export async function fetchVerifiedSamplesForApproval(token: string): Promise<Ve
     if (!res.ok) return []
     const data = await res.json().catch(() => ({})) as Record<string, unknown>
     const items = (data.items as Record<string, unknown>[]) ?? []
-    return items.map(it => {
+    const mapped = items.map(it => {
       const client = (it.Client as Record<string, unknown>) ?? {}
       const st = (it.SampleType as Record<string, unknown>) ?? {}
       const p = parseInt((it.Priority as string) ?? '', 10)
@@ -2999,11 +3050,21 @@ export async function fetchVerifiedSamplesForApproval(token: string): Promise<Ve
       return {
         senaite_uid: (it.uid as string) ?? '',
         sample_id: (it.id as string) ?? '',
+        client_uid: (client.uid as string) ?? '',
         client_name: (client.title as string) ?? (it.ClientTitle as string) ?? '',
         title: (st.title as string) ?? (it.SampleTypeTitle as string) ?? '',
         priority,
       }
     }).filter(s => s.senaite_uid)
+    // Same gap as fetchSenaiteSamples/fetchSenaiteBatches: the embedded Client
+    // ref has no title here either — backfill via the shared title-map helper.
+    if (mapped.some(s => s.client_uid && !s.client_name)) {
+      const clientTitles = await fetchSenaiteTitleMap(token, 'Client')
+      for (const s of mapped) {
+        if (s.client_uid && !s.client_name) s.client_name = clientTitles[s.client_uid] ?? s.client_name
+      }
+    }
+    return mapped.map(({ client_uid, ...rest }) => rest)
   } catch { return [] }
 }
 
@@ -3552,14 +3613,22 @@ export async function createSenaiteBatch(
     if (!items.length) return { success: false, error: 'No batch returned from SENAITE.' }
     const b = items[0]
     const client = (b.Client as Record<string, unknown>) ?? {}
+    const clientUid = (client.uid as string) ?? ''
+    // Same embedded-Client-ref-has-no-title gap fixed elsewhere in this file —
+    // getClientTitle comes back empty on a fresh create response too.
+    let clientTitle = (b.getClientTitle as string) ?? ''
+    if (clientUid && !clientTitle) {
+      const clientTitles = await fetchSenaiteTitleMap(token, 'Client')
+      clientTitle = clientTitles[clientUid] ?? ''
+    }
     return {
       success: true,
       batch: {
         uid: (b.uid as string) ?? '',
         id: (b.id as string) ?? '',
         title: (b.title as string) ?? '',
-        ClientUID: (client.uid as string) ?? '',
-        ClientTitle: (b.getClientTitle as string) ?? '',
+        ClientUID: clientUid,
+        ClientTitle: clientTitle,
         ClientID: (b.getClientID as string) ?? '',
         ClientBatchID: (b.ClientBatchID as string) ?? '',
         Remarks: extractRemarksText(b.Remarks),

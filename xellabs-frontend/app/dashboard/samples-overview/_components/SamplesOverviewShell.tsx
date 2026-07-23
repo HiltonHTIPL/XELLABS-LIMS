@@ -105,7 +105,11 @@ const STAT_CARDS = [
 
 function tatDays(receivedDate: string | null, nowMs: number | null): number | null {
   if (!receivedDate || nowMs === null) return null
-  return Math.floor((nowMs - new Date(receivedDate).getTime()) / (1000 * 60 * 60 * 24))
+  // Clamp to 0 — matches the same TAT formula on both Sample Detail pages.
+  // Without this, any clock skew between server and client could show a
+  // negative TAT here while the detail pages (already clamped) show 0 for
+  // the exact same sample.
+  return Math.max(0, Math.floor((nowMs - new Date(receivedDate).getTime()) / (1000 * 60 * 60 * 24)))
 }
 
 function isOverdueSample(s: LabSample): boolean {
@@ -136,7 +140,7 @@ const STAT_CARD_STATUS: Record<string, string> = {
 
 function fmt(dateStr: string | null): string {
   if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 }
 
 // ── Main Shell ────────────────────────────────────────────────────────────────

@@ -5,13 +5,16 @@ import {
   fetchSenaiteSample,
   senaiteWorkflowAction,
   fetchSenaiteAnalysisServices,
+  fetchSenaiteContactsForClient,
   SenaiteSample,
   SenaiteAnalysisService,
+  SenaiteContact,
 } from '@/app/lib/senaite'
 
 import { serverToken, sessionToken } from '@/app/lib/senaite-auth'
 import { logExternalAuditEvent } from '@/app/actions/audit-trail'
 import { refreshSampleStatus } from '@/app/actions/sample-status'
+import { logCustodyEvent } from '@/app/actions/chain-of-custody'
 
 // ─── List ─────────────────────────────────────────────────────────────────────
 
@@ -98,6 +101,15 @@ export async function getAnalysisServices(): Promise<SenaiteAnalysisService[]> {
   return fetchSenaiteAnalysisServices(serverToken())
 }
 
+// Every real Contact under a client (not just "the first one") — lets New
+// Sample's Contact/CC Contact fields be genuine pickers instead of free-text
+// inputs the analyst has to retype for a client that already has contacts
+// on file in SENAITE.
+export async function getContactsForClient(clientSenaiteUid: string): Promise<SenaiteContact[]> {
+  if (!clientSenaiteUid) return []
+  return fetchSenaiteContactsForClient(serverToken(), clientSenaiteUid)
+}
+
 // ─── Workflow transitions ─────────────────────────────────────────────────────
 //
 // These call SENAITE's REST API directly (senaiteWorkflowAction) — no Django
@@ -108,12 +120,32 @@ export async function getAnalysisServices(): Promise<SenaiteAnalysisService[]> {
 
 export type WorkflowResult = { success: boolean; message: string }
 
+// Chain of Custody (inventory/views.py's chain_of_custody action) matches
+// bridged AuditEvent rows by `object_repr__icontains=<canonical Django
+// sample_id>` (e.g. "SO-0022") — logging these transitions against the raw
+// SENAITE uid instead meant every receive/verify/publish/cancel event was
+// silently invisible there (confirmed live: the drawer only ever showed the
+// coarse Sample.status milestones, never these transitions themselves).
+// Resolve the human-readable AR id once per transition so the bridged row
+// actually matches that filter.
+async function resolveArId(token: string, uid: string): Promise<string> {
+  const sample = await fetchSenaiteSample(token, uid)
+  return sample?.id || uid
+}
+
 export async function receiveSample(uid: string): Promise<WorkflowResult> {
   const session = await getSession()
-  const result = await senaiteWorkflowAction(sessionToken(session), uid, 'receive')
+  const token = sessionToken(session)
+  const result = await senaiteWorkflowAction(token, uid, 'receive')
   revalidatePath('/dashboard/samples-overview')
   if (result.success) {
-    logExternalAuditEvent('receive', uid, undefined, 'sample')
+    const arId = await resolveArId(token, uid)
+    logExternalAuditEvent('receive', arId, undefined, 'sample')
+    // Real custody handoff, not just the generic audit bridge — we genuinely
+    // know a receive just happened and by whom, so it belongs in the same
+    // lims.ChainOfCustody ledger the manual "Log Custody Event" UI writes to
+    // (POST /api/lims/chain-of-custody/), not only the coarse AuditEvent.
+    logCustodyEvent({ sampleId: arId, action: 'received', toLocation: 'Receiving', purpose: 'Sample received into the lab' })
     await refreshSampleStatus({ uid })
   }
   return { success: result.success, message: result.success ? 'Sample received.' : (result.error ?? 'Failed to receive sample.') }
@@ -121,10 +153,11 @@ export async function receiveSample(uid: string): Promise<WorkflowResult> {
 
 export async function verifySample(uid: string): Promise<WorkflowResult> {
   const session = await getSession()
-  const result = await senaiteWorkflowAction(sessionToken(session), uid, 'verify')
+  const token = sessionToken(session)
+  const result = await senaiteWorkflowAction(token, uid, 'verify')
   revalidatePath('/dashboard/samples-overview')
   if (result.success) {
-    logExternalAuditEvent('verify', uid, undefined, 'sample')
+    logExternalAuditEvent('verify', await resolveArId(token, uid), undefined, 'sample')
     await refreshSampleStatus({ uid })
   }
   // The approval is created by reconcileSampleApprovals when the Approvals page
@@ -136,16 +169,24 @@ export async function verifySample(uid: string): Promise<WorkflowResult> {
 
 export async function publishSample(uid: string): Promise<WorkflowResult> {
   const session = await getSession()
-  const result = await senaiteWorkflowAction(sessionToken(session), uid, 'publish')
+  const token = sessionToken(session)
+  const result = await senaiteWorkflowAction(token, uid, 'publish')
   revalidatePath('/dashboard/samples-overview')
-  if (result.success) logExternalAuditEvent('publish', uid, undefined, 'sample')
+  if (result.success) {
+    logExternalAuditEvent('publish', await resolveArId(token, uid), undefined, 'sample')
+    await refreshSampleStatus({ uid })
+  }
   return { success: result.success, message: result.success ? 'Sample published.' : (result.error ?? 'Failed to publish sample.') }
 }
 
 export async function cancelSample(uid: string): Promise<WorkflowResult> {
   const session = await getSession()
-  const result = await senaiteWorkflowAction(sessionToken(session), uid, 'cancel')
+  const token = sessionToken(session)
+  const result = await senaiteWorkflowAction(token, uid, 'cancel')
   revalidatePath('/dashboard/samples-overview')
-  if (result.success) logExternalAuditEvent('cancel', uid, undefined, 'sample')
+  if (result.success) {
+    logExternalAuditEvent('cancel', await resolveArId(token, uid), undefined, 'sample')
+    await refreshSampleStatus({ uid })
+  }
   return { success: result.success, message: result.success ? 'Sample cancelled.' : (result.error ?? 'Failed to cancel sample.') }
 }

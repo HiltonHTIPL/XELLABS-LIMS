@@ -125,6 +125,7 @@ export async function login(
       userId: user.userid,
       username: user.userid,
       role,
+      senaiteRoles: user.roles,
       isSuperuser,
       djangoToken,
       senaiteToken,

@@ -62,13 +62,13 @@ const AR_STATUS_BADGE: Record<string, { bg: string; color: string; label: string
 
 function fmt(d: string | null): string {
   if (!d) return '—'
-  try { return new Date(d).toLocaleString('en-US', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) }
+  try { return new Date(d).toLocaleString('en-US', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'UTC' }) }
   catch { return d }
 }
 
 function fmtShort(d: string | null): string {
   if (!d) return '—'
-  try { return new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) }
+  try { return new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) }
   catch { return d }
 }
 
@@ -285,7 +285,7 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests, isD
         // displayId() shown elsewhere on this page. Must match sample_id exactly
         // or the audit trail always looks empty.
         <SampleAuditDrawer
-          sampleId={sample.sample_id}
+          sampleId={sample.id}
           open={showAuditTrail}
           onClose={() => setShowAuditTrail(false)}
         />
@@ -320,14 +320,12 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests, isD
           <button onClick={() => document.getElementById('storage-info')?.scrollIntoView({ behavior: 'smooth' })} style={headerBtn}>
             <MI name="inventory_2" size={15} /><span>Storage History</span>
           </button>
-          <button onClick={() => setShowAuditTrail(true)} style={headerBtn}>
-            <MI name="shield" size={15} /><span>Audit Trail</span>
+          <button onClick={() => router.push(`/dashboard/samples-overview/${sample.id}/audit-trail`)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            <MI name="shield" size={16} /><span>Audit Trail</span>
           </button>
           <button onClick={() => setShowChainOfCustody(true)} style={headerBtn}>
             <MI name="link" size={15} /><span>Chain of Custody</span>
-          </button>
-          <button onClick={() => document.getElementById('requested-analyses')?.scrollIntoView({ behavior: 'smooth' })} style={headerBtn}>
-            <MI name="fact_check" size={15} /><span>View Results</span>
           </button>
           <div style={{ position: 'relative' }}>
             <button onClick={() => setPrintOpen(v => !v)} style={headerBtn}>
