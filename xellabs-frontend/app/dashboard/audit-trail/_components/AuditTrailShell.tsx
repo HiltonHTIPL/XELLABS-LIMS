@@ -86,6 +86,50 @@ function TabBtn({ active, onClick, icon, label, count }: { active: boolean; onCl
 /** Slide-over showing one event's field-level Changes + its record's own History
  *  — DataTable has no row-expansion feature, so this replaces the old inline
  *  expandable table rows. */
+/** Inline dropdown panel showing event's field-level Changes */
+export function EventDetailsDropdown({ event }: { event: AuditEvent }) {
+  const hasChanges = event.changes && event.changes.length > 0
+  return (
+    <div style={{ backgroundColor: '#F8FAFC', borderRadius: 8, padding: 16, border: '1px solid #E2E8F0', marginTop: 4, marginBottom: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: hasChanges ? 12 : 0 }}>
+        <p style={{ fontSize: 13, fontWeight: 700, color: T.heading, margin: 0 }}>
+          Field Changes — {recordTypeLabel(event.content_type_label)} #{event.object_repr || event.object_id}
+        </p>
+        <span style={{ fontSize: 11, color: T.muted }}>{fmt(event.timestamp)}</span>
+      </div>
+
+      {hasChanges ? (
+        <div>
+          <div style={{ backgroundColor: '#fff', borderRadius: 6, border: '1px solid #E2E8F0', overflow: 'hidden' }}>
+            <table className="w-full" style={{ borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ background: '#F1F5F9' }}>
+                  <th style={thStyleLocal}>Field</th>
+                  <th style={thStyleLocal}>Old Value</th>
+                  <th style={thStyleLocal}>New Value</th>
+                  <th style={thStyleLocal}>Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {event.changes!.map(c => (
+                  <tr key={c.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                    <td style={{ ...tdStyleLocal, fontWeight: 600 }}>{c.field_name}</td>
+                    <td style={{ ...tdStyleLocal, color: '#EF4444', textDecoration: 'line-through' }}>{c.old_value ?? '—'}</td>
+                    <td style={{ ...tdStyleLocal, color: '#10B981', fontWeight: 600 }}>{c.new_value ?? '—'}</td>
+                    <td style={{ ...tdStyleLocal, color: '#6B7280' }}>{c.reason || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <p style={{ fontSize: 12, color: T.muted, margin: '8px 0 0' }}>No specific field changes recorded for this event.</p>
+      )}
+    </div>
+  )
+}
+
 function EventDetailsDrawer({ event, history, onClose }: { event: AuditEvent; history: AuditEvent[]; onClose: () => void }) {
   return (
     <div style={{ position: 'fixed', top: 0, bottom: 0, left: 0, right: 0, zIndex: 300 }}>
@@ -163,7 +207,7 @@ export function AuditEventsTable({ events }: { events: AuditEvent[] }) {
   const [dateTo, setDateTo] = useState('')
   const [userFilter, setUserFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
-  const [detailsFor, setDetailsFor] = useState<AuditEvent | null>(null)
+  const [expandedIds, setExpandedIds] = useState<(string | number)[]>([])
 
   const actions = useMemo(() => Array.from(new Set(events.map(e => e.action))).sort(), [events])
   const users = useMemo(
@@ -260,16 +304,36 @@ export function AuditEventsTable({ events }: { events: AuditEvent[] }) {
         data={filtered}
         columns={columns}
         persistKey="audit-trail-events"
-        rowActions={e => (
-          <button type="button" title="View changes / history" className="p-1 rounded hover:bg-gray-100" style={{ cursor: 'pointer' }} onClick={() => setDetailsFor(e)}>
-            <MI name="visibility" size={17} color={T.muted} />
-          </button>
+        expandedRowIds={expandedIds}
+        renderRowDetails={e => (
+          <EventDetailsDropdown event={e} />
         )}
+        rowActions={e => {
+          const isExp = expandedIds.includes(e.id)
+          return (
+            <button
+              type="button"
+              title={isExp ? "Collapse details" : "Expand details dropdown"}
+              className="px-2 py-1 rounded hover:bg-gray-100 flex items-center gap-1"
+              style={{
+                cursor: 'pointer',
+                border: '1px solid #E5E7EB',
+                backgroundColor: isExp ? '#EFF6FF' : '#fff',
+                color: isExp ? '#1D4ED8' : '#374151',
+                fontSize: 12,
+                fontWeight: 600,
+              }}
+              onClick={() => {
+                setExpandedIds(prev => prev.includes(e.id) ? prev.filter(x => x !== e.id) : [...prev, e.id])
+              }}
+            >
+              <span>{isExp ? 'Hide' : 'Details'}</span>
+              <MI name={isExp ? 'expand_less' : 'expand_more'} size={16} color={isExp ? '#1D4ED8' : '#6B7280'} />
+            </button>
+          )
+        }}
         emptyMessage="No matching events."
       />
-      {detailsFor && (
-        <EventDetailsDrawer event={detailsFor} history={historyFor(detailsFor)} onClose={() => setDetailsFor(null)} />
-      )}
     </div>
   )
 }

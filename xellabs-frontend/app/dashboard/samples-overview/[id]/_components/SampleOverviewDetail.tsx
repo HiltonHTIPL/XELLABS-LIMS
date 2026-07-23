@@ -327,9 +327,6 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests, isD
           <button onClick={() => setShowChainOfCustody(true)} style={headerBtn}>
             <MI name="link" size={15} /><span>Chain of Custody</span>
           </button>
-          <button onClick={() => document.getElementById('requested-analyses')?.scrollIntoView({ behavior: 'smooth' })} style={headerBtn}>
-            <MI name="fact_check" size={15} /><span>View Results</span>
-          </button>
           <div style={{ position: 'relative' }}>
             <button onClick={() => setPrintOpen(v => !v)} style={headerBtn}>
               <MI name="print" size={15} /><span>Print Label</span>
