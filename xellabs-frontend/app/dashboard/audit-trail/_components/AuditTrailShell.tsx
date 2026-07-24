@@ -6,7 +6,7 @@ import {
 } from '../../_components/ui'
 import DataTable, { type DataTableColumn } from '../../_components/DataTable'
 import type { AuditEvent, LoginEvent, SecurityEvent, RecordVersion } from '@/app/actions/audit-trail'
-import { recordTypeLabel, downloadAuditCsv, fieldNameLabel } from './auditCsv'
+import { recordTypeLabel, downloadAuditCsv, formatFieldName, cleanEventTitle, filterIgnoredChanges } from './auditCsv'
 
 type Tab = 'events' | 'logins' | 'security' | 'versions'
 
@@ -87,118 +87,152 @@ function TabBtn({ active, onClick, icon, label, count }: { active: boolean; onCl
  *  — DataTable has no row-expansion feature, so this replaces the old inline
  *  expandable table rows. */
 /** Inline dropdown panel showing event's field-level Changes */
-export function EventDetailsDropdown({ event }: { event: AuditEvent }) {
-  const hasChanges = event.changes && event.changes.length > 0
+export function EventDetailsDropdown({ event, onOpenSideView }: { event: AuditEvent; onOpenSideView?: (e: AuditEvent) => void }) {
+  const changes = filterIgnoredChanges(event.changes)
+  const hasChanges = changes.length > 0
+  const isResultEvent = event.content_type_label === 'lims.result' || event.object_repr?.startsWith('Analysis Result:')
+  const analysisTitle = cleanEventTitle(event)
+  const primaryReason = changes.find(c => c.reason)?.reason || '—'
+
   return (
     <div style={{ backgroundColor: '#F8FAFC', borderRadius: 8, padding: 16, border: '1px solid #E2E8F0', marginTop: 4, marginBottom: 4 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: hasChanges ? 12 : 0 }}>
-        <p style={{ fontSize: 13, fontWeight: 700, color: T.heading, margin: 0 }}>
-          Field Changes — {recordTypeLabel(event.content_type_label)} #{event.object_repr || event.object_id}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <p style={{ fontSize: 14, fontWeight: 700, color: T.heading, margin: 0 }}>
+          Field Changes — {analysisTitle}
         </p>
-        <span style={{ fontSize: 11, color: T.muted }}>{fmt(event.timestamp)}</span>
+        <span style={{ fontSize: 12, color: T.muted }}>{fmt(event.timestamp)}</span>
       </div>
 
-      {hasChanges ? (
-        <div>
-          <div style={{ backgroundColor: '#fff', borderRadius: 6, border: '1px solid #E2E8F0', overflow: 'hidden' }}>
-            <table className="w-full" style={{ borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead>
-                <tr style={{ background: '#F1F5F9' }}>
-                  <th style={thStyleLocal}>Field</th>
-                  <th style={thStyleLocal}>Old Value</th>
-                  <th style={thStyleLocal}>New Value</th>
-                  <th style={thStyleLocal}>Reason</th>
+      <div style={{ backgroundColor: '#fff', borderRadius: 6, border: '1px solid #E2E8F0', overflow: 'hidden' }}>
+        <table className="w-full" style={{ borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: '#F1F5F9' }}>
+              <th style={thStyleLocal}>Field</th>
+              <th style={thStyleLocal}>Old Value</th>
+              <th style={thStyleLocal}>New Value</th>
+              <th style={thStyleLocal}>Reason</th>
+              {isResultEvent && onOpenSideView && <th style={thStyleLocal}>Actions</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {isResultEvent ? (
+              <tr style={{ borderBottom: '1px solid #F1F5F9' }}>
+                <td style={{ ...tdStyleLocal, fontWeight: 600, color: '#111827' }}>{analysisTitle}</td>
+                <td style={{ ...tdStyleLocal, color: '#9CA3AF' }}>—</td>
+                <td style={{ ...tdStyleLocal, color: '#9CA3AF' }}>—</td>
+                <td style={{ ...tdStyleLocal, color: '#4B5563' }}>{primaryReason}</td>
+                {onOpenSideView && (
+                  <td style={tdStyleLocal}>
+                    <button
+                      type="button"
+                      className="px-2.5 py-1 rounded text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 flex items-center gap-1"
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => onOpenSideView(event)}
+                    >
+                      <span>View Results</span>
+                      <MI name="view_sidebar" size={13} color="#0154FC" />
+                    </button>
+                  </td>
+                )}
+              </tr>
+            ) : hasChanges ? (
+              changes.map(c => (
+                <tr key={c.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                  <td style={{ ...tdStyleLocal, fontWeight: 600 }}>{formatFieldName(c.field_name)}</td>
+                  <td style={{ ...tdStyleLocal, color: '#EF4444' }}>{c.old_value ?? '—'}</td>
+                  <td style={{ ...tdStyleLocal, color: '#10B981', fontWeight: 600 }}>{c.new_value ?? '—'}</td>
+                  <td style={{ ...tdStyleLocal, color: '#6B7280' }}>{c.reason || '—'}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {event.changes!.map(c => (
-                  <tr key={c.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                    <td style={{ ...tdStyleLocal, fontWeight: 600 }}>{fieldNameLabel(c.field_name)}</td>
-                    <td style={{ ...tdStyleLocal, color: '#EF4444', textDecoration: 'line-through' }}>{c.old_value ?? '—'}</td>
-                    <td style={{ ...tdStyleLocal, color: '#10B981', fontWeight: 600 }}>{c.new_value ?? '—'}</td>
-                    <td style={{ ...tdStyleLocal, color: '#6B7280' }}>{c.reason || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ) : (
-        <p style={{ fontSize: 12, color: T.muted, margin: '8px 0 0' }}>No specific field changes recorded for this event.</p>
-      )}
+              ))
+            ) : (
+              <tr>
+                <td colSpan={4} style={{ ...tdStyleLocal, color: T.muted }}>No specific field changes recorded for this event.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
 
-function EventDetailsDrawer({ event, history, onClose }: { event: AuditEvent; history: AuditEvent[]; onClose: () => void }) {
+function AnalysisSideViewPanel({ event, history, onClose }: { event: AuditEvent; history: AuditEvent[]; onClose: () => void }) {
+  const changes = filterIgnoredChanges(event.changes)
   return (
-    <div style={{ position: 'fixed', top: 0, bottom: 0, left: 0, right: 0, zIndex: 300 }}>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.3)' }} />
-      <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 'min(640px, 92%)', backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.12)', display: 'flex', flexDirection: 'column' }}>
-        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${T.cardBorder}` }}>
-          <div>
-            <p style={{ fontSize: 15, fontWeight: 700, color: T.heading, margin: 0 }}>{recordTypeLabel(event.content_type_label)} — {event.object_repr || event.object_id}</p>
-            <p style={{ fontSize: 12, color: T.muted, margin: '2px 0 0' }}>{fmt(event.timestamp)}</p>
-          </div>
-          <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', color: T.muted }}>
-            <MI name="close" size={20} />
-          </button>
+    <div
+      style={{
+        width: 380,
+        minWidth: 340,
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        border: '1px solid #E2E8F0',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignSelf: 'flex-start',
+        position: 'sticky',
+        top: 20,
+        maxHeight: 'calc(100vh - 140px)',
+        overflowY: 'auto',
+      }}
+    >
+      <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid #E2E8F0', backgroundColor: '#F8FAFC', borderTopLeftRadius: 12, borderTopRightRadius: 12 }}>
+        <div className="flex items-center gap-2">
+          <MI name="analytics" size={18} color="#0154FC" />
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: T.heading }}>
+            {cleanEventTitle(event)}
+          </h3>
         </div>
-        <div className="flex-1 overflow-y-auto p-5">
-          {event.changes && event.changes.length > 0 && (
-            <>
-              <p style={{ fontSize: 12, fontWeight: 700, color: T.heading, marginBottom: 8 }}>Field Changes</p>
-              <table className="w-full mb-6" style={{ borderCollapse: 'collapse' }}>
+        <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', color: T.muted }}>
+          <MI name="close" size={18} />
+        </button>
+      </div>
+
+      <div className="p-4 flex flex-col gap-4">
+        <div style={{ fontSize: 13, color: T.muted, backgroundColor: '#F1F5F9', padding: '6px 10px', borderRadius: 6 }}>
+          <span style={{ fontWeight: 600, color: '#1E293B' }}>{event.object_repr || event.object_id}</span>
+          <br />
+          {fmt(event.timestamp)} • User: {event.user_display ?? 'System'}
+        </div>
+
+        {changes.length > 0 ? (
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 700, color: T.heading, marginBottom: 6 }}>Result Changes</p>
+            <div style={{ borderRadius: 6, border: '1px solid #E2E8F0', overflow: 'hidden' }}>
+              <table className="w-full" style={{ borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
-                  <tr>
-                    <th style={{ ...thStyleLocal }}>Field</th>
-                    <th style={{ ...thStyleLocal }}>Old Value</th>
-                    <th style={{ ...thStyleLocal }}>New Value</th>
-                    <th style={{ ...thStyleLocal }}>Reason</th>
+                  <tr style={{ background: '#F8FAFC' }}>
+                    <th style={thStyleLocal}>Field</th>
+                    <th style={thStyleLocal}>Old Value</th>
+                    <th style={thStyleLocal}>New Value</th>
+                    <th style={thStyleLocal}>Reason</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {event.changes.map(c => (
-                    <tr key={c.id}>
-                      <td style={tdStyleLocal}>{fieldNameLabel(c.field_name)}</td>
-                      <td style={{ ...tdStyleLocal, color: T.danger }}>{c.old_value ?? '—'}</td>
-                      <td style={{ ...tdStyleLocal, color: T.success }}>{c.new_value ?? '—'}</td>
-                      <td style={tdStyleLocal}>{c.reason || '—'}</td>
+                  {changes.map(c => (
+                    <tr key={c.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                      <td style={{ ...tdStyleLocal, fontWeight: 600 }}>{formatFieldName(c.field_name)}</td>
+                      <td style={{ ...tdStyleLocal, color: '#EF4444' }}>{c.old_value ?? '—'}</td>
+                      <td style={{ ...tdStyleLocal, color: '#10B981', fontWeight: 600 }}>{c.new_value ?? '—'}</td>
+                      <td style={{ ...tdStyleLocal, color: '#6B7280' }}>{c.reason || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </>
-          )}
-          <p style={{ fontSize: 12, fontWeight: 700, color: T.heading, marginBottom: 8 }}>Record History</p>
-          <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th style={thStyleLocal}>Timestamp</th>
-                <th style={thStyleLocal}>Action</th>
-                <th style={thStyleLocal}>User</th>
-                <th style={thStyleLocal}>Source</th>
-              </tr>
-            </thead>
-            <tbody>
-              {history.map(h => (
-                <tr key={h.id}>
-                  <td style={tdStyleLocal}>{fmt(h.timestamp)}</td>
-                  <td style={tdStyleLocal}><StatusChip status={h.action} /></td>
-                  <td style={tdStyleLocal}>{h.user_display ?? '—'}</td>
-                  <td style={tdStyleLocal}>{h.source || 'manual'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            </div>
+          </div>
+        ) : (
+          <p style={{ fontSize: 13, color: T.muted, margin: 0 }}>No specific result field changes recorded for this event.</p>
+        )}
+
+
       </div>
     </div>
   )
 }
 
-const thStyleLocal = { textAlign: 'left' as const, fontSize: 11, fontWeight: 700, color: T.muted, padding: '6px 10px', borderBottom: `1px solid ${T.cardBorder}` }
-const tdStyleLocal = { fontSize: 12, color: T.text, padding: '6px 10px', borderBottom: `1px solid ${T.rowBorder}` }
+const thStyleLocal = { textAlign: 'left' as const, fontSize: 12, fontWeight: 700, color: T.muted, padding: '6px 10px', borderBottom: `1px solid ${T.cardBorder}` }
+const tdStyleLocal = { fontSize: 13, color: T.text, padding: '6px 10px', borderBottom: `1px solid ${T.rowBorder}` }
 
 export function AuditEventsTable({ events }: { events: AuditEvent[] }) {
   const [search, setSearch] = useState('')
@@ -207,7 +241,8 @@ export function AuditEventsTable({ events }: { events: AuditEvent[] }) {
   const [dateTo, setDateTo] = useState('')
   const [userFilter, setUserFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
-  const [expandedIds, setExpandedIds] = useState<(string | number)[]>([])
+  const [expandedId, setExpandedId] = useState<string | number | null>(null)
+  const [selectedDrawerEvent, setSelectedDrawerEvent] = useState<AuditEvent | null>(null)
 
   const actions = useMemo(() => Array.from(new Set(events.map(e => e.action))).sort(), [events])
   const users = useMemo(
@@ -257,7 +292,7 @@ export function AuditEventsTable({ events }: { events: AuditEvent[] }) {
     { id: 'action', label: 'Action', sortable: true, minWidth: 120, render: e => <ActionPill action={e.action} /> },
     { id: 'source', label: 'Source', sortable: true, minWidth: 100, render: e => e.source || 'manual' },
     { id: 'content_type_label', label: 'Record Type', sortable: true, minWidth: 140, render: e => recordTypeLabel(e.content_type_label) },
-    { id: 'object_repr', label: 'Object', sortable: true, minWidth: 160, render: e => <span style={{ color: '#0154FC', fontWeight: 600 }}>{e.object_repr || (e.object_id ?? '—')}</span> },
+    { id: 'object_repr', label: 'Object', sortable: true, minWidth: 160, render: e => e.object_repr || (e.object_id ?? '—') },
     { id: 'ip_address', label: 'IP Address', sortable: true, minWidth: 120, render: e => e.ip_address ?? '—' },
   ]
 
@@ -300,40 +335,57 @@ export function AuditEventsTable({ events }: { events: AuditEvent[] }) {
           Export CSV
         </Btn>
       </div>
-      <DataTable
-        data={filtered}
-        columns={columns}
-        persistKey="audit-trail-events"
-        expandedRowIds={expandedIds}
-        renderRowDetails={e => (
-          <EventDetailsDropdown event={e} />
+      <div className="flex gap-4 items-start">
+        <div className="flex-1 min-w-0">
+          <DataTable
+            data={filtered}
+            columns={columns}
+            persistKey="audit-trail-events"
+            expandedRowIds={expandedId !== null ? [expandedId] : []}
+            renderRowDetails={e => (
+              <EventDetailsDropdown event={e} onOpenSideView={ev => setSelectedDrawerEvent(prev => prev?.id === ev.id ? null : ev)} />
+            )}
+            rowActions={e => {
+              const isExp = expandedId === e.id
+              return (
+                <button
+                  type="button"
+                  title={isExp ? "Collapse details" : "Expand details dropdown"}
+                  className="px-2 py-1 rounded hover:bg-gray-100 flex items-center gap-1"
+                  style={{
+                    cursor: 'pointer',
+                    border: '1px solid #E5E7EB',
+                    backgroundColor: isExp ? '#EFF6FF' : '#fff',
+                    color: isExp ? '#1D4ED8' : '#374151',
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                  onClick={() => {
+                    setExpandedId(prev => {
+                      const next = prev === e.id ? null : e.id
+                      // close side panel when switching to a different row
+                      if (next !== prev) setSelectedDrawerEvent(null)
+                      return next
+                    })
+                  }}
+                >
+                  <span>{isExp ? 'Hide' : 'Details'}</span>
+                  <MI name={isExp ? 'expand_less' : 'expand_more'} size={16} color={isExp ? '#1D4ED8' : '#6B7280'} />
+                </button>
+              )
+            }}
+            emptyMessage="No matching events."
+          />
+        </div>
+
+        {selectedDrawerEvent && (
+          <AnalysisSideViewPanel
+            event={selectedDrawerEvent}
+            history={historyFor(selectedDrawerEvent)}
+            onClose={() => setSelectedDrawerEvent(null)}
+          />
         )}
-        rowActions={e => {
-          const isExp = expandedIds.includes(e.id)
-          return (
-            <button
-              type="button"
-              title={isExp ? "Collapse details" : "Expand details dropdown"}
-              className="px-2 py-1 rounded hover:bg-gray-100 flex items-center gap-1"
-              style={{
-                cursor: 'pointer',
-                border: '1px solid #E5E7EB',
-                backgroundColor: isExp ? '#EFF6FF' : '#fff',
-                color: isExp ? '#1D4ED8' : '#374151',
-                fontSize: 12,
-                fontWeight: 600,
-              }}
-              onClick={() => {
-                setExpandedIds(prev => prev.includes(e.id) ? prev.filter(x => x !== e.id) : [...prev, e.id])
-              }}
-            >
-              <span>{isExp ? 'Hide' : 'Details'}</span>
-              <MI name={isExp ? 'expand_less' : 'expand_more'} size={16} color={isExp ? '#1D4ED8' : '#6B7280'} />
-            </button>
-          )
-        }}
-        emptyMessage="No matching events."
-      />
+      </div>
     </div>
   )
 }

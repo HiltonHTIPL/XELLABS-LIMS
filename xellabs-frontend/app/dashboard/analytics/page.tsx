@@ -4,6 +4,10 @@ import SupersetDashboard from '../_components/SupersetDashboard';
 import { useState } from 'react';
 import Link from 'next/link';
 
+// Embed UUID comes from the running Superset instance (per-deploy), not the code.
+// Set NEXT_PUBLIC_SUPERSET_DASHBOARD_ID in the frontend env.
+const dashboardId = process.env.NEXT_PUBLIC_SUPERSET_DASHBOARD_ID;
+
 export default function AnalyticsPage() {
   const [loading, setLoading] = useState(false);
 
@@ -44,7 +48,13 @@ export default function AnalyticsPage() {
         </button>
       </div>
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 w-full flex-grow overflow-hidden">
-        <SupersetDashboard dashboardId="9d7824fb-69f1-4238-94a8-c3faa2a4603c" />
+        {dashboardId ? (
+          <SupersetDashboard dashboardId={dashboardId} />
+        ) : (
+          <div className="p-4 m-4 text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-md">
+            Analytics dashboard is not configured. Set NEXT_PUBLIC_SUPERSET_DASHBOARD_ID.
+          </div>
+        )}
       </div>
     </div>
   );

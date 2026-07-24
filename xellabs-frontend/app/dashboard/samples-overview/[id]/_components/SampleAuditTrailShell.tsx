@@ -22,7 +22,7 @@ export default function SampleAuditTrailShell({ sample, events }: { sample: LabS
       <PageHeader
         title={
           <span>
-            Audit Trail <span style={{ fontWeight: 400, color: '#6B7280', margin: '0 4px' }}>•</span> <span style={{ fontWeight: 500, color: '#0154FC' }}>{sampleLabel}</span>
+            Audit Trail <span style={{ fontWeight: 400, color: '#6B7280', margin: '0 4px' }}>•</span> <span style={{ fontWeight: 400, color: '#4B5563' }}>{sampleLabel}</span>
           </span>
         }
         subtitle={`Audit events log for Sample ${sampleLabel} (${sample.sample_type_name || 'Sample'})`}

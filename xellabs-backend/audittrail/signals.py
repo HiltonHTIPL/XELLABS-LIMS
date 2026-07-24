@@ -88,19 +88,31 @@ def wire_signals(model):
             extra_data=None,
         )
 
+        IGNORED_AUDIT_FIELDS = {"last_synced_from_senaite", "senaite_uid", "updated_at"}
         if not created:
             old = getattr(instance, "_pre_save_old", None)
             if old:
+                field_reasons = {}
+                if reason and isinstance(reason, str) and reason.strip().startswith("{"):
+                    try:
+                        import json
+                        field_reasons = json.loads(reason)
+                    except Exception:
+                        pass
+
                 for field in sender._meta.concrete_fields:
+                    if field.name in IGNORED_AUDIT_FIELDS or field.attname in IGNORED_AUDIT_FIELDS:
+                        continue
                     old_val = _serialize_value(getattr(old, field.attname, None))
                     new_val = _serialize_value(getattr(instance, field.attname, None))
                     if old_val != new_val:
+                        f_reason = field_reasons.get(field.name) or field_reasons.get(field.attname) or reason
                         DataChangeLog.objects.create(
                             audit_event=event,
                             field_name=field.name,
                             old_value=old_val,
                             new_value=new_val,
-                            reason=reason,
+                            reason=f_reason,
                         )
 
         # Create immutable version snapshot

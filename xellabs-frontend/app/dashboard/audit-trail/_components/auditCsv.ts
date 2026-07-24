@@ -18,25 +18,49 @@ export function recordTypeLabel(raw: string | null | undefined): string {
   return RECORD_TYPE_LABELS[raw] ?? raw
 }
 
-// Raw DataChangeLog.field_name values are the literal Django model field
-// (e.g. "last_synced_from_senaite") — internal backend naming is fine (see
-// CLAUDE.md §11a), but it must never surface verbatim in this user-facing
-// audit UI/export. Known internal-only fields get a brand-neutral label;
-// anything else falls back to a humanized version with "senaite" stripped.
-const FIELD_NAME_LABELS: Record<string, string> = {
-  last_synced_from_senaite: 'Last Synced',
-  senaite_uid: 'External Reference ID',
+const FIELD_LABELS: Record<string, string> = {
+  requested_analyses: 'Requested Analyses',
+  assigned_tests_count: 'Total Tests Assigned',
+  analysis_package: 'Analysis Package',
+  result_value: 'Result Value',
+  status: 'Status',
+  priority: 'Priority',
+  condition: 'Sample Condition',
+  description: 'Description / Notes',
+  storage_location: 'Storage Location',
+  expiry_date: 'Expiration Date',
+  due_date: 'Due Date',
+  analyst: 'Assigned Analyst',
+  specification: 'Specification',
+  method: 'Method',
+  unit: 'Unit of Measure',
+  senaite_uid: 'SENAITE UID',
+  updated_at: 'Updated At',
 }
 
-export function fieldNameLabel(raw: string | null | undefined): string {
+export function formatFieldName(raw: string | null | undefined): string {
   if (!raw) return '—'
-  if (FIELD_NAME_LABELS[raw]) return FIELD_NAME_LABELS[raw]
-  const humanized = raw
-    .replace(/_/g, ' ')
-    .replace(/\bsenaite\b/gi, '')
-    .trim()
-    .replace(/\s+/g, ' ')
-  return humanized.replace(/\b\w/g, ch => ch.toUpperCase())
+  if (FIELD_LABELS[raw]) return FIELD_LABELS[raw]
+  const cleaned = raw.replace(/\bresult_value\b/g, 'Result Value').replace(/_/g, ' ')
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1)
+}
+
+export function cleanEventTitle(event: AuditEvent): string {
+  const repr = event.object_repr || (event.object_id ? `#${event.object_id}` : '')
+  if (!repr) return recordTypeLabel(event.content_type_label)
+  if (repr.startsWith('Analysis Result: ')) {
+    const afterPrefix = repr.replace('Analysis Result: ', '')
+    const parts = afterPrefix.split('•')
+    return parts[0].trim()
+  }
+  if (repr.startsWith('Sample #')) {
+    return repr
+  }
+  if (repr.includes('•')) {
+    const parts = repr.split('•')
+    return parts[0].trim()
+  }
+  return repr
 }
 
 // Wrap a field in quotes and escape internal quotes when it contains a comma,
@@ -48,11 +72,21 @@ function csvCell(value: string): string {
   return value
 }
 
+export function filterIgnoredChanges<T extends { field_name?: string }>(changes: T[] | undefined | null): T[] {
+  if (!changes) return []
+  return changes.filter(c => {
+    if (!c.field_name) return false
+    const fn = c.field_name.toLowerCase()
+    return !fn.includes('senaite') && !fn.includes('last_synced')
+  })
+}
+
 function flattenChanges(e: AuditEvent): string {
-  if (!e.changes || e.changes.length === 0) return ''
-  return e.changes
+  const visible = filterIgnoredChanges(e.changes)
+  if (visible.length === 0) return ''
+  return visible
     .map(c => {
-      const base = `${fieldNameLabel(c.field_name)}: ${c.old_value ?? ''} -> ${c.new_value ?? ''}`
+      const base = `${formatFieldName(c.field_name)}: ${c.old_value ?? ''} -> ${c.new_value ?? ''}`
       return c.reason ? `${base} [${c.reason}]` : base
     })
     .join('; ')

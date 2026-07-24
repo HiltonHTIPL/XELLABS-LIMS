@@ -93,6 +93,8 @@ const lbl: CSSProperties = { fontSize: 11, fontWeight: 600, color: '#374151', ma
 export function EditDrawer({ sample, onClose, onSaved }: { sample: LabSample; onClose: () => void; onSaved: () => void }) {
   const [busy, startTransition] = useTransition()
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [reasonForChange, setReasonForChange] = useState('')
+  const [reasonError, setReasonError] = useState(false)
   const [vals, setVals] = useState({
     description:     sample.description ?? '',
     collection_date: sample.collection_date ? sample.collection_date.slice(0, 16) : '',
@@ -114,11 +116,25 @@ export function EditDrawer({ sample, onClose, onSaved }: { sample: LabSample; on
   function set(k: string, v: string) { setVals(prev => ({ ...prev, [k]: v })) }
 
   function handleSave() {
+    const patch: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(vals)) {
+      if (v !== initialVals[k as keyof typeof initialVals]) patch[k] = v
+    }
+
+    if (Object.keys(patch).length === 0) {
+      setToast({ ok: true, msg: 'No changes to save.' })
+      setTimeout(() => { onClose() }, 800)
+      return
+    }
+
+    if (!reasonForChange.trim()) {
+      setReasonError(true)
+      setToast({ ok: false, msg: 'Reason for change is required for audit trail.' })
+      return
+    }
+
     startTransition(async () => {
-      const patch: Record<string, unknown> = {}
-      for (const [k, v] of Object.entries(vals)) {
-        if (v !== initialVals[k as keyof typeof initialVals]) patch[k] = v
-      }
+      patch.reason_for_change = reasonForChange.trim()
       const res = await patchLabSample(sample.id, patch)
       setToast({ ok: res.ok, msg: res.ok ? 'Changes saved.' : (res.message ?? 'Save failed.') })
       if (res.ok) setTimeout(() => { onSaved(); onClose() }, 800)
@@ -169,13 +185,15 @@ export function EditDrawer({ sample, onClose, onSaved }: { sample: LabSample; on
                 <option value="high">High</option>
                 <option value="medium">Medium</option>
                 <option value="low">Low</option>
+                <option value="urgent">Urgent</option>
               </select></div>
             <div><label style={lbl}>Sample Condition</label>
               <select value={vals.condition} onChange={e => set('condition', e.target.value)} style={inp}>
                 <option value="good">Good</option>
-                <option value="acceptable">Acceptable</option>
-                <option value="compromised">Compromised</option>
-                <option value="not_acceptable">Not Acceptable</option>
+                <option value="damaged">Damaged</option>
+                <option value="leaking">Leaking</option>
+                <option value="expired">Expired</option>
+                <option value="improper_temp">Improper Temperature</option>
               </select></div>
           </div>
 
@@ -200,8 +218,26 @@ export function EditDrawer({ sample, onClose, onSaved }: { sample: LabSample; on
           </div>
 
           <div><label style={lbl}>Sample Notes</label>
-            <textarea value={vals.description} onChange={e => set('description', e.target.value)} rows={3}
+            <textarea value={vals.description} onChange={e => set('description', e.target.value)} rows={2}
               placeholder="Any notes about this sample..." style={{ ...inp, resize: 'none' }} /></div>
+
+          <div style={{ padding: '12px', backgroundColor: '#F8FAFC', borderRadius: 8, border: `1px solid ${reasonError ? '#EF4444' : '#E2E8F0'}` }}>
+            <label style={{ ...lbl, color: '#1E293B', marginBottom: 6 }}>
+              Reason for Change <span style={{ color: '#EF4444' }}>* (Required for Audit Trail)</span>
+            </label>
+            <textarea
+              value={reasonForChange}
+              onChange={e => { setReasonForChange(e.target.value); setReasonError(false) }}
+              rows={2}
+              placeholder="Mandatory reason for audit log (e.g. Updated storage location per QA SOP)..."
+              style={{ ...inp, border: reasonError ? '1px solid #EF4444' : inp.border, resize: 'none' }}
+            />
+            {reasonError && (
+              <p style={{ fontSize: 11, color: '#EF4444', margin: '4px 0 0', fontWeight: 600 }}>
+                Please enter a reason for this edit before saving.
+              </p>
+            )}
+          </div>
         </div>
 
         {toast && (
@@ -280,10 +316,6 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests, isD
       {showEdit && <EditDrawer sample={sample} onClose={() => setShowEdit(false)} onSaved={() => router.refresh()} />}
 
       {showAuditTrail && (
-        // Django's AuditEvent.object_repr is always the Django sample_id field
-        // (str(Sample) — see lims/models.py), never the SENAITE-preferring
-        // displayId() shown elsewhere on this page. Must match sample_id exactly
-        // or the audit trail always looks empty.
         <SampleAuditDrawer
           sampleId={sample.id}
           open={showAuditTrail}
@@ -517,6 +549,10 @@ export default function SampleOverviewDetail({ sample, id, analysisRequests, isD
           )}
         </div>
       </div>
+
+      {showEdit && (
+        <EditDrawer sample={sample} onClose={() => setShowEdit(false)} onSaved={() => router.refresh()} />
+      )}
     </div>
   )
 }

@@ -322,7 +322,89 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
     return results
   }
 
-  async function handleUpdateSubmit() {
+  type ChangedFieldInfo = {
+    key: string
+    label: string
+    oldVal: string
+    newVal: string
+    isRequired: boolean
+  }
+
+  const [showReasonModal, setShowReasonModal] = useState(false)
+  const [changedFieldsList, setChangedFieldsList] = useState<ChangedFieldInfo[]>([])
+  const [fieldReasonsMap, setFieldReasonsMap] = useState<Record<string, string>>({})
+  const [fieldReasonErrors, setFieldReasonErrors] = useState<Record<string, boolean>>({})
+
+  function detectChangedFields(): ChangedFieldInfo[] {
+    if (!editSample) return []
+    const list: ChangedFieldInfo[] = []
+
+    const oldDate = editSample.collection_date ? editSample.collection_date.slice(0, 16) : ''
+    if (f.dateSampled !== oldDate) {
+      list.push({ key: 'collection_date', label: 'Date Sampled', oldVal: oldDate, newVal: f.dateSampled, isRequired: true })
+    }
+    if (f.priority !== (editSample.priority ?? 'medium')) {
+      list.push({ key: 'priority', label: 'Priority', oldVal: editSample.priority ?? 'medium', newVal: f.priority, isRequired: true })
+    }
+    if (f.condition !== (editSample.condition ?? 'good')) {
+      list.push({ key: 'condition', label: 'Sample Condition', oldVal: editSample.condition ?? 'good', newVal: f.condition, isRequired: true })
+    }
+    if (f.storageLocation !== (editSample.storage_location ?? '')) {
+      list.push({ key: 'storage_location', label: 'Storage Location', oldVal: editSample.storage_location ?? '', newVal: f.storageLocation, isRequired: false })
+    }
+    if (f.contactName !== (editSample.contact_name ?? '')) {
+      list.push({ key: 'contact_name', label: 'Contact Name', oldVal: editSample.contact_name ?? '', newVal: f.contactName, isRequired: false })
+    }
+    if (f.clientOrderNum !== (editSample.client_order_number ?? '')) {
+      list.push({ key: 'client_order_number', label: 'Client Order No.', oldVal: editSample.client_order_number ?? '', newVal: f.clientOrderNum, isRequired: false })
+    }
+    if (f.clientReference !== (editSample.client_reference ?? '')) {
+      list.push({ key: 'client_reference', label: 'Client Reference', oldVal: editSample.client_reference ?? '', newVal: f.clientReference, isRequired: false })
+    }
+    if (f.clientSampleId !== (editSample.client_sample_id ?? '')) {
+      list.push({ key: 'client_sample_id', label: 'Client Sample ID', oldVal: editSample.client_sample_id ?? '', newVal: f.clientSampleId, isRequired: false })
+    }
+    if (f.containerType !== (editSample.container_type ?? '')) {
+      list.push({ key: 'container_type', label: 'Container', oldVal: editSample.container_type ?? '', newVal: f.containerType, isRequired: false })
+    }
+    if (f.analysisSpec !== (editSample.analysis_specification ?? '')) {
+      list.push({ key: 'analysis_specification', label: 'Analysis Specification', oldVal: editSample.analysis_specification ?? '', newVal: f.analysisSpec, isRequired: false })
+    }
+    if (f.envConditions !== (editSample.environmental_conditions ?? 'room_temp')) {
+      list.push({ key: 'environmental_conditions', label: 'Environmental Conditions', oldVal: editSample.environmental_conditions ?? 'room_temp', newVal: f.envConditions, isRequired: false })
+    }
+    if (f.batchSubGroup !== (editSample.batch_sub_group ?? '')) {
+      list.push({ key: 'batch_sub_group', label: 'Batch Sub-group', oldVal: editSample.batch_sub_group ?? '', newVal: f.batchSubGroup, isRequired: false })
+    }
+    if (f.ccContact !== (editSample.cc_contact ?? '')) {
+      list.push({ key: 'cc_contact', label: 'CC Contact', oldVal: editSample.cc_contact ?? '', newVal: f.ccContact, isRequired: false })
+    }
+    if (f.ccEmails.join(',') !== (editSample.cc_emails ?? '')) {
+      list.push({ key: 'cc_emails', label: 'CC Emails', oldVal: editSample.cc_emails ?? '', newVal: f.ccEmails.join(','), isRequired: false })
+    }
+    if (f.remarks !== (editSample.description ?? '')) {
+      list.push({ key: 'description', label: 'Sample Notes / Remarks', oldVal: editSample.description ?? '', newVal: f.remarks, isRequired: false })
+    }
+    if (f.preservation !== (editSample.preservation ?? '')) {
+      list.push({ key: 'preservation', label: 'Preservation', oldVal: editSample.preservation ?? '', newVal: f.preservation, isRequired: false })
+    }
+    if (f.samplePoint !== (editSample.sample_point ?? '')) {
+      list.push({ key: 'sample_point', label: 'Sample Point', oldVal: editSample.sample_point ?? '', newVal: f.samplePoint, isRequired: false })
+    }
+    if (f.samplingDeviation !== (editSample.sampling_deviation ?? 'none')) {
+      list.push({ key: 'sampling_deviation', label: 'Sampling Deviation', oldVal: editSample.sampling_deviation ?? 'none', newVal: f.samplingDeviation, isRequired: false })
+    }
+    if (f.composite !== Boolean(editSample.composite)) {
+      list.push({ key: 'composite', label: 'Composite Sample Toggle', oldVal: editSample.composite ? 'Enabled' : 'Disabled', newVal: f.composite ? 'Enabled' : 'Disabled', isRequired: false })
+    }
+    if (f.internalUse !== Boolean(editSample.internal_use)) {
+      list.push({ key: 'internal_use', label: 'Internal Use Toggle', oldVal: editSample.internal_use ? 'Enabled' : 'Disabled', newVal: f.internalUse ? 'Enabled' : 'Disabled', isRequired: false })
+    }
+
+    return list
+  }
+
+  function handleUpdateSubmit() {
     if (!editSample) return
     if (!f.clientId || !f.sampleTypeId) {
       setError('Client and Sample Type are required.')
@@ -332,10 +414,46 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
       setError('Date Sampled cannot be in the future.')
       return
     }
+
+    const changed = detectChangedFields()
+    if (changed.length === 0) {
+      setError('No attributes were modified.')
+      return
+    }
+
+    setChangedFieldsList(changed)
+    const initialMap: Record<string, string> = {}
+    changed.forEach(ch => { initialMap[ch.key] = '' })
+    setFieldReasonsMap(initialMap)
+    setFieldReasonErrors({})
+    setShowReasonModal(true)
+  }
+
+  async function confirmUpdateWithReason() {
+    if (!editSample) return
+
+    const errors: Record<string, boolean> = {}
+    let hasErr = false
+    changedFieldsList.forEach(ch => {
+      if (ch.isRequired && !fieldReasonsMap[ch.key]?.trim()) {
+        errors[ch.key] = true
+        hasErr = true
+      }
+    })
+
+    if (hasErr) {
+      setFieldReasonErrors(errors)
+      return
+    }
+
+    setShowReasonModal(false)
     setError(''); setSubmitting(true)
     const client = clients.find(c => String(c.id) === f.clientId)
     const sampleType = sampleTypes.find(st => String(st.id) === f.sampleTypeId)
     const batch = batches.find(b => b.uid === f.batchUid)
+
+    const jsonReasons = JSON.stringify(fieldReasonsMap)
+
     const payload: NewSamplePayload = {
       client: Number(f.clientId), sample_type: Number(f.sampleTypeId),
       priority: f.priority, condition: f.condition,
@@ -361,6 +479,7 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
       sampling_deviation_senaite_uid: f.samplingDeviation !== 'none'
         ? samplingDeviations.find(d => d.title === f.samplingDeviation)?.uid || undefined
         : undefined,
+      reason_for_change: jsonReasons,
     }
     const testsPayload: SelectedAnalysis[] = f.selectedTests.map(t => ({ uid: t.uid, name: t.title }))
     const result = await updateSampleWithAnalyses(
@@ -1246,6 +1365,75 @@ export default function NewSampleShell({ sampleTypes, clients, services, sampleT
           </div>
         </div>
       </div>
+
+      {showReasonModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, backgroundColor: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{ backgroundColor: '#fff', borderRadius: 12, width: '100%', maxWidth: 540, maxHeight: '85vh', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #E5E7EB', display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F8FAFC' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <MI name="edit_note" size={20} color="#2563EB" />
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#111827' }}>Reason for Change Required</h3>
+              </div>
+              <button type="button" onClick={() => setShowReasonModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280' }}>
+                <MI name="close" size={18} />
+              </button>
+            </div>
+
+            <div style={{ padding: 20, overflowY: 'auto', flex: 1 }}>
+              <p style={{ fontSize: 13, color: '#374151', margin: '0 0 16px', lineHeight: 1.5 }}>
+                You are modifying attributes for <strong>{editSample?.sample_id || 'this sample'}</strong>. Please specify reasons for the changed field(s):
+              </p>
+
+              {changedFieldsList.map(ch => (
+                <div key={ch.key} style={{ marginBottom: 14, padding: 12, backgroundColor: '#F8FAFC', borderRadius: 8, border: `1px solid ${fieldReasonErrors[ch.key] ? '#EF4444' : '#E2E8F0'}` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 12.5, fontWeight: 700, color: '#1E293B' }}>{ch.label}</span>
+                      {ch.isRequired ? (
+                        <span style={{ fontSize: 11, color: '#EF4444', fontWeight: 600 }}>* Required</span>
+                      ) : (
+                        <span style={{ fontSize: 11, color: '#6B7280', fontWeight: 500 }}>(Optional)</span>
+                      )}
+                    </div>
+                    <span style={{ fontSize: 11, color: '#6B7280' }}>
+                      <span style={{ color: '#EF4444' }}>{ch.oldVal || '—'}</span> → <span style={{ color: '#10B981', fontWeight: 600 }}>{ch.newVal || '—'}</span>
+                    </span>
+                  </div>
+                  <textarea
+                    rows={2}
+                    value={fieldReasonsMap[ch.key] ?? ''}
+                    onChange={e => {
+                      const v = e.target.value
+                      setFieldReasonsMap(prev => ({ ...prev, [ch.key]: v }))
+                      if (ch.isRequired) {
+                        setFieldReasonErrors(prev => ({ ...prev, [ch.key]: !v.trim() }))
+                      }
+                    }}
+                    placeholder={ch.isRequired ? `Mandatory reason for changing ${ch.label}...` : `Optional reason for changing ${ch.label}...`}
+                    style={{ ...inp, border: fieldReasonErrors[ch.key] ? '1px solid #EF4444' : inp.border, resize: 'none', fontSize: 12 }}
+                  />
+                  {fieldReasonErrors[ch.key] && (
+                    <p style={{ fontSize: 11, color: '#EF4444', margin: '4px 0 0', fontWeight: 600 }}>
+                      Reason for changing {ch.label} is required before saving.
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div style={{ padding: '12px 20px', borderTop: '1px solid #E5E7EB', backgroundColor: '#F8FAFC', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button type="button" onClick={() => setShowReasonModal(false)}
+                style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid #D1D5DB', background: '#fff', fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button type="button" onClick={confirmUpdateWithReason}
+                style={{ padding: '8px 18px', borderRadius: 6, border: 'none', background: '#2563EB', fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer' }}>
+                Confirm & Save Edits
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 

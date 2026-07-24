@@ -125,6 +125,7 @@ export type NewSamplePayload = {
   preservation_senaite_uid?: string
   sample_point_senaite_uid?: string
   sampling_deviation_senaite_uid?: string
+  reason_for_change?: string
 }
 
 function senaitePriority(priority: string): string {
@@ -329,6 +330,7 @@ export async function updateSampleWithAnalyses(
       composite: payload.composite ?? false, internal_use: payload.internal_use ?? false,
       client_order_number: payload.client_order_number ?? '', client_reference: payload.client_reference ?? '',
       client_sample_id: payload.client_sample_id ?? '',
+      reason_for_change: payload.reason_for_change,
     }
     const sampleRes = await djangoFetch(`/api/lims/samples/${sampleId}/`, { method: 'PATCH', body: JSON.stringify(patch) })
     if (!sampleRes.ok) {
