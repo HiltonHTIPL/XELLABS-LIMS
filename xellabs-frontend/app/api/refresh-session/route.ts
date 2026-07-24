@@ -9,6 +9,8 @@ export async function GET() {
     userId: session.userId,
     username: session.username,
     role: session.role,
+    senaiteRoles: session.senaiteRoles,
+    isSuperuser: session.isSuperuser,
     djangoToken: session.djangoToken,
     senaiteToken: session.senaiteToken,
     tenantSubdomain: session.tenantSubdomain,

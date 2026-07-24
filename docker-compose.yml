@@ -227,7 +227,7 @@ services:
     restart: unless-stopped
     command: npm run dev -- -H 0.0.0.0
     ports:
-      - "3000:3000"   # reach the app at http://127.0.0.1:3000 (and http://<host-lan-ip>:3000 on the LAN)
+      - "127.0.0.1:3000:3000"   # loopback-only; nginx proxies alims.xellabs.com -> frontend:3000 over the docker network
     environment:
       - DJANGO_API_URL=http://django:8001
       - SENAITE_URL=${SENAITE_URL:-http://senaite:8080/senaite}

@@ -67,7 +67,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { label: 'Chain of Custody', href: '/dashboard/chain-of-custody', icon: 'link', roles: ['admin', 'manager', 'lab_manager', 'analyst', 'verifier', 'client'],
     description: "Full audit trail of a sample's custody and status changes.",
     dependsOn: ['Analysis Requests'] },
-  { label: 'Approvals',    href: '/dashboard/approvals',    icon: 'fact_check',  roles: ['admin', 'manager', 'lab_manager'],
+  { label: 'Approvals',    href: '/dashboard/approvals',    icon: 'fact_check',  roles: ['admin', 'manager', 'lab_manager', 'verifier'],
     description: 'Review and approve workflow transitions requiring e-signature.' },
   { label: 'Audit Trail',  href: '/dashboard/audit-trail',  icon: 'history',     roles: ['admin', 'manager', 'lab_manager', 'publisher', 'verifier', 'analyst'],
     description: 'System-wide compliance log of every sensitive action.' },

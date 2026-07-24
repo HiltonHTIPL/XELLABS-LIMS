@@ -18,6 +18,7 @@ import { SENAITE_SITE_PATH } from '@/app/lib/senaite'
 import type { RefOption } from '@/app/dashboard/_components/AdminRefShell'
 import { logExternalAuditEvent } from '@/app/actions/audit-trail'
 import { refreshSampleStatus } from '@/app/actions/sample-status'
+import { logCustodyEvent } from '@/app/actions/chain-of-custody'
 
 // A QC material selectable on a worksheet. `serviceUids` are the analysis
 // services the sample carries expected results for — the services QC gets
@@ -127,11 +128,31 @@ export async function transitionWorksheet(
   return { success: true }
 }
 
+// Sample-log context for a single worksheet analysis — optional, mirroring
+// AnalysisLogMeta below. Without it the transition is still logged against
+// the worksheet, just not additionally attributed to the sample.
+type SampleLogMeta = { sampleId: string; title: string }
+
+// Also log a sample-scoped bridged event (object_repr = the AR/sample id,
+// matching the pattern already used by addAnalysesToWorksheet), alongside the
+// worksheet-scoped one above — otherwise a sample's own Chain of Custody /
+// Audit Trail never sees its own result-submit/verify events, since Django's
+// chain_of_custody view only matches AuditEvent rows by the human-readable
+// sample_id, never a worksheet id (confirmed: this was the reason SO-0022's
+// Chain of Custody only ever showed coarse Sample.status milestones, never
+// the two "Soil Available Minerals"/"Soil Calcium and Magnesium" result
+// events themselves).
+function logSampleResultEvent(action: string, meta: SampleLogMeta | undefined, extra: Record<string, unknown>) {
+  if (!meta?.sampleId) return
+  logExternalAuditEvent(action, meta.sampleId, { ...extra, title: meta.title }, 'sample')
+}
+
 // Enter a result on a worksheet analysis and submit it (assigned -> to_be_verified).
 export async function submitWorksheetResult(
   id: string,
   analysisUid: string,
   result: string,
+  sampleMeta?: SampleLogMeta,
 ): Promise<WorksheetActionResult> {
   const trimmed = (result ?? '').trim()
   if (!trimmed) return { success: false, error: 'Enter a result first.' }
@@ -140,6 +161,7 @@ export async function submitWorksheetResult(
   if (!r.success) return { success: false, error: r.error ?? 'Failed to submit result.' }
   revalidatePath(`/dashboard/worksheets/${id}`)
   logExternalAuditEvent('submit', id, { analysisUid, result: trimmed }, 'worksheet')
+  logSampleResultEvent('submit', sampleMeta, { analysisUid, result: trimmed, worksheetId: id })
   await refreshSampleStatus({ analysisUid })
   return { success: true }
 }
@@ -152,12 +174,14 @@ export async function submitWorksheetInterimResult(
   analysisUid: string,
   analysisPath: string,
   interimValues: { keyword: string; value: string }[],
+  sampleMeta?: SampleLogMeta,
 ): Promise<WorksheetActionResult> {
   const session = await getSession()
   const r = await submitAnalysisInterimResult(sessionToken(session), analysisPath, analysisUid, interimValues)
   if (!r.success) return { success: false, error: r.error ?? 'Failed to calculate/submit result.' }
   revalidatePath(`/dashboard/worksheets/${id}`)
   logExternalAuditEvent('submit', id, { analysisUid, interimValues }, 'worksheet')
+  logSampleResultEvent('submit', sampleMeta, { analysisUid, interimValues, worksheetId: id })
   await refreshSampleStatus({ analysisUid })
   return { success: true }
 }
@@ -166,12 +190,14 @@ export async function submitWorksheetInterimResult(
 export async function verifyWorksheetAnalysis(
   id: string,
   analysisUid: string,
+  sampleMeta?: SampleLogMeta,
 ): Promise<WorksheetActionResult> {
   const session = await getSession()
   const r = await transitionAnalysis(sessionToken(session), analysisUid, 'verify')
   if (!r.success) return { success: false, error: r.error ?? 'Failed to verify.' }
   revalidatePath(`/dashboard/worksheets/${id}`)
   logExternalAuditEvent('verify', id, { analysisUid }, 'worksheet')
+  logSampleResultEvent('verify', sampleMeta, { analysisUid, worksheetId: id })
   await refreshSampleStatus({ analysisUid })
   return { success: true }
 }
@@ -196,9 +222,18 @@ export async function addAnalysesToWorksheet(
   const r = await addWorksheetAnalyses(serverToken(), path, analysisUids)
   if (!r.success) return { success: false, error: r.error ?? 'Failed to add analyses.' }
   revalidateWs(id)
+  // One real "Sent for Analysis" custody row per distinct sample in this
+  // batch (not per analysis — a sample with 2 analyses assigned together is
+  // one physical handoff to the analysis bench, not two).
+  const loggedSamples = new Set<string>()
   for (const uid of analysisUids) {
     const meta = analysisMeta?.find(m => m.uid === uid)
-    if (meta) logExternalAuditEvent('assign_to_worksheet', meta.sampleId, { title: meta.title, worksheetId: id, analysisUid: uid }, 'sample')
+    if (!meta) continue
+    logExternalAuditEvent('assign_to_worksheet', meta.sampleId, { title: meta.title, worksheetId: id, analysisUid: uid }, 'sample')
+    if (!loggedSamples.has(meta.sampleId)) {
+      loggedSamples.add(meta.sampleId)
+      logCustodyEvent({ sampleId: meta.sampleId, action: 'analysed', toLocation: `Worksheet ${id}`, purpose: `Assigned to Worksheet ${id} for testing` })
+    }
   }
   return { success: true }
 }

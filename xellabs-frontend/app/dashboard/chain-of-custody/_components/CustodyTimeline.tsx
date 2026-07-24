@@ -72,7 +72,10 @@ export function eventRows(ev: CocEvent, sample: CocSample | null): Array<{ key: 
   if (ev.event_type.startsWith('custody_')) {
     if (ev.details?.from_location) rows.push({ key: 'From', value: ev.details.from_location as string })
     if (ev.details?.to_location)   rows.push({ key: 'To', value: ev.details.to_location as string })
+    if (ev.details?.received_by)   rows.push({ key: 'Received by', value: ev.details.received_by as string })
+    if (ev.details?.purpose)       rows.push({ key: 'Purpose', value: ev.details.purpose as string })
     if (ev.details?.condition)     rows.push({ key: 'Condition', value: ev.details.condition as string })
+    if (ev.details?.seal_status)   rows.push({ key: 'Seal', value: ev.details.seal_status as string })
     if (ev.details?.temperature_c) rows.push({ key: 'Temp', value: `${ev.details.temperature_c as string}°C` })
     if (ev.details?.notes)         rows.push({ key: 'Notes', value: ev.details.notes as string })
   }

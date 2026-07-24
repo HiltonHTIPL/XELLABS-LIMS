@@ -507,6 +507,14 @@ class ChainOfCustody(models.Model):
     temperature_c = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True, validators=[MinValueValidator(-80), MaxValueValidator(150)])
     condition = models.CharField(max_length=50, blank=True,
                                  choices=[("intact", "Intact"), ("damaged", "Damaged"), ("compromised", "Compromised")])
+    # Why this handoff happened (e.g. "Courier transfer", "Released for testing",
+    # "Returned to controlled storage") — distinct from `notes`, which is free-form
+    # observation text. Free text rather than a fixed choice list since the real
+    # reasons a sample changes hands vary too much across labs to enumerate.
+    purpose = models.CharField(max_length=200, blank=True)
+    seal_status = models.CharField(max_length=20, blank=True, choices=[
+        ("intact", "Seal Intact"), ("broken", "Seal Broken"), ("not_sealed", "Not Sealed"),
+    ])
     notes = models.TextField(blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
 

@@ -22,6 +22,19 @@ export type SenaiteMethodRow = {
   reviewState: string
 }
 
+// Unlike Instruments' "silently returns {} for a real list" bug (overlay-fixed
+// below), Calculations' v1-list gap is a shape mismatch: it comes back as an
+// array of bare ref objects ({uid, url, api_url}), not plain uid strings
+// (confirmed live 2026-07-23) — so a plain `as string[]` cast left every
+// checkbox unchecked even though the real link was correctly persisted.
+// Accept either shape here: a bare string, or an object with `.uid`.
+function toUidList(v: unknown): string[] {
+  if (!Array.isArray(v)) return []
+  return v
+    .map(item => (typeof item === 'string' ? item : (item && typeof item === 'object' && 'uid' in item ? String((item as { uid: unknown }).uid) : '')))
+    .filter(Boolean)
+}
+
 function mapRow(d: SetupRecord): SenaiteMethodRow {
   return {
     uid: d.uid as string,
@@ -31,8 +44,8 @@ function mapRow(d: SetupRecord): SenaiteMethodRow {
     methodId: (d.MethodID as string) ?? '',
     accredited: Boolean(d.Accredited),
     instructions: (d.Instructions as string) ?? '',
-    instrumentUids: Array.isArray(d.Instruments) ? (d.Instruments as string[]) : [],
-    calculationUids: Array.isArray(d.Calculations) ? (d.Calculations as string[]) : [],
+    instrumentUids: toUidList(d.Instruments),
+    calculationUids: toUidList(d.Calculations),
     reviewState: (d.review_state as string) ?? 'active',
   }
 }
