@@ -24,7 +24,6 @@ export default function SenaiteMethodsShell({ rows, instruments, calculations }:
 
   const instrumentOptions: RefOption[] = instruments.map(i => ({ uid: i.uid, title: i.title }))
   const calculationOptions: RefOption[] = calculations.map(c => ({ uid: c.uid, title: c.title }))
-  const statusOptions: RefOption[] = [{ uid: 'active', title: 'Active' }, { uid: 'inactive', title: 'Inactive' }]
 
   return (
     <AdminRefShell
@@ -45,7 +44,7 @@ export default function SenaiteMethodsShell({ rows, instruments, calculations }:
         { name: 'description', label: 'Description', kind: 'textarea', placeholder: 'Optional description' },
         { name: 'instructions', label: 'Instructions', kind: 'textarea', placeholder: 'Method instructions / procedure notes' },
         { name: 'accredited', label: 'Accredited', kind: 'checkbox' },
-        { name: 'reviewState', label: 'Status', kind: 'select', options: statusOptions },
+        { name: 'methodDocument', label: 'Method Document', kind: 'file', help: 'Load documents describing the method here' },
         { name: 'instrumentUids', label: 'Supported Instruments', kind: 'multiselect', options: instrumentOptions },
         { name: 'calculationUids', label: 'Supported Calculations', kind: 'multiselect', options: calculationOptions },
       ]}
