@@ -181,7 +181,7 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
             return Response({"error": "sample_id is required."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Fetch sample from lims — search by sample_id OR barcode
-        from lims.models import Sample
+        from lims.models import Sample, AnalysisRequestAnalysis
         sample_obj = (
             Sample.objects.select_related("sample_type", "client", "received_by")
             .filter(sample_id=sample_id)
@@ -240,6 +240,15 @@ class StorageLocationViewSet(viewsets.ModelViewSet):
             "sample_point": sample_obj.sample_point or "",
             "batch_id": sample_obj.batch_id or "",
             "batch_sub_group": sample_obj.batch_sub_group or "",
+            # Required for the formal Chain of Custody document (RFP-style COC
+            # requirement: the document that travels with the sample must list
+            # the analyses requested on it) — flattened across every
+            # AnalysisRequest this sample has, de-duplicated by name.
+            "required_analyses": list(dict.fromkeys(
+                AnalysisRequestAnalysis.objects.filter(analysis_request__sample=sample_obj)
+                .exclude(senaite_service_name="")
+                .values_list("senaite_service_name", flat=True)
+            )),
         }
 
         # Current slot holding this sample

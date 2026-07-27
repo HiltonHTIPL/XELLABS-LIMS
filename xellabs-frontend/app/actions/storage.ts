@@ -222,6 +222,7 @@ export type CocSample = {
   sample_point: string
   batch_id: string
   batch_sub_group: string
+  required_analyses: string[]
 }
 
 export type CocEvent = {

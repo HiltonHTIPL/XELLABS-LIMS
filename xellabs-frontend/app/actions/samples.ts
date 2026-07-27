@@ -145,7 +145,7 @@ export async function receiveSample(uid: string): Promise<WorkflowResult> {
     // know a receive just happened and by whom, so it belongs in the same
     // lims.ChainOfCustody ledger the manual "Log Custody Event" UI writes to
     // (POST /api/lims/chain-of-custody/), not only the coarse AuditEvent.
-    logCustodyEvent({ sampleId: arId, action: 'received', toLocation: 'Receiving', purpose: 'Sample received into the lab' })
+    await logCustodyEvent({ sampleId: arId, action: 'received', toLocation: 'Receiving', purpose: 'Sample received into the lab' })
     await refreshSampleStatus({ uid })
   }
   return { success: result.success, message: result.success ? 'Sample received.' : (result.error ?? 'Failed to receive sample.') }
@@ -173,7 +173,12 @@ export async function publishSample(uid: string): Promise<WorkflowResult> {
   const result = await senaiteWorkflowAction(token, uid, 'publish')
   revalidatePath('/dashboard/samples-overview')
   if (result.success) {
-    logExternalAuditEvent('publish', await resolveArId(token, uid), undefined, 'sample')
+    const arId = await resolveArId(token, uid)
+    logExternalAuditEvent('publish', arId, undefined, 'sample')
+    // Final custody milestone — closes the chain with a real "Sample
+    // Completed" row instead of the ledger stopping at Stored/Analysed
+    // forever, even for a sample that genuinely finished its full lifecycle.
+    logCustodyEvent({ sampleId: arId, action: 'completed', purpose: 'Results published — sample lifecycle complete' })
     await refreshSampleStatus({ uid })
   }
   return { success: result.success, message: result.success ? 'Sample published.' : (result.error ?? 'Failed to publish sample.') }

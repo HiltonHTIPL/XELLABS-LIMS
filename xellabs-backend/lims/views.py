@@ -210,8 +210,8 @@ class SampleViewSet(viewsets.ModelViewSet):
     serializer_class = SampleSerializer
     permission_classes = [ReadOnlyOrSampleHandler]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["status", "sample_type", "client", "priority", "hold_for_qa", "senaite_uid", "sample_id"]
-    search_fields = ["sample_id", "barcode", "description"]
+    filterset_fields = ["status", "sample_type", "client", "priority", "hold_for_qa", "senaite_uid", "sample_id", "senaite_ar_id", "barcode"]
+    search_fields = ["sample_id", "senaite_ar_id", "barcode", "description"]
     ordering_fields = ["created_at", "collection_date", "received_date", "expiry_date"]
 
     def get_queryset(self):

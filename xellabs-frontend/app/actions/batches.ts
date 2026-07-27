@@ -6,6 +6,7 @@ import {
   setSenaiteBatchState,
   fetchSenaiteClients,
   fetchSenaiteSamples,
+  fetchSenaiteSample,
   fetchAllAnalyses,
   submitAnalysisResult,
   updateSenaiteSample,
@@ -14,6 +15,7 @@ import {
   type SenaiteAnalysisFull,
 } from '@/app/lib/senaite'
 import { serverToken } from '@/app/lib/senaite-auth'
+import { logCustodyEvent } from '@/app/actions/chain-of-custody'
 
 export async function getBatchesList(): Promise<SenaiteBatch[]> {
   return fetchSenaiteBatches(serverToken())
@@ -63,12 +65,28 @@ export async function assignSamplesToBatch(
   sampleUids: string[]
 ): Promise<{ success: boolean; message: string }> {
   if (sampleUids.length === 0) return { success: true, message: 'No samples selected.' }
-  const results = await Promise.all(sampleUids.map(uid => updateSenaiteSample(serverToken(), uid, { Batch: batchUid })))
+  const token = serverToken()
+  const results = await Promise.all(sampleUids.map(uid => updateSenaiteSample(token, uid, { Batch: batchUid })))
   const failed = results.filter(r => !r.success)
   revalidatePath(`/dashboard/batches/${batchUid}`)
   if (failed.length > 0) {
     return { success: false, message: `${failed.length} of ${sampleUids.length} sample(s) failed: ${failed[0].error ?? 'unknown error'}` }
   }
+  // Log a real "Added to Batch" custody row for every sample successfully
+  // grouped under this batch. Awaited (not fire-and-forget) — a Server
+  // Action's execution can be torn down as soon as it returns, so an
+  // un-awaited promise here is not guaranteed to finish; confirmed live,
+  // this was silently dropping every batch-assignment custody log. A
+  // logging failure still never fails the batch assignment itself (already
+  // committed above) — only swallowed per-sample, not propagated.
+  const batches = await fetchSenaiteBatches(token)
+  const batchLabel = batches.find(b => b.uid === batchUid)?.id ?? batchUid
+  await Promise.all(sampleUids.map(async uid => {
+    const sample = await fetchSenaiteSample(token, uid)
+    if (sample?.id) {
+      await logCustodyEvent({ sampleId: sample.id, action: 'batched', toLocation: `Batch ${batchLabel}`, purpose: `Added to Batch ${batchLabel}` })
+    }
+  }))
   return { success: true, message: `${sampleUids.length} sample${sampleUids.length > 1 ? 's' : ''} added to batch.` }
 }
 

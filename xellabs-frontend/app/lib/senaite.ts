@@ -1,12 +1,21 @@
 export const SENAITE_URL = process.env.SENAITE_URL ?? 'http://senaite:8080/senaite'
 // Plone/SENAITE site root path — used for legacy create API parent_path.
-// When SENAITE_URL has no path (e.g. http://172.21.0.1:8096), pathname is '/'
-// which produces '//batches' — incorrect. Always use '/senaite' as the site root.
+// Whatever path (if any) SENAITE_URL itself carries IS the site root — never
+// force a '/senaite' fallback here. A direct container address always
+// includes '/senaite' explicitly in its own SENAITE_URL (e.g.
+// http://senaite:8080/senaite), so its pathname is already correct. A
+// reverse proxy in front of SENAITE (e.g. a whitelabel proxy on its own
+// port, serving the Zope site AT ROOT via its own VirtualHostBase rewrite)
+// deliberately has NO path in its URL — forcing '/senaite' onto that case
+// double-prefixes every request the proxy already rewrites, producing a
+// nonexistent senaite/senaite/... object and a 404 on every single create/
+// write call. Confirmed live: the previous '/senaite' fallback broke
+// worksheet creation (and would have broken every other write) against a
+// proxied SENAITE_URL with no path — see Prodfix.txt.
 export const SENAITE_SITE_PATH = (() => {
   try {
-    const p = new URL(SENAITE_URL).pathname.replace(/\/$/, '')
-    return p || '/senaite'
-  } catch { return '/senaite' }
+    return new URL(SENAITE_URL).pathname.replace(/\/$/, '')
+  } catch { return '' }
 })()
 // Protocol+host only, no site path — object `path` values returned by SENAITE
 // (e.g. "/senaite/clients/client-8") already include the site path, so custom

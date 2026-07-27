@@ -2,7 +2,7 @@
 import { revalidatePath } from 'next/cache'
 import { serverToken } from '@/app/lib/senaite-auth'
 import {
-  fetchSetupList, createSetupItem, updateSetupItem, deactivateSetupItem, activateSetupItem,
+  fetchSetupList, createSetupItem, updateSetupItem, deactivateSetupItem,
   fetchRestapiOverlay, type SetupRecord,
 } from '@/app/lib/senaite-setup'
 import { fetchSenaiteInstruments, type SenaiteInstrument } from '@/app/lib/senaite'
@@ -88,14 +88,24 @@ function buildBody(fd: FormData) {
   return { body, errors }
 }
 
-// Applies the form's Status selection via the Plone workflow transition —
-// idempotent (activating an already-active object / deactivating an already-
-// inactive one is a harmless no-op), so it's safe to call unconditionally
-// after every create/update rather than diffing against the prior state.
-async function applyStatus(path: string, fd: FormData) {
-  const wantInactive = (fd.get('reviewState') as string) === 'inactive'
-  if (wantInactive) await deactivateSetupItem(serverToken(), path)
-  else await activateSetupItem(serverToken(), path)
+// Reads the "methodDocument" file input (if one was chosen) and PATCHes it
+// onto the Method as SENAITE's MethodDocument BlobFileField — confirmed live
+// that a plain restapi PATCH with a base64-encoded body persists cleanly for
+// this field (2026-07-27), same shape already used for Attachment uploads in
+// core/senaite_service.py. A no-op when no file was chosen (edit forms don't
+// re-upload on every save).
+async function applyMethodDocument(path: string, fd: FormData) {
+  const file = fd.get('methodDocument')
+  if (!(file instanceof File) || file.size === 0) return
+  const buf = Buffer.from(await file.arrayBuffer())
+  await updateSetupItem(serverToken(), path, {
+    MethodDocument: {
+      data: buf.toString('base64'),
+      encoding: 'base64',
+      filename: file.name,
+      'content-type': file.type || 'application/octet-stream',
+    },
+  })
 }
 
 export async function createSenaiteMethodRecord(_p: SenaiteMethodFormState, fd: FormData): Promise<SenaiteMethodFormState> {
@@ -103,7 +113,7 @@ export async function createSenaiteMethodRecord(_p: SenaiteMethodFormState, fd: 
   if (Object.keys(errors).length) return { errors }
   const r = await createSetupItem(serverToken(), 'Method', 'methods', body)
   if (!r.success) return { message: r.error ?? 'Failed to create method.' }
-  if (r.path) await applyStatus(r.path, fd)
+  if (r.path) await applyMethodDocument(r.path, fd)
   revalidatePath('/dashboard/methods')
   return { success: true, message: `Method "${body.title as string}" created.` }
 }
@@ -115,7 +125,7 @@ export async function updateSenaiteMethodRecord(_uid: string, _p: SenaiteMethodF
   if (!path) return { message: 'Missing record path — cannot update.' }
   const r = await updateSetupItem(serverToken(), path, body)
   if (!r.success) return { message: r.error ?? 'Failed to update method.' }
-  await applyStatus(path, fd)
+  await applyMethodDocument(path, fd)
   revalidatePath('/dashboard/methods')
   return { success: true, message: `Method "${body.title as string}" updated.` }
 }

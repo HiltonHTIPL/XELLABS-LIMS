@@ -491,9 +491,15 @@ class ChainOfCustody(models.Model):
         ("collected", "Sample Collected"),
         ("transferred", "Transferred"),
         ("received", "Received at Lab"),
+        ("batched", "Added to Batch"),
         ("stored", "Stored"),
         ("retrieved", "Retrieved from Storage"),
         ("analysed", "Sent for Analysis"),
+        # The final custody milestone — sample results published, chain of
+        # custody complete. Without this the ledger always stopped at
+        # Stored/Analysed, never reaching a real closing entry, even for a
+        # sample that had genuinely finished its full lifecycle.
+        ("completed", "Sample Completed"),
         ("disposed", "Disposed"),
     ]
     sample = models.ForeignKey(Sample, on_delete=models.CASCADE, related_name="custody_records")

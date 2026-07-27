@@ -1,5 +1,5 @@
 'use client'
-import { useState, useActionState } from 'react'
+import { useState, useRef, useActionState } from 'react'
 import { useRouter } from 'next/navigation'
 import { exportRowsToCsv } from '@/app/lib/exportCsv'
 import ImportButton, { type ParsedRow } from './ImportButton'
@@ -13,7 +13,7 @@ export type AdminFormState = { success?: boolean; message?: string; errors?: Rec
 
 export type RefOption = { uid: string; title: string }
 
-export type FieldKind = 'text' | 'textarea' | 'number' | 'select' | 'multiselect' | 'select-or-add' | 'checkbox'
+export type FieldKind = 'text' | 'textarea' | 'number' | 'select' | 'multiselect' | 'select-or-add' | 'checkbox' | 'file'
 
 export type QuickField = { key: string; label: string; required?: boolean; placeholder?: string }
 
@@ -210,9 +210,11 @@ export default function AdminRefShell({
             {isEditing && editing.path != null && <input type="hidden" name="_path" value={String(editing.path)} />}
             {/* Serialize values into FormData via hidden inputs */}
             {fields.map(f =>
-              f.kind === 'multiselect'
-                ? (vals[f.name] as string[]).map(uid => <input key={`${f.name}-${uid}`} type="hidden" name={f.name} value={uid} />)
-                : <input key={`h-${f.name}`} type="hidden" name={f.name} value={vals[f.name] as string} />,
+              f.kind === 'file'
+                ? null // real <input type="file"> below already carries this field's name into FormData
+                : f.kind === 'multiselect'
+                  ? (vals[f.name] as string[]).map(uid => <input key={`${f.name}-${uid}`} type="hidden" name={f.name} value={uid} />)
+                  : <input key={`h-${f.name}`} type="hidden" name={f.name} value={vals[f.name] as string} />,
             )}
 
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
@@ -391,6 +393,10 @@ function FieldInput({ field, value, options, error, onChange, onToggleMulti, onO
     )
   }
 
+  if (field.kind === 'file') {
+    return <FileFieldInput field={field} error={error} />
+  }
+
   if (field.kind === 'checkbox') {
     return (
       <div>
@@ -428,6 +434,32 @@ function FieldInput({ field, value, options, error, onChange, onToggleMulti, onO
     <div>{label}
       <input type={field.kind === 'number' ? 'number' : 'text'} placeholder={field.placeholder}
         value={value as string} onChange={e => onChange(e.target.value)} className={base} style={style} />
+      {field.help && <p className="mt-0.5" style={{ fontSize: 10, color: '#374151' }}>{field.help}</p>}
+      {error && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{error}</p>}
+    </div>
+  )
+}
+
+// Matches the app-wide "Choose File" button pattern (SamplePointsShell.tsx,
+// InstrumentMaintenanceShell.tsx) instead of a bare native file input.
+function FileFieldInput({ field, error }: { field: FieldConfig; error?: string }) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [fileName, setFileName] = useState('')
+  return (
+    <div>
+      <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
+        {field.label}{field.required && <span style={{ color: '#EF4444' }}> *</span>}
+      </label>
+      <input ref={inputRef} type="file" name={field.name} className="hidden"
+        onChange={e => setFileName(e.target.files?.[0]?.name ?? '')} />
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => inputRef.current?.click()}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
+          style={{ border: `1px solid ${error ? '#FCA5A5' : '#D1D5DB'}`, color: '#374151', background: '#fff', cursor: 'pointer' }}>
+          <MI name="upload_file" size={13} color="#374151" /> Choose File
+        </button>
+        <span className="text-xs" style={{ color: fileName ? '#111827' : '#374151' }}>{fileName || 'No file chosen'}</span>
+      </div>
       {field.help && <p className="mt-0.5" style={{ fontSize: 10, color: '#374151' }}>{field.help}</p>}
       {error && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{error}</p>}
     </div>

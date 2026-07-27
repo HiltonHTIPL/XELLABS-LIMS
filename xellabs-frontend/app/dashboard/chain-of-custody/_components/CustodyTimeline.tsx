@@ -40,6 +40,8 @@ export function eventMeta(ev: CocEvent): { label: string; icon: string; color: s
       // any other custody action still renders (via ev.label), just without
       // a bespoke icon/color until it's actually used.
       if (ev.event_type === 'custody_disposed') return { label: ev.label, icon: 'delete_forever', color: '#991B1B' }
+      if (ev.event_type === 'custody_completed') return { label: ev.label, icon: 'task_alt', color: '#22C55E' }
+      if (ev.event_type === 'custody_batched') return { label: ev.label, icon: 'layers', color: '#0154FC' }
       return { label: ev.label, icon: 'edit', color: '#F59E0B' }
   }
 }
