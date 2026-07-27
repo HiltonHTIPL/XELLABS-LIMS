@@ -13,7 +13,7 @@ export type AdminFormState = { success?: boolean; message?: string; errors?: Rec
 
 export type RefOption = { uid: string; title: string }
 
-export type FieldKind = 'text' | 'textarea' | 'number' | 'select' | 'multiselect' | 'select-or-add' | 'checkbox' | 'file'
+export type FieldKind = 'text' | 'textarea' | 'richtext' | 'number' | 'select' | 'multiselect' | 'select-or-add' | 'checkbox' | 'file'
 
 export type QuickField = { key: string; label: string; required?: boolean; placeholder?: string }
 
@@ -63,6 +63,10 @@ type Props = {
   rows: AdminRow[]
   createAction: (prev: AdminFormState, fd: FormData) => Promise<AdminFormState>
   updateAction: (uid: string, prev: AdminFormState, fd: FormData) => Promise<AdminFormState>
+  // Optional override for the create/edit drawer width (default 460px) —
+  // use for forms with wide fields (e.g. a richtext editor) that feel cramped
+  // at the default width. Never shrinks below the default without a reason.
+  formWidth?: number
 }
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
@@ -91,7 +95,7 @@ function rowToVals(row: AdminRow, fields: FieldConfig[]): FormVals {
 }
 
 export default function AdminRefShell({
-  title, subtitle, singularLabel, icon, columns, exportColumns, fields, rows, createAction, updateAction,
+  title, subtitle, singularLabel, icon, columns, exportColumns, fields, rows, createAction, updateAction, formWidth,
 }: Props) {
   const router = useRouter()
   const [showForm, setShowForm] = useState(false)
@@ -192,7 +196,7 @@ export default function AdminRefShell({
       {/* Drawer — full-viewport overlay (matches app-wide drawer convention) */}
       <div style={{ position: 'fixed', inset: 0, zIndex: 200, pointerEvents: showForm ? 'auto' : 'none' }}>
         <div onClick={closeForm} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.30)', opacity: showForm ? 1 : 0, transition: 'opacity 0.25s ease' }} />
-        <div style={{ position: 'absolute', top: 'var(--dashboard-header-h)', right: 0, bottom: 'var(--dashboard-footer-h)', width: 460, maxWidth: '92vw', backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.12)', transform: showForm ? 'translateX(0)' : 'translateX(100%)', transition: 'transform 0.28s cubic-bezier(0.4,0,0.2,1)', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ position: 'absolute', top: 'var(--dashboard-header-h)', right: 0, bottom: 'var(--dashboard-footer-h)', width: formWidth ?? 460, maxWidth: '92vw', backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.12)', transform: showForm ? 'translateX(0)' : 'translateX(100%)', transition: 'transform 0.28s cubic-bezier(0.4,0,0.2,1)', display: 'flex', flexDirection: 'column' }}>
           <div className="flex items-center justify-between px-6 py-4 shrink-0" style={{ borderBottom: '1px solid #F3F4F6' }}>
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: isEditing ? '#EFF6FF' : '#DBEAFE' }}>
@@ -361,6 +365,16 @@ function FieldInput({ field, value, options, error, onChange, onToggleMulti, onO
     )
   }
 
+  if (field.kind === 'richtext') {
+    return (
+      <div>{label}
+        <RichTextInput value={value as string} onChange={onChange} error={!!error} />
+        {field.help && <p className="mt-0.5" style={{ fontSize: 10, color: '#374151' }}>{field.help}</p>}
+        {error && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{error}</p>}
+      </div>
+    )
+  }
+
   if (field.kind === 'select') {
     return (
       <div>{label}
@@ -462,6 +476,51 @@ function FileFieldInput({ field, error }: { field: FieldConfig; error?: string }
       </div>
       {field.help && <p className="mt-0.5" style={{ fontSize: 10, color: '#374151' }}>{field.help}</p>}
       {error && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{error}</p>}
+    </div>
+  )
+}
+
+// Lightweight rich-text field matching SENAITE's own Instructions-style
+// toolbar (bold/italic/underline/lists/align) — uses native execCommand
+// instead of a new editor dependency (KISS/YAGNI, avoids the npm-install +
+// lock-file + Docker rebuild dance for a formatting toolbar). Stores/returns
+// an HTML string, same as SENAITE's rich-text field storage.
+function RichTextInput({ value, onChange, error }: { value: string; onChange: (v: string) => void; error?: boolean }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const exec = (cmd: string) => {
+    ref.current?.focus()
+    document.execCommand(cmd)
+    onChange(ref.current?.innerHTML ?? '')
+  }
+  const toolBtn = (icon: string, cmd: string, title: string) => (
+    <button type="button" title={title} onMouseDown={e => e.preventDefault()} onClick={() => exec(cmd)}
+      className="flex items-center justify-center rounded" style={{ width: 26, height: 26, color: '#374151' }}>
+      <MI name={icon} size={15} color="#374151" />
+    </button>
+  )
+  return (
+    <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${error ? '#FCA5A5' : '#D1D5DB'}` }}>
+      <div className="flex items-center gap-0.5 px-1.5 py-1" style={{ background: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
+        {toolBtn('format_bold', 'bold', 'Bold')}
+        {toolBtn('format_italic', 'italic', 'Italic')}
+        {toolBtn('format_underlined', 'underline', 'Underline')}
+        <span style={{ width: 1, height: 16, background: '#E5E7EB', margin: '0 4px' }} />
+        {toolBtn('format_align_left', 'justifyLeft', 'Align left')}
+        {toolBtn('format_align_center', 'justifyCenter', 'Align center')}
+        {toolBtn('format_align_right', 'justifyRight', 'Align right')}
+        <span style={{ width: 1, height: 16, background: '#E5E7EB', margin: '0 4px' }} />
+        {toolBtn('format_list_bulleted', 'insertUnorderedList', 'Bullet list')}
+        {toolBtn('format_list_numbered', 'insertOrderedList', 'Numbered list')}
+      </div>
+      <div
+        ref={ref}
+        contentEditable
+        suppressContentEditableWarning
+        onInput={() => onChange(ref.current?.innerHTML ?? '')}
+        dangerouslySetInnerHTML={{ __html: value || '' }}
+        className="px-3 py-2 text-xs outline-none"
+        style={{ minHeight: 120, color: '#111827' }}
+      />
     </div>
   )
 }

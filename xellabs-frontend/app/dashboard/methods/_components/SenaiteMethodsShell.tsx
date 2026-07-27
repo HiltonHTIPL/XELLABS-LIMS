@@ -31,18 +31,18 @@ export default function SenaiteMethodsShell({ rows, instruments, calculations }:
       subtitle="Analytical methods available to Analysis Services and Worksheets"
       singularLabel="Method"
       icon="biotech"
+      formWidth={560}
       columns={[
-        { key: 'title', label: 'Name', width: '20%' },
+        { key: 'title', label: 'Title', width: '20%' },
         { key: 'methodId', label: 'Code', width: '12%' },
-        { key: 'description', label: 'Description', width: '26%' },
-        { key: 'statusLabel', label: 'Status', width: '12%' },
-        { key: 'instrumentNames', label: 'Linked Instruments', width: '30%' },
+        { key: 'description', label: 'Description', width: '28%' },
+        { key: 'instrumentNames', label: 'Linked Instruments', width: '40%' },
       ]}
       fields={[
-        { name: 'title', label: 'Name', kind: 'text', required: true, placeholder: 'e.g. Titrimetric Method' },
+        { name: 'title', label: 'Title', kind: 'text', required: true, placeholder: 'e.g. Titrimetric Method' },
         { name: 'methodId', label: 'Method ID / Code', kind: 'text', placeholder: 'e.g. MTH-SOIL-PH-001' },
         { name: 'description', label: 'Description', kind: 'textarea', placeholder: 'Optional description' },
-        { name: 'instructions', label: 'Instructions', kind: 'textarea', placeholder: 'Method instructions / procedure notes' },
+        { name: 'instructions', label: 'Instructions', kind: 'richtext', help: 'Technical description and instructions intended for analysts' },
         { name: 'accredited', label: 'Accredited', kind: 'checkbox' },
         { name: 'methodDocument', label: 'Method Document', kind: 'file', help: 'Load documents describing the method here' },
         { name: 'instrumentUids', label: 'Supported Instruments', kind: 'multiselect', options: instrumentOptions },
