@@ -11,7 +11,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   const sample = await getLabSample(sampleIdNum)
   if (!sample) notFound()
 
-  const events = await getSampleAuditEvents(sample.id)
+  const events = await getSampleAuditEvents(sample.id, sample.sample_id)
 
   return <SampleAuditTrailShell sample={sample} events={events} />
 }

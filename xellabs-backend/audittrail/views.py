@@ -17,7 +17,16 @@ from .serializers import (
 # today (sample lifecycle transitions, and worksheet transitions) — deliberately
 # a closed lookup table, not a way to pass an arbitrary app_label/model string
 # in from an API client.
-RECORD_TYPE_CONTENT_TYPES = {"sample": ("lims", "sample"), "worksheet": ("lims", "worksheet")}
+RECORD_TYPE_CONTENT_TYPES = {
+    "sample": ("lims", "sample"),
+    "worksheet": ("lims", "worksheet"),
+    "analysisrequest": ("lims", "analysisrequest"),
+    "result": ("lims", "result"),
+    "method": ("lims", "method"),
+    "sampletype": ("lims", "sampletype"),
+    "sampletemplate": ("lims", "sampletemplate"),
+    "analysisspecification": ("lims", "analysisspecification"),
+}
 
 
 class AuditEventFilter(df_filters.FilterSet):

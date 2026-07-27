@@ -590,12 +590,12 @@ function DataTableInner<T extends { id: string | number }>({
             {rows.length === 0 ? (
               <tr><td colSpan={totalCols} style={{ padding: 40, textAlign: 'center', color: '#374151', fontSize: 13 }}>{emptyMessage}</td></tr>
             ) : rows.map((row, idx) => {
-              const rowBg = idx % 2 === 0 ? '#fff' : '#FAFAFA'
               const isExpanded = expandedRowIds?.includes(row.id)
+              const rowBg = isExpanded ? '#EFF6FF' : (idx % 2 === 0 ? '#fff' : '#FAFAFA')
               return (
                 <Fragment key={row.id}>
                   <tr onClick={() => onRowClick?.(row)}
-                    style={{ borderBottom: '1px solid #F3F4F6', background: rowBg, cursor: onRowClick ? 'pointer' : 'default' }}>
+                    style={{ borderBottom: '1px solid #F3F4F6', background: rowBg, cursor: onRowClick ? 'pointer' : 'default', borderLeft: isExpanded ? '3px solid #2563EB' : '3px solid transparent' }}>
                     {selectable && (
                       <td style={{ padding: cellPad, position: 'sticky', left: 0, zIndex: 6, background: rowBg }} onClick={e => e.stopPropagation()}>
                         <input type="checkbox" checked={table.selectedIds.includes(row.id)} onChange={() => table.toggleSelection(row.id as number)} />
