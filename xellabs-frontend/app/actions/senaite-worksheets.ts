@@ -7,7 +7,8 @@ import {
   listSenaiteWorksheets, transitionSenaiteWorksheet,
   submitAnalysisResult, submitAnalysisInterimResult, transitionAnalysis,
   addWorksheetAnalyses, removeWorksheetAnalyses, addWorksheetDuplicate,
-  addWorksheetReference, updateWorksheet, fetchUnassignedAnalyses, fetchLabAnalysts,
+  addWorksheetReference, updateWorksheet, deleteSenaiteWorksheet,
+  fetchUnassignedAnalyses, fetchLabAnalysts, fetchServiceMethodMap,
   type WorksheetInfo, type WorksheetListItem, type UnassignedAnalysis, type LabAnalyst,
 } from '@/app/lib/senaite-worksheets'
 import {
@@ -48,10 +49,19 @@ export async function getSenaiteWorksheetDetailById(id: string): Promise<Workshe
   return fetchWorksheetInfo(serverToken(), `${SENAITE_SITE_PATH}/worksheets/${id}`)
 }
 
-// Templates the create flow can apply (active only), as {uid,title}.
-export async function getWorksheetTemplateOptions(): Promise<RefOption[]> {
+// Templates the create flow can apply (active only). Carries each template's
+// configured instrument uid so the New Worksheet form can auto-fill Instrument
+// when a template is picked, matching SENAITE's own `templateinstruments` JS.
+export type WorksheetTemplateOption = {
+  uid: string; title: string; instrumentUid: string
+  serviceUids: string[]; restrictToMethodUid: string
+}
+export async function getWorksheetTemplateOptions(): Promise<WorksheetTemplateOption[]> {
   const rows = await listWorksheetTemplates()
-  return rows.map(r => ({ uid: r.uid, title: r.title }))
+  return rows.map(r => ({
+    uid: r.uid, title: r.title, instrumentUid: r.instrumentUid,
+    serviceUids: r.serviceUids, restrictToMethodUid: r.restrictToMethodUid,
+  }))
 }
 
 export async function getWorksheetInstrumentOptions(): Promise<RefOption[]> {
@@ -65,6 +75,11 @@ export async function getWorksheetMethodOptions(): Promise<RefOption[]> {
 // Unassigned routine analyses available to add to a worksheet.
 export async function getUnassignedAnalyses(): Promise<UnassignedAnalysis[]> {
   return fetchUnassignedAnalyses(serverToken())
+}
+
+// serviceUid → supported method uids, for the add-analyses template-method filter.
+export async function getServiceMethodMap(): Promise<Record<string, string[]>> {
+  return fetchServiceMethodMap(serverToken())
 }
 
 // Active QC materials (reference samples) selectable as Blank/Control on a
@@ -202,6 +217,27 @@ export async function verifyWorksheetAnalysis(
   return { success: true }
 }
 
+// Generic analysis-level workflow transition (retract / reject / and any other
+// SENAITE analysis transition). Identity-sensitive like verify, so it uses the
+// logged-in user's own SENAITE token — SENAITE's self-verification and role
+// guards key off the acting user. Invalid transitions are rejected by SENAITE's
+// own guard and surfaced as an error, so this can't corrupt state.
+export async function transitionWorksheetAnalysis(
+  id: string,
+  analysisUid: string,
+  transition: string,
+  sampleMeta?: SampleLogMeta,
+): Promise<WorksheetActionResult> {
+  const session = await getSession()
+  const r = await transitionAnalysis(sessionToken(session), analysisUid, transition)
+  if (!r.success) return { success: false, error: r.error ?? `Failed to ${transition}.` }
+  revalidatePath(`/dashboard/worksheets/${id}`)
+  logExternalAuditEvent(transition, id, { analysisUid }, 'worksheet')
+  logSampleResultEvent(transition, sampleMeta, { analysisUid, worksheetId: id })
+  await refreshSampleStatus({ analysisUid })
+  return { success: true }
+}
+
 // ── Manual worksheet building ──────────────────────────────────────────────
 function revalidateWs(id: string) {
   revalidatePath('/dashboard/worksheets')
@@ -268,6 +304,15 @@ export async function addReferenceToWorksheet(
   const r = await addWorksheetReference(serverToken(), path, referenceUid, serviceUids)
   if (!r.success) return { success: false, error: r.error ?? 'Failed to add QC.' }
   revalidateWs(id)
+  return { success: true }
+}
+
+// Remove an empty worksheet (restapi DELETE — see deleteSenaiteWorksheet).
+export async function removeWorksheet(path: string, id: string): Promise<WorksheetActionResult> {
+  const r = await deleteSenaiteWorksheet(serverToken(), path)
+  if (!r.success) return { success: false, error: r.error ?? 'Failed to remove worksheet.' }
+  revalidatePath('/dashboard/worksheets')
+  logExternalAuditEvent('remove', id, undefined, 'worksheet')
   return { success: true }
 }
 

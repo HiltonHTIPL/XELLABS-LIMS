@@ -19,28 +19,24 @@ export default function GlobalError({ error }: { error: Error }) {
   }, [error])
 
   return (
-    <html>
-      <body>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: 'sans-serif' }}>
-          <div style={{ textAlign: 'center' }}>
-            {loopDetected ? (
-              <>
-                <p style={{ color: '#666', marginBottom: 12 }}>
-                  This page couldn&apos;t recover automatically.
-                </p>
-                <button
-                  onClick={() => { clearReloadGuard(); window.location.href = '/dashboard' }}
-                  style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid #ccc', background: '#fff', cursor: 'pointer' }}
-                >
-                  Return to Dashboard
-                </button>
-              </>
-            ) : (
-              <p style={{ color: '#666' }}>Reloading...</p>
-            )}
-          </div>
-        </div>
-      </body>
-    </html>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: 'sans-serif' }}>
+      <div style={{ textAlign: 'center' }}>
+        {loopDetected ? (
+          <>
+            <p style={{ color: '#666', marginBottom: 12 }}>
+              This page couldn&apos;t recover automatically.
+            </p>
+            <button
+              onClick={() => { clearReloadGuard(); window.location.href = '/dashboard' }}
+              style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid #ccc', background: '#fff', cursor: 'pointer' }}
+            >
+              Return to Dashboard
+            </button>
+          </>
+        ) : (
+          <p style={{ color: '#666' }}>Reloading...</p>
+        )}
+      </div>
+    </div>
   )
 }

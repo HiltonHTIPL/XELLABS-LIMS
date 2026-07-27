@@ -53,6 +53,29 @@ export type WorksheetAnalysisInfo = {
   aboveUdl: boolean
   belowLoq: boolean
   aboveUoq: boolean
+  // manage_results detail columns (from the @@worksheet-info view)
+  dl: string
+  uncertainty: string
+  specification: string
+  retested: boolean
+  methodTitle: string
+  methodUid: string
+  instrumentTitle: string
+  instrumentUid: string
+  attachmentsCount: number
+  captured: string
+  dueDate: string
+  remarks: string
+  // Rich slot-header context (routine rows use the sample fields; QC rows use
+  // referenceTitle/supplierTitle; a duplicate row carries dupSourceUid, which
+  // the shell maps to the source slot's position).
+  clientTitle: string
+  sampleType: string
+  samplePoint: string
+  dateReceived: string
+  referenceTitle: string
+  supplierTitle: string
+  dupSourceUid: string
 }
 
 export type WorksheetSlot = {
@@ -85,15 +108,36 @@ export type WorksheetListItem = {
   uid: string
   id: string
   path: string
-  analyst: string
+  // Raw SENAITE member id of the assigned analyst (e.g. "Hilton_analyst").
+  // The shell resolves this to a full name via the lab-analysts list (SoC:
+  // lib returns the stored value, presentation layer maps it to a label); the
+  // "Mine" filter and Reassign both key off this id, not the display name.
+  analystId: string
   reviewState: string
   created: string
   instrumentTitle: string
   templateTitle: string
   numAnalyses: number
+  // SENAITE worksheet-list catalog columns (worksheets.pt) — progress bar +
+  // the three separate counts SENAITE shows instead of one total.
+  progress: number
+  numRegularSamples: number
+  numQcAnalyses: number
+  numRegularAnalyses: number
 }
 
 type RawView = Record<string, unknown>
+
+// SENAITE ResultsRange dict → "min – max" display string (SoC: presentation
+// lives here, the view emits the raw dict). Empty when no spec is configured.
+function formatRange(rr: unknown): string {
+  if (!rr || typeof rr !== 'object') return ''
+  const r = rr as RawView
+  const min = r.min == null ? '' : String(r.min)
+  const max = r.max == null ? '' : String(r.max)
+  if (min && max) return `${min} – ${max}`
+  return min || max || ''
+}
 
 function mapAnalysis(a: RawView | null): WorksheetAnalysisInfo | null {
   if (!a) return null
@@ -121,6 +165,25 @@ function mapAnalysis(a: RawView | null): WorksheetAnalysisInfo | null {
     aboveUdl: Boolean(a.above_udl),
     belowLoq: Boolean(a.below_loq),
     aboveUoq: Boolean(a.above_uoq),
+    dl: (a.detection_limit_operand as string) ?? '',
+    uncertainty: a.uncertainty == null ? '' : String(a.uncertainty),
+    specification: formatRange(a.results_range),
+    retested: Boolean(a.retested),
+    methodTitle: (a.method_title as string) ?? '',
+    methodUid: (a.method_uid as string) ?? '',
+    instrumentTitle: (a.instrument_title as string) ?? '',
+    instrumentUid: (a.instrument_uid as string) ?? '',
+    attachmentsCount: Number(a.attachments_count) || 0,
+    captured: (a.result_captured as string) ?? '',
+    dueDate: (a.due_date as string) ?? '',
+    remarks: (a.remarks as string) ?? '',
+    clientTitle: (a.client_title as string) ?? '',
+    sampleType: (a.sample_type as string) ?? '',
+    samplePoint: (a.sample_point as string) ?? '',
+    dateReceived: (a.date_received as string) ?? '',
+    referenceTitle: (a.reference_title as string) ?? '',
+    supplierTitle: (a.supplier_title as string) ?? '',
+    dupSourceUid: (a.dup_source_uid as string) ?? '',
   }
 }
 
@@ -223,19 +286,28 @@ export async function listSenaiteWorksheets(token: string): Promise<WorksheetLis
     // map instead of trusting `.title` on the reference object.
     const instrumentTitles = await fetchSenaiteTitleMap(token, 'Instrument')
     return items.map(w => {
-      const analyst = (w.Analyst as RawView) ?? {}
       const instrument = (w.Instrument as RawView) ?? {}
       const instrumentUid = (instrument.uid as string) ?? ''
+      // Analyst comes back as a plain member-id string on this endpoint
+      // (confirmed live: both `getAnalyst` and `Analyst` are e.g.
+      // "Hilton_analyst", never a resolved-fullname reference object).
+      const analystId = (w.getAnalyst as string) ?? (typeof w.Analyst === 'string' ? (w.Analyst as string) : '') ?? ''
+      const numRegularAnalyses = Number(w.getNumberOfRegularAnalyses) || 0
+      const numQcAnalyses = Number(w.getNumberOfQCAnalyses) || 0
       return {
         uid: (w.uid as string) ?? '',
         id: (w.id as string) ?? '',
         path: (w.path as string) ?? '',
-        analyst: (analyst.fullname as string) ?? (w.getAnalyst as string) ?? (w.Analyst as string) ?? '',
+        analystId,
         reviewState: (w.review_state as string) ?? '',
         created: (w.created as string) ?? '',
         instrumentTitle: instrumentUid ? (instrumentTitles[instrumentUid] ?? '') : '',
         templateTitle: (w.getWorksheetTemplateTitle as string) ?? '',
-        numAnalyses: Array.isArray(w.Analyses) ? (w.Analyses as unknown[]).length : 0,
+        numAnalyses: numRegularAnalyses + numQcAnalyses,
+        progress: Number(w.getProgressPercentage) || 0,
+        numRegularSamples: Number(w.getNumberOfRegularSamples) || 0,
+        numQcAnalyses,
+        numRegularAnalyses,
       }
     })
   } catch { return [] }
@@ -266,15 +338,44 @@ export async function updateWorksheet(
   return postView(token, `${SENAITE_ORIGIN}${path}/@@update-worksheet`, fields)
 }
 
+// Delete an (empty) worksheet. SENAITE's `remove` workflow transition can't be
+// driven over REST — restapi @workflow/remove 404s (it deletes then fails to
+// serialize the gone object) and jsonapi update rejects it ("Analyses is
+// required"). plone.restapi's plain DELETE on the object works cleanly and is
+// equivalent for the empty-worksheet case (the only case we expose Remove for).
+export async function deleteSenaiteWorksheet(token: string, path: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${SENAITE_ORIGIN}${path}`, {
+      method: 'DELETE',
+      headers: authHeaders(token),
+      cache: 'no-store',
+    })
+    if (!res.ok) return { success: false, error: `HTTP ${res.status}` }
+    return { success: true }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
 // Unassigned routine analyses available to add to a worksheet (from received
 // samples whose analyses aren't on any worksheet yet).
 export type UnassignedAnalysis = {
   uid: string
   title: string
   keyword: string
+  serviceUid: string
   sampleId: string
   clientTitle: string
+  clientOrderNumber: string
   categoryTitle: string
+  // SENAITE priority 1..5 (1=Highest … 3=Medium default … 5=Lowest), taken from
+  // the parent sample and surfaced on the add-analyses screen as an icon/label.
+  priority: number
+  dateReceived: string
+  dueDate: string
+}
+
+// SENAITE ANALYSIS priority vocabulary (bika.lims): value → label.
+export const PRIORITY_LABEL: Record<number, string> = {
+  1: 'Highest', 2: 'High', 3: 'Medium', 4: 'Low', 5: 'Lowest',
 }
 
 export async function fetchUnassignedAnalyses(token: string): Promise<UnassignedAnalysis[]> {
@@ -286,15 +387,62 @@ export async function fetchUnassignedAnalyses(token: string): Promise<Unassigned
     if (!res.ok) return []
     const data = await res.json()
     const items = Array.isArray(data.items) ? (data.items as RawView[]) : []
-    return items.map(a => ({
-      uid: (a.uid as string) ?? '',
-      title: (a.title as string) ?? '',
-      keyword: (a.getKeyword as string) ?? '',
-      sampleId: (a.getRequestID as string) ?? (a.getRequestUID as string) ?? '',
-      clientTitle: (a.getClientTitle as string) ?? '',
-      categoryTitle: (a.getCategoryTitle as string) ?? '',
-    })).filter(a => a.uid)
+    // Analysis Category comes back only as a {uid} reference (getCategoryTitle
+    // is always null on this endpoint — confirmed live), so resolve titles via
+    // a uid→title map, same pattern as the Instrument title map above.
+    const categoryTitles = await fetchSenaiteTitleMap(token, 'AnalysisCategory')
+    return items.map(a => {
+      const category = (a.Category as RawView) ?? {}
+      const categoryUid = (category.uid as string) ?? ''
+      // Priority lives in the leading segment of the sort key (e.g. "3.<ts>…").
+      const priority = Number((a.getPrioritySortkey as string ?? '').split('.')[0]) || 3
+      return {
+        uid: (a.uid as string) ?? '',
+        title: (a.title as string) ?? '',
+        keyword: (a.getKeyword as string) ?? '',
+        serviceUid: (a.getServiceUID as string) ?? '',
+        sampleId: (a.getRequestID as string) ?? (a.getRequestUID as string) ?? '',
+        clientTitle: (a.getClientTitle as string) ?? '',
+        clientOrderNumber: (a.getClientOrderNumber as string) ?? '',
+        categoryTitle: categoryUid ? (categoryTitles[categoryUid] ?? '') : '',
+        priority,
+        dateReceived: (a.getDateReceived as string) ?? '',
+        dueDate: (a.getDueDate as string) ?? '',
+      }
+    }).filter(a => a.uid)
   } catch { return [] }
+}
+
+// serviceUid → method uids the service supports (its Methods + default Method).
+// Powers the add-analyses "Filter by template method" tab: an analysis matches
+// the template's restrict_to_method when its own service carries that method.
+// SENAITE returns an empty reference field as {} (not []), so normalize via a
+// tolerant ref extractor rather than a bare cast.
+function refUids(v: unknown): string[] {
+  if (!v) return []
+  const arr = Array.isArray(v) ? v : [v]
+  return arr
+    .map(x => (x && typeof x === 'object' ? ((x as RawView).uid as string) : typeof x === 'string' ? x : ''))
+    .filter(Boolean)
+}
+
+export async function fetchServiceMethodMap(token: string): Promise<Record<string, string[]>> {
+  try {
+    const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/AnalysisService?complete=true&limit=500`, {
+      headers: authHeaders(token),
+      cache: 'no-store',
+    })
+    if (!res.ok) return {}
+    const data = await res.json()
+    const items = Array.isArray(data.items) ? (data.items as RawView[]) : []
+    const map: Record<string, string[]> = {}
+    for (const s of items) {
+      const uid = (s.uid as string) ?? ''
+      if (!uid) continue
+      map[uid] = Array.from(new Set([...refUids(s.Methods), ...refUids(s.Method)]))
+    }
+    return map
+  } catch { return {} }
 }
 
 // Lab members eligible to be a worksheet analyst (Plone member id + fullname),

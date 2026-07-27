@@ -46,6 +46,33 @@ def _obj_or_none(uid):
         return None
 
 
+def _call(obj, getter, default=None):
+    """Call obj.<getter>() defensively; return `default` on missing attr or any
+    error. Needed because accessors like getResultsRange / getMethod /
+    getInstrument / getDueDate exist on a routine Analysis but not on a
+    ReferenceAnalysis / DuplicateAnalysis, so an unguarded call would raise."""
+    if obj is None or not hasattr(obj, getter):
+        return default
+    try:
+        return getattr(obj, getter)()
+    except Exception:
+        return default
+
+
+def _iso(dt):
+    try:
+        return dt.ISO8601() if dt else ""
+    except Exception:
+        return ""
+
+
+def _title(obj):
+    try:
+        return obj.Title() if obj is not None else ""
+    except Exception:
+        return ""
+
+
 def _analysis_info(analysis):
     request = None
     if hasattr(analysis, "getRequest"):
@@ -130,6 +157,44 @@ def _analysis_info(analysis):
                 elif box == "above_uoq":
                     above_uoq = value
 
+    # ── manage_results detail fields (all guarded — accessors differ per
+    # analysis type) ───────────────────────────────────────────────────────
+    method_obj = _call(analysis, "getMethod")
+    instrument_obj = _call(analysis, "getInstrument")
+    results_range = _call(analysis, "getResultsRange") or {}
+    try:
+        results_range = dict(results_range)
+    except Exception:
+        results_range = {}
+    uncertainty = _call(analysis, "getUncertainty")
+    dl_operand = _call(analysis, "getDetectionLimitOperand", "") or ""
+    retest_of = _call(analysis, "getRetestOfUID", "") or ""
+    attachments = _call(analysis, "getAttachment", []) or []
+    analysis_remarks = _call(analysis, "getRemarks", "")
+    if not isinstance(analysis_remarks, basestring):
+        analysis_remarks = str(analysis_remarks or "")
+
+    # Routine slot-header context off the already-resolved parent `request`
+    # (the AR for a routine Analysis / a DuplicateAnalysis; None for QC).
+    client_obj = _call(request, "getClient")
+    sample_type_obj = _call(request, "getSampleType")
+    sample_point_obj = _call(request, "getSamplePoint")
+
+    # QC descriptive header. A ReferenceAnalysis on a worksheet lives INSIDE the
+    # worksheet (so `request` above is None) — its ReferenceSample and Supplier
+    # come from the analysis's own getSample()/getSupplier(), NOT `request`.
+    is_reference = analysis.portal_type == "ReferenceAnalysis"
+    reference_sample = _call(analysis, "getSample") if is_reference else None
+    reference_title = _title(reference_sample)
+    supplier_title = _title(_call(analysis, "getSupplier")) if is_reference else ""
+
+    # Duplicate source: the routine analysis this row duplicates. The frontend
+    # maps this uid → the source slot's position via the layout already loaded.
+    dup_source_uid = ""
+    if analysis.portal_type == "DuplicateAnalysis":
+        src = _call(analysis, "getAnalysis")
+        dup_source_uid = api.get_uid(src) if src else ""
+
     return {
         "uid": api.get_uid(analysis),
         "id": api.get_id(analysis),
@@ -148,6 +213,27 @@ def _analysis_info(analysis):
         "above_udl": bool(above_udl),
         "below_loq": bool(below_loq),
         "above_uoq": bool(above_uoq),
+        # manage_results detail fields
+        "detection_limit_operand": dl_operand,
+        "uncertainty": "" if uncertainty is None else str(uncertainty),
+        "results_range": results_range,
+        "retested": bool(retest_of),
+        "method_title": _title(method_obj),
+        "method_uid": api.get_uid(method_obj) if method_obj else "",
+        "instrument_title": _title(instrument_obj),
+        "instrument_uid": api.get_uid(instrument_obj) if instrument_obj else "",
+        "attachments_count": len(attachments),
+        "result_captured": _iso(_call(analysis, "getResultCaptureDate")),
+        "due_date": _iso(_call(analysis, "getDueDate")),
+        "date_received": _iso(_call(analysis, "getDateReceived")),
+        "remarks": analysis_remarks,
+        # rich slot-header context
+        "client_title": _title(client_obj),
+        "sample_type": _title(sample_type_obj),
+        "sample_point": _title(sample_point_obj),
+        "reference_title": reference_title,
+        "supplier_title": supplier_title,
+        "dup_source_uid": dup_source_uid,
     }
 
 

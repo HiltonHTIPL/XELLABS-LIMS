@@ -5,8 +5,8 @@ import Link from 'next/link'
 import * as XLSX from 'xlsx'
 import {
   transitionWorksheet, submitWorksheetResult, submitWorksheetInterimResult, verifyWorksheetAnalysis,
-  addAnalysesToWorksheet, removeAnalysesFromWorksheet, addDuplicateToWorksheet,
-  addReferenceToWorksheet, updateWorksheetFields,
+  transitionWorksheetAnalysis, removeAnalysesFromWorksheet, addDuplicateToWorksheet,
+  addReferenceToWorksheet, updateWorksheetFields, removeWorksheet,
   type ReferenceSampleOption,
 } from '@/app/actions/senaite-worksheets'
 import type { WorksheetInfo, UnassignedAnalysis, LabAnalyst } from '@/app/lib/senaite-worksheets'
@@ -79,8 +79,6 @@ export default function WorksheetDetailShell({
   function setInterim(analysisUid: string, keyword: string, v: string) {
     setInterimValues(p => ({ ...p, [analysisUid]: { ...p[analysisUid], [keyword]: v } }))
   }
-  const [showAdd, setShowAdd] = useState(false)
-  const [picked, setPicked] = useState<Record<string, boolean>>({})
   const [analyst, setAnalyst] = useState(worksheet.analyst)
   // Show the member's full name where we can resolve it; fall back to the raw
   // stored value (a member id or a legacy free-text analyst).
@@ -91,6 +89,13 @@ export default function WorksheetDetailShell({
   const [remarks, setRemarks] = useState(latestRemark(worksheet.remarks))
   const [dupSlot, setDupSlot] = useState('')
   const [refUid, setRefUid] = useState('')
+  const [selectedIds, setSelectedIds] = useState<(string | number)[]>([])
+  // SENAITE results layout toggle (Classic list vs Transposed matrix).
+  const [layout, setLayout] = useState<'classic' | 'transposed'>('classic')
+  // Autofill-interims bar state (only shown when the worksheet has interim fields).
+  const [afKeyword, setAfKeyword] = useState('')
+  const [afValue, setAfValue] = useState('')
+  const [afOnlyEmpty, setAfOnlyEmpty] = useState(true)
 
   function addReference() {
     const ref = references.find(r => r.uid === refUid)
@@ -113,7 +118,58 @@ export default function WorksheetDetailShell({
     })
   }
 
-  const pickedUids = Object.keys(picked).filter(u => picked[u])
+  // Apply a workflow transition to every selected row that allows it in its
+  // current state (SENAITE analysis workflow); rows that don't allow it are
+  // skipped. `unassign` uses the remove-from-worksheet path.
+  function bulkTransition(tx: 'verify' | 'retract' | 'reject' | 'unassign', label: string) {
+    const allowed = (state: string) =>
+      tx === 'verify' ? state === 'to_be_verified'
+        : tx === 'retract' ? (state === 'to_be_verified' || state === 'verified')
+          : tx === 'reject' ? (state === 'assigned' || state === 'to_be_verified')
+            : state === 'assigned'
+    const targets = slotRows.filter(r => selectedIds.includes(r.id) && r.analysis && allowed(r.analysis.reviewState))
+    if (!targets.length) {
+      setToast({ ok: false, msg: `No selected rows can be ${label.toLowerCase()}.` })
+      setTimeout(() => setToast(null), 5000)
+      return
+    }
+    startTransition(async () => {
+      let ok = 0
+      for (const r of targets) {
+        const a = r.analysis!
+        const meta = a.sampleId ? { sampleId: a.sampleId, title: a.title } : undefined
+        const res = tx === 'unassign'
+          ? await removeAnalysesFromWorksheet(worksheet.path, worksheet.id, [r.analysisUid], a.sampleId ? [{ uid: r.analysisUid, sampleId: a.sampleId, title: a.title }] : undefined)
+          : await transitionWorksheetAnalysis(worksheet.id, r.analysisUid, tx, meta)
+        if (res.success) ok++
+      }
+      setToast({ ok: ok > 0, msg: `${label}: ${ok}/${targets.length} row${targets.length !== 1 ? 's' : ''}.` })
+      router.refresh()
+      setTimeout(() => setToast(null), 5000)
+    })
+  }
+
+  // Bulk-fill one interim field across every editable row that has it — the
+  // SENAITE "Autofill" wide-interims bar. `afOnlyEmpty` skips cells that already
+  // hold a non-empty, non-zero value.
+  function applyAutofill() {
+    if (!afKeyword) { setToast({ ok: false, msg: 'Pick an interim field to autofill.' }); setTimeout(() => setToast(null), 5000); return }
+    let filled = 0
+    setInterimValues(prev => {
+      const next = { ...prev }
+      for (const s of slots) {
+        if (s.analysis?.reviewState !== 'assigned') continue
+        if (!(s.analysis?.interimFields ?? []).some(f => f.keyword === afKeyword)) continue
+        const cur = (next[s.analysisUid]?.[afKeyword] ?? '').trim()
+        if (afOnlyEmpty && cur !== '' && cur !== '0') continue
+        next[s.analysisUid] = { ...next[s.analysisUid], [afKeyword]: afValue }
+        filled++
+      }
+      return next
+    })
+    setToast({ ok: true, msg: `Autofilled ${filled} row${filled !== 1 ? 's' : ''} — review, then Submit.` })
+    setTimeout(() => setToast(null), 5000)
+  }
 
   function saveDetails() {
     // Send all four fields, including empty instrument/method — the
@@ -126,15 +182,6 @@ export default function WorksheetDetailShell({
       }),
       'Worksheet updated.',
     )
-  }
-
-  function addSelected() {
-    const meta = pickedUids
-      .map(uid => unassigned.find(u => u.uid === uid))
-      .filter((u): u is UnassignedAnalysis => !!u)
-      .map(u => ({ uid: u.uid, sampleId: u.sampleId, title: u.title }))
-    run(() => addAnalysesToWorksheet(worksheet.path, worksheet.id, pickedUids, meta), 'Analyses added.')
-    setPicked({}); setShowAdd(false)
   }
 
   const importRef = useRef<HTMLInputElement>(null)
@@ -322,54 +369,121 @@ export default function WorksheetDetailShell({
     return { backgroundColor: '#fff', color: '#374151', border: '1px solid #E8EAF2' }
   }
 
+  // Result cell — shared by the Classic grid column and the Transposed matrix
+  // (DRY): editable input(s) for an `assigned` row (interim boxes for a
+  // Calculation-backed analysis, else a single Result box), else the stored
+  // result text.
+  function resultCell(s: SlotRow) {
+    const editable = (s.analysis?.reviewState ?? '') === 'assigned'
+    const interimFields = s.analysis?.interimFields ?? []
+    if (editable && interimFields.length > 0) {
+      return (
+        <div className="flex flex-wrap items-center gap-1">
+          {interimFields.map(f => (
+            <input
+              key={f.keyword}
+              value={interimValues[s.analysisUid]?.[f.keyword] ?? ''}
+              onChange={e => setInterim(s.analysisUid, f.keyword, e.target.value)}
+              placeholder={f.keyword}
+              title={`${f.title}${f.unit ? ` (${f.unit})` : ''}`}
+              className="px-1.5 py-1 text-xs rounded-lg outline-none"
+              style={{ border: '1px solid #D1D5DB', color: '#111827', width: 52 }}
+            />
+          ))}
+        </div>
+      )
+    }
+    return editable ? (
+      <input value={results[s.analysisUid] ?? ''} onChange={e => setResult(s.analysisUid, e.target.value)} placeholder="Enter result…" className="px-2 py-1 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827', width: 110 }} />
+    ) : <span className="text-xs font-medium" style={{ color: '#111827' }}>{s.analysis?.result || '—'}</span>
+  }
+
   // Columns reproduce the previous hand-rolled cells exactly (same badges /
   // editable result input / action buttons), migrated to the shared <DataTable>.
   const slotColumns: DataTableColumn<SlotRow>[] = [
     {
-      id: 'position', label: 'Pos', sortable: true, minWidth: 70,
-      render: s => <span className="inline-block w-7 text-center text-xs font-semibold rounded" style={{ color: '#0154FC', backgroundColor: '#EFF6FF', padding: '3px 0' }}>{s.position}</span>,
+      // Rich Position slot header (SENAITE slot_header): routine rows show
+      // Sample ID / Client / Sample Type · Point · Received; QC rows show the
+      // QC type, Reference Sample + Supplier, or "Dup of #N" for a duplicate.
+      id: 'position', label: 'Position', sortable: true, minWidth: 200,
+      render: s => {
+        const a = s.analysis
+        const isQc = s.type !== 'a'
+        const dupPos = a?.dupSourceUid ? slots.find(x => x.analysisUid === a.dupSourceUid)?.position : undefined
+        return (
+          <div className="flex items-start gap-2">
+            <span className="inline-block w-7 text-center text-xs font-semibold rounded shrink-0" style={{ color: '#0154FC', backgroundColor: '#EFF6FF', padding: '3px 0' }}>{s.position}</span>
+            <div className="min-w-0">
+              {isQc ? (
+                <>
+                  <div className="text-xs font-semibold" style={{ color: TYPE_COLOR[s.type] ?? '#111827' }}>{TYPE_LABEL[s.type] ?? s.type}</div>
+                  {a?.referenceTitle && <div className="text-xs truncate" style={{ color: '#111827' }}>{a.referenceTitle}</div>}
+                  {a?.supplierTitle && <div className="text-xs truncate" style={{ color: '#6B7280' }}>{a.supplierTitle}</div>}
+                  {s.type === 'd' && (dupPos || a?.sampleId) ? <div className="text-xs" style={{ color: '#6B7280' }}>Dup of {dupPos ? `#${dupPos}` : a?.sampleId}</div> : null}
+                </>
+              ) : (
+                <>
+                  <div className="text-xs font-medium truncate" style={{ color: '#111827' }}>{a?.sampleId || '—'}</div>
+                  {a?.clientTitle && <div className="text-xs truncate" style={{ color: '#6B7280' }}>{a.clientTitle}</div>}
+                  {(a?.sampleType || a?.samplePoint || a?.dateReceived) && (
+                    <div className="text-xs truncate" style={{ color: '#9CA3AF' }}>
+                      {[a?.sampleType, a?.samplePoint, a?.dateReceived ? a.dateReceived.slice(0, 10) : ''].filter(Boolean).join(' · ')}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        )
+      },
     },
     {
-      id: 'type', label: 'Type', sortable: true, minWidth: 100,
-      render: s => <span className="text-xs font-medium" style={{ color: TYPE_COLOR[s.type] ?? '#374151' }}>{TYPE_LABEL[s.type] ?? s.type}</span>,
-    },
-    {
-      id: 'analysis', label: 'Analysis', sortable: true, minWidth: 200,
+      id: 'analysis', label: 'Analysis', sortable: true, minWidth: 180,
       render: s => <span className="text-xs" style={{ color: '#111827' }}>{s.analysis?.title ?? '—'}</span>,
     },
     {
-      id: 'sample', label: 'Sample', sortable: true, minWidth: 120,
-      render: s => <span className="text-xs" style={{ color: '#374151' }}>{s.analysis?.sampleId || '—'}</span>,
+      id: 'result', label: 'Result', minWidth: 140,
+      render: s => resultCell(s),
     },
     {
-      id: 'result', label: 'Result', minWidth: 140,
-      render: s => {
-        const editable = (s.analysis?.reviewState ?? '') === 'assigned'
-        const interimFields = s.analysis?.interimFields ?? []
-        if (editable && interimFields.length > 0) {
-          // Calculation-backed row (e.g. Soil Calcium and Magnesium: CA+MG) —
-          // one small box per raw reading; the final Result is computed by
-          // SENAITE's own engine on Submit, not typed in directly.
-          return (
-            <div className="flex flex-wrap items-center gap-1">
-              {interimFields.map(f => (
-                <input
-                  key={f.keyword}
-                  value={interimValues[s.analysisUid]?.[f.keyword] ?? ''}
-                  onChange={e => setInterim(s.analysisUid, f.keyword, e.target.value)}
-                  placeholder={f.keyword}
-                  title={`${f.title}${f.unit ? ` (${f.unit})` : ''}`}
-                  className="px-1.5 py-1 text-xs rounded-lg outline-none"
-                  style={{ border: '1px solid #D1D5DB', color: '#111827', width: 52 }}
-                />
-              ))}
-            </div>
-          )
-        }
-        return editable ? (
-          <input value={results[s.analysisUid] ?? ''} onChange={e => setResult(s.analysisUid, e.target.value)} placeholder="Enter result…" className="px-2 py-1 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827', width: 110 }} />
-        ) : <span className="text-xs font-medium" style={{ color: '#111827' }}>{s.analysis?.result || '—'}</span>
-      },
+      id: 'dl', label: 'DL', minWidth: 60,
+      render: s => <span className="text-xs" style={{ color: '#374151' }}>{s.analysis?.dl || '—'}</span>,
+    },
+    {
+      id: 'uncertainty', label: 'Uncertainty', sortable: true, minWidth: 100,
+      render: s => <span className="text-xs" style={{ color: '#374151' }}>{s.analysis?.uncertainty || '—'}</span>,
+    },
+    {
+      id: 'specification', label: 'Spec (min–max)', minWidth: 120,
+      render: s => <span className="text-xs" style={{ color: '#374151' }}>{s.analysis?.specification || '—'}</span>,
+    },
+    {
+      id: 'method', label: 'Method', sortable: true, minWidth: 130,
+      render: s => <span className="text-xs" style={{ color: '#374151' }}>{s.analysis?.methodTitle || '—'}</span>,
+    },
+    {
+      id: 'instrument', label: 'Instrument', sortable: true, minWidth: 130,
+      render: s => <span className="text-xs" style={{ color: '#374151' }}>{s.analysis?.instrumentTitle || '—'}</span>,
+    },
+    {
+      id: 'captured', label: 'Captured', sortable: true, minWidth: 110,
+      render: s => <span className="text-xs" style={{ color: '#374151' }}>{s.analysis?.captured ? s.analysis.captured.slice(0, 10) : '—'}</span>,
+    },
+    {
+      id: 'due', label: 'Due', sortable: true, minWidth: 110,
+      render: s => <span className="text-xs" style={{ color: '#374151' }}>{s.analysis?.dueDate ? s.analysis.dueDate.slice(0, 10) : '—'}</span>,
+    },
+    {
+      id: 'retested', label: 'Retested', minWidth: 80,
+      render: s => s.analysis?.retested ? <span className="text-xs" style={{ color: '#B45309' }}>Yes</span> : <span className="text-xs" style={{ color: '#9CA3AF' }}>—</span>,
+    },
+    {
+      id: 'attachments', label: 'Att.', minWidth: 60,
+      render: s => <span className="text-xs" style={{ color: '#374151' }}>{s.analysis?.attachmentsCount ? s.analysis.attachmentsCount : '—'}</span>,
+    },
+    {
+      id: 'remarks', label: 'Remarks', minWidth: 160,
+      render: s => <span className="text-xs truncate inline-block" style={{ color: '#374151', maxWidth: 220 }} title={s.analysis?.remarks || ''}>{s.analysis?.remarks || '—'}</span>,
     },
     {
       id: 'state', label: 'State', sortable: true, minWidth: 120,
@@ -425,21 +539,14 @@ export default function WorksheetDetailShell({
       }
       return submitWorksheetResult(worksheet.id, s.analysisUid, results[s.analysisUid] ?? '', sampleMeta)
     }
+    const unassignMeta = a?.sampleId ? [{ uid: s.analysisUid, sampleId: a.sampleId, title: a.title }] : undefined
     return (
-      <div className="whitespace-nowrap">
+      <div className="whitespace-nowrap flex items-center gap-1">
         {editable && a && (
-          <>
-            <button onClick={() => run(submitRow, 'Result submitted.')} disabled={busy || !canSubmit}
-              className="inline-flex items-center gap-1 mr-1" style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', borderRadius: 6, backgroundColor: '#0154FC', color: '#fff', border: 'none', cursor: 'pointer', opacity: busy || !canSubmit ? 0.5 : 1 }}>
-              <MI name="send" size={12} color="#fff" /> Submit
-            </button>
-            {isOpen && (
-              <button onClick={() => run(() => removeAnalysesFromWorksheet(worksheet.path, worksheet.id, [s.analysisUid], a.sampleId ? [{ uid: s.analysisUid, sampleId: a.sampleId, title: a.title }] : undefined), 'Analysis removed.')} disabled={busy} title="Remove from worksheet"
-                className="inline-flex items-center p-1 rounded" style={{ border: '1px solid #FECACA', background: '#fff', cursor: 'pointer' }}>
-                <MI name="close" size={12} color="#DC2626" />
-              </button>
-            )}
-          </>
+          <button onClick={() => run(submitRow, 'Result submitted.')} disabled={busy || !canSubmit}
+            className="inline-flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', borderRadius: 6, backgroundColor: '#0154FC', color: '#fff', border: 'none', cursor: 'pointer', opacity: busy || !canSubmit ? 0.5 : 1 }}>
+            <MI name="send" size={12} color="#fff" /> Submit
+          </button>
         )}
         {state === 'to_be_verified' && a && (
           <button onClick={() => run(() => verifyWorksheetAnalysis(worksheet.id, s.analysisUid, sampleMeta), 'Analysis verified.')} disabled={busy}
@@ -447,10 +554,66 @@ export default function WorksheetDetailShell({
             <MI name="verified" size={12} color="#166534" /> Verify
           </button>
         )}
+        {/* Retract — to_be_verified or verified (SENAITE analysis workflow) */}
+        {a && (state === 'to_be_verified' || state === 'verified') && (
+          <button onClick={() => run(() => transitionWorksheetAnalysis(worksheet.id, s.analysisUid, 'retract', sampleMeta), 'Analysis retracted.')} disabled={busy} title="Retract"
+            className="inline-flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, padding: '5px 8px', borderRadius: 6, backgroundColor: '#fff', color: '#B45309', border: '1px solid #FCD34D', cursor: 'pointer', opacity: busy ? 0.5 : 1 }}>
+            <MI name="undo" size={12} color="#B45309" /> Retract
+          </button>
+        )}
+        {/* Reject — assigned or to_be_verified */}
+        {a && (state === 'assigned' || state === 'to_be_verified') && (
+          <button onClick={() => run(() => transitionWorksheetAnalysis(worksheet.id, s.analysisUid, 'reject', sampleMeta), 'Analysis rejected.')} disabled={busy} title="Reject"
+            className="inline-flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, padding: '5px 8px', borderRadius: 6, backgroundColor: '#fff', color: '#B91C1C', border: '1px solid #FCA5A5', cursor: 'pointer', opacity: busy ? 0.5 : 1 }}>
+            <MI name="block" size={12} color="#B91C1C" /> Reject
+          </button>
+        )}
+        {/* Unassign — assigned only, on an open worksheet */}
+        {a && state === 'assigned' && isOpen && (
+          <button onClick={() => run(() => removeAnalysesFromWorksheet(worksheet.path, worksheet.id, [s.analysisUid], unassignMeta), 'Analysis unassigned.')} disabled={busy} title="Unassign from worksheet"
+            className="inline-flex items-center p-1 rounded" style={{ border: '1px solid #E8EAF2', background: '#fff', cursor: 'pointer' }}>
+            <MI name="link_off" size={12} color="#374151" />
+          </button>
+        )}
         {state === 'verified' && <MI name="check_circle" size={16} color="#22C55E" />}
       </div>
     )
   }
+
+  // Transposed matrix (SENAITE's Transposed layout): one row per analysis
+  // service, one dynamic column per position — still a shared <DataTable>, just
+  // laid out the other way. Result cells reuse resultCell() (DRY).
+  type TransRow = { id: string; title: string }
+  const transposed = useMemo(() => {
+    const order: string[] = []
+    const posSet = new Set<number>()
+    const byKey = new Map<string, SlotRow>()
+    for (const s of slotRows) {
+      const title = s.analysis?.title ?? `Slot ${s.position}`
+      if (!order.includes(title)) order.push(title)
+      posSet.add(s.position)
+      byKey.set(`${title}||${s.position}`, s)
+    }
+    return { positions: [...posSet].sort((a, b) => a - b), rows: order.map(t => ({ id: t, title: t })), byKey }
+  }, [slotRows])
+
+  const transColumns: DataTableColumn<TransRow>[] = [
+    { id: 'title', label: 'Analysis', sortable: true, minWidth: 180, render: r => <span className="text-xs font-medium" style={{ color: '#111827' }}>{r.title}</span> },
+    ...transposed.positions.map((pos): DataTableColumn<TransRow> => {
+      const head = slotRows.find(s => s.position === pos)
+      const a = head?.analysis
+      const isQc = head ? head.type !== 'a' : false
+      const primary = isQc ? (a?.referenceTitle || (head ? TYPE_LABEL[head.type] : '')) : (a?.sampleId || '')
+      const secondary = isQc ? (a?.supplierTitle || '') : (a?.clientTitle || a?.sampleType || '')
+      return {
+        id: `pos-${pos}`, label: `#${pos}${primary ? ` · ${primary}` : ''}${secondary ? ` (${secondary})` : ''}`, minWidth: 150,
+        render: (r: TransRow) => {
+          const slot = transposed.byKey.get(`${r.title}||${pos}`)
+          return slot?.analysis ? resultCell(slot) : <span style={{ color: '#D1D5DB' }}>—</span>
+        },
+      }
+    }),
+  ]
 
   return (
     <div style={{ padding: 20, backgroundColor: '#F7F8FC', minHeight: '100%' }}>
@@ -484,6 +647,18 @@ export default function WorksheetDetailShell({
               {a.label}
             </button>
           ))}
+          {/* Remove — SENAITE allows removing an empty worksheet (open + no
+              analyses). Navigates back to the list once removed. */}
+          {isOpen && slots.length === 0 && (
+            <button onClick={() => run(async () => {
+              const r = await removeWorksheet(worksheet.path, worksheet.id)
+              if (r.success) router.push('/dashboard/worksheets')
+              return r
+            }, 'Worksheet removed.')} disabled={busy} className="flex items-center gap-1.5"
+              style={{ fontSize: 12, fontWeight: 600, padding: '8px 14px', borderRadius: 8, cursor: busy ? 'not-allowed' : 'pointer', backgroundColor: '#fff', color: '#DC2626', border: '1px solid #FCA5A5' }}>
+              <MI name="delete" size={14} color="#DC2626" /> Remove
+            </button>
+          )}
           <a href={`/dashboard/worksheets/${worksheet.id}/print`} target="_blank" rel="noopener noreferrer"
             className="flex items-center gap-1.5" style={{ fontSize: 12, fontWeight: 600, padding: '8px 12px', borderRadius: 8, backgroundColor: '#fff', color: '#374151', border: '1px solid #E8EAF2' }}>
             <MI name="print" size={14} color="#374151" /> Print
@@ -577,95 +752,139 @@ export default function WorksheetDetailShell({
         )}
       </div>
 
-      {/* Add analyses / duplicate controls (open only) */}
+      {/* Add-to-worksheet controls (open only). Routine analyses are added on
+          the dedicated Add-Analyses screen (SENAITE's add_analyses); this panel
+          keeps the QC controls (Duplicate / Blank / Control). */}
       {isOpen && (
-        <div className="bg-white rounded-xl mb-4" style={{ border: '1px solid #E8EAF2' }}>
-          <button onClick={() => setShowAdd(v => !v)} className="w-full flex items-center justify-between px-4 py-3" style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+        <div className="bg-white rounded-xl mb-4 px-4 py-4" style={{ border: '1px solid #E8EAF2' }}>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
             <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: '#111827' }}>
               <MI name="playlist_add" size={16} color="#0154FC" /> Add analyses
-              <span style={{ fontSize: 11, color: '#374151', fontWeight: 400 }}>{unassigned.length} available</span>
+              <span style={{ fontSize: 11, color: '#374151', fontWeight: 400 }}>{unassigned.length} pending available</span>
             </span>
-            <MI name={showAdd ? 'expand_less' : 'expand_more'} size={18} color="#374151" />
-          </button>
-          {showAdd && (
-            <div className="px-4 pb-4">
-              {unassigned.length === 0 ? (
-                <p className="text-xs" style={{ color: '#374151' }}>No pending analyses. Receive samples to make their analyses available here.</p>
-              ) : (
-                <>
-                  <div className="rounded-lg" style={{ border: '1px solid #E8EAF2', maxHeight: 220, overflowY: 'auto' }}>
-                    {unassigned.map(a => (
-                      <label key={a.uid} className="flex items-center gap-2 px-3 py-1.5 cursor-pointer" style={{ borderBottom: '1px solid #F3F4F6' }}>
-                        <input type="checkbox" checked={!!picked[a.uid]} onChange={e => setPicked(p => ({ ...p, [a.uid]: e.target.checked }))} style={{ accentColor: '#0154FC' }} />
-                        <span className="text-xs" style={{ color: '#111827', flex: 1 }}>{a.title}</span>
-                        <span className="text-xs" style={{ color: '#374151' }}>{a.sampleId}</span>
-                        <span className="text-xs" style={{ color: '#374151' }}>{a.clientTitle}</span>
-                      </label>
-                    ))}
-                  </div>
-                  <div className="mt-2 flex justify-end">
-                    <button onClick={addSelected} disabled={busy || pickedUids.length === 0} className="flex items-center gap-1.5" style={{ fontSize: 12, fontWeight: 600, padding: '7px 14px', borderRadius: 8, backgroundColor: '#0154FC', color: '#fff', border: 'none', cursor: 'pointer', opacity: busy || pickedUids.length === 0 ? 0.5 : 1 }}>
-                      <MI name="add" size={13} color="#fff" /> Add {pickedUids.length || ''} selected
-                    </button>
-                  </div>
-                </>
-              )}
-              {routinePositions.length > 0 && (
-                <div className="mt-3 pt-3 flex items-center gap-2 flex-wrap" style={{ borderTop: '1px solid #F3F4F6' }}>
-                  <span className="text-xs font-medium" style={{ color: '#374151' }}>Add duplicate QC of position</span>
-                  <select value={dupSlot} onChange={e => setDupSlot(e.target.value)} className="px-2 py-1 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827' }}>
-                    <option value="">Select…</option>
-                    {routinePositions.map(p => <option key={p} value={p}>Position {p}</option>)}
-                  </select>
-                  <button onClick={() => run(() => addDuplicateToWorksheet(worksheet.path, worksheet.id, Number(dupSlot)), 'Duplicate added.')} disabled={busy || !dupSlot} className="flex items-center gap-1" style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 8, backgroundColor: '#fff', color: '#D97706', border: '1px solid #FCD34D', cursor: 'pointer', opacity: busy || !dupSlot ? 0.5 : 1 }}>
-                    <MI name="content_copy" size={12} color="#D97706" /> Add Duplicate
-                  </button>
-                </div>
-              )}
-              {/* Blank / Control QC from a reference sample */}
-              <div className="mt-3 pt-3 flex items-center gap-2 flex-wrap" style={{ borderTop: '1px solid #F3F4F6' }}>
-                <span className="text-xs font-medium" style={{ color: '#374151' }}>Add Blank/Control QC</span>
-                <select value={refUid} onChange={e => setRefUid(e.target.value)} className="px-2 py-1 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827', minWidth: 220 }}>
-                  <option value="">Select reference sample…</option>
-                  {references.map(r => (
-                    <option key={r.uid} value={r.uid}>
-                      {r.blank ? '[Blank] ' : '[Control] '}{r.title}{r.supplierTitle ? ` — ${r.supplierTitle}` : ''}
-                    </option>
-                  ))}
-                </select>
-                <button onClick={addReference} disabled={busy || !refUid} className="flex items-center gap-1" style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 8, backgroundColor: '#fff', color: '#059669', border: '1px solid #6EE7B7', cursor: 'pointer', opacity: busy || !refUid ? 0.5 : 1 }}>
-                  <MI name="science" size={12} color="#059669" /> Add QC
-                </button>
-                {references.length === 0 && (
-                  <span style={{ fontSize: 11, color: '#374151' }}>
-                    No reference samples yet — add them under Administration → Reference Samples.
-                  </span>
-                )}
-              </div>
+            <Link href={`/dashboard/worksheets/${worksheet.id}/add`} className="flex items-center gap-1.5"
+              style={{ fontSize: 12, fontWeight: 600, padding: '7px 14px', borderRadius: 8, backgroundColor: '#0154FC', color: '#fff' }}>
+              <MI name="add" size={13} color="#fff" /> Add analyses
+            </Link>
+          </div>
+          {routinePositions.length > 0 && (
+            <div className="mt-3 pt-3 flex items-center gap-2 flex-wrap" style={{ borderTop: '1px solid #F3F4F6' }}>
+              <span className="text-xs font-medium" style={{ color: '#374151' }}>Add duplicate QC of position</span>
+              <select value={dupSlot} onChange={e => setDupSlot(e.target.value)} className="px-2 py-1 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827' }}>
+                <option value="">Select…</option>
+                {routinePositions.map(p => <option key={p} value={p}>Position {p}</option>)}
+              </select>
+              <button onClick={() => run(() => addDuplicateToWorksheet(worksheet.path, worksheet.id, Number(dupSlot)), 'Duplicate added.')} disabled={busy || !dupSlot} className="flex items-center gap-1" style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 8, backgroundColor: '#fff', color: '#D97706', border: '1px solid #FCD34D', cursor: 'pointer', opacity: busy || !dupSlot ? 0.5 : 1 }}>
+                <MI name="content_copy" size={12} color="#D97706" /> Add Duplicate
+              </button>
             </div>
           )}
+          {/* Blank / Control QC from a reference sample */}
+          <div className="mt-3 pt-3 flex items-center gap-2 flex-wrap" style={{ borderTop: '1px solid #F3F4F6' }}>
+            <span className="text-xs font-medium" style={{ color: '#374151' }}>Add Blank/Control QC</span>
+            <select value={refUid} onChange={e => setRefUid(e.target.value)} className="px-2 py-1 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827', minWidth: 220 }}>
+              <option value="">Select reference sample…</option>
+              {references.map(r => (
+                <option key={r.uid} value={r.uid}>
+                  {r.blank ? '[Blank] ' : '[Control] '}{r.title}{r.supplierTitle ? ` — ${r.supplierTitle}` : ''}
+                </option>
+              ))}
+            </select>
+            <button onClick={addReference} disabled={busy || !refUid} className="flex items-center gap-1" style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 8, backgroundColor: '#fff', color: '#059669', border: '1px solid #6EE7B7', cursor: 'pointer', opacity: busy || !refUid ? 0.5 : 1 }}>
+              <MI name="science" size={12} color="#059669" /> Add QC
+            </button>
+            {references.length === 0 && (
+              <span style={{ fontSize: 11, color: '#374151' }}>
+                No reference samples yet — add them under Administration → Reference Samples.
+              </span>
+            )}
+          </div>
         </div>
       )}
 
       {/* Layout / results grid */}
       <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
-        <div className="px-4 py-3" style={{ borderBottom: '1px solid #F3F4F6' }}>
-          <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>Worksheet Layout</h2>
+        <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap" style={{ borderBottom: '1px solid #F3F4F6' }}>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>Worksheet Layout</h2>
+            {/* Classic ⇄ Transposed layout toggle (SENAITE resultslayout) */}
+            {slots.length > 0 && (
+              <div className="inline-flex rounded-lg overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
+                {(['classic', 'transposed'] as const).map(l => (
+                  <button key={l} onClick={() => setLayout(l)}
+                    className="text-xs font-semibold px-2.5 py-1"
+                    style={{ backgroundColor: layout === l ? '#0154FC' : '#fff', color: layout === l ? '#fff' : '#374151', border: 'none', cursor: 'pointer' }}>
+                    {l === 'classic' ? 'Classic' : 'Transposed'}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {/* Bulk workflow action bar — Classic view only (selection lives there) */}
+          {layout === 'classic' && selectedIds.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs font-medium mr-1" style={{ color: '#374151' }}>{selectedIds.length} selected</span>
+              <button onClick={() => bulkTransition('verify', 'Verified')} disabled={busy} className="inline-flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', borderRadius: 6, background: '#fff', color: '#166534', border: '1px solid #86EFAC', cursor: 'pointer' }}>
+                <MI name="verified" size={12} color="#166534" /> Verify
+              </button>
+              <button onClick={() => bulkTransition('retract', 'Retracted')} disabled={busy} className="inline-flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', borderRadius: 6, background: '#fff', color: '#B45309', border: '1px solid #FCD34D', cursor: 'pointer' }}>
+                <MI name="undo" size={12} color="#B45309" /> Retract
+              </button>
+              <button onClick={() => bulkTransition('reject', 'Rejected')} disabled={busy} className="inline-flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', borderRadius: 6, background: '#fff', color: '#B91C1C', border: '1px solid #FCA5A5', cursor: 'pointer' }}>
+                <MI name="block" size={12} color="#B91C1C" /> Reject
+              </button>
+              {isOpen && (
+                <button onClick={() => bulkTransition('unassign', 'Unassigned')} disabled={busy} className="inline-flex items-center gap-1" style={{ fontSize: 11, fontWeight: 600, padding: '5px 10px', borderRadius: 6, background: '#fff', color: '#374151', border: '1px solid #E8EAF2', cursor: 'pointer' }}>
+                  <MI name="link_off" size={12} color="#374151" /> Unassign
+                </button>
+              )}
+            </div>
+          )}
         </div>
+
+        {/* Autofill interims bar — only when the worksheet has interim fields */}
+        {isOpen && interimKeywords.length > 0 && (
+          <div className="px-4 py-2.5 flex items-center gap-2 flex-wrap" style={{ borderBottom: '1px solid #F3F4F6', backgroundColor: '#FAFBFF' }}>
+            <span className="text-xs font-semibold" style={{ color: '#374151' }}>Autofill</span>
+            <select value={afKeyword} onChange={e => setAfKeyword(e.target.value)} className="px-2 py-1 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827' }}>
+              <option value="">Field…</option>
+              {interimKeywords.map(kw => <option key={kw} value={kw}>{kw}</option>)}
+            </select>
+            <input value={afValue} onChange={e => setAfValue(e.target.value)} placeholder="Value" className="px-2 py-1 text-xs rounded-lg outline-none" style={{ border: '1px solid #D1D5DB', color: '#111827', width: 100 }} />
+            <label className="flex items-center gap-1 text-xs" style={{ color: '#374151' }}>
+              <input type="checkbox" checked={afOnlyEmpty} onChange={e => setAfOnlyEmpty(e.target.checked)} style={{ accentColor: '#0154FC' }} />
+              Only to empty or zero fields
+            </label>
+            <button onClick={applyAutofill} disabled={busy || !afKeyword} className="inline-flex items-center gap-1" style={{ fontSize: 12, fontWeight: 600, padding: '5px 12px', borderRadius: 6, backgroundColor: '#fff', color: '#0154FC', border: '1px solid #93C5FD', cursor: busy || !afKeyword ? 'not-allowed' : 'pointer', opacity: busy || !afKeyword ? 0.5 : 1 }}>
+              <MI name="bolt" size={12} color="#0154FC" /> Apply
+            </button>
+          </div>
+        )}
+
         {slots.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10">
             <MI name="grid_off" size={32} color="#D1D5DB" />
             <p className="mt-2 text-sm" style={{ color: '#374151' }}>No positions assigned</p>
             <p className="text-xs mt-0.5" style={{ color: '#374151' }}>Use “Add analyses” above, or apply a template</p>
           </div>
-        ) : (
+        ) : layout === 'classic' ? (
           <DataTable<SlotRow>
             data={slotRows}
             columns={slotColumns}
+            selectable
             searchable
             persistKey="worksheet-layout"
             emptyMessage="No positions assigned."
+            onSelectionChange={setSelectedIds}
             rowActions={slotRowActions}
+          />
+        ) : (
+          <DataTable<TransRow>
+            data={transposed.rows}
+            columns={transColumns}
+            paginated={false}
+            persistKey="worksheet-transposed"
+            emptyMessage="No positions assigned."
           />
         )}
       </div>
