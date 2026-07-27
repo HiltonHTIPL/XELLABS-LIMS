@@ -5,7 +5,6 @@ import {
   fetchSenaiteAnalysisCategories,
   fetchSenaiteDepartments,
   fetchSenaiteLabContacts,
-  fetchSenaiteMethods,
   fetchSenaiteInstruments,
   createSenaiteAnalysisCategory,
   createSenaiteAnalysisService,
@@ -16,13 +15,16 @@ import {
   type SenaiteAnalysisCategory,
   type SenaiteDepartment,
   type SenaiteLabContact,
-  type SenaiteRefOption,
   type SenaiteInstrument,
+  type SenaiteCalculation,
   type AnalysisServicePayload,
   type SenaiteUncertaintyRow,
   type SenaiteInterimFieldRow,
   type SenaiteConditionRow,
 } from '@/app/lib/senaite'
+import { listSenaiteMethods, type SenaiteMethodRow } from './senaite-methods'
+import { getCalculations } from './calculations-senaite'
+import { logExternalAuditEvent, getAuditEvents, type AuditEvent } from './audit-trail'
 
 import { serverToken } from '@/app/lib/senaite-auth'
 
@@ -31,21 +33,29 @@ export type AnalysesPageData = {
   categories: SenaiteAnalysisCategory[]
   departments: SenaiteDepartment[]
   labContacts: SenaiteLabContact[]
-  methods: SenaiteRefOption[]
+  // Full method rows (not just uid/title) — SENAITE's own Method tab filters
+  // the Instruments picklist and Calculation dropdown down to whatever's
+  // linked on the currently-selected Method(s), so the app needs each
+  // method's own instrumentUids/calculationUids to replicate that (see
+  // bika/lims/content/analysisservice.py _instruments_vocabulary /
+  // _default_calculation_vocabulary).
+  methods: SenaiteMethodRow[]
   instruments: SenaiteInstrument[]
+  calculations: SenaiteCalculation[]
 }
 
 export async function getAnalysesPageData(): Promise<AnalysesPageData> {
   const token = serverToken()
-  const [services, categories, departments, labContacts, methods, instruments] = await Promise.all([
+  const [services, categories, departments, labContacts, methods, instruments, calculations] = await Promise.all([
     fetchSenaiteAnalysisServices(token),
     fetchSenaiteAnalysisCategories(token),
     fetchSenaiteDepartments(token),
     fetchSenaiteLabContacts(token),
-    fetchSenaiteMethods(token),
+    listSenaiteMethods(),
     fetchSenaiteInstruments(token),
+    getCalculations(),
   ])
-  return { services, categories, departments, labContacts, methods, instruments }
+  return { services, categories, departments, labContacts, methods, instruments, calculations }
 }
 
 export type AnalysisFormState = {
@@ -77,12 +87,14 @@ function parseAnalysisFormData(formData: FormData): AnalysisServicePayload & { t
     SortKey: get('SortKey'),
     CommercialID: get('CommercialID'),
     ProtocolID: get('ProtocolID'),
-    ScientificName: get('ScientificName'),
+    ScientificName: formData.get('ScientificName') === 'on',
+    UnitChoices: parseJsonArray<string>(formData, 'UnitChoices'),
     Accredited: formData.get('Accredited') === 'on',
     PointOfCapture: get('PointOfCapture') || 'lab',
     DepartmentUid: get('Department'),
     BulkPrice: get('BulkPrice'),
     VAT: get('VAT'),
+    Remarks: get('Remarks'),
     LowerDetectionLimit: get('LowerDetectionLimit'),
     LowerLimitOfQuantification: get('LowerLimitOfQuantification'),
     UpperLimitOfQuantification: get('UpperLimitOfQuantification'),
@@ -115,6 +127,19 @@ function parseAnalysisFormData(formData: FormData): AnalysisServicePayload & { t
     NumberOfRequiredVerifications: get('NumberOfRequiredVerifications') || '1',
     Conditions: parseJsonArray<SenaiteConditionRow>(formData, 'Conditions'),
   }
+}
+
+// Shared repr format for the audit bridge — includes the Keyword since it's
+// the one stable, unique-per-service token to filter the Audit Trail tab by
+// (title alone isn't guaranteed unique, and the SENAITE uid isn't human-
+// readable in the log). Keep create/update/read all using this exact shape.
+function analysisAuditRepr(title: string, keyword: string): string {
+  return `${title} (${keyword})`
+}
+
+export async function getAnalysisAuditEvents(keyword: string): Promise<AuditEvent[]> {
+  if (!keyword) return []
+  return getAuditEvents({ object_repr_contains: `(${keyword})` })
 }
 
 function validateAnalysisFields(payload: ReturnType<typeof parseAnalysisFormData>): Record<string, string[]> {
@@ -230,6 +255,15 @@ export async function createAnalysis(
     return { message: result.error ?? 'Failed to create the analysis.' }
   }
 
+  // AnalysisService is SENAITE-native with no Django mirror model (deliberately
+  // — see CLAUDE.md §16g on not reintroducing a Django Test/AnalysisService
+  // table), so the normal TRACKED_MODELS save-signal audit log never fires for
+  // it. Bridge it the same way sample/worksheet SENAITE-actions already do —
+  // no `record_type` here since there's no matching Django ContentType to
+  // resolve to; the Audit Trail tab instead matches on this repr via
+  // object_repr_contains (see getAnalysisAuditEvents below).
+  logExternalAuditEvent('create', analysisAuditRepr(payload.title, payload.Keyword))
+
   revalidatePath('/dashboard/analyses')
   revalidatePath('/dashboard/analysis-profiles')
   revalidatePath('/dashboard/samples-overview/new')
@@ -249,6 +283,8 @@ export async function updateAnalysis(
   const token = serverToken()
   const result = await updateSenaiteAnalysisService(token, uid, payload)
   if (!result.success) return { message: result.error ?? 'Failed to update the analysis.' }
+
+  logExternalAuditEvent('update', analysisAuditRepr(payload.title, payload.Keyword))
 
   revalidatePath('/dashboard/analyses')
   revalidatePath('/dashboard/analysis-profiles')

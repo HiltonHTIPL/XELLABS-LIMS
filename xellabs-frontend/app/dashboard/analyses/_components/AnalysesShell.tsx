@@ -1,6 +1,6 @@
 'use client'
 import { exportRowsToCsv } from '@/app/lib/exportCsv'
-import { useState, useActionState, useRef } from 'react'
+import { useState, useActionState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createAnalysis, updateAnalysis, type AnalysisFormState } from '@/app/actions/analyses'
@@ -9,12 +9,13 @@ import {
   type SenaiteAnalysisCategory,
   type SenaiteDepartment,
   type SenaiteLabContact,
-  type SenaiteRefOption,
   type SenaiteInstrument,
+  type SenaiteCalculation,
   type SenaiteUncertaintyRow,
   type SenaiteInterimFieldRow,
   type SenaiteConditionRow,
 } from '@/app/lib/senaite'
+import { type SenaiteMethodRow } from '@/app/actions/senaite-methods'
 import ImportButton, { type ParsedRow } from '../../_components/ImportButton'
 import DataTable, { type DataTableColumn } from '../../_components/DataTable'
 
@@ -37,10 +38,10 @@ function MI({ name, size = 16, color }: { name: string; size?: number; color?: s
 }
 
 function Field({
-  label, name, placeholder, required, error, hint, value, onChange, type = 'text',
+  label, name, placeholder, required, error, hint, description, value, onChange, type = 'text',
 }: {
   label: string; name: string; placeholder?: string; required?: boolean
-  error?: string; hint?: string; value: string; onChange: (v: string) => void; type?: string
+  error?: string; hint?: string; description?: string; value: string; onChange: (v: string) => void; type?: string
 }) {
   return (
     <div>
@@ -48,6 +49,7 @@ function Field({
         {label}{required && <span style={{ color: '#EF4444' }}> *</span>}
         {hint && <span className="ml-1 font-normal" style={{ color: '#374151' }}>{hint}</span>}
       </label>
+      {description && <p className="mb-1" style={{ fontSize: 11, color: '#6B7280', lineHeight: 1.4 }}>{description}</p>}
       <input
         type={type}
         name={name}
@@ -112,6 +114,25 @@ function CheckboxToggle({ label, hint, checked, onChange }: { label: string; hin
   )
 }
 
+// SENAITE shows Save/Cancel inline at the bottom of whichever tab is active,
+// not just in a persistent footer — this reproduces that, reusing the same
+// submit/cancel wiring (one <form>, so a submit button anywhere in it works).
+function TabActions({ pending, isEdit, onCancel }: { pending: boolean; isEdit: boolean; onCancel: () => void }) {
+  return (
+    <div className="flex items-center gap-2 pt-3 mt-1" style={{ borderTop: '1px solid #F3F4F6' }}>
+      <button type="submit" disabled={pending} className="flex items-center gap-1.5"
+        style={{ fontSize: 12, fontWeight: 600, padding: '7px 18px', borderRadius: 8, backgroundColor: isEdit ? '#2563EB' : '#0154FC', color: '#fff', border: 'none', cursor: pending ? 'not-allowed' : 'pointer', opacity: pending ? 0.7 : 1 }}>
+        <MI name={pending ? 'hourglass_top' : 'check'} size={13} color="#fff" />
+        {pending ? (isEdit ? 'Saving…' : 'Creating…') : isEdit ? 'Save Changes' : 'Save'}
+      </button>
+      <button type="button" onClick={onCancel} disabled={pending}
+        style={{ fontSize: 12, fontWeight: 500, padding: '7px 16px', borderRadius: 8, border: '1px solid #E8EAF2', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
+        Cancel
+      </button>
+    </div>
+  )
+}
+
 // Shared multi-select picker for Methods/Instruments — same shape as the
 // CheckboxList already used on the Methods page for Instruments/Calculations.
 function CheckboxList({ options, selected, onChange }: {
@@ -147,8 +168,8 @@ type FV = {
   Department: string; newDepartmentTitle: string; newDepartmentId: string
   Manager: string; newContactFirstName: string; newContactLastName: string
   Unit: string; Price: string
-  ShortTitle: string; SortKey: string; CommercialID: string; ProtocolID: string; ScientificName: string
-  Accredited: boolean; PointOfCapture: string; BulkPrice: string; VAT: string
+  ShortTitle: string; SortKey: string; CommercialID: string; ProtocolID: string; ScientificName: boolean; UnitChoices: string[]
+  Accredited: boolean; PointOfCapture: string; BulkPrice: string; VAT: string; Remarks: string
   LowerDetectionLimit: string; LowerLimitOfQuantification: string; UpperLimitOfQuantification: string; UpperDetectionLimit: string
   DetectionLimitSelector: boolean; AllowManualDetectionLimit: boolean
   MethodUids: string[]; DefaultMethodUid: string; InstrumentUids: string[]; DefaultInstrumentUid: string; CalculationUid: string
@@ -165,9 +186,10 @@ const blank = (): FV => ({
   Department: '', newDepartmentTitle: '', newDepartmentId: '',
   Manager: '', newContactFirstName: '', newContactLastName: '',
   Unit: '', Price: '',
-  ShortTitle: '', SortKey: '', CommercialID: '', ProtocolID: '', ScientificName: '',
-  Accredited: false, PointOfCapture: 'lab', BulkPrice: '', VAT: '',
-  LowerDetectionLimit: '', LowerLimitOfQuantification: '', UpperLimitOfQuantification: '', UpperDetectionLimit: '',
+  ShortTitle: '', SortKey: '', CommercialID: '', ProtocolID: '', ScientificName: false, UnitChoices: [],
+  Accredited: false, PointOfCapture: 'lab', BulkPrice: '', VAT: '', Remarks: '',
+  // Defaults match SENAITE's own schema defaults for these fields exactly.
+  LowerDetectionLimit: '0.0', LowerLimitOfQuantification: '0.0', UpperLimitOfQuantification: '1000000000.0', UpperDetectionLimit: '1000000000.0',
   DetectionLimitSelector: false, AllowManualDetectionLimit: false,
   MethodUids: [], DefaultMethodUid: '', InstrumentUids: [], DefaultInstrumentUid: '', CalculationUid: '',
   Uncertainties: [], PrecisionFromUncertainty: false, AllowManualUncertainty: false,
@@ -186,7 +208,8 @@ function serviceToFV(s: SenaiteAnalysisService): FV {
     Manager: '', newContactFirstName: '', newContactLastName: '',
     Unit: s.Unit, Price: s.Price,
     ShortTitle: s.ShortTitle, SortKey: s.SortKey, CommercialID: s.CommercialID, ProtocolID: s.ProtocolID, ScientificName: s.ScientificName,
-    Accredited: s.Accredited, PointOfCapture: s.PointOfCapture || 'lab', BulkPrice: s.BulkPrice, VAT: s.VAT,
+    UnitChoices: s.UnitChoices,
+    Accredited: s.Accredited, PointOfCapture: s.PointOfCapture || 'lab', BulkPrice: s.BulkPrice, VAT: s.VAT, Remarks: s.Remarks,
     LowerDetectionLimit: s.LowerDetectionLimit, LowerLimitOfQuantification: s.LowerLimitOfQuantification,
     UpperLimitOfQuantification: s.UpperLimitOfQuantification, UpperDetectionLimit: s.UpperDetectionLimit,
     DetectionLimitSelector: s.DetectionLimitSelector, AllowManualDetectionLimit: s.AllowManualDetectionLimit,
@@ -204,14 +227,15 @@ function serviceToFV(s: SenaiteAnalysisService): FV {
 }
 
 export default function AnalysesShell({
-  initialServices, categories, departments, labContacts, methods, instruments,
+  initialServices, categories, departments, labContacts, methods, instruments, calculations,
 }: {
   initialServices: SenaiteAnalysisService[]
   categories: SenaiteAnalysisCategory[]
   departments: SenaiteDepartment[]
   labContacts: SenaiteLabContact[]
-  methods: SenaiteRefOption[]
+  methods: SenaiteMethodRow[]
   instruments: SenaiteInstrument[]
+  calculations: SenaiteCalculation[]
 }) {
   const router = useRouter()
   const [showDrawer, setShowDrawer] = useState(false)
@@ -226,6 +250,19 @@ export default function AnalysesShell({
   const creatingCategory = vals.Category === '__new__'
   const creatingDepartment = creatingCategory && vals.Department === '__new__'
   const creatingContact = creatingDepartment && vals.Manager === '__new__'
+
+  // Replicates SENAITE's own _instruments_vocabulary / _default_calculation_vocabulary
+  // (bika/lims/content/analysisservice.py): once one or more Methods are
+  // selected, only the Instruments/Calculations actually linked on those
+  // Methods are offered — not the full lab-wide list. With no Method
+  // selected, everything is available, same as SENAITE's fallback.
+  const selectedMethods = methods.filter(m => vals.MethodUids.includes(m.uid))
+  const availableInstruments = selectedMethods.length
+    ? instruments.filter(i => selectedMethods.some(m => m.instrumentUids.includes(i.uid)))
+    : instruments
+  const availableCalculations = selectedMethods.length
+    ? calculations.filter(c => selectedMethods.some(m => m.calculationUids.includes(c.uid)))
+    : calculations
 
   function setVal<K extends keyof FV>(k: K, v: FV[K]) {
     setVals(prev => ({ ...prev, [k]: v }))
@@ -259,6 +296,21 @@ export default function AnalysesShell({
   function openCreate() { setEditing(null); setVals(blank()); setFieldErrors({}); setActiveTab('Description'); setShowDrawer(true) }
   function openEdit(s: SenaiteAnalysisService) { setEditing(s); setVals(serviceToFV(s)); setFieldErrors({}); setActiveTab('Description'); setShowDrawer(true) }
   function closeDrawer() { setShowDrawer(false); setEditing(null) }
+
+  // Deep-link from the "View Analysis" detail page's Edit button
+  // (`/dashboard/analyses?edit=<uid>`) straight into the edit drawer. Reads
+  // window.location directly (not next/navigation's useSearchParams) — that
+  // hook requires a Suspense boundary to avoid failing the production build,
+  // and this page isn't wrapped in one (see CLAUDE.md §13b-i on build-crash
+  // risk from this exact class of mistake).
+  useEffect(() => {
+    const editUid = new URLSearchParams(window.location.search).get('edit')
+    if (!editUid) return
+    const match = initialServices.find(s => s.uid === editUid)
+    if (match) openEdit(match)
+    router.replace('/dashboard/analyses')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function handleImportRow(row: ParsedRow) {
     const fd = new FormData()
@@ -295,6 +347,7 @@ export default function AnalysesShell({
     }
     set('MethodUids', vals.MethodUids)
     set('InstrumentUids', vals.InstrumentUids)
+    set('UnitChoices', vals.UnitChoices)
     set('Uncertainties', vals.Uncertainties)
     set('InterimFields', vals.InterimFields)
     set('Conditions', vals.Conditions)
@@ -440,6 +493,7 @@ export default function AnalysesShell({
             <form action={action} onSubmit={handleSubmit} className="flex-1 overflow-y-auto flex flex-col min-h-0">
               <input type="hidden" name="MethodUids" />
               <input type="hidden" name="InstrumentUids" />
+              <input type="hidden" name="UnitChoices" />
               <input type="hidden" name="Uncertainties" />
               <input type="hidden" name="InterimFields" />
               <input type="hidden" name="Conditions" />
@@ -450,12 +504,14 @@ export default function AnalysesShell({
                     <form> at submit time, so a conditionally-unmounted tab's inputs
                     would silently vanish from the submission the instant you're not
                     looking at that tab, even though its state (`vals`) is still held. */}
+                {/* Field set and order here match SENAITE's own AnalysisService
+                    "Description" schemata exactly (bika/lims/content/abstractbaseanalysis.py) */}
                 <div style={{ display: activeTab === 'Description' ? 'flex' : 'none', flexDirection: 'column', gap: 12 }}>
-                    <Field label="Analysis Name" name="title" placeholder="e.g. Total Protein" required
+                    <Field label="Title" name="title" placeholder="e.g. Total Protein" required
                       error={fieldErrors.title} value={vals.title} onChange={v => setVal('title', v)} />
                     <TextAreaField label="Description" name="description" hint="(used in item listings and search results)"
                       value={vals.description} onChange={v => setVal('description', v)} />
-                    <Field label="Short Title" name="ShortTitle" hint="(optional — used instead of title in column headings)"
+                    <Field label="Short title" name="ShortTitle" hint="(optional — used instead of title in column headings)"
                       value={vals.ShortTitle} onChange={v => setVal('ShortTitle', v)} />
                     <Field label="Sort Key" name="SortKey" hint="(0.0 - 1000.0)"
                       value={vals.SortKey} onChange={v => setVal('SortKey', v)} />
@@ -463,15 +519,36 @@ export default function AnalysesShell({
                       value={vals.CommercialID} onChange={v => setVal('CommercialID', v)} />
                     <Field label="Protocol ID" name="ProtocolID" hint="(optional)"
                       value={vals.ProtocolID} onChange={v => setVal('ProtocolID', v)} />
-                    <Field label="Scientific Name" name="ScientificName" hint="(optional)"
-                      value={vals.ScientificName} onChange={v => setVal('ScientificName', v)} />
-                </div>
-
-                <div style={{ display: activeTab === 'Analysis' ? 'flex' : 'none', flexDirection: 'column', gap: 12 }}>
-                    <Field label="Keyword" name="Keyword" placeholder="e.g. TotalProtein" required
+                    <CheckboxToggle label="Scientific name" hint="If enabled, the name of the analysis will be written in italics"
+                      checked={vals.ScientificName} onChange={v => setVal('ScientificName', v)} />
+                    <Field label="Default Unit" name="Unit" placeholder="e.g. mg/dL" hint="(optional)" value={vals.Unit} onChange={v => setVal('Unit', v)} />
+                    <div>
+                      <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Units for Selection</label>
+                      <p style={{ fontSize: 10, color: '#374151', marginTop: -6, marginBottom: 6 }}>
+                        Provide a list of units that are suitable for the analysis. Ensure to include the default unit in this list
+                      </p>
+                      <RowsTable
+                        columns={['Unit']}
+                        rows={vals.UnitChoices.map(value => ({ value }))}
+                        onChange={rows => setVal('UnitChoices', rows.map(r => r.value))}
+                        blankRow={() => ({ value: '' })}
+                        renderCell={(row, key, onCellChange) => (
+                          <input value={row[key as 'value']} onChange={e => onCellChange(key, e.target.value)}
+                            className="w-full px-2 py-1 text-xs rounded outline-none" style={{ border: '1px solid #D1D5DB' }} />
+                        )}
+                        cellKeys={['value']}
+                      />
+                    </div>
+                    <Field label="Analysis Keyword" name="Keyword" placeholder="e.g. TotalProtein" required
                       hint="(unique code, no spaces)"
                       error={fieldErrors.Keyword} value={vals.Keyword} onChange={v => setVal('Keyword', v)} />
-                    <SelectField label="Category" name="Category" required
+                    <CheckboxToggle label="Accredited" hint="Included in the laboratory's schedule of accredited analyses"
+                      checked={vals.Accredited} onChange={v => setVal('Accredited', v)} />
+                    <SelectField label="Point of Capture" name="PointOfCapture" value={vals.PointOfCapture} onChange={v => setVal('PointOfCapture', v)}>
+                      <option value="lab">Lab</option>
+                      <option value="field">Field</option>
+                    </SelectField>
+                    <SelectField label="Analysis Category" name="Category" required
                       error={fieldErrors.Category} value={vals.Category} onChange={v => setVal('Category', v)}>
                       <option value="">Select a category…</option>
                       {categories.map(c => <option key={c.uid} value={c.uid}>{c.title}</option>)}
@@ -527,53 +604,74 @@ export default function AnalysesShell({
                       </SelectField>
                     )}
 
-                    <SelectField label="Point of Capture" name="PointOfCapture" value={vals.PointOfCapture} onChange={v => setVal('PointOfCapture', v)}>
-                      <option value="lab">Lab</option>
-                      <option value="field">Field</option>
-                    </SelectField>
-                    <CheckboxToggle label="Accredited" hint="Included in the laboratory's schedule of accredited analyses"
-                      checked={vals.Accredited} onChange={v => setVal('Accredited', v)} />
-                    <div className="grid grid-cols-2 gap-3">
-                      <Field label="Unit" name="Unit" placeholder="e.g. mg/dL" hint="(optional)" value={vals.Unit} onChange={v => setVal('Unit', v)} />
-                      <Field label="Price" name="Price" placeholder="e.g. 25.00" hint="(optional)" error={fieldErrors.Price} value={vals.Price} onChange={v => setVal('Price', v)} />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Field label="Bulk Price" name="BulkPrice" placeholder="e.g. 20.00" hint="(optional)" value={vals.BulkPrice} onChange={v => setVal('BulkPrice', v)} />
-                      <Field label="VAT %" name="VAT" placeholder="e.g. 15.00" hint="(optional)" value={vals.VAT} onChange={v => setVal('VAT', v)} />
-                    </div>
+                    <Field label="Price (excluding VAT)" name="Price" placeholder="e.g. 25.00" hint="(optional)" error={fieldErrors.Price} value={vals.Price} onChange={v => setVal('Price', v)} />
+                    <Field label="Bulk price (excluding VAT)" name="BulkPrice" placeholder="e.g. 20.00" hint="(optional — the price charged per analysis for clients who qualify for bulk discounts)" value={vals.BulkPrice} onChange={v => setVal('BulkPrice', v)} />
+                    <Field label="VAT %" name="VAT" placeholder="e.g. 15.00" hint="(optional)" value={vals.VAT} onChange={v => setVal('VAT', v)} />
+                    <TextAreaField label="Remarks" name="Remarks" value={vals.Remarks} onChange={v => setVal('Remarks', v)} />
+                    <TabActions pending={pending} isEdit={isEdit} onCancel={closeDrawer} />
                 </div>
 
+                {/* Labels, descriptions and defaults copied verbatim from SENAITE's
+                    own schema (bika/lims/content/abstractbaseanalysis.py). */}
                 <div style={{ display: activeTab === 'Limits' ? 'flex' : 'none', flexDirection: 'column', gap: 12 }}>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Field label="Lower Limit of Detection (LLOD)" name="LowerDetectionLimit" value={vals.LowerDetectionLimit} onChange={v => setVal('LowerDetectionLimit', v)} />
-                      <Field label="Lower Limit of Quantification (LLOQ)" name="LowerLimitOfQuantification" value={vals.LowerLimitOfQuantification} onChange={v => setVal('LowerLimitOfQuantification', v)} />
-                      <Field label="Upper Limit of Quantification (ULOQ)" name="UpperLimitOfQuantification" value={vals.UpperLimitOfQuantification} onChange={v => setVal('UpperLimitOfQuantification', v)} />
-                      <Field label="Upper Limit of Detection (ULOD)" name="UpperDetectionLimit" value={vals.UpperDetectionLimit} onChange={v => setVal('UpperDetectionLimit', v)} />
-                    </div>
-                    <CheckboxToggle label="Display a Detection Limit selector" checked={vals.DetectionLimitSelector} onChange={v => setVal('DetectionLimitSelector', v)} />
-                    <CheckboxToggle label="Allow Manual Detection Limit input" checked={vals.AllowManualDetectionLimit} onChange={v => setVal('AllowManualDetectionLimit', v)} />
+                    <Field label="Lower Limit of Detection (LLOD)" name="LowerDetectionLimit"
+                      description="The Lower Limit of Detection (LLOD) is the lowest concentration of a parameter that can be reliably detected by a specified testing methodology with a defined level of confidence. Results below this threshold are typically reported as '< LLOD' (or 'Not Detected'), indicating that the parameter's concentration, if present, is below the detection capability of the method at a reliable level."
+                      value={vals.LowerDetectionLimit} onChange={v => setVal('LowerDetectionLimit', v)} />
+                    <Field label="Lower Limit Of Quantification (LLOQ)" name="LowerLimitOfQuantification"
+                      description="The Lower Limit of Quantification (LLOQ) is the lowest concentration of a parameter that can be reliably and accurately measured using the specified testing methodology, with acceptable levels of precision and accuracy. Results below this value cannot be quantified with confidence and are typically reported as '< LOQ' (or 'Detected but < LOQ'), indicating that while the parameter may be present, its exact concentration cannot be determined reliably."
+                      value={vals.LowerLimitOfQuantification} onChange={v => setVal('LowerLimitOfQuantification', v)} />
+                    <Field label="Upper Limit Of Quantification (ULOQ)" name="UpperLimitOfQuantification"
+                      description="The Upper Limit of Quantification (ULOQ) is the highest concentration of a parameter that can be reliably and accurately measured using the specified testing methodology, with acceptable levels of precision and accuracy. Results above this value cannot be quantified with confidence and are typically reported as '> ULOQ', indicating that its exact concentration cannot be determined reliably."
+                      value={vals.UpperLimitOfQuantification} onChange={v => setVal('UpperLimitOfQuantification', v)} />
+                    <Field label="Upper Limit of Detection (ULOD)" name="UpperDetectionLimit"
+                      description="The Upper Limit of Detection (ULOD) is the highest concentration of a parameter that can be reliably measured using a specified testing methodology. Beyond this limit, results may no longer be accurate or valid due to instrument saturation or methodological limitations. Results exceeding this threshold are typically reported as '> ULOD', indicating that the parameter's concentration is above the reliable detection range of the method."
+                      value={vals.UpperDetectionLimit} onChange={v => setVal('UpperDetectionLimit', v)} />
+                    <CheckboxToggle label="Display a Detection Limit selector"
+                      hint="If checked, a selection list will be displayed next to the analysis' result field in results entry views. By using this selector, the analyst will be able to set the value as a Detection Limit (LDL or UDL) instead of a regular result"
+                      checked={vals.DetectionLimitSelector} onChange={v => setVal('DetectionLimitSelector', v)} />
+                    <CheckboxToggle label="Allow Manual Detection Limit input"
+                      hint="Allow the analyst to manually replace the default Detection Limits (LDL and UDL) on results entry views"
+                      checked={vals.AllowManualDetectionLimit} onChange={v => setVal('AllowManualDetectionLimit', v)} />
+                    <TabActions pending={pending} isEdit={isEdit} onCancel={closeDrawer} />
                 </div>
 
                 <div style={{ display: activeTab === 'Method' ? 'flex' : 'none', flexDirection: 'column', gap: 12 }}>
                     <div>
                       <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Methods</label>
+                      <p style={{ fontSize: 10, color: '#374151', marginTop: -6, marginBottom: 6 }}>Available methods to perform the test</p>
                       <CheckboxList options={methods} selected={vals.MethodUids} onChange={v => setVal('MethodUids', v)} />
                     </div>
                     <SelectField label="Default Method" name="DefaultMethodUid" value={vals.DefaultMethodUid} onChange={v => setVal('DefaultMethodUid', v)}>
                       <option value="">None</option>
-                      {methods.filter(m => vals.MethodUids.includes(m.uid)).map(m => <option key={m.uid} value={m.uid}>{m.title}</option>)}
+                      {(selectedMethods.length ? selectedMethods : methods).map(m => <option key={m.uid} value={m.uid}>{m.title}</option>)}
                     </SelectField>
                     <div>
                       <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Instruments</label>
-                      <CheckboxList options={instruments.map(i => ({ uid: i.uid, title: i.title }))} selected={vals.InstrumentUids} onChange={v => setVal('InstrumentUids', v)} />
+                      <p style={{ fontSize: 10, color: '#374151', marginTop: -6, marginBottom: 6 }}>Available instruments based on the selected methods.</p>
+                      <CheckboxList options={availableInstruments.map(i => ({ uid: i.uid, title: i.title }))} selected={vals.InstrumentUids} onChange={v => setVal('InstrumentUids', v)} />
                     </div>
                     <SelectField label="Default Instrument" name="DefaultInstrumentUid" value={vals.DefaultInstrumentUid} onChange={v => setVal('DefaultInstrumentUid', v)}>
                       <option value="">None</option>
                       {instruments.filter(i => vals.InstrumentUids.includes(i.uid)).map(i => <option key={i.uid} value={i.uid}>{i.title}</option>)}
                     </SelectField>
+                    <SelectField label="Calculation" name="CalculationUid" value={vals.CalculationUid} onChange={v => setVal('CalculationUid', v)}>
+                      <option value="">None</option>
+                      {availableCalculations.map(c => <option key={c.uid} value={c.uid}>{c.title}</option>)}
+                    </SelectField>
+                    <p style={{ fontSize: 10, color: '#374151', marginTop: -8 }}>Calculation to be assigned to this content.</p>
+                    <TabActions pending={pending} isEdit={isEdit} onCancel={closeDrawer} />
                 </div>
 
                 <div style={{ display: activeTab === 'Uncertainties' ? 'flex' : 'none', flexDirection: 'column', gap: 12 }}>
+                    <div>
+                      <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>Uncertainty</label>
+                      <p style={{ fontSize: 11, color: '#6B7280', lineHeight: 1.5 }}>
+                        Specify the uncertainty value for a given range, e.g. for results in a range with minimum of 0 and maximum of 10, where the uncertainty value is 0.5 - a result of 6.67 will be reported as 6.67 ± 0.5.<br />
+                        You can also specify the uncertainty value as a percentage of the result value, by adding a &apos;%&apos; to the value entered in the &apos;Uncertainty Value&apos; column, e.g. for results in a range with minimum of 10.01 and a maximum of 100, where the uncertainty value is 2%, a result of 100 will be reported as 100 ± 2.<br />
+                        If you don&apos;t want uncertainty to be displayed for a given range, set 0 (or a value below 0) as the Uncertainty value.<br />
+                        Please ensure successive ranges are continuous, e.g. 0.00 - 10.00 is followed by 10.01 - 20.00, 20.01 - 30.00 etc.
+                      </p>
+                    </div>
                     <RowsTable
                       columns={['Range min', 'Range max', 'Uncertainty value']}
                       rows={vals.Uncertainties}
@@ -585,22 +683,22 @@ export default function AnalysesShell({
                       )}
                       cellKeys={['intercept_min', 'intercept_max', 'errorvalue']}
                     />
-                    <CheckboxToggle label="Calculate Precision from Uncertainties" checked={vals.PrecisionFromUncertainty} onChange={v => setVal('PrecisionFromUncertainty', v)} />
-                    <CheckboxToggle label="Allow manual uncertainty value input" checked={vals.AllowManualUncertainty} onChange={v => setVal('AllowManualUncertainty', v)} />
+                    <CheckboxToggle label="Calculate Precision from Uncertainties"
+                      hint="Precision as the number of significant digits according to the uncertainty. The decimal position will be given by the first number different from zero in the uncertainty, at that position the system will round up the uncertainty and results. For example, with a result of 5.243 and an uncertainty of 0.22, the system will display correctly as 5.2+-0.2. If no uncertainty range is set for the result, the system will use the fixed precision set."
+                      checked={vals.PrecisionFromUncertainty} onChange={v => setVal('PrecisionFromUncertainty', v)} />
+                    <CheckboxToggle label="Allow manual uncertainty value input"
+                      hint="Allow the analyst to manually replace the default uncertainty value."
+                      checked={vals.AllowManualUncertainty} onChange={v => setVal('AllowManualUncertainty', v)} />
+                    <TabActions pending={pending} isEdit={isEdit} onCancel={closeDrawer} />
                 </div>
 
-                <div style={{ display: activeTab === 'Result options' ? 'flex' : 'none', flexDirection: 'column', gap: 12 }}>
-                    <SelectField label="Result Type" name="ResultType" value={vals.ResultType} onChange={v => setVal('ResultType', v)}>
-                      {RESULT_TYPES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-                    </SelectField>
-                    <Field label="Default Result" name="DefaultResult" hint="(optional)" value={vals.DefaultResult} onChange={v => setVal('DefaultResult', v)} />
-                    <label className="block text-xs font-medium" style={{ color: '#374151' }}>Result Variables</label>
-                    <InterimFieldsTable rows={vals.InterimFields} onChange={rows => setVal('InterimFields', rows)} />
+                {/* Matches SENAITE's real schemata="Analysis" field set exactly. */}
+                <div style={{ display: activeTab === 'Analysis' ? 'flex' : 'none', flexDirection: 'column', gap: 12 }}>
                     <div className="grid grid-cols-2 gap-3">
-                      <Field label="Precision (decimals)" name="Precision" value={vals.Precision} onChange={v => setVal('Precision', v)} />
-                      <Field label="Exponential Format Precision" name="ExponentialFormatPrecision" value={vals.ExponentialFormatPrecision} onChange={v => setVal('ExponentialFormatPrecision', v)} />
+                      <Field label="Precision as number of decimals" name="Precision" value={vals.Precision} onChange={v => setVal('Precision', v)} />
+                      <Field label="Exponential format precision" name="ExponentialFormatPrecision" value={vals.ExponentialFormatPrecision} onChange={v => setVal('ExponentialFormatPrecision', v)} />
                     </div>
-                    <CheckboxToggle label="Attachment required for verification" checked={vals.AttachmentRequired} onChange={v => setVal('AttachmentRequired', v)} />
+                    <CheckboxToggle label="Attachment required for verification" hint="Make attachments mandatory for verification" checked={vals.AttachmentRequired} onChange={v => setVal('AttachmentRequired', v)} />
                     <label className="block text-xs font-medium" style={{ color: '#374151' }}>Maximum turn-around time</label>
                     <div className="grid grid-cols-3 gap-2">
                       <Field label="Days" name="MaxTimeAllowedDays" value={vals.MaxTimeAllowedDays} onChange={v => setVal('MaxTimeAllowedDays', v)} />
@@ -614,7 +712,7 @@ export default function AnalysesShell({
                       <Field label="Minutes" name="MaxHoldingTimeMinutes" value={vals.MaxHoldingTimeMinutes} onChange={v => setVal('MaxHoldingTimeMinutes', v)} />
                     </div>
                     <Field label="Duplicate Variation %" name="DuplicateVariation" value={vals.DuplicateVariation} onChange={v => setVal('DuplicateVariation', v)} />
-                    <CheckboxToggle label="Hidden" hint="Analysis and results won't be displayed by default in reports" checked={vals.Hidden} onChange={v => setVal('Hidden', v)} />
+                    <CheckboxToggle label="Hidden" hint="If enabled, this analysis and its results will not be displayed by default in reports" checked={vals.Hidden} onChange={v => setVal('Hidden', v)} />
                     <SelectField label="Self-verification of results" name="SelfVerification" value={vals.SelfVerification} onChange={v => setVal('SelfVerification', v)}>
                       <option value="-1">System default</option>
                       <option value="1">Yes</option>
@@ -623,14 +721,26 @@ export default function AnalysesShell({
                     <SelectField label="Number of required verifications" name="NumberOfRequiredVerifications" value={vals.NumberOfRequiredVerifications} onChange={v => setVal('NumberOfRequiredVerifications', v)}>
                       {[1, 2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}
                     </SelectField>
+                    <TabActions pending={pending} isEdit={isEdit} onCancel={closeDrawer} />
+                </div>
+
+                <div style={{ display: activeTab === 'Result options' ? 'flex' : 'none', flexDirection: 'column', gap: 12 }}>
+                    <SelectField label="Result Type" name="ResultType" value={vals.ResultType} onChange={v => setVal('ResultType', v)}>
+                      {RESULT_TYPES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+                    </SelectField>
+                    <Field label="Default Result" name="DefaultResult" hint="(optional)" value={vals.DefaultResult} onChange={v => setVal('DefaultResult', v)} />
+                    <label className="block text-xs font-medium" style={{ color: '#374151' }}>Result Variables</label>
+                    <InterimFieldsTable rows={vals.InterimFields} onChange={rows => setVal('InterimFields', rows)} />
+                    <TabActions pending={pending} isEdit={isEdit} onCancel={closeDrawer} />
                 </div>
 
                 <div style={{ display: activeTab === 'Advanced' ? 'flex' : 'none', flexDirection: 'column', gap: 12 }}>
-                    <label className="block text-xs font-medium" style={{ color: '#374151' }}>Analysis Conditions</label>
-                    <p style={{ fontSize: 10, color: '#374151', marginTop: -6 }}>
-                      Conditions to ask for this analysis on sample registration
+                    <label className="block text-xs font-medium" style={{ color: '#374151' }}>Analysis conditions</label>
+                    <p style={{ fontSize: 11, color: '#6B7280', lineHeight: 1.5, marginTop: -6 }}>
+                      Conditions to ask for this analysis on sample registration. For instance, laboratory may want the user to input the temperature, the ramp and flow when a thermogravimetric (TGA) analysis is selected on sample registration. The information provided will be later considered by the laboratory personnel when performing the test.
                     </p>
                     <ConditionsTable rows={vals.Conditions} onChange={rows => setVal('Conditions', rows)} />
+                    <TabActions pending={pending} isEdit={isEdit} onCancel={closeDrawer} />
                 </div>
               </div>
 
@@ -675,11 +785,18 @@ export default function AnalysesShell({
           persistKey="analyses"
           emptyMessage="No analyses found."
           rowActions={s => (
-            <button onClick={() => openEdit(s)} title="Edit"
-              className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium hover:bg-gray-50"
-              style={{ border: '1px solid #E8EAF2', background: '#fff', color: '#374151', cursor: 'pointer' }}>
-              <MI name="edit" size={13} color="#6B7280" /> Edit
-            </button>
+            <div className="flex items-center gap-1.5">
+              <Link href={`/dashboard/analyses/${s.uid}`} title="View"
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium hover:bg-gray-50"
+                style={{ border: '1px solid #E8EAF2', background: '#fff', color: '#374151', cursor: 'pointer' }}>
+                <MI name="visibility" size={13} color="#6B7280" /> View
+              </Link>
+              <button onClick={() => openEdit(s)} title="Edit"
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium hover:bg-gray-50"
+                style={{ border: '1px solid #E8EAF2', background: '#fff', color: '#374151', cursor: 'pointer' }}>
+                <MI name="edit" size={13} color="#6B7280" /> Edit
+              </button>
+            </div>
           )}
         />
       )}
@@ -784,13 +901,16 @@ function ConditionsTable({ rows, onChange }: { rows: SenaiteConditionRow[]; onCh
   function update(i: number, patch: Partial<SenaiteConditionRow>) {
     onChange(rows.map((r, idx) => idx === i ? { ...r, ...patch } : r))
   }
-  const blank = (): SenaiteConditionRow => ({ title: '', description: '', type: 'text', value: '', choices: '', required: false })
+  // Vocabulary and subfield names match SENAITE's real Conditions field exactly
+  // (bika/lims/content/analysisservice.py) — was previously text/numeric/select/
+  // boolean (wrong) and a "value" key that doesn't exist on the real record.
+  const blank = (): SenaiteConditionRow => ({ title: '', description: '', type: 'text', choices: '', default: '', required: false })
   return (
     <div className="rounded-lg overflow-x-auto" style={{ border: '1px solid #E8EAF2' }}>
-      <table style={{ borderCollapse: 'collapse', minWidth: 620 }}>
+      <table style={{ borderCollapse: 'collapse', minWidth: 780 }}>
         <thead>
           <tr style={{ backgroundColor: '#FAFAFA' }}>
-            {['Title', 'Description', 'Control type', 'Default value', 'Required', ''].map(c => (
+            {['Title', 'Description', 'Control type', 'Choices', 'Default value', 'Required', ''].map(c => (
               <th key={c} className="px-2 py-1.5 text-left" style={{ fontSize: 10, fontWeight: 600, color: '#374151' }}>{c}</th>
             ))}
           </tr>
@@ -802,10 +922,17 @@ function ConditionsTable({ rows, onChange }: { rows: SenaiteConditionRow[]; onCh
               <td className="px-2 py-1.5"><input value={row.description} onChange={e => update(i, { description: e.target.value })} className="w-36 px-2 py-1 text-xs rounded outline-none" style={{ border: '1px solid #D1D5DB' }} /></td>
               <td className="px-2 py-1.5">
                 <select value={row.type} onChange={e => update(i, { type: e.target.value })} className="px-1.5 py-1 text-xs rounded outline-none bg-white" style={{ border: '1px solid #D1D5DB' }}>
-                  <option value="text">Text</option><option value="numeric">Numeric</option><option value="select">Selection</option><option value="boolean">Yes/No</option>
+                  <option value="">&nbsp;</option>
+                  <option value="text">Text</option><option value="number">Number</option><option value="checkbox">Checkbox</option>
+                  <option value="select">Select</option><option value="file">File upload</option>
                 </select>
               </td>
-              <td className="px-2 py-1.5"><input value={row.value} onChange={e => update(i, { value: e.target.value })} className="w-20 px-2 py-1 text-xs rounded outline-none" style={{ border: '1px solid #D1D5DB' }} /></td>
+              <td className="px-2 py-1.5">
+                <input value={row.choices} onChange={e => update(i, { choices: e.target.value })}
+                  placeholder="key1:value1|key2:value2" title="Please use the following format for select options: key1:value1|key2:value2|...|keyN:valueN"
+                  className="w-32 px-2 py-1 text-xs rounded outline-none" style={{ border: '1px solid #D1D5DB' }} />
+              </td>
+              <td className="px-2 py-1.5"><input value={row.default} onChange={e => update(i, { default: e.target.value })} className="w-20 px-2 py-1 text-xs rounded outline-none" style={{ border: '1px solid #D1D5DB' }} /></td>
               <td className="px-2 py-1.5 text-center"><input type="checkbox" checked={row.required} onChange={e => update(i, { required: e.target.checked })} /></td>
               <td className="px-2 py-1.5 text-center">
                 <button type="button" onClick={() => onChange(rows.filter((_, idx) => idx !== i))} style={{ border: 'none', background: 'none', cursor: 'pointer' }}>

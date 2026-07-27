@@ -117,10 +117,16 @@ export async function renderSticker(template: StickerTemplate, sample: CocSample
   return `<div class="sticker sticker--${template.id}">${bodyHtml}</div>`
 }
 
-export async function printSticker(sample: CocSample, template: StickerTemplate, copies: number) {
-  const stickerHtml = await renderSticker(template, sample)
-  const stickers = Array.from({ length: copies }, () => stickerHtml).join('')
-  const html = `<!DOCTYPE html><html><head><title>Sticker — ${sampleDisplayId(sample)}</title>
+// Renders `copies` stickers for every sample given, all into ONE print job —
+// the real-world "select N samples, print stickers for all of them" case
+// (Batch's bulk "Print stickers" action), not just one sample repeated.
+// `printSticker` (single-sample) below is just this called with one sample.
+export async function printStickersBatch(samples: CocSample[], template: StickerTemplate, copies: number) {
+  if (samples.length === 0) return
+  const stickerHtmls = await Promise.all(samples.map(s => renderSticker(template, s)))
+  const stickers = stickerHtmls.flatMap(html => Array.from({ length: copies }, () => html)).join('')
+  const title = samples.length === 1 ? sampleDisplayId(samples[0]) : `${samples.length} samples`
+  const html = `<!DOCTYPE html><html><head><title>Sticker — ${title}</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family: Inter, Arial, sans-serif; background:#fff; }
@@ -131,6 +137,10 @@ ${stickers}
 </body></html>`
   const w = window.open('', '_blank', 'width=500,height=420')
   if (w) { w.document.write(html); w.document.close() }
+}
+
+export async function printSticker(sample: CocSample, template: StickerTemplate, copies: number) {
+  await printStickersBatch([sample], template, copies)
 }
 
 export function stickerPageCss(template: StickerTemplate): string {

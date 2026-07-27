@@ -3,13 +3,38 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { type SenaiteBatch, type SenaiteSample, type SenaiteAnalysisFull, mapSenaiteState, mapSenaitePriority } from '@/app/lib/senaite'
-import { receiveSample, cancelSample } from '@/app/actions/samples'
+import { receiveSample, cancelSample, runSampleWorkflowTransition } from '@/app/actions/samples'
 import { getAnalysesByUids, submitBatchResult, getUnassignedSamples, assignSamplesToBatch } from '@/app/actions/batches'
 import DataTable, { type DataTableColumn } from '@/app/dashboard/_components/DataTable'
 import BatchWorksheetWizard from './BatchWorksheetWizard'
+import { STICKER_TEMPLATES, printStickersBatch, type StickerTemplate } from '@/app/lib/stickerTemplates'
+import { type CocSample } from '@/app/actions/storage'
 
 type BatchSampleRow = SenaiteSample & { id: string; sampleCode: string }
 type AddSampleRow = SenaiteSample & { id: string; sampleCode: string }
+
+// renderSticker/printStickersBatch were built for the chain-of-custody lookup
+// shape (CocSample) — adapt SenaiteSample into it rather than writing a
+// second sticker renderer, so every entry point (Sample Detail, Batch) prints
+// from the exact same templates/logic (see SampleOverviewDetail.tsx's own
+// toCocSample for the sibling adapter). Fields with no SenaiteSample
+// equivalent are left blank rather than guessed.
+function toCocSample(s: SenaiteSample, batchId: string): CocSample {
+  return {
+    sample_id: s.id || s.title, senaite_ar_id: s.id,
+    status: s.review_state, status_display: mapSenaiteState(s.review_state),
+    sample_type: s.SampleTypeTitle, client: s.ClientTitle, barcode: '',
+    collection_date: s.DateSampled, received_date: s.DateReceived, expiry_date: null,
+    condition: '', seal_condition: '', priority: mapSenaitePriority(s.Priority),
+    storage_requirement: '', sampling_deviation: '',
+    quantity_received: '', quantity_unit: '', hold_for_qa: false,
+    received_by: '', receipt_notes: '', collector: '',
+    client_order_number: '', composite: false,
+    container_type: '', preservation: '', sample_point: '',
+    batch_id: batchId, batch_sub_group: '',
+    required_analyses: s.Analyses.map(a => a.title),
+  }
+}
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -76,6 +101,12 @@ export default function BatchDetailShell({
   const [resultsValues, setResultsValues] = useState<Record<string, string>>({})
   const [resultsSubmitting, setResultsSubmitting] = useState(false)
 
+  // Print stickers — reuses the shared sticker-template system (app/lib/stickerTemplates.ts)
+  const [printOpen, setPrintOpen] = useState(false)
+  const [printTemplateId, setPrintTemplateId] = useState(STICKER_TEMPLATES[0].id)
+  const [printCopies, setPrintCopies] = useState(1)
+  const [printing, setPrinting] = useState(false)
+
   // Add Samples — pick existing samples with no Batch assigned yet
   const [addOpen, setAddOpen] = useState(false)
   const [addLoading, setAddLoading] = useState(false)
@@ -98,6 +129,25 @@ export default function BatchDetailShell({
   const selectedSamples = samples.filter(s => selected.has(s.uid))
   const receivableCount = selectedSamples.filter(s => s.review_state === 'sample_due').length
   const cancellableCount = selectedSamples.filter(s => !['cancelled', 'invalid', 'rejected'].includes(s.review_state)).length
+
+  // Which review_states allow each transition — confirmed live against
+  // SENAITE's own @workflow endpoint per sample state (not guessed):
+  //   sample_received:  cancel, create_partitions, dispatch, store
+  //   to_be_verified:   create_partitions, dispatch, retract, store
+  //   verified:         create_partitions, dispatch, invalidate, publish, store
+  //   published:        create_partitions, dispatch, invalidate, republish, store
+  //   cancelled:        reinstate
+  const TRANSITION_STATES: Record<'dispatch' | 'store' | 'create_partitions' | 'invalidate' | 'republish' | 'reinstate', string[]> = {
+    dispatch: ['sample_received', 'to_be_verified', 'verified', 'published'],
+    store: ['sample_received', 'to_be_verified', 'verified', 'published'],
+    create_partitions: ['sample_received', 'to_be_verified', 'verified', 'published'],
+    invalidate: ['verified', 'published'],
+    republish: ['published'],
+    reinstate: ['cancelled'],
+  }
+  function eligibleFor(transition: keyof typeof TRANSITION_STATES) {
+    return selectedSamples.filter(s => TRANSITION_STATES[transition].includes(s.review_state))
+  }
 
   function runBulk(action: (uid: string) => Promise<{ success: boolean; message: string }>, eligible: SenaiteSample[], doneMsg: string) {
     if (eligible.length === 0) return
@@ -122,6 +172,17 @@ export default function BatchDetailShell({
   }
   function handleCancel() {
     runBulk(cancelSample, selectedSamples.filter(s => !['cancelled', 'invalid', 'rejected'].includes(s.review_state)), 'cancelled')
+  }
+  function handleTransition(transition: keyof typeof TRANSITION_STATES, doneMsg: string) {
+    runBulk(uid => runSampleWorkflowTransition(uid, transition), eligibleFor(transition), doneMsg)
+  }
+
+  async function handlePrintStickers() {
+    const template = STICKER_TEMPLATES.find((t: StickerTemplate) => t.id === printTemplateId)!
+    setPrinting(true)
+    await printStickersBatch(selectedSamples.map(s => toCocSample(s, batch.id)), template, printCopies)
+    setPrinting(false)
+    setPrintOpen(false)
   }
 
   async function openResults() {
@@ -262,10 +323,18 @@ export default function BatchDetailShell({
           <button onClick={openAdd} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ backgroundColor: '#fff', color: '#374151', border: '1px solid #D1D5DB', cursor: 'pointer' }}>
             <MI name="playlist_add" size={15} color="#374151" /> Add Samples
           </button>
+          <Link href={`/dashboard/batches/${batch.uid}/audit-trail`} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ backgroundColor: '#fff', color: '#374151', border: '1px solid #D1D5DB', textDecoration: 'none' }}>
+            <MI name="history" size={15} color="#374151" /> Audit Log
+          </Link>
           {samples.length > 0 && (
-            <button onClick={() => setWizardOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ backgroundColor: '#fff', color: '#374151', border: '1px solid #D1D5DB', cursor: 'pointer' }}>
-              <MI name="table_chart" size={15} color="#374151" /> Create Worksheet
-            </button>
+            <>
+              <Link href={`/dashboard/batches/${batch.uid}/batch-book`} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ backgroundColor: '#fff', color: '#374151', border: '1px solid #D1D5DB', textDecoration: 'none' }}>
+                <MI name="menu_book" size={15} color="#374151" /> Batch Book
+              </Link>
+              <button onClick={() => setWizardOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ backgroundColor: '#fff', color: '#374151', border: '1px solid #D1D5DB', cursor: 'pointer' }}>
+                <MI name="table_chart" size={15} color="#374151" /> Create Worksheet
+              </button>
+            </>
           )}
           <Link href={`/dashboard/samples-overview/new?batch=${batch.uid}`} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC', textDecoration: 'none' }}>
             <MI name="add" size={15} color="#fff" /> Create Sample
@@ -314,12 +383,50 @@ export default function BatchDetailShell({
           <button onClick={openResults} disabled={busy} style={toolbarBtn}>
             <MI name="grid_view" size={14} color="#374151" /> {selected.size === 1 ? 'Enter Results' : 'Multi Results'} <span style={{ background: '#DBEAFE', color: '#1D4ED8', borderRadius: 999, padding: '1px 6px', fontSize: 10 }}>{selected.size}</span>
           </button>
-          <button disabled title="Coming soon" style={{ ...toolbarBtn, opacity: 0.5, cursor: 'not-allowed' }}>
-            <MI name="print" size={14} color="#374151" /> Print stickers <span style={{ background: '#F3F4F6', color: '#374151', borderRadius: 999, padding: '1px 6px', fontSize: 10 }}>{selected.size}</span>
-          </button>
+          <div style={{ position: 'relative' }}>
+            <button onClick={() => setPrintOpen(v => !v)} disabled={busy} style={toolbarBtn}>
+              <MI name="print" size={14} color="#374151" /> Print stickers <span style={{ background: '#DBEAFE', color: '#1D4ED8', borderRadius: 999, padding: '1px 6px', fontSize: 10 }}>{selected.size}</span>
+            </button>
+            {printOpen && (
+              <div style={{ position: 'absolute', top: '110%', left: 0, zIndex: 20, width: 240, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.1)', padding: 14 }}>
+                <label style={{ fontSize: 11, color: '#374151', display: 'block', marginBottom: 4 }}>Template</label>
+                <select value={printTemplateId} onChange={e => setPrintTemplateId(e.target.value)}
+                  style={{ width: '100%', fontSize: 12, padding: '6px 8px', border: '1px solid #E5E7EB', borderRadius: 6, marginBottom: 10 }}>
+                  {STICKER_TEMPLATES.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+                <label style={{ fontSize: 11, color: '#374151', display: 'block', marginBottom: 4 }}>Copies per sample</label>
+                <input type="number" min={1} max={50} value={printCopies}
+                  onChange={e => setPrintCopies(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
+                  style={{ width: '100%', fontSize: 12, padding: '6px 8px', border: '1px solid #E5E7EB', borderRadius: 6, marginBottom: 10 }} />
+                <button onClick={handlePrintStickers} disabled={printing}
+                  className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg"
+                  style={{ backgroundColor: '#0154FC', color: '#fff', cursor: printing ? 'not-allowed' : 'pointer', border: 'none', opacity: printing ? 0.7 : 1 }}>
+                  <MI name="print" size={14} color="#fff" /> {printing ? 'Preparing…' : 'Print'}
+                </button>
+              </div>
+            )}
+          </div>
           <button disabled title="Coming soon" style={{ ...toolbarBtn, opacity: 0.5, cursor: 'not-allowed' }}>
             <MI name="content_copy" size={14} color="#374151" /> Copy to new <span style={{ background: '#F3F4F6', color: '#374151', borderRadius: 999, padding: '1px 6px', fontSize: 10 }}>{selected.size}</span>
           </button>
+          {(['dispatch', 'store', 'create_partitions', 'invalidate', 'republish', 'reinstate'] as const).map(transition => {
+            const count = eligibleFor(transition).length
+            if (count === 0) return null
+            const META: Record<typeof transition, { icon: string; label: string; doneMsg: string }> = {
+              dispatch: { icon: 'local_shipping', label: 'Dispatch', doneMsg: 'dispatched' },
+              store: { icon: 'inventory_2', label: 'Store', doneMsg: 'stored' },
+              create_partitions: { icon: 'call_split', label: 'Create partitions', doneMsg: 'partitioned' },
+              invalidate: { icon: 'block', label: 'Invalidate', doneMsg: 'invalidated' },
+              republish: { icon: 'campaign', label: 'Republish', doneMsg: 'republished' },
+              reinstate: { icon: 'restore', label: 'Reinstate', doneMsg: 'reinstated' },
+            }
+            const meta = META[transition]
+            return (
+              <button key={transition} onClick={() => handleTransition(transition, meta.doneMsg)} disabled={busy} style={toolbarBtn}>
+                <MI name={meta.icon} size={14} color="#374151" /> {meta.label} <span style={{ background: '#DBEAFE', color: '#1D4ED8', borderRadius: 999, padding: '1px 6px', fontSize: 10 }}>{count}</span>
+              </button>
+            )
+          })}
           <button onClick={handleCancel} disabled={busy || cancellableCount === 0}
             style={{ ...toolbarBtn, background: '#DC2626', color: '#fff', border: 'none', opacity: cancellableCount === 0 ? 0.5 : 1, cursor: cancellableCount === 0 ? 'not-allowed' : 'pointer' }}>
             <MI name="cancel" size={14} color="#fff" /> Cancel {cancellableCount > 0 && <span style={{ background: 'rgba(255,255,255,0.25)', color: '#fff', borderRadius: 999, padding: '1px 6px', fontSize: 10 }}>{cancellableCount}</span>}
