@@ -27,6 +27,7 @@ function toCocSample(s: LabSample): CocSample {
     client_order_number: s.client_order_number, composite: s.composite,
     container_type: s.container_type, preservation: s.preservation, sample_point: s.sample_point,
     batch_id: s.batch_id, batch_sub_group: s.batch_sub_group,
+    required_analyses: [],
   }
 }
 

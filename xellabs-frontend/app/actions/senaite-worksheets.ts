@@ -232,7 +232,7 @@ export async function addAnalysesToWorksheet(
     logExternalAuditEvent('assign_to_worksheet', meta.sampleId, { title: meta.title, worksheetId: id, analysisUid: uid }, 'sample')
     if (!loggedSamples.has(meta.sampleId)) {
       loggedSamples.add(meta.sampleId)
-      logCustodyEvent({ sampleId: meta.sampleId, action: 'analysed', toLocation: `Worksheet ${id}`, purpose: `Assigned to Worksheet ${id} for testing` })
+      await logCustodyEvent({ sampleId: meta.sampleId, action: 'analysed', toLocation: `Worksheet ${id}`, purpose: `Assigned to Worksheet ${id} for testing` })
     }
   }
   return { success: true }

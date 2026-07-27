@@ -6,12 +6,12 @@ import {
   lookupChainOfCustody, resolveStorageLabel, assignSampleByLabel,
   type ChainOfCustodyResult, type ResolvedLabel,
 } from '@/app/actions/storage'
-import { logCustodyEvent, type CustodyAction, type CustodyCondition, type SealStatus } from '@/app/actions/chain-of-custody'
+import { logCustodyEvent, signCustodyEvent, type CustodyAction, type CustodyCondition, type SealStatus } from '@/app/actions/chain-of-custody'
 import { getStaffUsers, type StaffUser } from '@/app/actions/users'
 import { STICKER_TEMPLATES, renderSticker, stickerPageCss, printSticker, type StickerTemplate } from '@/app/lib/stickerTemplates'
 import QrScanModal from '@/app/dashboard/_components/QrScanModal'
 import { sampleDisplayId } from '@/app/lib/sampleDisplay'
-import { MI, CustodyTimelineList, FullHistoryModal } from './_components/CustodyTimeline'
+import { MI, CustodyTimelineList, FullHistoryModal, eventMeta, fmtDateShort, fmtTime } from './_components/CustodyTimeline'
 
 const CUSTODY_ACTIONS: { value: CustodyAction; label: string }[] = [
   { value: 'collected', label: 'Collected' },
@@ -20,6 +20,7 @@ const CUSTODY_ACTIONS: { value: CustodyAction; label: string }[] = [
   { value: 'analysed', label: 'Released for Analysis' },
   { value: 'retrieved', label: 'Retrieved from Storage' },
   { value: 'stored', label: 'Returned to Storage' },
+  { value: 'completed', label: 'Sample Completed' },
 ]
 
 function fmtDate(iso: string | null | undefined) {
@@ -94,17 +95,34 @@ export default function ChainOfCustodyPage() {
     action: 'transferred' as CustodyAction,
     fromLocation: '', toLocation: '', receivedById: '',
     temperatureC: '', condition: '' as CustodyCondition | '', sealStatus: '' as SealStatus | '',
-    purpose: '', notes: '',
+    purpose: '', notes: '', password: '',
   })
+  const [custodyErrors, setCustodyErrors] = useState<Record<string, string>>({})
   function resetCustodyForm() {
-    setCustodyForm({ action: 'transferred', fromLocation: '', toLocation: '', receivedById: '', temperatureC: '', condition: '', sealStatus: '', purpose: '', notes: '' })
+    setCustodyForm({ action: 'transferred', fromLocation: '', toLocation: '', receivedById: '', temperatureC: '', condition: '', sealStatus: '', purpose: '', notes: '', password: '' })
+    setCustodyErrors({})
   }
   async function openCustodyModal() {
     setCustodyOpen(true)
     if (staffUsers.length === 0) setStaffUsers(await getStaffUsers())
   }
+  // Any handoff that plausibly opens the sample container (received into the
+  // lab, released for lab prep/analysis) must have its seal condition
+  // recorded — this is what makes "any breaking of this seal must be
+  // rigorously logged" an enforced requirement rather than an optional field
+  // nobody fills in.
+  const SEAL_REQUIRED_ACTIONS: CustodyAction[] = ['received', 'analysed']
   async function submitCustodyEvent() {
     if (!sample || custodySaving) return
+    const errors: Record<string, string> = {}
+    if (SEAL_REQUIRED_ACTIONS.includes(custodyForm.action) && !custodyForm.sealStatus) {
+      errors.sealStatus = 'Seal status must be recorded for this action.'
+    }
+    if (!custodyForm.password) {
+      errors.password = 'Your password is required to sign this custody event.'
+    }
+    if (Object.keys(errors).length) { setCustodyErrors(errors); return }
+
     setCustodySaving(true)
     const res = await logCustodyEvent({
       sampleId: sample.sample_id,
@@ -118,13 +136,28 @@ export default function ChainOfCustodyPage() {
       purpose: custodyForm.purpose || undefined,
       notes: custodyForm.notes || undefined,
     })
-    setCustodySaving(false)
-    showToast(res.success, res.success ? 'Custody event logged.' : (res.message ?? 'Failed to log custody event.'))
-    if (res.success) {
-      setCustodyOpen(false)
-      resetCustodyForm()
-      await handleLookup(sample.sample_id)
+    if (!res.success || !res.id) {
+      setCustodySaving(false)
+      showToast(false, res.message ?? 'Failed to log custody event.')
+      return
     }
+    // Sign the just-created record — a failed signature (wrong password)
+    // leaves the custody row logged but unsigned, matching Approvals' own
+    // "decision applied, e-signature attempt separate" precedent, and telling
+    // the user exactly what went wrong rather than silently dropping it.
+    const actionLabel = CUSTODY_ACTIONS.find(a => a.value === custodyForm.action)?.label ?? custodyForm.action
+    const sig = await signCustodyEvent(
+      res.id, custodyForm.purpose || `${actionLabel} — ${sampleDisplayId(sample)}`, custodyForm.password,
+    )
+    setCustodySaving(false)
+    if (!sig.success) {
+      setCustodyErrors({ password: sig.message ?? 'Incorrect password — the event was logged but not signed.' })
+      return
+    }
+    showToast(true, 'Custody event logged and signed.')
+    setCustodyOpen(false)
+    resetCustodyForm()
+    await handleLookup(sample.sample_id)
   }
 
   function showToast(ok: boolean, msg: string) {
@@ -229,6 +262,68 @@ export default function ChainOfCustodyPage() {
     return () => { cancelled = true }
   }, [stickerPickerOpen, stickerTemplateId, sample])
 
+  // Formal COC document — the printable record meant to physically travel
+  // with the sample: Sample ID, source location, collection date/time,
+  // collector's name, required analyses, and every logged handoff with who
+  // performed it and when, so a reviewer can see the unbroken chain at a
+  // glance without opening the app.
+  function handlePrintCocDocument() {
+    if (!sample) return
+    const rows = events.map(ev => {
+      const meta = eventMeta(ev)
+      return `<tr>
+        <td>${fmtDateShort(ev.timestamp)} ${fmtTime(ev.timestamp)}</td>
+        <td>${meta.label}</td>
+        <td>${ev.user || '—'}</td>
+        <td>${(ev.details?.from_location as string) || (ev.details?.to_location as string) || '—'}</td>
+      </tr>`
+    }).join('')
+    const analysesHtml = sample.required_analyses.length
+      ? sample.required_analyses.map(a => `<li>${a}</li>`).join('')
+      : '<li style="color:#666">None on file</li>'
+    const w = window.open('', '_blank', 'width=800,height=900')
+    if (!w) { showToast(false, 'Pop-up blocked — allow pop-ups to print the COC document.'); return }
+    w.document.write(`<!doctype html><html><head><title>Chain of Custody — ${sampleDisplayId(sample)}</title>
+      <style>
+        body{font-family:Arial,sans-serif;padding:32px;color:#111;font-size:13px}
+        h1{font-size:18px;margin:0 0 4px}
+        .sub{color:#555;margin:0 0 20px;font-size:12px}
+        table{width:100%;border-collapse:collapse;margin-top:8px}
+        th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;font-size:12px}
+        th{background:#f3f4f6}
+        .grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;margin-bottom:16px}
+        .grid div span.k{color:#555;display:block;font-size:11px}
+        .grid div span.v{font-weight:700}
+        .sig{margin-top:28px;display:grid;grid-template-columns:1fr 1fr;gap:24px}
+        .sig div{border-top:1px solid #333;padding-top:4px;font-size:11px;color:#555}
+        @media print{ .noprint{display:none} }
+      </style>
+      </head><body>
+      <h1>Chain of Custody Record</h1>
+      <p class="sub">Formal custody document — must accompany the physical sample at all times.</p>
+      <div class="grid">
+        <div><span class="k">Sample ID</span><span class="v">${sampleDisplayId(sample)}</span></div>
+        <div><span class="k">Barcode</span><span class="v">${sample.barcode || sampleDisplayId(sample)}</span></div>
+        <div><span class="k">Source Location</span><span class="v">${sample.sample_point || '—'}</span></div>
+        <div><span class="k">Client / Project</span><span class="v">${sample.client || '—'}</span></div>
+        <div><span class="k">Date &amp; Time of Collection</span><span class="v">${sample.collection_date ? fmtDateShort(sample.collection_date) + ' ' + fmtTime(sample.collection_date) : '—'}</span></div>
+        <div><span class="k">Collector's Name</span><span class="v">${sample.collector || '—'}</span></div>
+      </div>
+      <p style="font-size:12px;font-weight:700;margin-bottom:4px">Required Analyses</p>
+      <ul style="margin:0 0 16px 20px;font-size:12px">${analysesHtml}</ul>
+      <p style="font-size:12px;font-weight:700;margin-bottom:4px">Custody Log — Every Individual Who Assumed Possession</p>
+      <table><thead><tr><th>Date / Time</th><th>Action</th><th>By</th><th>Location</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="4" style="text-align:center;color:#888">No custody events recorded yet.</td></tr>'}</tbody></table>
+      <div class="sig">
+        <div>Released by (signature / date)</div>
+        <div>Received by (signature / date)</div>
+      </div>
+      <p style="margin-top:24px;font-size:10px;color:#888">Generated ${new Date().toLocaleString('en-GB', { timeZone: 'UTC' })} UTC — entries marked "Sign &amp; Log Event" in the system carry a password-verified electronic signature on file.</p>
+      <button class="noprint" onclick="window.print()" style="margin-top:16px;padding:8px 16px;cursor:pointer">Print</button>
+      </body></html>`)
+    w.document.close()
+  }
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 310px', height: '100%', fontFamily: 'Inter, sans-serif', backgroundColor: '#F8F9FB', overflow: 'hidden' }}>
 
@@ -331,6 +426,7 @@ export default function ChainOfCustodyPage() {
                 <div style={{ position: 'fixed', top: morePos.top, right: morePos.right, zIndex: 9999, width: 200, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', padding: 4 }}>
                   {[
                     { label: 'Print Label', icon: 'print', disabled: !sample, run: () => setStickerPickerOpen(true) },
+                    { label: 'Print COC Document', icon: 'description', disabled: !sample, run: () => handlePrintCocDocument() },
                     { label: 'Log Custody Event', icon: 'swap_horiz', disabled: !sample, run: () => openCustodyModal() },
                     { label: 'View Full History', icon: 'history', disabled: !sample, run: () => setHistoryOpen(true) },
                     { label: 'Clear Sample', icon: 'close', disabled: !sample, run: () => { setResult(null); setSampleInput(''); setError(''); setPendingLabel(null) } },
@@ -409,7 +505,16 @@ export default function ChainOfCustodyPage() {
                 </div>
               ))}
             </div>
+            {/* Formal-COC fields: collection date/time, collector, and source
+                (collection point) location — required per the Chain of
+                Custody compliance spec ("record the sample ID, source
+                location, date and time of collection, collector's name"). */}
             <div className="mt-3 pt-3 flex flex-wrap gap-x-8 gap-y-1" style={{ borderTop: '1px solid #F3F4F6' }}>
+              {sample.collection_date && <><span style={{ fontSize: 10, color: '#374151' }}>Collected</span><span style={{ fontSize: 10, fontWeight: 500, color: '#374151' }}>{fmtDate(sample.collection_date)}</span></>}
+              {sample.collector       && <><span style={{ fontSize: 10, color: '#374151', marginLeft: 16 }}>Collector</span><span style={{ fontSize: 10, fontWeight: 500, color: '#374151' }}>{sample.collector}</span></>}
+              {sample.sample_point    && <><span style={{ fontSize: 10, color: '#374151', marginLeft: 16 }}>Source Location</span><span style={{ fontSize: 10, fontWeight: 500, color: '#374151' }}>{sample.sample_point}</span></>}
+            </div>
+            <div className="mt-1.5 pt-1.5 flex flex-wrap gap-x-8 gap-y-1">
               {sample.received_date && <><span style={{ fontSize: 10, color: '#374151' }}>Received</span><span style={{ fontSize: 10, fontWeight: 500, color: '#374151' }}>{fmtDate(sample.received_date)}</span></>}
               {sample.received_by  && <><span style={{ fontSize: 10, color: '#374151', marginLeft: 16 }}>Received by</span><span style={{ fontSize: 10, fontWeight: 500, color: '#374151' }}>{sample.received_by}</span></>}
               {sample.condition    && <><span style={{ fontSize: 10, color: '#374151', marginLeft: 16 }}>Condition</span><span style={{ fontSize: 10, fontWeight: 500, color: '#374151' }}>{sample.condition}</span></>}
@@ -417,6 +522,14 @@ export default function ChainOfCustodyPage() {
               {sample.batch_id     && <><span style={{ fontSize: 10, color: '#374151', marginLeft: 16 }}>Batch</span><span style={{ fontSize: 10, fontWeight: 500, color: '#374151' }}>{sample.batch_id}{sample.batch_sub_group ? ` (${sample.batch_sub_group})` : ''}</span></>}
               {sample.hold_for_qa  && <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 999, backgroundColor: '#FEF3C7', color: '#92400E', marginLeft: 16 }}>QA Hold</span>}
             </div>
+            {sample.required_analyses.length > 0 && (
+              <div className="mt-2 pt-2 flex flex-wrap items-center gap-1.5" style={{ borderTop: '1px solid #F3F4F6' }}>
+                <span style={{ fontSize: 10, color: '#374151', marginRight: 4 }}>Required Analyses</span>
+                {sample.required_analyses.map(name => (
+                  <span key={name} style={{ fontSize: 10, fontWeight: 600, padding: '2px 9px', borderRadius: 999, backgroundColor: '#EFF6FF', color: '#1D4ED8' }}>{name}</span>
+                ))}
+              </div>
+            )}
             {sample.receipt_notes && (
               <div className="mt-2 px-3 py-2 rounded-lg" style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A' }}>
                 <span style={{ fontSize: 10, color: '#92400E', fontWeight: 600 }}>Receipt Notes: </span>
@@ -752,14 +865,20 @@ export default function ChainOfCustodyPage() {
                   </select>
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Seal Status</label>
-                  <select value={custodyForm.sealStatus} onChange={e => setCustodyForm(p => ({ ...p, sealStatus: e.target.value as SealStatus | '' }))}
-                    className="w-full outline-none text-sm px-3 py-2 rounded-lg" style={{ border: '1px solid #D1D5DB', color: '#111827' }}>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>
+                    Seal Status
+                    {SEAL_REQUIRED_ACTIONS.includes(custodyForm.action) && <span style={{ color: '#EF4444' }}> *</span>}
+                  </label>
+                  <select value={custodyForm.sealStatus}
+                    onChange={e => { setCustodyForm(p => ({ ...p, sealStatus: e.target.value as SealStatus | '' })); setCustodyErrors(p => { const n = { ...p }; delete n.sealStatus; return n }) }}
+                    className="w-full outline-none text-sm px-3 py-2 rounded-lg"
+                    style={{ border: `1px solid ${custodyErrors.sealStatus ? '#EF4444' : '#D1D5DB'}`, color: '#111827' }}>
                     <option value="">— Not specified —</option>
                     <option value="intact">Seal Intact</option>
                     <option value="broken">Seal Broken</option>
                     <option value="not_sealed">Not Sealed</option>
                   </select>
+                  {custodyErrors.sealStatus && <p className="mt-1" style={{ fontSize: 10, color: '#EF4444' }}>{custodyErrors.sealStatus}</p>}
                 </div>
               </div>
 
@@ -775,6 +894,20 @@ export default function ChainOfCustodyPage() {
                 <textarea rows={2} value={custodyForm.notes} onChange={e => setCustodyForm(p => ({ ...p, notes: e.target.value }))}
                   className="w-full outline-none text-sm px-3 py-2 rounded-lg resize-none" style={{ border: '1px solid #D1D5DB', color: '#111827' }} />
               </div>
+
+              <div className="pt-2" style={{ borderTop: '1px solid #F3F4F6' }}>
+                <label style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>
+                  Sign to confirm you are assuming/releasing custody <span style={{ color: '#EF4444' }}>*</span>
+                </label>
+                <input type="password" value={custodyForm.password}
+                  onChange={e => { setCustodyForm(p => ({ ...p, password: e.target.value })); setCustodyErrors(p => { const n = { ...p }; delete n.password; return n }) }}
+                  placeholder="Enter your account password to sign"
+                  className="w-full outline-none text-sm px-3 py-2 rounded-lg"
+                  style={{ border: `1px solid ${custodyErrors.password ? '#EF4444' : '#D1D5DB'}`, color: '#111827' }} />
+                {custodyErrors.password
+                  ? <p className="mt-1" style={{ fontSize: 10, color: '#EF4444' }}>{custodyErrors.password}</p>
+                  : <p className="mt-1" style={{ fontSize: 10, color: '#374151' }}>This creates a permanent, timestamped electronic signature attesting you took custody of this sample.</p>}
+              </div>
             </div>
 
             <div className="flex gap-2 mt-4">
@@ -785,7 +918,7 @@ export default function ChainOfCustodyPage() {
               <button onClick={submitCustodyEvent} disabled={custodySaving}
                 className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
                 style={{ backgroundColor: '#0154FC', border: 'none', cursor: custodySaving ? 'not-allowed' : 'pointer', opacity: custodySaving ? 0.6 : 1 }}>
-                {custodySaving ? 'Logging…' : 'Log Event'}
+                {custodySaving ? 'Signing…' : 'Sign & Log Event'}
               </button>
             </div>
           </div>

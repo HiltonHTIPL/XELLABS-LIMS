@@ -4,7 +4,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 
-from core.permissions import IsLabManagerOrAbove, IsAnalystOrAbove, requires
+from rest_framework.permissions import BasePermission
+from core.permissions import IsLabManagerOrAbove, IsAnalystOrAbove, CAN_RECEIVE_OR_STORE_ROLES, requires
 from audittrail.models import AuditEvent, SecurityEvent
 from audittrail.middleware import get_current_request
 from .models import WorkflowState, WorkflowTransition, Task, TaskAssignment, Approval, ElectronicSignature
@@ -240,13 +241,28 @@ class ApprovalViewSet(viewsets.ModelViewSet):
         return Response({"created": len(to_create), "updated": updated})
 
 
+class IsAnalystOrSampleHandler(BasePermission):
+    """analyst-or-above (IsAnalystOrAbove), OR any role permitted to log a
+    Chain of Custody handoff (ReadOnlyOrSampleHandler's write_roles) — a
+    lab_clerk can create a custody event but sits below "analyst" in
+    ROLE_HIERARCHY, so gating /sign/ on IsAnalystOrAbove alone would let them
+    log the handoff and then be refused when signing it."""
+    def has_permission(self, request, view):
+        return (
+            request.user.is_authenticated
+            and (IsAnalystOrAbove().has_permission(request, view)
+                 or getattr(request.user, "role", None) in CAN_RECEIVE_OR_STORE_ROLES)
+        )
+
+
 class ElectronicSignatureViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = ElectronicSignature.objects.select_related("signed_by", "content_type").all()
     serializer_class = ElectronicSignatureSerializer
     # A signature can only ever be created for the signer themselves (the sign
     # action re-verifies request.user's own password), so this stays open to any
-    # lab analyst-or-above; identity is enforced by the password, not the role.
-    permission_classes = [IsAnalystOrAbove]
+    # lab analyst-or-above, or a role that can log a Chain of Custody handoff;
+    # identity is enforced by the password, not the role.
+    permission_classes = [IsAnalystOrSampleHandler]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ["content_type", "object_id", "signed_by"]
 

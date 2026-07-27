@@ -1073,15 +1073,16 @@ def dispatch_sample(senaite_uid: str, comment: str) -> dict:
     except requests.RequestException as exc:
         logger.error("dispatch_sample failed uid=%s: %s", uid, exc)
         return {"ok": False, "error": _sanitize_error(str(exc))}
-# In local dev, SENAITE_URL already includes the site path (e.g.
-# "http://senaite:8080/senaite"), so the parent path must NOT repeat "/senaite"
-# or it 404s ("...senaite/senaite/setup/..." — confirmed live). In production,
-# SENAITE_URL points at the host with no site path, so "/senaite" must be
-# included here instead. settings.DEBUG (True locally, False in production —
-# see config/settings.py) is what distinguishes the two environments.
-DYNAMIC_ANALYSIS_SPECS_PARENT_PATH = (
-    "/setup/dynamicanalysisspecs" if settings.DEBUG else "/senaite/setup/dynamicanalysisspecs"
-)
+# Whatever site path (if any) SENAITE_URL itself carries already covers this
+# — never guess it from settings.DEBUG. A direct container address includes
+# "/senaite" explicitly in SENAITE_URL (e.g. "http://senaite:8080/senaite"),
+# so repeating it here 404s ("...senaite/senaite/setup/..." — confirmed
+# live). A reverse proxy in front of SENAITE deliberately has NO path in its
+# URL (it rewrites requests to serve the Zope site at root), so prepending
+# "/senaite" there 404s the exact same way for the identical reason — this
+# is what broke worksheet creation in production; see Prodfix.txt. The old
+# DEBUG-based ternary had this backwards for the production/proxy case.
+DYNAMIC_ANALYSIS_SPECS_PARENT_PATH = f"{_parsed.path.rstrip('/')}/setup/dynamicanalysisspecs"
 
 
 def push_dynamic_analysis_spec(name: str, summary: str, file_bytes: bytes, filename: str) -> dict:
