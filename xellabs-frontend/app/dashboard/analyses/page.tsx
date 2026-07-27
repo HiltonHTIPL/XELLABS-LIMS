@@ -4,7 +4,7 @@ import { listOptions } from '@/app/lib/admin-crud'
 import AnalysesTabsShell from './_components/AnalysesTabsShell'
 
 export default async function AnalysesPage() {
-  const [{ services, categories, departments, labContacts, methods, instruments }, profiles, sampleTypeOptions] = await Promise.all([
+  const [{ services, categories, departments, labContacts, methods, instruments, calculations }, profiles, sampleTypeOptions] = await Promise.all([
     getAnalysesPageData(),
     getAnalysisProfiles(),
     listOptions('SampleType'),
@@ -17,6 +17,7 @@ export default async function AnalysesPage() {
       labContacts={labContacts}
       methods={methods}
       instruments={instruments}
+      calculations={calculations}
       initialProfiles={profiles}
       sampleTypeOptions={sampleTypeOptions}
     />

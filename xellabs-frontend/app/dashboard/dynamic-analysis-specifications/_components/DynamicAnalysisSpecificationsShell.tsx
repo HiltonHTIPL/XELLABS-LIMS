@@ -10,6 +10,7 @@ import {
 } from '@/app/actions/dynamic-analysis-specifications'
 import { ConfirmModal } from '@/app/dashboard/_components/ui'
 import DataTable, { type DataTableColumn } from '../../_components/DataTable'
+import ChooseFileButton from '../../_components/ChooseFileButton'
 
 function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
   return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
@@ -76,9 +77,7 @@ function NewDynamicSpecModal({ onClose, onDone }: { onClose: () => void; onDone:
               style={{ border: '1px solid #D1D5DB', color: '#111827' }} />
           </Field>
           <Field label="Specification File" required error={fieldErrors.file} hint="Only Excel files supported (.xlsx, .xls) — must have Keyword, min, max columns.">
-            <input name="file" type="file" accept=".xlsx,.xls"
-              className="w-full text-xs"
-              style={{ color: '#111827' }} />
+            <ChooseFileButton name="file" accept=".xlsx,.xls" required />
           </Field>
           {state.message && !state.success && (
             <p className="text-xs px-3 py-2 rounded-lg" style={{ backgroundColor: '#FEF2F2', color: '#991B1B', border: '1px solid #FECACA' }}>{state.message}</p>

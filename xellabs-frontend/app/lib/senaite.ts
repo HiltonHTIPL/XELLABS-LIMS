@@ -1945,8 +1945,11 @@ export type SenaiteInterimFieldRow = {
   keyword: string; title: string; value: string; choices: string; result_type: string
   allow_empty: boolean; unit: string; report: boolean; hidden: boolean; wide: boolean
 }
+// Field names match SENAITE's real Conditions RecordsField subfields exactly
+// (bika/lims/content/analysisservice.py) — the default-value subfield is
+// literally named "default" there, not "value".
 export type SenaiteConditionRow = {
-  title: string; description: string; type: string; value: string; choices: string; required: boolean
+  title: string; description: string; type: string; choices: string; default: string; required: boolean
 }
 
 export type SenaiteAnalysisService = {
@@ -1964,13 +1967,14 @@ export type SenaiteAnalysisService = {
   SortKey: string
   CommercialID: string
   ProtocolID: string
-  ScientificName: string
-  // Analysis tab
+  ScientificName: boolean
+  UnitChoices: string[]
   Accredited: boolean
   PointOfCapture: string
   DepartmentUid: string
   BulkPrice: string
   VAT: string
+  Remarks: string
   // Limits tab
   LowerDetectionLimit: string
   LowerLimitOfQuantification: string
@@ -2031,12 +2035,14 @@ function mapSenaiteAnalysisService(s: Record<string, unknown>): SenaiteAnalysisS
     SortKey: (s.SortKey as string) ?? '',
     CommercialID: (s.CommercialID as string) ?? '',
     ProtocolID: (s.ProtocolID as string) ?? '',
-    ScientificName: (s.ScientificName as string) ?? '',
+    ScientificName: Boolean(s.ScientificName),
+    UnitChoices: ((s.UnitChoices as Record<string, unknown>[]) ?? []).map(r => String(r.value ?? '')).filter(Boolean),
     Accredited: Boolean(s.Accredited),
     PointOfCapture: (s.PointOfCapture as string) ?? 'lab',
     DepartmentUid: refUid(s.Department),
     BulkPrice: (s.BulkPrice as string) ?? '',
     VAT: (s.VAT as string) ?? '',
+    Remarks: (s.Remarks as string) ?? '',
     LowerDetectionLimit: (s.LowerDetectionLimit as string) ?? '',
     LowerLimitOfQuantification: (s.LowerLimitOfQuantification as string) ?? '',
     UpperLimitOfQuantification: (s.UpperLimitOfQuantification as string) ?? '',
@@ -2075,7 +2081,7 @@ function mapSenaiteAnalysisService(s: Record<string, unknown>): SenaiteAnalysisS
     NumberOfRequiredVerifications: (s.NumberOfRequiredVerifications as string) ?? '1',
     Conditions: ((s.Conditions as Record<string, unknown>[]) ?? []).map(r => ({
       title: String(r.title ?? ''), description: String(r.description ?? ''), type: String(r.type ?? 'text'),
-      value: String(r.value ?? ''), choices: String(r.choices ?? ''), required: Boolean(r.required),
+      choices: String(r.choices ?? ''), default: String(r.default ?? ''), required: Boolean(r.required),
     })),
     review_state: (s.review_state as string) ?? 'active',
   }
@@ -2310,12 +2316,14 @@ export type AnalysisServicePayload = {
   SortKey?: string
   CommercialID?: string
   ProtocolID?: string
-  ScientificName?: string
+  ScientificName?: boolean
+  UnitChoices?: string[]
   Accredited?: boolean
   PointOfCapture?: string
   DepartmentUid?: string
   BulkPrice?: string
   VAT?: string
+  Remarks?: string
   LowerDetectionLimit?: string
   LowerLimitOfQuantification?: string
   UpperLimitOfQuantification?: string
@@ -2361,11 +2369,13 @@ function analysisServiceBody(payload: AnalysisServicePayload): Record<string, un
     SortKey: payload.SortKey ?? '',
     CommercialID: payload.CommercialID ?? '',
     ProtocolID: payload.ProtocolID ?? '',
-    ScientificName: payload.ScientificName ?? '',
+    ScientificName: payload.ScientificName ?? false,
+    UnitChoices: (payload.UnitChoices ?? []).filter(Boolean).map(value => ({ value })),
     Accredited: payload.Accredited ?? false,
     PointOfCapture: payload.PointOfCapture ?? 'lab',
     BulkPrice: payload.BulkPrice ?? '0.00',
     VAT: payload.VAT ?? '',
+    Remarks: payload.Remarks ?? '',
     // Unlike every other blank-optional field on this type (which merely
     // trips the already-handled bogus "'NoneType' object has no attribute
     // 'form'" response-rendering error while the object is still created
@@ -2993,6 +3003,7 @@ export async function senaiteWorkflowAction(
   token: string,
   uid: string,
   action: 'receive' | 'verify' | 'publish' | 'retract' | 'cancel'
+    | 'dispatch' | 'store' | 'create_partitions' | 'invalidate' | 'republish' | 'reinstate'
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const before = await fetch(`${SENAITE_URL}/@@API/senaite/v1/AnalysisRequest/${uid}?complete=true`, {
@@ -3329,7 +3340,12 @@ export async function assignAnalysesToWorksheet(
   } catch (e) { return { success: false, error: String(e) } }
 }
 
-export async function submitAnalysisResult(
+// Writes an Analysis's Result field ONLY — no workflow transition. Used by
+// both submitAnalysisResult (below, which submits-for-verification right
+// after) and the Batch Book, which — matching SENAITE's own Batch Book
+// exactly ("submitting the results for verification is only possible within
+// samples or worksheets") — must be able to save a value without submitting.
+export async function saveAnalysisResult(
   token: string,
   analysisUid: string,
   result: string
@@ -3371,7 +3387,7 @@ export async function submitAnalysisResult(
       // Confirmed live (2026-07-22): for an Analysis whose Service/Analysis
       // has any blank detection-limit field, this endpoint returns HTTP 200
       // with `success:false, message:"Value '' is not floatable"` — the same
-      // to_float('') crash as the submit-transition render bug above, this
+      // to_float('') crash as the submit-transition render bug below, this
       // time surfacing while the endpoint recomputes a formatted-result
       // summary for its own JSON response, AFTER the Result field has
       // already been written. `updateData.success===false` is therefore not
@@ -3387,6 +3403,18 @@ export async function submitAnalysisResult(
         return { success: false, error: (updateData.message as string) ?? `Update failed: HTTP ${updateRes.status}` }
       }
     }
+    return { success: true }
+  } catch (e) { return { success: false, error: String(e) } }
+}
+
+export async function submitAnalysisResult(
+  token: string,
+  analysisUid: string,
+  result: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const saved = await saveAnalysisResult(token, analysisUid, result)
+    if (!saved.success) return saved
 
     // See senaiteWorkflowAction for why content_status_modify is used instead of
     // the nonexistent `/workflow_action` REST route.
@@ -3471,6 +3499,34 @@ export type SenaiteAnalysisFull = {
  * client-side against the uids they already trust (e.g. a SenaiteSample's own
  * `Analyses[].uid` list, which comes from the object itself, not a search).
  */
+function mapAnalysisFullItem(a: Record<string, unknown>): SenaiteAnalysisFull {
+  // ResultsRange (bika.lims.content.abstractroutineanalysis.getResultsRange)
+  // is a {min, max, warn_min, warn_max} dict per-Analysis, or null/empty
+  // when no Specification applies — never an AR-level join, confirmed by
+  // reading the SENAITE source directly (not guessed).
+  const range = (a.ResultsRange && typeof a.ResultsRange === 'object') ? a.ResultsRange as Record<string, unknown> : null
+  const toNum = (v: unknown): number | null => {
+    if (v === null || v === undefined || v === '') return null
+    const n = Number(v)
+    return Number.isFinite(n) ? n : null
+  }
+  const verificators = Array.isArray(a.getVerificators) ? (a.getVerificators as unknown[]) : []
+  return {
+    uid:          (a.uid as string) ?? '',
+    title:        (a.title as string) ?? '',
+    Keyword:      (a.Keyword as string) ?? (a.getKeyword as string) ?? '',
+    Result:       (a.Result as string) ?? '',
+    Unit:         (a.Unit as string) ?? (a.getUnit as string) ?? '',
+    review_state: (a.review_state as string) ?? '',
+    sampleId:     (a.getRequestID as string) ?? '',
+    submittedBy:  (a.getSubmittedBy as string) ?? '',
+    verifiedBy:   (a.getLastVerificator as string) ?? (verificators[verificators.length - 1] as string) ?? '',
+    resultCaptureDate: (a.getResultCaptureDate as string) ?? (a.ResultCaptureDate as string) ?? null,
+    resultsRangeMin: toNum(range?.min),
+    resultsRangeMax: toNum(range?.max),
+  }
+}
+
 export async function fetchAllAnalyses(token: string): Promise<SenaiteAnalysisFull[]> {
   try {
     const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Analysis?complete=true&limit=5000`, {
@@ -3479,34 +3535,32 @@ export async function fetchAllAnalyses(token: string): Promise<SenaiteAnalysisFu
     })
     if (!res.ok) return []
     const data = await res.json()
-    return (data.items ?? []).map((a: Record<string, unknown>) => {
-      // ResultsRange (bika.lims.content.abstractroutineanalysis.getResultsRange)
-      // is a {min, max, warn_min, warn_max} dict per-Analysis, or null/empty
-      // when no Specification applies — never an AR-level join, confirmed by
-      // reading the SENAITE source directly (not guessed).
-      const range = (a.ResultsRange && typeof a.ResultsRange === 'object') ? a.ResultsRange as Record<string, unknown> : null
-      const toNum = (v: unknown): number | null => {
-        if (v === null || v === undefined || v === '') return null
-        const n = Number(v)
-        return Number.isFinite(n) ? n : null
-      }
-      const verificators = Array.isArray(a.getVerificators) ? (a.getVerificators as unknown[]) : []
-      return {
-        uid:          (a.uid as string) ?? '',
-        title:        (a.title as string) ?? '',
-        Keyword:      (a.Keyword as string) ?? (a.getKeyword as string) ?? '',
-        Result:       (a.Result as string) ?? '',
-        Unit:         (a.Unit as string) ?? (a.getUnit as string) ?? '',
-        review_state: (a.review_state as string) ?? '',
-        sampleId:     (a.getRequestID as string) ?? '',
-        submittedBy:  (a.getSubmittedBy as string) ?? '',
-        verifiedBy:   (a.getLastVerificator as string) ?? (verificators[verificators.length - 1] as string) ?? '',
-        resultCaptureDate: (a.getResultCaptureDate as string) ?? (a.ResultCaptureDate as string) ?? null,
-        resultsRangeMin: toNum(range?.min),
-        resultsRangeMax: toNum(range?.max),
-      }
-    })
+    return (data.items ?? []).map(mapAnalysisFullItem)
   } catch { return [] }
+}
+
+// Targeted alternative to fetchAllAnalyses (which pulls up to 5000 analyses
+// lab-wide and filters client-side) for callers that already know exactly
+// which analysis uids they need — e.g. a batch's own Analyses[] refs. One
+// singular `v1/Analysis/<uid>?complete=true` call per uid, in parallel, same
+// per-uid pattern already proven in fetchSenaiteSample. For a batch's
+// handful of analyses this is dramatically cheaper than the full-catalog
+// dump — confirmed the "Batch Book"/"Multi Results" load-time complaint
+// traced back to fetchAllAnalyses being called for a 3-sample batch.
+export async function fetchAnalysesByUids(token: string, uids: string[]): Promise<SenaiteAnalysisFull[]> {
+  if (uids.length === 0) return []
+  const resolved = await Promise.all(uids.map(async uid => {
+    try {
+      const res = await fetch(`${SENAITE_URL}/@@API/senaite/v1/Analysis/${uid}?complete=true`, {
+        headers: { Authorization: `Basic ${token}`, Accept: 'application/json' },
+        cache: 'no-store',
+      })
+      if (!res.ok) return null
+      const item = ((await res.json()).items ?? [])[0] as Record<string, unknown> | undefined
+      return item ? mapAnalysisFullItem(item) : null
+    } catch { return null }
+  }))
+  return resolved.filter((a): a is SenaiteAnalysisFull => a !== null)
 }
 
 // ─── Batches ──────────────────────────────────────────────────────────────────

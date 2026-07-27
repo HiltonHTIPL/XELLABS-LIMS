@@ -195,3 +195,31 @@ export async function cancelSample(uid: string): Promise<WorkflowResult> {
   }
   return { success: result.success, message: result.success ? 'Sample cancelled.' : (result.error ?? 'Failed to cancel sample.') }
 }
+
+// Shared wrapper for the remaining workflow transitions confirmed live
+// against SENAITE's own @workflow endpoint per state (dispatch/store/
+// create_partitions/invalidate/republish/reinstate) — same verify-by-
+// re-fetch mechanism senaiteWorkflowAction already uses for receive/cancel,
+// just without cancel's/receive's extra custody-ledger side effects (those
+// two log a specific custody handoff; these five don't represent a genuine
+// physical custody event the same way).
+const TRANSITION_LABELS: Record<string, string> = {
+  dispatch: 'dispatched', store: 'stored', create_partitions: 'partitioned',
+  invalidate: 'invalidated', republish: 'republished', reinstate: 'reinstated',
+}
+
+export async function runSampleWorkflowTransition(
+  uid: string,
+  transition: 'dispatch' | 'store' | 'create_partitions' | 'invalidate' | 'republish' | 'reinstate',
+): Promise<WorkflowResult> {
+  const session = await getSession()
+  const token = sessionToken(session)
+  const result = await senaiteWorkflowAction(token, uid, transition)
+  revalidatePath('/dashboard/samples-overview')
+  const label = TRANSITION_LABELS[transition]
+  if (result.success) {
+    logExternalAuditEvent(transition, await resolveArId(token, uid), undefined, 'sample')
+    await refreshSampleStatus({ uid })
+  }
+  return { success: result.success, message: result.success ? `Sample ${label}.` : (result.error ?? `Failed to ${transition.replace('_', ' ')} sample.`) }
+}

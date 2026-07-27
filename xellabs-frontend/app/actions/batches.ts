@@ -7,8 +7,9 @@ import {
   fetchSenaiteClients,
   fetchSenaiteSamples,
   fetchSenaiteSample,
-  fetchAllAnalyses,
+  fetchAnalysesByUids,
   submitAnalysisResult,
+  saveAnalysisResult,
   updateSenaiteSample,
   type SenaiteBatch,
   type SenaiteSample,
@@ -16,6 +17,22 @@ import {
 } from '@/app/lib/senaite'
 import { serverToken } from '@/app/lib/senaite-auth'
 import { logCustodyEvent } from '@/app/actions/chain-of-custody'
+import { logExternalAuditEvent, getAuditEvents, type AuditEvent } from '@/app/actions/audit-trail'
+
+// Batch is SENAITE-native with no Django mirror model (same reasoning as
+// Analysis Service — see CLAUDE.md §16g on not reintroducing a Django
+// mirror), so the normal TRACKED_MODELS save-signal audit log never fires
+// for it. Bridge batch-level actions the same way sample/worksheet/analysis
+// SENAITE-actions already do — no `record_type` (no matching ContentType),
+// filtered instead via object_repr_contains matching the batch's own id.
+function batchAuditRepr(id: string, title: string): string {
+  return `${title} (${id})`
+}
+
+export async function getBatchAuditEvents(id: string): Promise<AuditEvent[]> {
+  if (!id) return []
+  return getAuditEvents({ object_repr_contains: `(${id})` })
+}
 
 export async function getBatchesList(): Promise<SenaiteBatch[]> {
   return fetchSenaiteBatches(serverToken())
@@ -39,10 +56,7 @@ export async function getBatchSamples(uid: string): Promise<SenaiteSample[]> {
  * analysis uids — pass each selected sample's own `Analyses[].uid` list,
  * trusted data straight from the object itself, not a broken search filter. */
 export async function getAnalysesByUids(uids: string[]): Promise<SenaiteAnalysisFull[]> {
-  if (uids.length === 0) return []
-  const all = await fetchAllAnalyses(serverToken())
-  const wanted = new Set(uids)
-  return all.filter(a => wanted.has(a.uid))
+  return fetchAnalysesByUids(serverToken(), uids)
 }
 
 export async function submitBatchResult(
@@ -50,6 +64,25 @@ export async function submitBatchResult(
   result: string
 ): Promise<{ success: boolean; message?: string }> {
   const r = await submitAnalysisResult(serverToken(), analysisUid, result)
+  return { success: r.success, message: r.error }
+}
+
+// Batch Book — matches SENAITE's own Batch Book exactly: lets a user fill in
+// result VALUES across every sample in the batch, but never submits them for
+// verification (that still requires going into the Sample or Worksheet,
+// where instrument/method can also be set). Every analysis across every
+// sample in the batch, not just a selected subset.
+export async function getBatchBookAnalyses(uid: string): Promise<SenaiteAnalysisFull[]> {
+  const samples = await getBatchSamples(uid)
+  const uids = Array.from(new Set(samples.flatMap(s => s.Analyses.map(a => a.uid))))
+  return getAnalysesByUids(uids)
+}
+
+export async function saveBatchBookResult(
+  analysisUid: string,
+  result: string
+): Promise<{ success: boolean; message?: string }> {
+  const r = await saveAnalysisResult(serverToken(), analysisUid, result)
   return { success: r.success, message: r.error }
 }
 
@@ -80,13 +113,17 @@ export async function assignSamplesToBatch(
   // logging failure still never fails the batch assignment itself (already
   // committed above) — only swallowed per-sample, not propagated.
   const batches = await fetchSenaiteBatches(token)
-  const batchLabel = batches.find(b => b.uid === batchUid)?.id ?? batchUid
+  const batch = batches.find(b => b.uid === batchUid)
+  const batchLabel = batch?.id ?? batchUid
   await Promise.all(sampleUids.map(async uid => {
     const sample = await fetchSenaiteSample(token, uid)
     if (sample?.id) {
       await logCustodyEvent({ sampleId: sample.id, action: 'batched', toLocation: `Batch ${batchLabel}`, purpose: `Added to Batch ${batchLabel}` })
     }
   }))
+  if (batch) {
+    logExternalAuditEvent('update', batchAuditRepr(batch.id, batch.title), { added_samples: sampleUids.length })
+  }
   return { success: true, message: `${sampleUids.length} sample${sampleUids.length > 1 ? 's' : ''} added to batch.` }
 }
 
@@ -131,6 +168,8 @@ export async function createBatch(
     return { message: result.error ?? 'Failed to create batch.' }
   }
 
+  if (result.batch) logExternalAuditEvent('create', batchAuditRepr(result.batch.id, title))
+
   revalidatePath('/dashboard/batches')
   return { success: true, message: `Batch "${title}" created.` }
 }
@@ -139,10 +178,12 @@ export async function setBatchState(
   uid: string,
   transition: 'close' | 'open' | 'cancel'
 ): Promise<{ success: boolean; message: string }> {
+  const batch = await getBatch(uid)
   const result = await setSenaiteBatchState(serverToken(), uid, transition)
   if (!result.success) {
     return { success: false, message: result.error ?? 'Failed to update batch status.' }
   }
+  if (batch) logExternalAuditEvent(transition, batchAuditRepr(batch.id, batch.title))
   revalidatePath('/dashboard/batches')
   const LABELS = { close: 'Batch closed.', open: 'Batch reopened.', cancel: 'Batch cancelled.' }
   return { success: true, message: LABELS[transition] }
