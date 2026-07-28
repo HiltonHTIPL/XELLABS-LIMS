@@ -10,21 +10,30 @@
  */
 import 'server-only'
 import { headers } from 'next/headers'
-import { getSession } from '@/app/lib/session'
+import { redirect } from 'next/navigation'
+import { getSession, deleteSession } from '@/app/lib/session'
 
 const DJANGO_API = process.env.DJANGO_API_URL ?? 'http://django:8001'
 
 export async function djangoFetch(
   path: string,
-  init: RequestInit & { skipAuth?: boolean } = {}
+  init: RequestInit & { skipAuth?: boolean; auditSource?: 'import' } = {}
 ): Promise<Response> {
   const [session, headerStore] = await Promise.all([getSession(), headers()])
 
   // Tenant: prefer session value (reliable after login), fall back to
-  // middleware header (useful for unauthenticated requests like login itself)
+  // middleware header (useful for unauthenticated requests like login itself),
+  // then DEFAULT_TENANT_SCHEMA (demo-phase only — see auth.ts's identical
+  // fallback and CLAUDE.md). This must match auth.ts's login() resolution:
+  // login() calls this same djangoFetch for /api/auth/me/ BEFORE any session
+  // exists and with no subdomain header on plain localhost access, so without
+  // this fallback here too, any non-superuser tenant user fails login with
+  // "This account does not belong to the requested tenant" even though the
+  // session it's about to create would have had the right tenant all along.
   const tenantSubdomain =
     session?.tenantSubdomain ||
     headerStore.get('x-tenant-subdomain') ||
+    process.env.DEFAULT_TENANT_SCHEMA ||
     ''
 
   const tenantHeaders: Record<string, string> = {}
@@ -32,21 +41,57 @@ export async function djangoFetch(
     tenantHeaders['X-Tenant-Schema'] = tenantSubdomain
   }
 
-  const authHeaders: Record<string, string> = {}
-  if (!init.skipAuth && session?.djangoToken) {
-    authHeaders['Authorization'] = `Token ${session.djangoToken}`
+  if (init.auditSource) {
+    tenantHeaders['X-Audit-Source'] = init.auditSource
   }
 
-  const { skipAuth: _omit, ...fetchInit } = init
+  const token =
+    session?.djangoToken ||
+    process.env.DJANGO_SERVICE_TOKEN ||
+    ''
 
-  return fetch(`${DJANGO_API}${path}`, {
+  const authHeaders: Record<string, string> = {}
+  if (!init.skipAuth && token) {
+    authHeaders['Authorization'] = `Token ${token}`
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { skipAuth: _omit, auditSource: _omit2, ...fetchInit } = init
+
+  // Don't set Content-Type for FormData bodies — fetch must set its own
+  // multipart boundary, and a forced 'application/json' here would break uploads.
+  const isFormData = typeof FormData !== 'undefined' && fetchInit.body instanceof FormData
+
+  const res = await fetch(`${DJANGO_API}${path}`, {
     ...fetchInit,
     headers: {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...authHeaders,
       ...tenantHeaders,
       ...(fetchInit.headers as Record<string, string> | undefined),
     },
     cache: fetchInit.cache ?? 'no-store',
   })
+
+  // Only an *existing* session can go stale this way — a fresh/unauthenticated
+  // request (e.g. the login form's own djangoFetch call) hitting this means
+  // the tenant name itself was wrong, which the caller already handles as a
+  // normal auth failure. Only clear+redirect when a logged-in session's
+  // frozen tenantSubdomain no longer resolves in the DB (deleted tenant, or a
+  // cookie issued before a tenant/DB reset) — otherwise every request made
+  // with that cookie would silently 500 for the rest of its 8-hour lifetime.
+  if (session && res.status === 401) {
+    const probe = res.clone()
+    let code: string | undefined
+    try {
+      code = (await probe.json())?.code
+    } catch { /* not JSON — not our invalid_tenant signal */ }
+
+    if (code === 'invalid_tenant') {
+      await deleteSession()
+      redirect('/login')
+    }
+  }
+
+  return res
 }

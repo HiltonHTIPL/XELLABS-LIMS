@@ -1,0 +1,104 @@
+import os
+import json
+import logging
+from base64 import b64encode
+from urllib.request import urlopen, Request
+from urllib.error import URLError
+
+from celery import shared_task
+from django_tenants.utils import schema_context
+
+logger = logging.getLogger(__name__)
+
+SENAITE_URL  = os.getenv("SENAITE_URL", "http://senaite:8080/senaite")
+SENAITE_USER = os.getenv("SENAITE_USER", "admin")
+SENAITE_PASS = os.getenv("SENAITE_PASSWORD", "admin")
+
+
+def _basic_token() -> str:
+    return b64encode(f"{SENAITE_USER}:{SENAITE_PASS}".encode()).decode()
+
+
+def _fetch_senaite_clients() -> list[dict]:
+    """Fetch all clients from the reference LIMS via its JSON API."""
+    url = f"{SENAITE_URL}/@@API/senaite/v1/client?complete=true&limit=1000"
+    req = Request(url, headers={
+        "Authorization": f"Basic {_basic_token()}",
+        "Accept": "application/json",
+    })
+    try:
+        with urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read())
+            return data.get("items", [])
+    except URLError as exc:
+        logger.warning("Client sync: could not reach reference LIMS — %s", exc)
+        return []
+    except Exception as exc:
+        logger.exception("Client sync: unexpected error fetching clients — %s", exc)
+        return []
+
+
+def _addr(item: dict, key: str) -> dict:
+    raw = item.get(key) or {}
+    return {
+        "address": raw.get("address", ""),
+        "city":    raw.get("city", ""),
+        "state":   raw.get("state", ""),
+        "zip":     raw.get("zip", ""),
+        "country": raw.get("country", ""),
+    }
+
+
+@shared_task(name="core.tasks.sync_clients")
+def sync_clients():
+    """
+    Pull all clients from the reference LIMS and upsert them into Django's
+    Client table using the internal UID as the deduplication key.
+    Runs inside the public schema (Client is a shared model).
+    """
+    from core.models import Client  # imported here to avoid circular imports at module load
+
+    items = _fetch_senaite_clients()
+    if not items:
+        logger.info("Client sync: no items returned, skipping.")
+        return {"created": 0, "updated": 0, "total": 0}
+
+    created = updated = 0
+
+    with schema_context("public"):
+        for item in items:
+            uid = item.get("uid", "")
+            if not uid:
+                continue
+
+            is_active = item.get("review_state", "active") != "inactive"
+
+            defaults = {
+                "name":             item.get("title") or item.get("Name") or "",
+                "client_id":        item.get("ClientID") or item.get("id") or "",
+                "email":            item.get("EmailAddress") or "",
+                "phone":            item.get("Phone") or "",
+                "fax":              item.get("Fax") or "",
+                "tax_number":       item.get("TaxNumber") or "",
+                "bank_name":        item.get("BankName") or "",
+                "bank_branch":      item.get("BankBranch") or "",
+                "physical_address": _addr(item, "PhysicalAddress"),
+                "postal_address":   _addr(item, "PostalAddress"),
+                "billing_address":  _addr(item, "BillingAddress"),
+                "is_active":        is_active,
+            }
+
+            obj, was_created = Client.objects.update_or_create(
+                senaite_uid=uid,
+                defaults=defaults,
+            )
+
+            if was_created:
+                created += 1
+                logger.info("Client sync: created '%s' (uid=%s)", obj.name, uid)
+            else:
+                updated += 1
+                logger.debug("Client sync: updated '%s' (uid=%s, active=%s)", obj.name, uid, is_active)
+
+    logger.info("Client sync complete — created=%d updated=%d total=%d", created, updated, len(items))
+    return {"created": created, "updated": updated, "total": len(items)}

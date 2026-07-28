@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+# Pre-push checks — runs before `git push` leaves this machine.
+# Goal: catch the exact class of thing that has broken deployment before —
+# missing migrations, Django config errors, TypeScript errors, a frontend
+# build that doesn't actually compile, and secrets accidentally staged.
+#
+# One-time setup per clone:
+#   git config core.hooksPath .githooks
+#
+# Skip once, for a genuinely urgent push (use sparingly, not as a habit):
+#   git push --no-verify
+
+set -uo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+FAILED=0
+fail() { echo -e "${RED}✗ $1${NC}"; FAILED=1; }
+pass() { echo -e "${GREEN}✓ $1${NC}"; }
+warn() { echo -e "${YELLOW}! $1${NC}"; }
+
+echo "Running pre-push checks..."
+echo ""
+
+# ── 0. Never push secrets ─────────────────────────────────────────────────
+if git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep -qE '(^|/)\.env($|\.[^e])'; then
+  fail ".env file is staged for commit — never push real secrets."
+else
+  pass "No .env files staged"
+fi
+
+RANGE_DIFF="$(git diff origin/$(git symbolic-ref --short HEAD 2>/dev/null || echo main).. 2>/dev/null || git diff HEAD~5..HEAD 2>/dev/null || true)"
+if echo "$RANGE_DIFF" | grep -qiE "(SECRET_KEY|PASSWORD|API_KEY)\s*[:=]\s*['\"][^'\"]{8,}['\"]"; then
+  warn "Diff contains something that LOOKS like a hardcoded secret — double-check before continuing."
+else
+  pass "No obvious hardcoded secrets in the diff"
+fi
+echo ""
+
+# ── 1. Docker containers must be up — these checks run inside them ───────
+DJANGO_UP=$(docker ps --filter "name=xellabs-lims-django-1" --filter "status=running" -q)
+FRONTEND_UP=$(docker ps --filter "name=xellabs-lims-frontend-1" --filter "status=running" -q)
+
+if [ -z "$DJANGO_UP" ] || [ -z "$FRONTEND_UP" ]; then
+  fail "Containers not running — start with 'docker compose up -d' and try again."
+  echo ""
+  echo -e "${RED}Pre-push checks aborted (containers unavailable).${NC}"
+  exit 1
+fi
+
+# ── 2. Backend: Django system check ───────────────────────────────────────
+if docker exec xellabs-lims-django-1 python manage.py check --deploy 2>&1 | tee /tmp/django_check.log | grep -q "System check identified no issues\|0 silenced"; then
+  pass "Django system check"
+else
+  if docker exec xellabs-lims-django-1 python manage.py check 2>&1 | grep -qE "ERROR|CommandError"; then
+    fail "Django system check found errors — see output above"
+    docker exec xellabs-lims-django-1 python manage.py check
+  else
+    pass "Django system check (deploy warnings only, non-blocking)"
+  fi
+fi
+
+# ── 3. Backend: no missing migrations ─────────────────────────────────────
+if docker exec xellabs-lims-django-1 python manage.py makemigrations --check --dry-run > /tmp/migrations_check.log 2>&1; then
+  pass "No missing migrations"
+else
+  fail "Missing migrations detected — run 'makemigrations' and commit them:"
+  cat /tmp/migrations_check.log
+fi
+
+# ── 4. Backend: test suite ────────────────────────────────────────────────
+# --parallel is deliberately NOT used here: with Python 3.12 + this Django
+# version, a failing/erroring test under --parallel crashes the *runner*
+# itself ("TypeError: cannot pickle 'traceback' object") instead of reporting
+# the failure — confirmed by direct testing. A single-process run reports
+# real failures correctly; slower, but correct beats fast-and-broken here.
+if docker exec xellabs-lims-django-1 python manage.py test --failfast --noinput > /tmp/django_tests.log 2>&1; then
+  pass "Django test suite"
+else
+  fail "Django test suite failed:"
+  tail -40 /tmp/django_tests.log
+fi
+echo ""
+
+# ── 5. Frontend: TypeScript type check ────────────────────────────────────
+if docker exec xellabs-lims-frontend-1 npx tsc --noEmit > /tmp/tsc_check.log 2>&1; then
+  pass "TypeScript type check"
+else
+  fail "TypeScript errors found:"
+  cat /tmp/tsc_check.log
+fi
+
+# ── 6. Frontend: lint ──────────────────────────────────────────────────────
+# Non-blocking by design: there is a large pre-existing lint backlog across
+# this codebase unrelated to any specific change, and `next build` has
+# succeeded repeatedly throughout this project's history despite it — so
+# lint errors are not actually a deployment risk here, just debt. Warn loudly
+# instead of blocking every future push on a pre-existing, unrelated backlog.
+if docker exec xellabs-lims-frontend-1 npm run lint > /tmp/lint_check.log 2>&1; then
+  pass "ESLint"
+else
+  warn "ESLint found issues (non-blocking — pre-existing backlog, not gating pushes):"
+  tail -20 /tmp/lint_check.log
+fi
+
+# ── 7. Frontend: production build actually compiles ───────────────────────
+# The single strongest signal that deployment won't break — this is the exact
+# build Docker/production runs. Slower than the checks above, but a broken
+# build reaching the shared branch is the whole reason this hook exists.
+# Force NODE_ENV=production for this check regardless of the frontend
+# container's own runtime env (local dev now runs `next dev` with
+# NODE_ENV=development — `next build` behaves incorrectly, failing with a
+# "<Html> should not be imported outside of pages/_document" prerender
+# error, unless NODE_ENV is explicitly production for the build itself).
+# BUILD_CHECK=1 makes next.config.ts build into a separate distDir
+# (.next-buildcheck) instead of the default .next — this check runs inside
+# the SAME long-lived container as the local `next dev` server, and both
+# writing the same .next dir at once corrupts the dev server's build
+# manifest and sends `next build` into an infinite retry loop (confirmed
+# live). Never remove BUILD_CHECK here without also reverting next.config.ts.
+if docker exec -e NODE_ENV=production -e BUILD_CHECK=1 xellabs-lims-frontend-1 npm run build > /tmp/build_check.log 2>&1; then
+  pass "Next.js production build"
+else
+  fail "Next.js build failed:"
+  tail -60 /tmp/build_check.log
+fi
+
+echo ""
+if [ "$FAILED" -eq 1 ]; then
+  echo -e "${RED}Pre-push checks FAILED — push aborted.${NC}"
+  echo "Fix the issues above, or push with --no-verify if this is a deliberate exception."
+  exit 1
+fi
+
+echo -e "${GREEN}All pre-push checks passed.${NC}"
+exit 0

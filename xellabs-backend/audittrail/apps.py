@@ -6,8 +6,18 @@ class AudittrailConfig(AppConfig):
 
     def ready(self):
         from .signals import wire_signals
-        from lims.models import Sample, Result, AnalysisRequest, Worksheet
-        from instruments.models import Instrument, Calibration
+        from lims.models import Sample, Result, AnalysisRequest, Worksheet, SampleTemplate, SampleType, Method, AnalysisSpecification, Specification, DynamicAnalysisSpecification
+        from instruments.models import (
+            Instrument, Calibration, Certification, Validation,
+            InstrumentType, InstrumentLocation, ScheduledTask, InstrumentResultImport,
+            InstrumentManufacturer, InstrumentSupplier,
+        )
 
-        for model in (Sample, Result, AnalysisRequest, Worksheet, Instrument, Calibration):
+        for model in (
+            Sample, Result, AnalysisRequest, Worksheet, SampleTemplate,
+            SampleType, Method, AnalysisSpecification, Specification, DynamicAnalysisSpecification,
+            Instrument, Calibration, Certification, Validation,
+            InstrumentType, InstrumentLocation, ScheduledTask, InstrumentResultImport,
+            InstrumentManufacturer, InstrumentSupplier,
+        ):
             wire_signals(model)

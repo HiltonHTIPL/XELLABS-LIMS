@@ -1,0 +1,625 @@
+'use client'
+import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { type SenaiteBatch, type SenaiteSample, type SenaiteAnalysisFull, mapSenaiteState, mapSenaitePriority } from '@/app/lib/senaite'
+import { receiveSample, cancelSample, runSampleWorkflowTransition } from '@/app/actions/samples'
+import { getAnalysesByUids, submitBatchResult, getUnassignedSamples, assignSamplesToBatch } from '@/app/actions/batches'
+import DataTable, { type DataTableColumn } from '@/app/dashboard/_components/DataTable'
+import BatchWorksheetWizard from './BatchWorksheetWizard'
+import { STICKER_TEMPLATES, printStickersBatch, type StickerTemplate } from '@/app/lib/stickerTemplates'
+import { type CocSample } from '@/app/actions/storage'
+
+type BatchSampleRow = SenaiteSample & { id: string; sampleCode: string }
+type AddSampleRow = SenaiteSample & { id: string; sampleCode: string }
+
+// renderSticker/printStickersBatch were built for the chain-of-custody lookup
+// shape (CocSample) — adapt SenaiteSample into it rather than writing a
+// second sticker renderer, so every entry point (Sample Detail, Batch) prints
+// from the exact same templates/logic (see SampleOverviewDetail.tsx's own
+// toCocSample for the sibling adapter). Fields with no SenaiteSample
+// equivalent are left blank rather than guessed.
+function toCocSample(s: SenaiteSample, batchId: string): CocSample {
+  return {
+    sample_id: s.id || s.title, senaite_ar_id: s.id,
+    status: s.review_state, status_display: mapSenaiteState(s.review_state),
+    sample_type: s.SampleTypeTitle, client: s.ClientTitle, barcode: '',
+    collection_date: s.DateSampled, received_date: s.DateReceived, expiry_date: null,
+    condition: '', seal_condition: '', priority: mapSenaitePriority(s.Priority),
+    storage_requirement: '', sampling_deviation: '',
+    quantity_received: '', quantity_unit: '', hold_for_qa: false,
+    received_by: '', receipt_notes: '', collector: '',
+    client_order_number: '', composite: false,
+    container_type: '', preservation: '', sample_point: '',
+    batch_id: batchId, batch_sub_group: '',
+    required_analyses: s.Analyses.map(a => a.title),
+  }
+}
+
+function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
+  return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
+}
+
+function StatusBadge({ state }: { state: string }) {
+  const MAP: Record<string, { label: string; bg: string; color: string }> = {
+    open:      { label: 'Open',      bg: '#DCFCE7', color: '#15803D' },
+    closed:    { label: 'Closed',    bg: '#F3F4F6', color: '#374151' },
+    cancelled: { label: 'Cancelled', bg: '#FEF2F2', color: '#991B1B' },
+  }
+  const s = MAP[state] ?? { label: state, bg: '#F3F4F6', color: '#374151' }
+  return (
+    <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: s.bg, color: s.color }}>
+      {s.label}
+    </span>
+  )
+}
+
+function SampleStateBadge({ state }: { state: string }) {
+  const MAP: Record<string, { bg: string; color: string }> = {
+    sample_due:      { bg: '#FEF3C7', color: '#92400E' },
+    sample_received: { bg: '#DBEAFE', color: '#1D4ED8' },
+    to_be_verified:  { bg: '#EDE9FE', color: '#6D28D9' },
+    verified:        { bg: '#DCFCE7', color: '#15803D' },
+    published:       { bg: '#DCFCE7', color: '#15803D' },
+    cancelled:       { bg: '#FEF2F2', color: '#991B1B' },
+    rejected:        { bg: '#FEF2F2', color: '#991B1B' },
+    invalid:         { bg: '#FEF2F2', color: '#991B1B' },
+  }
+  const s = MAP[state] ?? { bg: '#F3F4F6', color: '#374151' }
+  return (
+    <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: s.bg, color: s.color }}>
+      {mapSenaiteState(state)}
+    </span>
+  )
+}
+
+function fmtDate(iso: string | null) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+export default function BatchDetailShell({
+  batch, samples, djangoIdByUid,
+}: {
+  batch: SenaiteBatch
+  samples: SenaiteSample[]
+  djangoIdByUid: Record<string, number>
+}) {
+  const router = useRouter()
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [samplesTableKey, setSamplesTableKey] = useState(0)
+  const [busy, setBusy] = useState(false)
+  const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [, startTransition] = useTransition()
+
+  // Results entry
+  const [resultsOpen, setResultsOpen] = useState(false)
+  const [resultsLoading, setResultsLoading] = useState(false)
+  const [resultsList, setResultsList] = useState<SenaiteAnalysisFull[]>([])
+  const [resultsValues, setResultsValues] = useState<Record<string, string>>({})
+  const [resultsSubmitting, setResultsSubmitting] = useState(false)
+
+  // Print stickers — reuses the shared sticker-template system (app/lib/stickerTemplates.ts)
+  const [printOpen, setPrintOpen] = useState(false)
+  const [printTemplateId, setPrintTemplateId] = useState(STICKER_TEMPLATES[0].id)
+  const [printCopies, setPrintCopies] = useState(1)
+  const [printing, setPrinting] = useState(false)
+
+  // Add Samples — pick existing samples with no Batch assigned yet
+  const [addOpen, setAddOpen] = useState(false)
+  const [addLoading, setAddLoading] = useState(false)
+  const [addCandidates, setAddCandidates] = useState<SenaiteSample[]>([])
+  const [addSelected, setAddSelected] = useState<Set<string>>(new Set())
+  const [addSearch, setAddSearch] = useState('')
+  const [addSubmitting, setAddSubmitting] = useState(false)
+  const [addTableKey, setAddTableKey] = useState(0)
+
+  // Create Worksheet(s) from batch — one worksheet per distinct analysis requested
+  const [wizardOpen, setWizardOpen] = useState(false)
+
+  function showToast(ok: boolean, msg: string) {
+    setToast({ ok, msg })
+    setTimeout(() => setToast(null), 4000)
+  }
+
+  // Only samples still in "Sample Due" can be received — matches SENAITE's own
+  // workflow guard, avoids firing a transition that's guaranteed to be rejected.
+  const selectedSamples = samples.filter(s => selected.has(s.uid))
+  const receivableCount = selectedSamples.filter(s => s.review_state === 'sample_due').length
+  const cancellableCount = selectedSamples.filter(s => !['cancelled', 'invalid', 'rejected'].includes(s.review_state)).length
+
+  // Which review_states allow each transition — confirmed live against
+  // SENAITE's own @workflow endpoint per sample state (not guessed):
+  //   sample_received:  cancel, create_partitions, dispatch, store
+  //   to_be_verified:   create_partitions, dispatch, retract, store
+  //   verified:         create_partitions, dispatch, invalidate, publish, store
+  //   published:        create_partitions, dispatch, invalidate, republish, store
+  //   cancelled:        reinstate
+  const TRANSITION_STATES: Record<'dispatch' | 'store' | 'create_partitions' | 'invalidate' | 'republish' | 'reinstate', string[]> = {
+    dispatch: ['sample_received', 'to_be_verified', 'verified', 'published'],
+    store: ['sample_received', 'to_be_verified', 'verified', 'published'],
+    create_partitions: ['sample_received', 'to_be_verified', 'verified', 'published'],
+    invalidate: ['verified', 'published'],
+    republish: ['published'],
+    reinstate: ['cancelled'],
+  }
+  function eligibleFor(transition: keyof typeof TRANSITION_STATES) {
+    return selectedSamples.filter(s => TRANSITION_STATES[transition].includes(s.review_state))
+  }
+
+  function runBulk(action: (uid: string) => Promise<{ success: boolean; message: string }>, eligible: SenaiteSample[], doneMsg: string) {
+    if (eligible.length === 0) return
+    setBusy(true)
+    startTransition(async () => {
+      const results = await Promise.all(eligible.map(s => action(s.uid)))
+      const failed = results.filter(r => !r.success)
+      setBusy(false)
+      setSelected(new Set())
+      setSamplesTableKey(k => k + 1)
+      if (failed.length > 0) {
+        showToast(false, `${failed.length} of ${eligible.length} failed: ${failed[0].message}`)
+      } else {
+        showToast(true, `${eligible.length} sample${eligible.length > 1 ? 's' : ''} ${doneMsg}.`)
+      }
+      router.refresh()
+    })
+  }
+
+  function handleReceive() {
+    runBulk(receiveSample, selectedSamples.filter(s => s.review_state === 'sample_due'), 'received')
+  }
+  function handleCancel() {
+    runBulk(cancelSample, selectedSamples.filter(s => !['cancelled', 'invalid', 'rejected'].includes(s.review_state)), 'cancelled')
+  }
+  function handleTransition(transition: keyof typeof TRANSITION_STATES, doneMsg: string) {
+    runBulk(uid => runSampleWorkflowTransition(uid, transition), eligibleFor(transition), doneMsg)
+  }
+
+  async function handlePrintStickers() {
+    const template = STICKER_TEMPLATES.find((t: StickerTemplate) => t.id === printTemplateId)!
+    setPrinting(true)
+    await printStickersBatch(selectedSamples.map(s => toCocSample(s, batch.id)), template, printCopies)
+    setPrinting(false)
+    setPrintOpen(false)
+  }
+
+  async function openResults() {
+    // Each SenaiteSample's own Analyses[].uid list is trustworthy object data
+    // (not a broken search filter — see getAnalysesByUids) so gather every
+    // analysis uid across the selected samples and enrich with full details.
+    const uids = Array.from(new Set(selectedSamples.flatMap(s => s.Analyses.map(a => a.uid))))
+    setResultsOpen(true)
+    setResultsLoading(true)
+    const analyses = await getAnalysesByUids(uids)
+    setResultsList(analyses)
+    setResultsValues({})
+    setResultsLoading(false)
+  }
+
+  function closeResults() {
+    setResultsOpen(false)
+    setResultsList([])
+    setResultsValues({})
+  }
+
+  async function submitResults() {
+    const entries = Object.entries(resultsValues).filter(([, v]) => v.trim() !== '')
+    if (entries.length === 0) { closeResults(); return }
+    setResultsSubmitting(true)
+    const outcomes = await Promise.all(entries.map(([uid, value]) => submitBatchResult(uid, value)))
+    const failed = outcomes.filter(o => !o.success)
+    setResultsSubmitting(false)
+    closeResults()
+    if (failed.length > 0) {
+      showToast(false, `${failed.length} of ${entries.length} result(s) failed: ${failed[0].message}`)
+    } else {
+      showToast(true, `${entries.length} result${entries.length > 1 ? 's' : ''} submitted.`)
+    }
+    setSelected(new Set())
+    setSamplesTableKey(k => k + 1)
+    router.refresh()
+  }
+
+  // batch.ClientUID scopes the picker to that client; an unassigned batch (no
+  // client) shows every unbatched sample across all clients — per spec.
+  async function openAdd() {
+    setAddOpen(true)
+    setAddLoading(true)
+    const candidates = await getUnassignedSamples(batch.ClientUID || undefined)
+    setAddCandidates(candidates)
+    setAddSelected(new Set())
+    setAddSearch('')
+    setAddLoading(false)
+  }
+
+  function closeAdd() {
+    setAddOpen(false)
+    setAddCandidates([])
+    setAddSelected(new Set())
+    setAddTableKey(k => k + 1)
+  }
+
+  const addFiltered = addCandidates.filter(s => {
+    const q = addSearch.trim().toLowerCase()
+    if (!q) return true
+    return (s.id || s.title).toLowerCase().includes(q) || s.ClientTitle.toLowerCase().includes(q) || s.SampleTypeTitle.toLowerCase().includes(q)
+  })
+
+  async function submitAdd() {
+    if (addSelected.size === 0) { closeAdd(); return }
+    setAddSubmitting(true)
+    const result = await assignSamplesToBatch(batch.uid, Array.from(addSelected))
+    setAddSubmitting(false)
+    closeAdd()
+    showToast(result.success, result.message)
+    router.refresh()
+  }
+
+  const toolbarBtn = {
+    fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 8,
+    border: '1px solid #D1D5DB', background: '#fff', color: '#374151', cursor: 'pointer',
+    display: 'flex', alignItems: 'center', gap: 6,
+  }
+
+  const batchSampleRows: BatchSampleRow[] = samples.map(s => ({ ...s, id: s.uid, sampleCode: s.id }))
+  const batchSampleColumns: DataTableColumn<BatchSampleRow>[] = [
+    {
+      id: 'sampleCode', label: 'Sample ID', sortable: true, minWidth: 130,
+      render: row => {
+        const djangoId = djangoIdByUid[row.id]
+        return djangoId ? (
+          <Link href={`/dashboard/samples-overview/${djangoId}`} className="text-xs font-mono px-2 py-0.5 rounded-full hover:underline" style={{ backgroundColor: '#EFF6FF', color: '#2563EB', fontWeight: 600, textDecoration: 'none' }}>
+            {row.sampleCode || row.title}
+          </Link>
+        ) : (
+          <span className="text-xs font-mono px-2 py-0.5 rounded-full" style={{ backgroundColor: '#F3F4F6', color: '#374151', fontWeight: 600 }}>
+            {row.sampleCode || row.title}
+          </span>
+        )
+      },
+    },
+    { id: 'ClientTitle', label: 'Client', sortable: true, minWidth: 130, render: row => <span className="text-xs" style={{ color: '#374151' }}>{row.ClientTitle || '—'}</span> },
+    { id: 'SampleTypeTitle', label: 'Sample Type', sortable: true, minWidth: 130, render: row => <span className="text-xs" style={{ color: '#374151' }}>{row.SampleTypeTitle || '—'}</span> },
+    { id: 'DateSampled', label: 'Date Sampled', sortable: true, minWidth: 120, render: row => <span className="text-xs" style={{ color: '#374151' }}>{fmtDate(row.DateSampled)}</span> },
+    { id: 'Priority', label: 'Priority', sortable: true, minWidth: 90, render: row => <span className="text-xs" style={{ color: '#374151' }}>{mapSenaitePriority(row.Priority)}</span> },
+    { id: 'review_state', label: 'Status', sortable: true, minWidth: 120, render: row => <SampleStateBadge state={row.review_state} /> },
+  ]
+
+  const addSampleRows: AddSampleRow[] = addFiltered.map(s => ({ ...s, id: s.uid, sampleCode: s.id }))
+  const addSampleColumns: DataTableColumn<AddSampleRow>[] = [
+    { id: 'sampleCode', label: 'Sample ID', sortable: true, minWidth: 130, render: row => <span className="text-xs font-mono font-semibold" style={{ color: '#2563EB' }}>{row.sampleCode || row.title}</span> },
+    { id: 'ClientTitle', label: 'Client', sortable: true, minWidth: 130, render: row => <span className="text-xs" style={{ color: '#374151' }}>{row.ClientTitle || '—'}</span> },
+    { id: 'SampleTypeTitle', label: 'Sample Type', sortable: true, minWidth: 130, render: row => <span className="text-xs" style={{ color: '#374151' }}>{row.SampleTypeTitle || '—'}</span> },
+    { id: 'DateSampled', label: 'Date Sampled', sortable: true, minWidth: 120, render: row => <span className="text-xs" style={{ color: '#374151' }}>{fmtDate(row.DateSampled)}</span> },
+    { id: 'review_state', label: 'Status', sortable: true, minWidth: 120, render: row => <SampleStateBadge state={row.review_state} /> },
+  ]
+
+  return (
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <button onClick={() => router.push('/dashboard/batches')} className="flex items-center gap-1 mb-2" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#374151', fontSize: 13, padding: 0, flexShrink: 0 }}>
+        <MI name="arrow_back" size={16} color="#374151" /> Back to Batches
+      </button>
+
+      <div className="flex items-start justify-between mb-4" style={{ flexShrink: 0 }}>
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: '#DBEAFE' }}>
+            <MI name="layers" size={22} color="#0154FC" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 style={{ fontSize: 22, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>{batch.title}</h1>
+              <span className="text-xs font-mono px-2 py-0.5 rounded-full" style={{ backgroundColor: '#EFF6FF', color: '#2563EB', fontWeight: 600 }}>{batch.id}</span>
+              <StatusBadge state={batch.review_state} />
+            </div>
+            <p className="text-sm mt-0.5" style={{ color: '#374151' }}>
+              {batch.ClientTitle ? `${batch.ClientTitle}${batch.ClientID ? ` (${batch.ClientID})` : ''}` : 'No client assigned'}
+              {batch.ClientBatchID ? ` · Client Batch ID: ${batch.ClientBatchID}` : ''}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button onClick={openAdd} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ backgroundColor: '#fff', color: '#374151', border: '1px solid #D1D5DB', cursor: 'pointer' }}>
+            <MI name="playlist_add" size={15} color="#374151" /> Add Samples
+          </button>
+          <Link href={`/dashboard/batches/${batch.uid}/audit-trail`} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ backgroundColor: '#fff', color: '#374151', border: '1px solid #D1D5DB', textDecoration: 'none' }}>
+            <MI name="history" size={15} color="#374151" /> Audit Log
+          </Link>
+          {samples.length > 0 && (
+            <>
+              <Link href={`/dashboard/batches/${batch.uid}/batch-book`} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ backgroundColor: '#fff', color: '#374151', border: '1px solid #D1D5DB', textDecoration: 'none' }}>
+                <MI name="menu_book" size={15} color="#374151" /> Batch Book
+              </Link>
+              <button onClick={() => setWizardOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ backgroundColor: '#fff', color: '#374151', border: '1px solid #D1D5DB', cursor: 'pointer' }}>
+                <MI name="table_chart" size={15} color="#374151" /> Create Worksheet
+              </button>
+            </>
+          )}
+          <Link href={`/dashboard/samples-overview/new?batch=${batch.uid}`} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC', textDecoration: 'none' }}>
+            <MI name="add" size={15} color="#fff" /> Create Sample
+          </Link>
+        </div>
+      </div>
+
+      {toast && (
+        <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: toast.ok ? '#DBEAFE' : '#FEF2F2', border: `1px solid ${toast.ok ? '#93C5FD' : '#FECACA'}`, color: toast.ok ? '#0154FC' : '#991B1B', flexShrink: 0 }}>
+          <MI name={toast.ok ? 'check_circle' : 'error'} size={13} color={toast.ok ? '#0154FC' : '#DC2626'} />
+          {toast.msg}
+        </div>
+      )}
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-4 gap-3 mb-4" style={{ flexShrink: 0 }}>
+        {[
+          { label: 'Samples', value: samples.length, icon: 'science' },
+          { label: 'Progress', value: `${batch.getProgress}%`, icon: 'trending_up' },
+          { label: 'Date', value: fmtDate(batch.BatchDate), icon: 'event' },
+          { label: 'Created', value: fmtDate(batch.created), icon: 'schedule' },
+        ].map(card => (
+          <div key={card.label} className="bg-white rounded-xl p-3" style={{ border: '1px solid #E8EAF2' }}>
+            <div className="flex items-center gap-2 mb-1">
+              <MI name={card.icon} size={14} color="#374151" />
+              <span style={{ fontSize: 10, color: '#374151', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{card.label}</span>
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: '#111827' }}>{card.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {(batch.description || batch.Remarks) && (
+        <div className="bg-white rounded-xl p-3 mb-4" style={{ border: '1px solid #E8EAF2', flexShrink: 0 }}>
+          {batch.description && <p className="text-xs" style={{ color: '#374151' }}>{batch.description}</p>}
+          {batch.Remarks && <p className="text-xs mt-1" style={{ color: '#374151' }}>{batch.Remarks}</p>}
+        </div>
+      )}
+
+      {/* Bulk action toolbar — only appears once something is selected */}
+      {selected.size > 0 && (
+        <div className="flex items-center gap-2 mb-3" style={{ flexShrink: 0 }}>
+          <button onClick={handleReceive} disabled={busy || receivableCount === 0} style={{ ...toolbarBtn, opacity: receivableCount === 0 ? 0.5 : 1, cursor: receivableCount === 0 ? 'not-allowed' : 'pointer' }}>
+            <MI name="inbox" size={14} color="#374151" /> Receive {receivableCount > 0 && <span style={{ background: '#DBEAFE', color: '#1D4ED8', borderRadius: 999, padding: '1px 6px', fontSize: 10 }}>{receivableCount}</span>}
+          </button>
+          <button onClick={openResults} disabled={busy} style={toolbarBtn}>
+            <MI name="grid_view" size={14} color="#374151" /> {selected.size === 1 ? 'Enter Results' : 'Multi Results'} <span style={{ background: '#DBEAFE', color: '#1D4ED8', borderRadius: 999, padding: '1px 6px', fontSize: 10 }}>{selected.size}</span>
+          </button>
+          <div style={{ position: 'relative' }}>
+            <button onClick={() => setPrintOpen(v => !v)} disabled={busy} style={toolbarBtn}>
+              <MI name="print" size={14} color="#374151" /> Print stickers <span style={{ background: '#DBEAFE', color: '#1D4ED8', borderRadius: 999, padding: '1px 6px', fontSize: 10 }}>{selected.size}</span>
+            </button>
+            {printOpen && (
+              <div style={{ position: 'absolute', top: '110%', left: 0, zIndex: 20, width: 240, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.1)', padding: 14 }}>
+                <label style={{ fontSize: 11, color: '#374151', display: 'block', marginBottom: 4 }}>Template</label>
+                <select value={printTemplateId} onChange={e => setPrintTemplateId(e.target.value)}
+                  style={{ width: '100%', fontSize: 12, padding: '6px 8px', border: '1px solid #E5E7EB', borderRadius: 6, marginBottom: 10 }}>
+                  {STICKER_TEMPLATES.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+                <label style={{ fontSize: 11, color: '#374151', display: 'block', marginBottom: 4 }}>Copies per sample</label>
+                <input type="number" min={1} max={50} value={printCopies}
+                  onChange={e => setPrintCopies(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
+                  style={{ width: '100%', fontSize: 12, padding: '6px 8px', border: '1px solid #E5E7EB', borderRadius: 6, marginBottom: 10 }} />
+                <button onClick={handlePrintStickers} disabled={printing}
+                  className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg"
+                  style={{ backgroundColor: '#0154FC', color: '#fff', cursor: printing ? 'not-allowed' : 'pointer', border: 'none', opacity: printing ? 0.7 : 1 }}>
+                  <MI name="print" size={14} color="#fff" /> {printing ? 'Preparing…' : 'Print'}
+                </button>
+              </div>
+            )}
+          </div>
+          <button disabled title="Coming soon" style={{ ...toolbarBtn, opacity: 0.5, cursor: 'not-allowed' }}>
+            <MI name="content_copy" size={14} color="#374151" /> Copy to new <span style={{ background: '#F3F4F6', color: '#374151', borderRadius: 999, padding: '1px 6px', fontSize: 10 }}>{selected.size}</span>
+          </button>
+          {(['dispatch', 'store', 'create_partitions', 'invalidate', 'republish', 'reinstate'] as const).map(transition => {
+            const count = eligibleFor(transition).length
+            if (count === 0) return null
+            const META: Record<typeof transition, { icon: string; label: string; doneMsg: string }> = {
+              dispatch: { icon: 'local_shipping', label: 'Dispatch', doneMsg: 'dispatched' },
+              store: { icon: 'inventory_2', label: 'Store', doneMsg: 'stored' },
+              create_partitions: { icon: 'call_split', label: 'Create partitions', doneMsg: 'partitioned' },
+              invalidate: { icon: 'block', label: 'Invalidate', doneMsg: 'invalidated' },
+              republish: { icon: 'campaign', label: 'Republish', doneMsg: 'republished' },
+              reinstate: { icon: 'restore', label: 'Reinstate', doneMsg: 'reinstated' },
+            }
+            const meta = META[transition]
+            return (
+              <button key={transition} onClick={() => handleTransition(transition, meta.doneMsg)} disabled={busy} style={toolbarBtn}>
+                <MI name={meta.icon} size={14} color="#374151" /> {meta.label} <span style={{ background: '#DBEAFE', color: '#1D4ED8', borderRadius: 999, padding: '1px 6px', fontSize: 10 }}>{count}</span>
+              </button>
+            )
+          })}
+          <button onClick={handleCancel} disabled={busy || cancellableCount === 0}
+            style={{ ...toolbarBtn, background: '#DC2626', color: '#fff', border: 'none', opacity: cancellableCount === 0 ? 0.5 : 1, cursor: cancellableCount === 0 ? 'not-allowed' : 'pointer' }}>
+            <MI name="cancel" size={14} color="#fff" /> Cancel {cancellableCount > 0 && <span style={{ background: 'rgba(255,255,255,0.25)', color: '#fff', borderRadius: 999, padding: '1px 6px', fontSize: 10 }}>{cancellableCount}</span>}
+          </button>
+        </div>
+      )}
+
+      {/* Samples table */}
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E8EAF2' }}>
+        <div className="px-4 py-3" style={{ borderBottom: '1px solid #F3F4F6' }}>
+          <h2 style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Samples logged under this batch</h2>
+        </div>
+        {samples.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12">
+            <MI name="science" size={32} color="#D1D5DB" />
+            <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>No samples in batch</p>
+            <p className="text-xs mt-0.5 mb-3" style={{ color: '#374151' }}>Add an existing unassigned sample, or register a new one for this batch</p>
+            <div className="flex items-center gap-2">
+              <button onClick={openAdd} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium" style={{ backgroundColor: '#fff', color: '#374151', border: '1px solid #D1D5DB', cursor: 'pointer' }}>
+                <MI name="playlist_add" size={13} color="#374151" /> Add Samples
+              </button>
+              <Link href={`/dashboard/samples-overview/new?batch=${batch.uid}`} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC', textDecoration: 'none' }}>
+                <MI name="add" size={13} color="#fff" /> Create Sample
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <div className="px-3 pb-3">
+            <DataTable<BatchSampleRow>
+              key={samplesTableKey}
+              data={batchSampleRows}
+              columns={batchSampleColumns}
+              selectable
+              searchable
+              persistKey="batch-detail-samples"
+              bare
+              onSelectionChange={ids => setSelected(new Set(ids as string[]))}
+              emptyMessage="No samples in batch."
+            />
+          </div>
+        )}
+        <div className="px-3 py-2" style={{ borderTop: '1px solid #F3F4F6', backgroundColor: '#FAFAFA' }}>
+          <p style={{ fontSize: 12, color: '#1F2937', fontWeight: 500 }}>{samples.length} sample{samples.length !== 1 ? 's' : ''}{selected.size > 0 ? ` · ${selected.size} selected` : ''}</p>
+        </div>
+      </div>
+      </div>
+
+      {/* Results entry modal — single sample or multiple, same table */}
+      {resultsOpen && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1000 }}>
+          <div onClick={closeResults} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)' }} />
+          <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', top: 'var(--dashboard-header-h)', right: 0, bottom: 'var(--dashboard-footer-h)', background: '#fff', width: 640, maxWidth: '90vw', display: 'flex', flexDirection: 'column', boxShadow: '-6px 0 32px rgba(0,0,0,0.18)' }}>
+            <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #F3F4F6' }}>
+              <div>
+                <h2 style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>{selectedSamples.length === 1 ? 'Enter Results' : 'Multi Results'}</h2>
+                <p style={{ fontSize: 11, color: '#374151' }}>{selectedSamples.length} sample{selectedSamples.length !== 1 ? 's' : ''} selected</p>
+              </div>
+              <button onClick={closeResults} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                <MI name="close" size={16} color="#374151" />
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 20px' }}>
+              {resultsLoading ? (
+                <div className="flex items-center justify-center py-10">
+                  <p style={{ fontSize: 12, color: '#374151' }}>Loading analyses…</p>
+                </div>
+              ) : resultsList.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10">
+                  <MI name="science" size={28} color="#D1D5DB" />
+                  <p className="mt-2 text-sm" style={{ color: '#374151' }}>No analyses to enter results for</p>
+                  <p className="text-xs mt-0.5" style={{ color: '#374151' }}>The selected sample(s) have no analyses attached yet</p>
+                </div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #F3F4F6' }}>
+                      {['Sample', 'Analysis', 'Result', 'Unit'].map(h => (
+                        <th key={h} className="px-2 py-2 text-left" style={{ fontSize: 10, fontWeight: 600, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {resultsList.map(a => (
+                      <tr key={a.uid} style={{ borderBottom: '1px solid #F9FAFB' }}>
+                        <td className="px-2 py-2 text-xs" style={{ color: '#374151' }}>{a.sampleId}</td>
+                        <td className="px-2 py-2 text-xs font-medium" style={{ color: '#111827' }}>{a.title || a.Keyword}</td>
+                        <td className="px-2 py-2">
+                          <input
+                            defaultValue={a.Result}
+                            onChange={e => setResultsValues(prev => ({ ...prev, [a.uid]: e.target.value }))}
+                            placeholder="Enter result"
+                            className="text-xs rounded outline-none"
+                            style={{ border: '1px solid #D1D5DB', padding: '5px 8px', width: 120 }}
+                          />
+                        </td>
+                        <td className="px-2 py-2 text-xs" style={{ color: '#374151' }}>{a.Unit || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="px-5 py-4 flex items-center justify-end gap-2" style={{ borderTop: '1px solid #F3F4F6' }}>
+              <button onClick={closeResults} disabled={resultsSubmitting} style={{ fontSize: 12, fontWeight: 500, padding: '7px 16px', borderRadius: 8, border: '1px solid #E8EAF2', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button onClick={submitResults} disabled={resultsSubmitting || resultsList.length === 0}
+                style={{ fontSize: 12, fontWeight: 600, padding: '7px 18px', borderRadius: 8, backgroundColor: '#0154FC', color: '#fff', border: 'none', cursor: resultsSubmitting ? 'not-allowed' : 'pointer', opacity: resultsSubmitting ? 0.7 : 1 }}>
+                {resultsSubmitting ? 'Submitting…' : 'Submit Results'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Samples modal — pick from samples not yet assigned to any batch,
+          scoped to this batch's client when it has one, otherwise every client */}
+      {addOpen && (
+        <div onClick={closeAdd} style={{ position: 'fixed', top: 'var(--dashboard-header-h)', bottom: 'var(--dashboard-footer-h)', left: 0, right: 0, zIndex: 1000, backgroundColor: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 12, width: 680, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}>
+            <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #F3F4F6' }}>
+              <div>
+                <h2 style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>Add Samples to Batch</h2>
+                <p style={{ fontSize: 11, color: '#374151' }}>
+                  {batch.ClientTitle ? `Showing unassigned samples for ${batch.ClientTitle}` : 'Showing unassigned samples across all clients'}
+                </p>
+              </div>
+              <button onClick={closeAdd} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                <MI name="close" size={16} color="#374151" />
+              </button>
+            </div>
+
+            <div className="px-5 pt-3">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ backgroundColor: '#F3F4F6', border: '1px solid #E5E7EB' }}>
+                <MI name="search" size={14} color="#374151" />
+                <input
+                  type="text"
+                  value={addSearch}
+                  onChange={e => setAddSearch(e.target.value)}
+                  placeholder="Search sample ID, client, sample type..."
+                  className="flex-1 bg-transparent text-xs outline-none"
+                  style={{ color: '#374151' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 20px' }}>
+              {addLoading ? (
+                <div className="flex items-center justify-center py-10">
+                  <p style={{ fontSize: 12, color: '#374151' }}>Loading unassigned samples…</p>
+                </div>
+              ) : addFiltered.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10">
+                  <MI name="science" size={28} color="#D1D5DB" />
+                  <p className="mt-2 text-sm" style={{ color: '#374151' }}>No unassigned samples found</p>
+                  <p className="text-xs mt-0.5" style={{ color: '#374151' }}>
+                    {batch.ClientTitle ? `Every sample for ${batch.ClientTitle} is already in a batch.` : 'Every sample is already assigned to a batch.'}
+                  </p>
+                </div>
+              ) : (
+                <DataTable<AddSampleRow>
+                  key={addTableKey}
+                  data={addSampleRows}
+                  columns={addSampleColumns}
+                  selectable
+                  bare
+                  paginated={false}
+                  onSelectionChange={ids => setAddSelected(new Set(ids as string[]))}
+                  emptyMessage="No unassigned samples found."
+                />
+              )}
+            </div>
+
+            <div className="px-5 py-4 flex items-center justify-between gap-2" style={{ borderTop: '1px solid #F3F4F6' }}>
+              <span style={{ fontSize: 11, color: '#374151' }}>{addSelected.size} selected</span>
+              <div className="flex items-center gap-2">
+                <button onClick={closeAdd} disabled={addSubmitting} style={{ fontSize: 12, fontWeight: 500, padding: '7px 16px', borderRadius: 8, border: '1px solid #E8EAF2', color: '#374151', backgroundColor: '#fff', cursor: 'pointer' }}>
+                  Cancel
+                </button>
+                <button onClick={submitAdd} disabled={addSubmitting || addSelected.size === 0}
+                  style={{ fontSize: 12, fontWeight: 600, padding: '7px 18px', borderRadius: 8, backgroundColor: '#0154FC', color: '#fff', border: 'none', cursor: addSubmitting ? 'not-allowed' : 'pointer', opacity: addSubmitting || addSelected.size === 0 ? 0.6 : 1 }}>
+                  {addSubmitting ? 'Adding…' : `Add ${addSelected.size || ''} Sample${addSelected.size === 1 ? '' : 's'}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {wizardOpen && <BatchWorksheetWizard batchUid={batch.uid} onClose={() => setWizardOpen(false)} />}
+    </div>
+  )
+}

@@ -72,32 +72,47 @@ def wire_signals(model):
         request = get_current_request()
         user = _get_user(request)
         ip = _get_ip(request)
-        reason = _get_reason(request)
+        reason = getattr(instance, "_audit_reason", None) or _get_reason(request)
+        source = getattr(instance, "_audit_source", None) or (request.META.get("HTTP_X_AUDIT_SOURCE") if request and hasattr(request, 'META') else None) or "manual"
         ct = ContentType.objects.get_for_model(sender)
-        action = "create" if created else "update"
+        action = getattr(instance, "_audit_action", None) or ("create" if created else "update")
 
         event = AuditEvent.objects.create(
             user=user,
             action=action,
+            source=source,
             content_type=ct,
             object_id=instance.pk,
             object_repr=str(instance)[:300],
             ip_address=ip,
+            extra_data=None,
         )
 
+        IGNORED_AUDIT_FIELDS = {"last_synced_from_senaite", "senaite_uid", "updated_at"}
         if not created:
             old = getattr(instance, "_pre_save_old", None)
             if old:
+                field_reasons = {}
+                if reason and isinstance(reason, str) and reason.strip().startswith("{"):
+                    try:
+                        import json
+                        field_reasons = json.loads(reason)
+                    except Exception:
+                        pass
+
                 for field in sender._meta.concrete_fields:
+                    if field.name in IGNORED_AUDIT_FIELDS or field.attname in IGNORED_AUDIT_FIELDS:
+                        continue
                     old_val = _serialize_value(getattr(old, field.attname, None))
                     new_val = _serialize_value(getattr(instance, field.attname, None))
                     if old_val != new_val:
+                        f_reason = field_reasons.get(field.name) or field_reasons.get(field.attname) or reason
                         DataChangeLog.objects.create(
                             audit_event=event,
                             field_name=field.name,
                             old_value=old_val,
                             new_value=new_val,
-                            reason=reason,
+                            reason=f_reason,
                         )
 
         # Create immutable version snapshot

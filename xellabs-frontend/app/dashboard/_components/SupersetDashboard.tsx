@@ -1,0 +1,108 @@
+"use client";
+
+import React, { useEffect, useRef, useState } from "react";
+import { embedDashboard } from "@superset-ui/embedded-sdk";
+
+interface SupersetDashboardProps {
+  dashboardId: string;
+}
+
+export default function SupersetDashboard({ dashboardId }: SupersetDashboardProps) {
+  const mountPointRef = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    // Guest tokens expire after 5 minutes; the SDK re-invokes this to refresh,
+    // so it must fetch a fresh token every call — never cache one.
+    const fetchGuestToken = async (): Promise<string> => {
+      const response = await fetch("/api/superset/guest-token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ dashboardId }),
+      });
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || `Failed to fetch guest token (HTTP ${response.status})`);
+      }
+
+      const data = await response.json();
+
+      // Fallback to various common properties that might hold the token
+      const guestToken = data.token || data.guestToken;
+
+      if (!guestToken) {
+        throw new Error("No guest token returned from API");
+      }
+
+      return guestToken;
+    };
+
+    const setupDashboard = async () => {
+      if (!mountPointRef.current) return;
+
+      try {
+        setLoading(true);
+
+        // Must be the SAME instance the guest-token route mints against
+        // (SUPERSET_URL), reachable from the browser.
+        const supersetDomain = process.env.NEXT_PUBLIC_SUPERSET_DOMAIN || "http://localhost:8089";
+
+        await embedDashboard({
+          id: dashboardId,
+          supersetDomain,
+          mountPoint: mountPointRef.current,
+          fetchGuestToken,
+          dashboardUiConfig: {
+            hideTitle: true,
+            hideTab: true,
+            hideChartControls: true,
+          },
+        });
+        if (isMounted) {
+          setLoading(false);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setError(err instanceof Error ? err.message : "An error occurred while loading the dashboard");
+          console.error("Error embedding Superset dashboard:", err);
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    setupDashboard();
+
+    return () => {
+      isMounted = false;
+      if (mountPointRef.current) {
+        mountPointRef.current.innerHTML = "";
+      }
+    };
+  }, [dashboardId]);
+
+  return (
+    <div className="w-full h-full min-h-[500px] flex flex-col relative">
+      {loading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10 backdrop-blur-sm">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        </div>
+      )}
+      {error && (
+        <div className="p-4 bg-destructive/10 text-destructive border border-destructive/20 rounded-md m-4">
+          <p className="font-semibold">Error loading dashboard</p>
+          <p className="text-sm">{error}</p>
+        </div>
+      )}
+      <div ref={mountPointRef} className="w-full h-full flex-grow [&>iframe]:w-full [&>iframe]:h-full [&>iframe]:border-none" />
+    </div>
+  );
+}

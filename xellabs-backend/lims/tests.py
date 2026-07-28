@@ -2,15 +2,18 @@
 Functional tests for the Core LIMS workflow.
 Covers: sample registration, analysis request, worksheet, result entry, review/approval, ID generation.
 """
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.authtoken.models import Token
-from rest_framework.test import APITestCase
+from core.tenant_test import TenantAPITestCase
 
 from core.models import Client
 from lims.models import (
-    SampleType, Method, Test,
-    Sample, AnalysisRequest, Worksheet, WorksheetAssignment, Result,
+    SampleType, Method,
+    Sample, AnalysisRequest, AnalysisRequestAnalysis, Worksheet, WorksheetAssignment, Result,
 )
 
 User = get_user_model()
@@ -22,15 +25,16 @@ def make_user(username, role="analyst"):
     return u, token.key
 
 
-class SampleRegistrationTest(APITestCase):
+class SampleRegistrationTest(TenantAPITestCase):
     def setUp(self):
-        self.analyst, self.key = make_user("lims_analyst", "analyst")
+        # admin can both register and receive (receive_sample = lab_clerk/admin only)
+        self.analyst, self.key = make_user("lims_reg_admin", "admin")
         self.client_obj = Client.objects.create(name="Test Client")
         self.st = SampleType.objects.create(name="Blood", prefix="BLD")
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.key}")
 
     def test_create_sample_auto_generates_id(self):
-        r = self.client.post("/api/samples/", {
+        r = self.client.post("/api/lims/samples/", {
             "client": self.client_obj.pk,
             "sample_type": self.st.pk,
         }, format="json")
@@ -41,7 +45,7 @@ class SampleRegistrationTest(APITestCase):
         Sample.objects.create(
             sample_id="BLD-DUP", client=self.client_obj, sample_type=self.st, created_by=self.analyst
         )
-        r = self.client.post("/api/samples/", {
+        r = self.client.post("/api/lims/samples/", {
             "client": self.client_obj.pk,
             "sample_type": self.st.pk,
             "sample_id": "BLD-DUP",
@@ -52,7 +56,7 @@ class SampleRegistrationTest(APITestCase):
         sample = Sample.objects.create(
             sample_id="BLD-RCV", client=self.client_obj, sample_type=self.st, created_by=self.analyst
         )
-        r = self.client.post(f"/api/samples/{sample.pk}/receive/", {
+        r = self.client.post(f"/api/lims/samples/{sample.pk}/receive/", {
             "location": "Fridge A", "notes": "Received on time"
         }, format="json")
         self.assertEqual(r.status_code, status.HTTP_200_OK)
@@ -63,25 +67,26 @@ class SampleRegistrationTest(APITestCase):
             sample_id="BLD-RCV2", client=self.client_obj, sample_type=self.st,
             created_by=self.analyst, status="received"
         )
-        r = self.client.post(f"/api/samples/{sample.pk}/receive/")
+        r = self.client.post(f"/api/lims/samples/{sample.pk}/receive/")
         self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
 
 
-class ResultWorkflowTest(APITestCase):
+class ResultWorkflowTest(TenantAPITestCase):
     def setUp(self):
         self.analyst, self.analyst_key = make_user("res_analyst", "analyst")
-        self.reviewer, self.reviewer_key = make_user("res_reviewer", "reviewer")
+        self.reviewer, self.reviewer_key = make_user("res_reviewer", "verifier")
         self.client_obj = Client.objects.create(name="Result Client")
         st = SampleType.objects.create(name="Urine", prefix="URN")
-        method = Method.objects.create(name="Titration", code="TITR")
-        self.test_obj = Test.objects.create(name="pH", code="PH01", method=method)
+        Method.objects.create(name="Titration", code="TITR")
         sample = Sample.objects.create(
             sample_id="URN-001", client=self.client_obj, sample_type=st, created_by=self.analyst
         )
         ar = AnalysisRequest.objects.create(ar_id="AR-URN-001", sample=sample, created_by=self.analyst)
-        ar.tests.add(self.test_obj)
+        AnalysisRequestAnalysis.objects.create(analysis_request=ar, senaite_service_uid="ph-uid", senaite_service_name="pH")
         ws = Worksheet.objects.create(ws_id="WS-URN-001", analyst=self.analyst)
-        self.wa = WorksheetAssignment.objects.create(worksheet=ws, analysis_request=ar, test=self.test_obj)
+        self.wa = WorksheetAssignment.objects.create(
+            worksheet=ws, analysis_request=ar, senaite_service_uid="ph-uid", senaite_service_name="pH"
+        )
         self.result = Result.objects.create(worksheet_assignment=self.wa, value="7.4")
 
     def _auth(self, key):
@@ -89,7 +94,7 @@ class ResultWorkflowTest(APITestCase):
 
     def test_analyst_submits_result(self):
         self._auth(self.analyst_key)
-        r = self.client.post(f"/api/results/{self.result.pk}/submit/")
+        r = self.client.post(f"/api/lims/results/{self.result.pk}/submit/")
         self.assertEqual(r.status_code, status.HTTP_200_OK)
         self.assertEqual(r.data["status"], "submitted")
 
@@ -97,14 +102,14 @@ class ResultWorkflowTest(APITestCase):
         self.result.value = ""
         self.result.save()
         self._auth(self.analyst_key)
-        r = self.client.post(f"/api/results/{self.result.pk}/submit/")
+        r = self.client.post(f"/api/lims/results/{self.result.pk}/submit/")
         self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_reviewer_verifies_submitted_result(self):
         self.result.status = "submitted"
         self.result.save()
         self._auth(self.reviewer_key)
-        r = self.client.post(f"/api/results/{self.result.pk}/verify/")
+        r = self.client.post(f"/api/lims/results/{self.result.pk}/verify/")
         self.assertEqual(r.status_code, status.HTTP_200_OK)
         self.assertEqual(r.data["status"], "verified")
         self.assertTrue(r.data["is_locked"])
@@ -113,7 +118,7 @@ class ResultWorkflowTest(APITestCase):
         self.result.status = "submitted"
         self.result.save()
         self._auth(self.reviewer_key)
-        r = self.client.post(f"/api/results/{self.result.pk}/reject/", {"remarks": "Value out of expected range"})
+        r = self.client.post(f"/api/lims/results/{self.result.pk}/reject/", {"remarks": "Value out of expected range"})
         self.assertEqual(r.status_code, status.HTTP_200_OK)
         self.assertEqual(r.data["status"], "rejected")
 
@@ -122,11 +127,11 @@ class ResultWorkflowTest(APITestCase):
         self.result.is_locked = True
         self.result.save()
         self._auth(self.analyst_key)
-        r = self.client.patch(f"/api/results/{self.result.pk}/", {"value": "9.9"}, format="json")
+        r = self.client.patch(f"/api/lims/results/{self.result.pk}/", {"value": "9.9"}, format="json")
         self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
 
 
-class WorksheetWorkflowTest(APITestCase):
+class WorksheetWorkflowTest(TenantAPITestCase):
     def setUp(self):
         self.analyst, self.analyst_key = make_user("ws_analyst", "analyst")
         self.manager, self.manager_key = make_user("ws_manager", "lab_manager")
@@ -137,7 +142,7 @@ class WorksheetWorkflowTest(APITestCase):
 
     def test_submit_for_review(self):
         self._auth(self.analyst_key)
-        r = self.client.post(f"/api/worksheets/{self.ws.pk}/submit_for_review/")
+        r = self.client.post(f"/api/lims/worksheets/{self.ws.pk}/submit_for_review/")
         self.assertEqual(r.status_code, status.HTTP_200_OK)
         self.assertEqual(r.data["status"], "to_be_verified")
 
@@ -145,7 +150,7 @@ class WorksheetWorkflowTest(APITestCase):
         self.ws.status = "to_be_verified"
         self.ws.save()
         self._auth(self.manager_key)
-        r = self.client.post(f"/api/worksheets/{self.ws.pk}/verify/")
+        r = self.client.post(f"/api/lims/worksheets/{self.ws.pk}/verify/")
         self.assertEqual(r.status_code, status.HTTP_200_OK)
         self.assertEqual(r.data["status"], "verified")
 
@@ -153,11 +158,11 @@ class WorksheetWorkflowTest(APITestCase):
         self.ws.status = "to_be_verified"
         self.ws.save()
         self._auth(self.analyst_key)
-        r = self.client.post(f"/api/worksheets/{self.ws.pk}/verify/")
+        r = self.client.post(f"/api/lims/worksheets/{self.ws.pk}/verify/")
         self.assertEqual(r.status_code, status.HTTP_403_FORBIDDEN)
 
 
-class IDGenerationTest(APITestCase):
+class IDGenerationTest(TenantAPITestCase):
     """Verify sequential auto-ID generation."""
 
     def setUp(self):
@@ -167,10 +172,132 @@ class IDGenerationTest(APITestCase):
         self.st = SampleType.objects.create(name="Serum", prefix="SRM")
 
     def test_sequential_ids_same_day(self):
-        r1 = self.client.post("/api/samples/", {"client": self.client_obj.pk, "sample_type": self.st.pk}, format="json")
-        r2 = self.client.post("/api/samples/", {"client": self.client_obj.pk, "sample_type": self.st.pk}, format="json")
+        r1 = self.client.post("/api/lims/samples/", {"client": self.client_obj.pk, "sample_type": self.st.pk}, format="json")
+        r2 = self.client.post("/api/lims/samples/", {"client": self.client_obj.pk, "sample_type": self.st.pk}, format="json")
         self.assertEqual(r1.status_code, status.HTTP_201_CREATED)
         self.assertEqual(r2.status_code, status.HTTP_201_CREATED)
         seq1 = int(r1.data["sample_id"].split("-")[-1])
         seq2 = int(r2.data["sample_id"].split("-")[-1])
         self.assertEqual(seq2, seq1 + 1)
+
+
+class SampleDisposeWorkflowTest(TenantAPITestCase):
+    def setUp(self):
+        self.manager, self.key = make_user("dispose_mgr", "lab_manager")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.key}")
+        self.client_obj = Client.objects.create(name="Dispose Client")
+        self.st = SampleType.objects.create(name="Water", prefix="GW")
+        self.sample = Sample.objects.create(
+            sample_id="GW-DISP-001",
+            client=self.client_obj,
+            sample_type=self.st,
+            created_by=self.manager,
+            status="reviewed",
+            description="Past retention sample",
+            expiry_date=timezone.now() - timedelta(days=1),
+        )
+
+    def test_dispose_from_eligible_state(self):
+        from lims.models import ChainOfCustody
+        from audittrail.models import AuditEvent, DataChangeLog
+
+        r = self.client.post(
+            f"/api/lims/samples/{self.sample.pk}/dispose/",
+            {"regulatory_basis": "40 CFR Part 261 — retention exceeded"},
+            format="multipart",
+        )
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+        self.assertEqual(r.data["status"], "disposed")
+        self.assertIn("[Disposed] 40 CFR Part 261", r.data["description"])
+
+        self.sample.refresh_from_db()
+        self.assertEqual(self.sample.status, "disposed")
+        self.assertTrue(
+            ChainOfCustody.objects.filter(sample=self.sample, action="disposed").exists()
+        )
+        self.assertTrue(
+            AuditEvent.objects.filter(
+                object_id=str(self.sample.pk),
+                content_type__model="sample",
+            ).exists()
+        )
+        self.assertTrue(
+            DataChangeLog.objects.filter(
+                audit_event__object_id=str(self.sample.pk),
+                audit_event__content_type__model="sample",
+                field_name="status",
+                old_value="reviewed",
+                new_value="disposed",
+            ).exists()
+        )
+
+    def test_dispose_ineligible_status_returns_400(self):
+        self.sample.status = "registered"
+        self.sample.save(update_fields=["status"])
+        r = self.client.post(
+            f"/api/lims/samples/{self.sample.pk}/dispose/",
+            {"regulatory_basis": "40 CFR Part 261"},
+            format="multipart",
+        )
+        self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
+        self.sample.refresh_from_db()
+        self.assertEqual(self.sample.status, "registered")
+
+    def test_dispose_already_disposed_returns_400(self):
+        self.sample.status = "disposed"
+        self.sample.save(update_fields=["status"])
+        r = self.client.post(
+            f"/api/lims/samples/{self.sample.pk}/dispose/",
+            {"regulatory_basis": "40 CFR Part 261"},
+            format="multipart",
+        )
+        self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_dispose_before_retention_date_returns_400(self):
+        self.sample.expiry_date = timezone.now() + timedelta(days=1)
+        self.sample.save(update_fields=["expiry_date"])
+        r = self.client.post(
+            f"/api/lims/samples/{self.sample.pk}/dispose/",
+            {"regulatory_basis": "40 CFR Part 261"},
+            format="multipart",
+        )
+        self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)
+        self.sample.refresh_from_db()
+        self.assertEqual(self.sample.status, "reviewed")
+
+    def test_disposed_sample_leaves_analysis_active_list(self):
+        from lims.models import AnalysisRequest
+
+        ar = AnalysisRequest.objects.create(
+            ar_id="AR-DISP-001", sample=self.sample, created_by=self.manager, status="completed",
+        )
+        r = self.client.post(
+            f"/api/lims/samples/{self.sample.pk}/dispose/",
+            {"regulatory_basis": "40 CFR Part 261 — retention exceeded"},
+            format="multipart",
+        )
+        self.assertEqual(r.status_code, status.HTTP_200_OK)
+
+        active = self.client.get("/api/lims/analysis-requests/")
+        self.assertEqual(active.status_code, status.HTTP_200_OK)
+        rows = active.data if isinstance(active.data, list) else active.data.get("results", [])
+        ids = [row["id"] for row in rows]
+        self.assertNotIn(ar.id, ids)
+
+        default_samples = self.client.get("/api/lims/samples/")
+        self.assertEqual(default_samples.status_code, status.HTTP_200_OK)
+        rows = default_samples.data if isinstance(default_samples.data, list) else default_samples.data.get("results", [])
+        self.assertNotIn("GW-DISP-001", [s["sample_id"] for s in rows])
+
+        disposed_filter = self.client.get("/api/lims/samples/?status=disposed")
+        self.assertEqual(disposed_filter.status_code, status.HTTP_200_OK)
+        samples = disposed_filter.data if isinstance(disposed_filter.data, list) else disposed_filter.data.get("results", [])
+        self.assertIn("GW-DISP-001", [s["sample_id"] for s in samples])
+
+    def test_missing_basis_returns_400(self):
+        r = self.client.post(
+            f"/api/lims/samples/{self.sample.pk}/dispose/",
+            {},
+            format="multipart",
+        )
+        self.assertEqual(r.status_code, status.HTTP_400_BAD_REQUEST)

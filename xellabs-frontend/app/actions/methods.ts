@@ -1,0 +1,154 @@
+'use server'
+import { revalidatePath } from 'next/cache'
+import { djangoFetch } from '@/app/lib/django'
+
+export type Method = {
+  id: number
+  name: string
+  code: string
+  description: string
+  accredited: boolean
+  instructions: string
+  document: string | null
+  instruments: number[]
+  /** UIDs of real SENAITE Calculation objects this method supports. */
+  senaite_calculation_uids: string[]
+  is_active: boolean
+  created_at: string
+}
+
+export type MethodFormState = {
+  success?: boolean
+  message?: string
+  errors?: Record<string, string[]>
+  id?: number
+}
+
+export async function getMethods(): Promise<Method[]> {
+  try {
+    const res = await djangoFetch('/api/lims/methods/?ordering=name')
+    if (!res.ok) return []
+    const data = await res.json()
+    return data.results ?? data ?? []
+  } catch { return [] }
+}
+
+function buildMethodFormData(formData: FormData): FormData {
+  const fd = new FormData()
+  fd.append('name', ((formData.get('name') as string) || '').trim())
+  fd.append('code', ((formData.get('code') as string) || '').trim())
+  fd.append('description', ((formData.get('description') as string) || '').trim())
+  fd.append('instructions', ((formData.get('instructions') as string) || '').trim())
+  fd.append('accredited', formData.get('accredited') ? 'true' : 'false')
+  for (const id of formData.getAll('instrument_ids')) fd.append('instrument_ids', id as string)
+  for (const uid of formData.getAll('calculation_uids')) fd.append('senaite_calculation_uids', uid as string)
+  const doc = formData.get('document')
+  if (doc instanceof File && doc.size > 0) fd.append('document', doc)
+  return fd
+}
+
+export async function createMethod(_state: MethodFormState, formData: FormData): Promise<MethodFormState> {
+  const isImport = formData.get('_is_import') === 'true'
+  formData.delete('_is_import')
+
+  const name = (formData.get('name') as string)?.trim()
+  const code = (formData.get('code') as string)?.trim()
+
+  const errors: Record<string, string[]> = {}
+  if (!name) errors.name = ['Name is required']
+  if (!code) errors.code = ['Code is required']
+  if (Object.keys(errors).length) return { errors }
+
+  try {
+    const fd = buildMethodFormData(formData)
+    fd.append('is_active', 'true')
+    const res = await djangoFetch('/api/lims/methods/', {
+      method: 'POST',
+      auditSource: isImport ? 'import' : undefined,
+      body: fd,
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      return { message: (data as Record<string,string[]>).code?.[0] ?? (data as Record<string,string[]>).name?.[0] ?? (data as {detail?: string}).detail ?? 'Failed to create method.' }
+    }
+    revalidatePath('/dashboard/methods')
+    revalidatePath('/dashboard/instruments')
+    return { success: true, message: `Method "${name}" created.`, id: Number(data.id) }
+  } catch (e) { return { message: String(e) } }
+}
+
+/** Inline create from instrument form — returns the created row for immediate select. */
+export async function createMethodQuick(
+  name: string,
+  description = '',
+  extras?: Record<string, string>,
+): Promise<{ ok: boolean; message: string; item?: { id: number; name: string; code: string; description: string } }> {
+  const trimmed = name.trim()
+  const code = (extras?.code ?? '').trim()
+  if (!trimmed) return { ok: false, message: 'Name is required.' }
+  if (!code) return { ok: false, message: 'Code is required.' }
+  try {
+    const res = await djangoFetch('/api/lims/methods/', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: trimmed,
+        code,
+        description: description.trim(),
+        is_active: true,
+      }),
+    })
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>
+    if (!res.ok) {
+      const firstErr = Object.values(data)[0]
+      const msg = Array.isArray(firstErr) ? String(firstErr[0]) : (data.detail as string) ?? 'Failed to create method.'
+      return { ok: false, message: msg }
+    }
+    revalidatePath('/dashboard/methods')
+    revalidatePath('/dashboard/instruments')
+    return {
+      ok: true,
+      message: 'Added.',
+      item: {
+        id: Number(data.id),
+        name: String(data.name),
+        code: String(data.code ?? code),
+        description: String(data.description ?? ''),
+      },
+    }
+  } catch (e) { return { ok: false, message: String(e) } }
+}
+
+export async function updateMethod(id: number, _state: MethodFormState, formData: FormData): Promise<MethodFormState> {
+  const name = (formData.get('name') as string)?.trim()
+  const code = (formData.get('code') as string)?.trim()
+
+  const errors: Record<string, string[]> = {}
+  if (!name) errors.name = ['Name is required']
+  if (!code) errors.code = ['Code is required']
+  if (Object.keys(errors).length) return { errors }
+
+  try {
+    const fd = buildMethodFormData(formData)
+    const res = await djangoFetch(`/api/lims/methods/${id}/`, {
+      method: 'PATCH',
+      body: fd,
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({})) as { detail?: string }
+      return { message: data.detail ?? 'Failed to update method.' }
+    }
+    revalidatePath('/dashboard/methods')
+    return { success: true, message: `Method "${name}" updated.`, id }
+  } catch (e) { return { message: String(e) } }
+}
+
+export async function toggleMethodActive(id: number, is_active: boolean): Promise<{ success: boolean; message: string }> {
+  try {
+    const res = await djangoFetch(`/api/lims/methods/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_active }),
+    })
+    revalidatePath('/dashboard/methods')
+    return { success: res.ok, message: res.ok ? (is_active ? 'Method activated.' : 'Method deactivated.') : 'Failed to update.' }
+  } catch (e) { return { success: false, message: String(e) } }
+}

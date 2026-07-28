@@ -1,6 +1,22 @@
 import { getSession } from '@/app/lib/session'
 import { redirect } from 'next/navigation'
 import DashboardShell from './_components/DashboardShell'
+import SessionRefresher from './_components/SessionRefresher'
+import { getReportDraftCount } from '@/app/actions/reports'
+import { getOpenTasks } from '@/app/actions/tasks'
+import { type EnvLabel } from '@/app/lib/envOverride'
+
+// Resolved server-side at request time — NOT baked into the client bundle at
+// build time (a client component reading NEXT_PUBLIC_* gets the build-time
+// value, which is why the badge used to show PRODUCTION in dev containers).
+function runtimeEnvLabel(): EnvLabel {
+  const env = (process.env.APP_ENV ?? process.env.NEXT_PUBLIC_APP_ENV ?? 'development').toLowerCase()
+  if (env === 'production') return 'Production'
+  if (env === 'testing') return 'Testing'
+  if (env === 'qa') return 'QA'
+  if (env === 'staging') return 'Staging'
+  return 'Development'
+}
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession()
@@ -17,9 +33,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ')
 
+  const [reportDraftCount, openTasks] = await Promise.all([
+    getReportDraftCount(),
+    getOpenTasks(),
+  ])
+
   return (
-    <div className="flex flex-col h-screen overflow-hidden" style={{ backgroundColor: '#F5F6FA' }}>
-      <DashboardShell initials={initials} displayName={displayName} roleLabel={roleLabel}>
+    <div className="flex flex-col h-screen overflow-hidden" style={{ backgroundColor: '#F7F8FC' }}>
+      <SessionRefresher />
+      <DashboardShell initials={initials} displayName={displayName} roleLabel={roleLabel} role={session.role} senaiteRoles={session.senaiteRoles} reportDraftCount={reportDraftCount} isSuperuser={Boolean(session.isSuperuser)} serverEnvLabel={runtimeEnvLabel()} notifications={openTasks}>
         {children}
       </DashboardShell>
 
@@ -29,7 +51,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         style={{ backgroundColor: '#0B1E47', color: 'rgba(255,255,255,0.55)' }}
       >
         <div className="flex items-center gap-2">
-          <span className="material-icons" style={{ fontSize: 14, color: '#14B8A6' }}>security</span>
+          <span className="material-icons" style={{ fontSize: 14, color: '#0154FC' }}>security</span>
           <span style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 500 }}>Secure. Compliant. Reliable.</span>
           <span className="mx-1" style={{ color: 'rgba(255,255,255,0.25)' }}>·</span>
           <span>XelLabs LIMS is configured and supported by Hephzibah Technologies Inc.</span>

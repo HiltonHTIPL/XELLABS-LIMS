@@ -66,12 +66,24 @@ class TaskAssignment(models.Model):
 
 class Approval(models.Model):
     STATUS = [("pending", "Pending"), ("approved", "Approved"), ("rejected", "Rejected")]
-    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
-    object_id = models.PositiveBigIntegerField()
+    # Django-object subject (GenericFK) — nullable, because the primary subject
+    # in this app is a SENAITE sample (an AnalysisRequest identified by a string
+    # UID), which is NOT a Django model row. For SENAITE-sample approvals the
+    # GenericFK stays null and the senaite_* fields below carry the subject.
+    content_type = models.ForeignKey(ContentType, null=True, blank=True, on_delete=models.CASCADE)
+    object_id = models.PositiveBigIntegerField(null=True, blank=True)
     subject = GenericForeignKey("content_type", "object_id")
+    # SENAITE-sample subject (used instead of the GenericFK above).
+    senaite_uid = models.CharField(max_length=64, blank=True, db_index=True)
+    sample_id = models.CharField(max_length=64, blank=True)      # human ID, e.g. HP-00123
+    client_name = models.CharField(max_length=255, blank=True)
+    title = models.CharField(max_length=255, blank=True)         # e.g. sample type / analysis name
+    priority = models.CharField(max_length=10, blank=True)       # High/Medium/Low — snapshot of the sample's SENAITE priority
     status = models.CharField(max_length=10, choices=STATUS, default="pending")
-    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
-                                     related_name="approvals_requested")
+    # Nullable: approvals auto-created by reconciling SENAITE's "verified" state
+    # have no explicit human requester (system-detected), only an approver.
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                     on_delete=models.SET_NULL, related_name="approvals_requested")
     reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
                                     on_delete=models.SET_NULL, related_name="approvals_reviewed")
     comments = models.TextField(blank=True)
@@ -83,9 +95,12 @@ class Approval(models.Model):
 
 
 class ElectronicSignature(models.Model):
-    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
-    object_id = models.PositiveBigIntegerField()
+    # Nullable GenericFK for the same reason as Approval — a SENAITE-sample
+    # signature is keyed by senaite_uid instead of a Django content type.
+    content_type = models.ForeignKey(ContentType, null=True, blank=True, on_delete=models.CASCADE)
+    object_id = models.PositiveBigIntegerField(null=True, blank=True)
     signed_object = GenericForeignKey("content_type", "object_id")
+    senaite_uid = models.CharField(max_length=64, blank=True, db_index=True)
     signed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     reason = models.CharField(max_length=300)
     signed_at = models.DateTimeField(auto_now_add=True)

@@ -6,11 +6,24 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-55t!40@#xrq!hijkz984yr!yumph2g2c(u%bop)$p5q+=-z+i+")
+DEBUG = os.getenv("DEBUG", "False") == "True"
 
-DEBUG = os.getenv("DEBUG", "True") == "True"
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = "django-insecure-55t!40@#xrq!hijkz984yr!yumph2g2c(u%bop)$p5q+=-z+i+"
+    else:
+        raise RuntimeError("SECRET_KEY environment variable must be set when DEBUG=False")
 
-ALLOWED_HOSTS = ["*"]
+_allowed_hosts_default = "localhost,127.0.0.1,django" if DEBUG else ""
+ALLOWED_HOSTS = [h.strip() for h in os.getenv("ALLOWED_HOSTS", _allowed_hosts_default).split(",") if h.strip()]
+
+# Behind nginx, the connection to Django itself is plain HTTP — this tells Django
+# to trust nginx's X-Forwarded-Proto header so request.is_secure() and the CSRF
+# origin check see the real (https) scheme instead of concluding every request
+# is insecure.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",") if o.strip()]
 
 # ── Multi-tenant: shared apps live in the public schema ──────────────────────
 SHARED_APPS = [
@@ -48,17 +61,25 @@ DATABASE_ROUTERS = ("django_tenants.routers.TenantSyncRouter",)
 MIDDLEWARE = [
     "config.tenant_middleware.XelLabsTenantMiddleware",   # must be first; reads X-Tenant-Schema header
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",   # serves STATIC_ROOT under gunicorn (no runserver auto-serve)
     "corsheaders.middleware.CorsMiddleware",
-    "audittrail.middleware.AuditMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "audittrail.middleware.AuditMiddleware",   # after auth so request.user is populated
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-CORS_ALLOW_ALL_ORIGINS = DEBUG
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOWED_ORIGINS = [
+    o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000").split(",") if o.strip()
+]
+
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SECURE_SSL_REDIRECT = not DEBUG
 
 # Public schema urlconf (tenant management, no tenant context)
 PUBLIC_SCHEMA_URLCONF = "config.urls_public"
@@ -111,14 +132,23 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 AUTH_USER_MODEL = "core.User"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.TokenAuthentication",
-        "rest_framework.authentication.SessionAuthentication",
+        "core.authentication.TenantAwareTokenAuthentication",
+        "core.authentication.TenantAwareSessionAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
@@ -130,14 +160,41 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": "20/min",
+        "user": "300/min",
+    },
 }
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
 CELERY_TIMEZONE = "UTC"
 
+_redis_cache_url = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0").rsplit("/", 1)[0] + "/1"
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": _redis_cache_url,  # Redis DB 1 — separate from Celery's DB 0
+        "KEY_PREFIX": "xellabs",
+        "TIMEOUT": 300,
+    }
+}
+
+SENAITE_URL      = os.getenv("SENAITE_URL",      "http://senaite:8080/senaite")
+SENAITE_USER     = os.getenv("SENAITE_USER",     "admin")
+SENAITE_PASSWORD = os.getenv("SENAITE_PASSWORD", "admin")
+
 from celery.schedules import crontab
 CELERY_BEAT_SCHEDULE = {
+    # Pull sample status + results from SENAITE every 5 minutes
+    "sync-from-senaite-every-5-minutes": {
+        "task": "lims.tasks.sync_from_senaite",
+        "schedule": 300,
+    },
     "check-inventory-expiry-daily": {
         "task": "inventory.tasks.check_inventory_expiry",
         "schedule": crontab(hour=6, minute=0),
@@ -149,3 +206,4 @@ CELERY_BEAT_SCHEDULE = {
         "kwargs": {"days_ahead": 7},
     },
 }
+

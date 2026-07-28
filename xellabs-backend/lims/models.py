@@ -1,12 +1,18 @@
 from django.db import models
 from django.conf import settings
+from django.core.validators import MinValueValidator, MaxValueValidator
 
 
 class SampleType(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
-    prefix = models.CharField(max_length=10, blank=True)
+    prefix = models.CharField(max_length=10)
+    retention_days = models.PositiveIntegerField(
+        default=14,
+        help_text="Days after collection before the sample is past retention (drives due/expiry date).",
+    )
     is_active = models.BooleanField(default=True)
+    senaite_uid = models.CharField(max_length=100, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -16,10 +22,44 @@ class SampleType(models.Model):
         return self.name
 
 
+class SampleTemplate(models.Model):
+    name = models.CharField(max_length=200, unique=True)
+    description = models.TextField(blank=True)
+    sample_type_uid = models.CharField(max_length=100, blank=True)
+    sample_type_name = models.CharField(max_length=200, blank=True)
+    sample_point_uid = models.CharField(max_length=100, blank=True)
+    sample_point_name = models.CharField(max_length=200, blank=True)
+    composite = models.BooleanField(default=False)
+    sampling_required = models.BooleanField(default=False)
+    auto_partition = models.BooleanField(default=False)
+    # List of partition dicts: {part_id, container_uid, container_name,
+    # preservation_uid, preservation_name, sample_type_uid, sample_type_name,
+    # services: [{uid, title, hidden}]} — mirrors SENAITE's partitions DataGrid.
+    partitions = models.JSONField(default=list, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "sample_templates"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
 class Method(models.Model):
     name = models.CharField(max_length=200)
     code = models.CharField(max_length=50, unique=True)
     description = models.TextField(blank=True)
+    accredited = models.BooleanField(default=False)
+    instructions = models.TextField(blank=True)
+    document = models.FileField(upload_to="method_documents/", blank=True, null=True)
+    # UIDs of real SENAITE Calculation objects (Administration > Calculations)
+    # this method supports. Previously an M2M to a Django-local `Calculation`
+    # model that had no relation to SENAITE at all — replaced so this field
+    # actually points at the same calculations the lab manages.
+    senaite_calculation_uids = models.JSONField(default=list, blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -30,29 +70,77 @@ class Method(models.Model):
         return self.name
 
 
-class Test(models.Model):
+class DynamicAnalysisSpecification(models.Model):
+    """Mirrors SENAITE's DynamicAnalysisSpec — an uploaded Excel file of
+    Keyword/min/max spec rows. Unlike Specification below, this one has no
+    meaningful existence without its SENAITE counterpart (the file itself
+    lives there, and SENAITE's own parsing is the only thing that can read
+    it back — see core/senaite_service.py push_dynamic_analysis_spec), so
+    senaite_uid is effectively required in practice, populated at create time
+    synchronously rather than via a background signal/task."""
     name = models.CharField(max_length=200)
-    code = models.CharField(max_length=50, unique=True)
-    description = models.TextField(blank=True)
-    unit = models.CharField(max_length=50, blank=True)
-    method = models.ForeignKey(Method, null=True, blank=True, on_delete=models.SET_NULL)
+    summary = models.TextField(blank=True)
+    file = models.FileField(upload_to="dynamic_analysis_specs/")
+    senaite_uid = models.CharField(max_length=100, blank=True, db_index=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        db_table = "tests"
+        db_table = "dynamic_analysis_specifications"
 
     def __str__(self):
         return self.name
 
 
+class AnalysisSpecification(models.Model):
+    """Header — mirrors SENAITE's own AnalysisSpecification (Title,
+    Description, Sample Type, optional Dynamic Analysis Specification link),
+    which contains a grid of many per-test Specification rows (below).
+    Replaces the old one-row-per-test model — see Specification's docstring."""
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    sample_type = models.ForeignKey(SampleType, on_delete=models.CASCADE, related_name="analysis_specifications")
+    dynamic_spec = models.ForeignKey(
+        DynamicAnalysisSpecification, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="analysis_specifications",
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "analysis_specifications"
+
+    def __str__(self):
+        return self.title
+
+
 class Specification(models.Model):
-    test = models.ForeignKey(Test, on_delete=models.CASCADE, related_name="specifications")
-    sample_type = models.ForeignKey(SampleType, on_delete=models.CASCADE)
+    """A single test's row within an AnalysisSpecification's grid — mirrors
+    SENAITE's per-service spec row (Min/Max/Warn thresholds + the display
+    value/comment shown when a result falls outside range)."""
+    OPERATOR_CHOICES = [
+        (">=", "Greater than or equal (>=)"),
+        (">", "Greater than (>)"),
+        ("<=", "Less than or equal (<=)"),
+        ("<", "Less than (<)"),
+    ]
+
+    specification = models.ForeignKey(AnalysisSpecification, on_delete=models.CASCADE, related_name="rows")
+    # References a SENAITE AnalysisService (uid) directly — SENAITE is the single
+    # source of truth for "what analyses exist", not a mirrored Django table.
+    senaite_service_uid = models.CharField(max_length=100, db_index=True, default="", blank=True)
+    senaite_service_name = models.CharField(max_length=200, blank=True)
     min_value = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
     max_value = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
-    min_operator = models.CharField(max_length=5, default=">=")
-    max_operator = models.CharField(max_length=5, default="<=")
+    min_operator = models.CharField(max_length=5, default=">=", choices=OPERATOR_CHOICES)
+    max_operator = models.CharField(max_length=5, default="<=", choices=OPERATOR_CHOICES)
+    min_warn = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
+    max_warn = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
+    # Display value/comment shown in results/reports when a result falls
+    # outside range — mirrors SENAITE's "< Min" / "> Max" / "Out of range comment".
+    out_of_range_low = models.CharField(max_length=100, blank=True)
+    out_of_range_high = models.CharField(max_length=100, blank=True)
+    out_of_range_comment = models.CharField(max_length=500, blank=True)
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -70,6 +158,35 @@ class Sample(models.Model):
         ("rejected", "Rejected"),
         ("disposed", "Disposed"),
     ]
+    CONDITION = [
+        ("good", "Good"),
+        ("acceptable", "Acceptable"),
+        ("compromised", "Compromised"),
+        ("not_acceptable", "Not Acceptable"),
+    ]
+    SEAL_CONDITION = [
+        ("intact", "Intact"),
+        ("broken", "Broken"),
+        ("missing", "Missing"),
+    ]
+    STORAGE_REQ = [
+        ("2_8c", "2–8 °C (Refrigerated)"),
+        ("minus_20c", "-20 °C (Frozen)"),
+        ("minus_80c", "-80 °C (Ultra-frozen)"),
+        ("room_temp", "Room Temperature"),
+    ]
+    PRIORITY = [
+        ("high", "High"),
+        ("medium", "Medium"),
+        ("low", "Low"),
+    ]
+    QTY_UNIT = [
+        ("tubes", "Tubes"),
+        ("vials", "Vials"),
+        ("bags", "Bags"),
+        ("slides", "Slides"),
+    ]
+
     sample_id = models.CharField(max_length=50, unique=True)
     client = models.ForeignKey("core.Client", on_delete=models.PROTECT, related_name="samples")
     sample_type = models.ForeignKey(SampleType, on_delete=models.PROTECT)
@@ -78,8 +195,65 @@ class Sample(models.Model):
     received_date = models.DateTimeField(null=True, blank=True)
     expiry_date = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS, default="registered")
+    # Authoritative only when a real StorageLocation slot is occupied — written
+    # exclusively by inventory._assign_sample_to_slot / unassign. Never set at
+    # registration time, so "Active" never means "merely intended".
     storage_location = models.CharField(max_length=200, blank=True)
+    # Informational hint chosen at registration (New Sample), before the sample
+    # physically exists — surfaced as a pre-fill suggestion on Sample Receipt.
+    preferred_storage_location = models.CharField(max_length=200, blank=True)
+    preferred_storage_label_code = models.CharField(max_length=40, blank=True)
     barcode = models.CharField(max_length=100, blank=True)
+    # Receipt intake fields
+    condition = models.CharField(max_length=20, choices=CONDITION, blank=True)
+    seal_condition = models.CharField(max_length=20, choices=SEAL_CONDITION, blank=True)
+    seal_number = models.CharField(max_length=100, blank=True)
+    quantity_received = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    quantity_unit = models.CharField(max_length=20, choices=QTY_UNIT, blank=True)
+    sampling_deviation = models.CharField(max_length=100, blank=True, default="none")
+    storage_requirement = models.CharField(max_length=20, choices=STORAGE_REQ, blank=True)
+    priority = models.CharField(max_length=10, choices=PRIORITY, blank=True, default="medium")
+    hold_for_qa = models.BooleanField(default=False)
+    collector = models.CharField(max_length=200, blank=True)
+    received_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                    on_delete=models.SET_NULL, related_name="samples_received")
+    receipt_notes = models.TextField(blank=True)
+    # Extended intake fields
+    contact_name = models.CharField(max_length=200, blank=True)
+    cc_contact = models.CharField(max_length=200, blank=True)
+    cc_emails = models.TextField(blank=True)
+    batch_id = models.CharField(max_length=100, blank=True)
+    batch_sub_group = models.CharField(max_length=100, blank=True)
+    container_type = models.CharField(max_length=100, blank=True)
+    preservation = models.CharField(max_length=100, blank=True)
+    analysis_specification = models.ForeignKey(
+        AnalysisSpecification, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="samples",
+        db_column="analysis_specification",
+    )
+    sample_point = models.CharField(max_length=200, blank=True)
+    environmental_conditions = models.CharField(max_length=100, blank=True)
+    composite = models.BooleanField(default=False)
+    internal_use = models.BooleanField(default=False)
+    client_order_number = models.CharField(max_length=100, blank=True)
+    client_reference = models.CharField(max_length=200, blank=True)
+    client_sample_id = models.CharField(max_length=100, blank=True)
+    attachment = models.FileField(upload_to="sample_attachments/", null=True, blank=True)
+    senaite_attachment_uid = models.CharField(max_length=100, blank=True, db_index=True)
+    SENAITE_SYNC_STATUS = [
+        ("", "Unspecified"),
+        ("synced", "Synced"),
+        ("pending", "Pending"),
+        ("failed", "Failed"),
+        ("not_linked", "Not linked"),
+    ]
+    senaite_uid = models.CharField(max_length=100, blank=True, db_index=True)
+    senaite_ar_id = models.CharField(max_length=100, blank=True)
+    senaite_sync_status = models.CharField(
+        max_length=20, choices=SENAITE_SYNC_STATUS, blank=True, default=""
+    )
+    senaite_sync_error = models.TextField(blank=True)
+    last_synced_from_senaite = models.DateTimeField(null=True, blank=True)
     is_locked = models.BooleanField(default=False)
     locked_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
                                   on_delete=models.SET_NULL, related_name="samples_locked")
@@ -92,9 +266,24 @@ class Sample(models.Model):
     class Meta:
         db_table = "samples"
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["status"], name="sample_status_idx"),
+            models.Index(fields=["client"], name="sample_client_idx"),
+            models.Index(fields=["created_at"], name="sample_created_at_idx"),
+            models.Index(fields=["status", "client"], name="sample_status_client_idx"),
+        ]
 
     def __str__(self):
-        return self.sample_id
+        # `sample_id` is Django's own locally-generated id (e.g.
+        # "TEST-20260722-0019") — cosmetically similar to but NOT the real
+        # SENAITE-assigned id (e.g. "HP-0011"), stored separately in
+        # senaite_ar_id. Every other page in the app shows the SENAITE id
+        # when one exists (see xellabs-frontend/app/lib/sampleDisplay.ts's
+        # sampleDisplayId()) — __str__ feeds AuditEvent.object_repr via the
+        # generic save signal (audittrail/signals.py), so without this same
+        # preference the Audit Trail's Object column showed a different,
+        # unfamiliar id for the same sample than every other screen does.
+        return self.senaite_ar_id or self.sample_id
 
 
 class AnalysisRequest(models.Model):
@@ -106,12 +295,12 @@ class AnalysisRequest(models.Model):
     ]
     ar_id = models.CharField(max_length=50, unique=True)
     sample = models.ForeignKey(Sample, on_delete=models.CASCADE, related_name="analysis_requests")
-    tests = models.ManyToManyField(Test, related_name="analysis_requests")
     status = models.CharField(max_length=20, choices=STATUS, default="pending")
     priority = models.CharField(max_length=20, default="normal",
                                 choices=[("low", "Low"), ("normal", "Normal"), ("high", "High"), ("urgent", "Urgent")])
     due_date = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(blank=True)
+    senaite_uid = models.CharField(max_length=100, blank=True, db_index=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -119,9 +308,28 @@ class AnalysisRequest(models.Model):
     class Meta:
         db_table = "analysis_requests"
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["sample"], name="ar_sample_idx"),
+            models.Index(fields=["status"], name="ar_status_idx"),
+        ]
 
     def __str__(self):
         return self.ar_id
+
+
+class AnalysisRequestAnalysis(models.Model):
+    """One SENAITE analysis service requested on an AnalysisRequest — replaces
+    the old tests M2M (SENAITE is the source of truth for analyses, not a
+    mirrored Django table)."""
+    analysis_request = models.ForeignKey(AnalysisRequest, on_delete=models.CASCADE, related_name="analyses")
+    senaite_service_uid = models.CharField(max_length=100, db_index=True, default="", blank=True)
+    senaite_service_name = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        db_table = "analysis_request_analyses"
+        indexes = [
+            models.Index(fields=["analysis_request"], name="ara_ar_idx"),
+        ]
 
 
 class Worksheet(models.Model):
@@ -134,6 +342,10 @@ class Worksheet(models.Model):
     ]
     ws_id = models.CharField(max_length=50, unique=True)
     analyst = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="worksheets")
+    instrument = models.ForeignKey(
+        "instruments.Instrument", null=True, blank=True, on_delete=models.SET_NULL, related_name="worksheets",
+    )
+    method = models.ForeignKey(Method, null=True, blank=True, on_delete=models.SET_NULL, related_name="worksheets")
     status = models.CharField(max_length=20, choices=STATUS, default="open")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -149,11 +361,33 @@ class Worksheet(models.Model):
 class WorksheetAssignment(models.Model):
     worksheet = models.ForeignKey(Worksheet, on_delete=models.CASCADE, related_name="assignments")
     analysis_request = models.ForeignKey(AnalysisRequest, on_delete=models.CASCADE)
-    test = models.ForeignKey(Test, on_delete=models.PROTECT)
+    senaite_service_uid = models.CharField(max_length=100, db_index=True, default="", blank=True)
+    senaite_service_name = models.CharField(max_length=200, blank=True)
+    # Defaulted from the parent worksheet's instrument/method at assignment-creation
+    # time (see WorksheetAssignmentSerializer.create), then kept in sync whenever the
+    # worksheet's own instrument/method changes (see WorksheetSerializer.update) —
+    # mirrors SENAITE's cascade-to-analyses behavior. Independently overridable per row.
+    instrument = models.ForeignKey(
+        "instruments.Instrument", null=True, blank=True, on_delete=models.SET_NULL, related_name="worksheet_assignments",
+    )
+    method = models.ForeignKey(Method, null=True, blank=True, on_delete=models.SET_NULL, related_name="worksheet_assignments")
     assigned_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = "worksheet_items"
+        indexes = [
+            models.Index(fields=["worksheet"], name="wa_worksheet_idx"),
+            models.Index(fields=["analysis_request"], name="wa_ar_idx"),
+        ]
+        constraints = [
+            # Same sample (AR) can't have the same test assigned twice —
+            # regardless of which worksheet, since each assignment carries its
+            # own single Result row (see Result model below).
+            models.UniqueConstraint(
+                fields=["analysis_request", "senaite_service_uid"],
+                name="uniq_ar_service_assignment",
+            ),
+        ]
 
 
 class Result(models.Model):
@@ -179,6 +413,9 @@ class Result(models.Model):
 
     class Meta:
         db_table = "results"
+        indexes = [
+            models.Index(fields=["status"], name="result_status_idx"),
+        ]
 
 
 class QCSample(models.Model):
@@ -198,7 +435,8 @@ class QCSample(models.Model):
     ]
     qc_id = models.CharField(max_length=50, unique=True)
     qc_type = models.CharField(max_length=20, choices=QC_TYPE)
-    test = models.ForeignKey(Test, on_delete=models.PROTECT, related_name="qc_samples")
+    senaite_service_uid = models.CharField(max_length=100, db_index=True, default="", blank=True)
+    senaite_service_name = models.CharField(max_length=200, blank=True)
     worksheet = models.ForeignKey(Worksheet, null=True, blank=True, on_delete=models.SET_NULL, related_name="qc_samples")
     lot_number = models.CharField(max_length=100, blank=True)
     expiry_date = models.DateField(null=True, blank=True)
@@ -210,12 +448,39 @@ class QCSample(models.Model):
     run_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
                                on_delete=models.SET_NULL, related_name="qc_samples_run")
     run_at = models.DateTimeField(null=True, blank=True)
+    
+    # Review fields
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                    on_delete=models.SET_NULL, related_name="qc_samples_reviewed")
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    review_notes = models.TextField(blank=True)
+    is_reviewed = models.BooleanField(default=False)
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "qc_samples"
         ordering = ["-created_at"]
+
+    def save(self, *args, **kwargs):
+        if not self.qc_id:
+            from .services import generate_qc_id
+            self.qc_id = generate_qc_id()
+        
+        # Auto-calculate status when actual_value is provided
+        if self.actual_value is not None and self.target_value is not None:
+            from decimal import Decimal
+            tol_fraction = Decimal(self.tolerance_percent or 0) / Decimal("100")
+            lower_bound = Decimal(self.target_value) * (Decimal("1") - tol_fraction)
+            upper_bound = Decimal(self.target_value) * (Decimal("1") + tol_fraction)
+            actual_dec = Decimal(self.actual_value)
+            if lower_bound <= actual_dec <= upper_bound:
+                self.status = "passed"
+            else:
+                self.status = "failed"
+                
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.qc_id} ({self.get_qc_type_display()})"
@@ -226,9 +491,15 @@ class ChainOfCustody(models.Model):
         ("collected", "Sample Collected"),
         ("transferred", "Transferred"),
         ("received", "Received at Lab"),
+        ("batched", "Added to Batch"),
         ("stored", "Stored"),
         ("retrieved", "Retrieved from Storage"),
         ("analysed", "Sent for Analysis"),
+        # The final custody milestone — sample results published, chain of
+        # custody complete. Without this the ledger always stopped at
+        # Stored/Analysed, never reaching a real closing entry, even for a
+        # sample that had genuinely finished its full lifecycle.
+        ("completed", "Sample Completed"),
         ("disposed", "Disposed"),
     ]
     sample = models.ForeignKey(Sample, on_delete=models.CASCADE, related_name="custody_records")
@@ -239,9 +510,17 @@ class ChainOfCustody(models.Model):
                                        related_name="custody_transfers_made")
     received_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
                                     on_delete=models.SET_NULL, related_name="custody_transfers_received")
-    temperature_c = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True)
+    temperature_c = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True, validators=[MinValueValidator(-80), MaxValueValidator(150)])
     condition = models.CharField(max_length=50, blank=True,
                                  choices=[("intact", "Intact"), ("damaged", "Damaged"), ("compromised", "Compromised")])
+    # Why this handoff happened (e.g. "Courier transfer", "Released for testing",
+    # "Returned to controlled storage") — distinct from `notes`, which is free-form
+    # observation text. Free text rather than a fixed choice list since the real
+    # reasons a sample changes hands vary too much across labs to enumerate.
+    purpose = models.CharField(max_length=200, blank=True)
+    seal_status = models.CharField(max_length=20, blank=True, choices=[
+        ("intact", "Seal Intact"), ("broken", "Seal Broken"), ("not_sealed", "Not Sealed"),
+    ])
     notes = models.TextField(blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
 

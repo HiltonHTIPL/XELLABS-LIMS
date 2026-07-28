@@ -1,0 +1,111 @@
+Xellabs LIMS — Start Commands
+==============================
+Last verified: 2026-06-29
+
+================================================================
+QUICK START — One command, everything in Docker Desktop
+================================================================
+
+Prerequisites (Docker Desktop must be running):
+  Open Docker Desktop from the taskbar (whale icon must be steady, not spinning)
+
+Start all services (PowerShell — IDE integrated terminal):
+  cd c:\Users\Hilton\xellabs-lims
+  docker compose up -d
+
+That's it. All 5 containers start automatically:
+  postgres  → PostgreSQL 16 database
+  redis     → Redis 7 cache/broker
+  django    → Django 6 API (runs migrate automatically on start)
+  celery    → Celery worker
+  senaite   → SENAITE v2.6.0 reference LIMS
+
+================================================================
+SERVICE URLS
+================================================================
+
+  Django API   → http://127.0.0.1:8001
+  Django Admin → http://127.0.0.1:8001/admin    (create superuser first — see below)
+  SENAITE LIMS → http://localhost:8080/senaite   Login: admin / admin
+                 NOTE: Zope takes ~90 seconds to boot after first start.
+                       Watch progress: docker logs -f xellabs-lims-senaite-1
+
+================================================================
+AFTER CODE CHANGES — Rebuild Django/Celery image
+================================================================
+
+  cd c:\Users\Hilton\xellabs-lims
+  docker compose up -d --build
+
+================================================================
+CHECK STATUS
+================================================================
+
+  docker ps --filter "name=xellabs" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+================================================================
+CHECK LOGS
+================================================================
+
+  docker logs xellabs-lims-django-1  --tail 50
+  docker logs xellabs-lims-celery-1  --tail 50
+  docker logs xellabs-lims-postgres-1 --tail 20
+  docker logs xellabs-lims-senaite-1  --tail 20
+
+================================================================
+CREATE DJANGO SUPERUSER (first time only)
+================================================================
+
+  docker exec -it xellabs-lims-django-1 python manage.py createsuperuser
+
+================================================================
+STOP EVERYTHING
+================================================================
+
+  cd c:\Users\Hilton\xellabs-lims
+  docker compose stop
+
+NEVER run: docker compose down -v
+  (the -v flag deletes the postgres_data and senaite_data volumes — all data lost)
+
+================================================================
+SENAITE WHITE-LABEL — Re-apply after container recreation
+================================================================
+
+If senaite container was destroyed (docker compose down without -v still removes container),
+re-apply the XelLabs branding after the container starts:
+
+  # From project root in WSL terminal (wsl -d Ubuntu-22.04):
+  cd /mnt/c/Users/Hilton/xellabs-lims
+
+  # Copy rebrand scripts into container
+  for f in logo.pt toolbar.pt footer.pt colophon.pt frontpage.pt xellabs_overrides.css apply_rebrand.sh apply_templates.sh fix_title_full2.py; do
+    docker cp senaite-rebrand/$f xellabs-lims-senaite-1:/tmp/
+  done
+
+  # Apply template replacements and CSS
+  docker exec --user root xellabs-lims-senaite-1 bash /tmp/apply_rebrand.sh
+  docker exec --user root xellabs-lims-senaite-1 bash /tmp/apply_templates.sh
+
+  # Set the site title via HTTP (wait for Zope to be ready first)
+  docker exec xellabs-lims-senaite-1 python2.7 /tmp/fix_title_full2.py
+
+  # Restart to flush template cache
+  docker restart xellabs-lims-senaite-1
+
+================================================================
+ENVIRONMENT SUMMARY
+================================================================
+
+  Project root:    c:\Users\Hilton\xellabs-lims
+  Backend code:    c:\Users\Hilton\xellabs-lims\xellabs-backend
+  Docker Compose:  c:\Users\Hilton\xellabs-lims\docker-compose.yml
+  Django .env:     c:\Users\Hilton\xellabs-lims\xellabs-backend\.env
+
+  DB containers:   DB_HOST=postgres  DB_PORT=5432  (internal Docker network)
+  DB credentials:  xellabs_lims / xellabs_user / 3333
+
+  SENAITE image:   senaite/senaite:v2.6.0
+  SENAITE login:   admin / admin
+  White-label:     XelLabs branding (templates + CSS modified inside egg)
+  Rebrand scripts: c:\Users\Hilton\xellabs-lims\senaite-rebrand\

@@ -1,7 +1,12 @@
+from django.urls import path
 from rest_framework.routers import DefaultRouter
 from .views import (
     InstrumentViewSet, InstrumentMethodViewSet, CalibrationViewSet,
     MaintenanceViewSet, InstrumentRunViewSet, InstrumentResultImportViewSet,
+    SampleInstrumentReportView,
+    InstrumentTypeViewSet, InstrumentLocationViewSet, CertificationViewSet,
+    ScheduledTaskViewSet, ValidationViewSet,
+    InstrumentManufacturerViewSet, InstrumentSupplierViewSet,
 )
 
 router = DefaultRouter()
@@ -11,5 +16,14 @@ router.register("calibrations", CalibrationViewSet)
 router.register("maintenances", MaintenanceViewSet)
 router.register("runs", InstrumentRunViewSet)
 router.register("result-imports", InstrumentResultImportViewSet)
+router.register("instrument-types", InstrumentTypeViewSet)
+router.register("instrument-locations", InstrumentLocationViewSet)
+router.register("manufacturers", InstrumentManufacturerViewSet)
+router.register("suppliers", InstrumentSupplierViewSet)
+router.register("certifications", CertificationViewSet)
+router.register("scheduled-tasks", ScheduledTaskViewSet)
+router.register("validations", ValidationViewSet)
 
-urlpatterns = router.urls
+urlpatterns = [
+    path("sample-report/", SampleInstrumentReportView.as_view(), name="instrument-sample-report"),
+] + router.urls

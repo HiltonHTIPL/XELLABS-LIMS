@@ -1,20 +1,28 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { decrypt } from '@/app/lib/session'
+import { decrypt, encrypt, SESSION_DURATION_MS, getSessionCookieOptions } from '@/app/lib/session-edge'
 
 const protectedRoutes = ['/dashboard']
 const publicRoutes = ['/login', '/']
 
+const IPV4_RE = /^\d{1,3}(\.\d{1,3}){3}$/
+
 function extractSubdomain(host: string): string {
   const hostname = host.split(':')[0]
+  // A bare IPv4 address (e.g. accessing the site via its server IP directly)
+  // also has multiple dot-separated parts — without this check, the first
+  // octet gets misread as a tenant subdomain (e.g. "34.30.6.247" -> "34"),
+  // routing every request to a tenant schema that doesn't exist and causing
+  // every tenant-scoped API call to fail with a 500.
+  if (IPV4_RE.test(hostname)) return ''
   const parts = hostname.split('.')
   if (parts.length === 1) return ''
   const sub = parts[0]
-  if (['www', 'app', 'api', 'admin'].includes(sub)) return ''
+  if (['www', 'app', 'api', 'admin', 'qa'].includes(sub)) return ''
   return sub
 }
 
-export async function proxy(req: NextRequest) {
+export default async function proxy(req: NextRequest) {
   const path = req.nextUrl.pathname
   const isProtected = protectedRoutes.some(r => path.startsWith(r))
   const isPublic = publicRoutes.includes(path)
@@ -40,9 +48,16 @@ export async function proxy(req: NextRequest) {
     requestHeaders.delete('x-tenant-subdomain')
   }
 
-  return NextResponse.next({
-    request: { headers: requestHeaders },
-  })
+  const response = NextResponse.next({ request: { headers: requestHeaders } })
+
+  // Sliding session: refresh the cookie on every authenticated request
+  if (isProtected && session) {
+    const expiresAt = new Date(Date.now() + SESSION_DURATION_MS)
+    const refreshed = await encrypt({ ...session, expiresAt })
+    response.cookies.set('session', refreshed, getSessionCookieOptions(expiresAt))
+  }
+
+  return response
 }
 
 export const config = {

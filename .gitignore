@@ -2,8 +2,33 @@
 CLAUDE.md
 .claude/
 
+# Internal feature/principle change-log — contains implementation notes not
+# meant for the shared repo (kept locally, never committed)
+Codetrackbypriciple.txt
+
 # Startup / reference docs
 start-commands.txt
+
+# Local change tracking (cleared after every push — never commit)
+pending-changes.md
+
+# Multi-instance coordination log (local-machine only — never commit)
+ACTIVE-CLAUDE-SESSIONS.md
+
+# Bug backlog (local only — worked from directly, never committed)
+needtofixbugs.md
+
+# Local scratch / handoff notes — not project source
+qa-admin-handoff.html
+serversideerrorfixes.md
+learning.md
+
+# Claude project map — auto-generated, never committed
+project-map.md
+
+# Celery runtime files
+celerybeat-schedule
+celerybeat.pid
 
 # Python
 __pycache__/
@@ -30,9 +55,11 @@ venv/
 env/
 .env/
 
-# Django secrets
+# Django secrets — never commit real .env files
 xellabs-backend/.env
 *.env
+# BUT always commit .env.example files
+!*.env.example
 
 # Django generated
 xellabs-backend/db.sqlite3
@@ -62,3 +89,31 @@ senaite-rebrand/*.bak
 
 # Temp scripts
 xellabs-backend/reset_inventory.py
+
+# Backup script and backup output (server-side only — not tracked in git)
+backup.sh
+xellabs-backups/
+userscredential.txt
+
+# Superset Data (Do not commit)
+*.db
+imm_data/
+superset_home/
+SENAITE_Module_Field_Workflow_Spec.xlsx
+
+# env templates (user preference: never commit)
+.env.example
+**/.env.example
+
+# scripts/templates with embedded credentials (kept locally only)
+senaite-rebrand/rebrand.py
+senaite-rebrand/fix_title_full2.py
+
+# Testing (local-only, per user request)
+e2e-playwright/
+xellabs-backend/unit_tests/
+sample-imports/
+TEST-REPORT.md
+docker-compose.override.yml
+docker-compose.testing.yml
+test-results/

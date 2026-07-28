@@ -15,9 +15,17 @@ class AuditEvent(models.Model):
         ("sign", "Signed"),
         ("print", "Printed"),
         ("instrument_import", "Instrument Import"),
+        ("receive", "Received"),
+        ("submit", "Submitted"),
+        ("verify", "Verified"),
+        ("complete", "Completed"),
+        ("store", "Store"),
+        ("dispose", "Disposed"),
+        ("custody_transfer", "Custody Transferred"),
     ]
     user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
     action = models.CharField(max_length=30, choices=ACTION)
+    source = models.CharField(max_length=50, default="manual")
     content_type = models.ForeignKey(ContentType, null=True, blank=True, on_delete=models.SET_NULL)
     object_id = models.PositiveBigIntegerField(null=True, blank=True)
     object_repr = models.CharField(max_length=300, blank=True)
@@ -89,3 +97,23 @@ class RecordVersion(models.Model):
 
     def __str__(self):
         return f"{self.content_type} #{self.object_id} v{self.version_number}"
+
+
+class ImportLog(models.Model):
+    """Persistent batch record of a CSV import operation."""
+    entity_name = models.CharField(max_length=100)
+    filename = models.CharField(max_length=255)
+    total_rows = models.PositiveIntegerField()
+    created_count = models.PositiveIntegerField()
+    skipped_count = models.PositiveIntegerField()
+    failed_count = models.PositiveIntegerField()
+    row_errors = models.JSONField(null=True, blank=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "import_logs"
+        ordering = ["-timestamp"]
+
+    def __str__(self):
+        return f"Import {self.entity_name} ({self.filename}) at {self.timestamp}"

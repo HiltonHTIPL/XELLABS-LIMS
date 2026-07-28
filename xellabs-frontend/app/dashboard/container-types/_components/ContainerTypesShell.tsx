@@ -1,0 +1,212 @@
+'use client'
+import { exportRowsToCsv } from '@/app/lib/exportCsv'
+import { useState, useActionState, useRef } from 'react'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { createContainerType, updateContainerType, type ContainerTypeFormState } from '@/app/actions/container-types'
+import type { SenaiteContainerType } from '@/app/lib/senaite'
+import ImportButton, { type ParsedRow } from '../../_components/ImportButton'
+import DataTable, { type DataTableColumn } from '../../_components/DataTable'
+
+const exportColumns = [
+  { key: 'title', label: 'Title' },
+  { key: 'description', label: 'Description' },
+]
+
+function MI({ name, size = 16, color }: { name: string; size?: number; color?: string }) {
+  return <span className="material-icons" style={{ fontSize: size, color, lineHeight: 1 }}>{name}</span>
+}
+
+function Field({
+  label, name, placeholder, required, error, as, value, onChange,
+}: {
+  label: string; name: string; placeholder?: string
+  required?: boolean; error?: string; as?: 'textarea'
+  value: string; onChange: (v: string) => void
+}) {
+  const base = 'w-full px-3 py-2 text-xs rounded-lg outline-none'
+  const style = { border: `1px solid ${error ? '#FCA5A5' : '#D1D5DB'}`, color: '#111827' }
+  return (
+    <div>
+      <label className="block text-xs font-medium mb-1" style={{ color: '#374151' }}>
+        {label}{required && <span style={{ color: '#EF4444' }}> *</span>}
+      </label>
+      {as === 'textarea'
+        ? <textarea name={name} rows={4} placeholder={placeholder} value={value}
+            onChange={e => onChange(e.target.value)} className={`${base} resize-none`} style={style} />
+        : <input name={name} placeholder={placeholder} required={required}
+            value={value} onChange={e => onChange(e.target.value)} className={base} style={style} />}
+      {error && <p className="mt-0.5 text-xs" style={{ color: '#EF4444' }}>{error}</p>}
+    </div>
+  )
+}
+
+const initialState: ContainerTypeFormState = {}
+
+export default function ContainerTypesShell({ initialContainerTypes }: { initialContainerTypes: SenaiteContainerType[] }) {
+  const router = useRouter()
+  const [showForm, setShowForm] = useState(false)
+  const [editing, setEditing] = useState<SenaiteContainerType | null>(null)
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const formRef = useRef<HTMLFormElement>(null)
+  const isEditing = editing !== null
+
+  const [state, action, pending] = useActionState(
+    async (prev: ContainerTypeFormState, formData: FormData) => {
+      const uid = formData.get('_uid') as string | null
+      const result = uid ? await updateContainerType(uid, prev, formData) : await createContainerType(prev, formData)
+      if (result.success) {
+        setShowForm(false); setEditing(null); setTitle(''); setDescription('')
+        router.refresh()
+      }
+      return result
+    },
+    initialState
+  )
+
+  function openCreate() { setEditing(null); setTitle(''); setDescription(''); setShowForm(true) }
+  function openEdit(ct: SenaiteContainerType) { setEditing(ct); setTitle(ct.title); setDescription(ct.description); setShowForm(true) }
+  function closeForm() { setShowForm(false); setEditing(null) }
+
+  async function handleImportRow(row: ParsedRow) {
+    const fd = new FormData()
+    if (row.title) fd.append('title', row.title)
+    if (row.description) fd.append('description', row.description)
+
+    const res = await createContainerType({}, fd)
+    return { success: res.success, message: res.message, errors: res.errors }
+  }
+
+  // SenaiteContainerType has no `id`, so key rows by uid for the shared table.
+  type Row = SenaiteContainerType & { id: string }
+  const rows: Row[] = initialContainerTypes.map(ct => ({ ...ct, id: ct.uid }))
+  const columns: DataTableColumn<Row>[] = [
+    {
+      id: 'title', label: 'Name', sortable: true, minWidth: 200,
+      render: ct => <span className="text-xs font-medium" style={{ color: '#111827' }}>{ct.title}</span>,
+    },
+    {
+      id: 'description', label: 'Description', sortable: true, minWidth: 300,
+      render: ct => <span className="text-xs" style={{ color: '#374151' }}>{ct.description || '—'}</span>,
+    },
+  ]
+
+  return (
+    <div style={{ padding: 20, backgroundColor: '#F7F8FC', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+
+      <div className="flex items-center justify-between mb-3" style={{ flexShrink: 0 }}>
+        <div className="flex items-center gap-3">
+          <Link href="/dashboard/admin" className="p-1.5 rounded-lg hover:bg-gray-100 shrink-0" style={{ border: '1px solid #E8EAF2' }}>
+            <MI name="arrow_back" size={16} color="#374151" />
+          </Link>
+          <div>
+            <h1 style={{ fontSize: 26, fontWeight: 800, color: '#14265E', letterSpacing: '-0.02em' }}>Container Types</h1>
+            <p className="text-sm mt-0.5" style={{ color: '#374151' }}>Manage sample container types</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => exportRowsToCsv(exportColumns, [], 'container-types-template')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ color: '#374151', border: '1px solid #D1D5DB', backgroundColor: '#fff' }}>
+            <MI name="download" size={15} color="#374151" /> Template
+          </button>
+          <button onClick={() => exportRowsToCsv(exportColumns, initialContainerTypes, 'container-types')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium" style={{ color: '#0154FC', border: '1px solid #0154FC', backgroundColor: '#fff' }}>
+            <MI name="file_download" size={15} color="#0154FC" /> Export
+          </button>
+          <ImportButton
+            columns={exportColumns}
+            existingTitles={initialContainerTypes.map(ct => ct.title)}
+            templateFilename="container-types-template"
+            entityName="Container Types"
+            onImportRow={handleImportRow}
+            onRefresh={() => router.refresh()}
+          />
+          <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
+            <MI name="add" size={15} color="#fff" /> New Container Type
+          </button>
+        </div>
+      </div>
+
+      {/* Drawer */}
+      <div style={{ position: 'fixed', top: 'var(--dashboard-header-h)', bottom: 'var(--dashboard-footer-h)', left: 0, right: 0, zIndex: 200, pointerEvents: showForm ? 'auto' : 'none' }}>
+        <div onClick={closeForm} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.30)', opacity: showForm ? 1 : 0, transition: 'opacity 0.25s ease' }} />
+        <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 420, backgroundColor: '#fff', boxShadow: '-6px 0 32px rgba(0,0,0,0.12)', transform: showForm ? 'translateX(0)' : 'translateX(100%)', transition: 'transform 0.28s cubic-bezier(0.4,0,0.2,1)', display: 'flex', flexDirection: 'column' }}>
+
+          <div className="flex items-center justify-between px-6 py-4 shrink-0" style={{ borderBottom: '1px solid #F3F4F6' }}>
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: isEditing ? '#EFF6FF' : '#DBEAFE' }}>
+                <MI name={isEditing ? 'edit' : 'add_box'} size={16} color={isEditing ? '#2563EB' : '#0154FC'} />
+              </div>
+              <h2 className="text-sm font-semibold" style={{ color: '#111827' }}>
+                {isEditing ? `Edit — ${editing.title}` : 'New Container Type'}
+              </h2>
+            </div>
+            <button onClick={closeForm} className="p-1.5 rounded-lg hover:bg-gray-100"><MI name="close" size={16} color="#374151" /></button>
+          </div>
+
+          <form ref={formRef} action={action} className="flex flex-col flex-1 min-h-0">
+            {isEditing && <input type="hidden" name="_uid" value={editing.uid} />}
+            <input type="hidden" name="title" value={title} />
+            <input type="hidden" name="description" value={description} />
+
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+              <Field label="Name" name="title" placeholder="e.g. Amber Glass Bottle" required
+                value={title} onChange={setTitle} error={state.errors?.title?.[0]} />
+              <Field label="Description" name="description" as="textarea" placeholder="Optional description"
+                value={description} onChange={setDescription} />
+              {state.message && !state.success && (
+                <p className="text-xs" style={{ color: '#DC2626' }}>{state.message}</p>
+              )}
+            </div>
+
+            <div className="px-6 py-4 flex gap-2 shrink-0" style={{ borderTop: '1px solid #F3F4F6' }}>
+              <button type="button" onClick={closeForm} className="flex items-center gap-1.5 px-4 py-2 text-xs rounded-lg font-medium" style={{ border: '1px solid #D1D5DB', color: '#374151' }}>
+                <MI name="close" size={13} color="#374151" /> Cancel
+              </button>
+              <div className="flex-1" />
+              <button type="submit" disabled={pending}
+                className="flex items-center gap-1.5 px-4 py-2 text-xs rounded-lg font-medium text-white"
+                style={{ backgroundColor: pending ? '#DBEAFE' : isEditing ? '#2563EB' : '#0154FC', cursor: pending ? 'not-allowed' : 'pointer' }}>
+                <MI name={pending ? 'hourglass_top' : 'check'} size={13} color="#fff" />
+                {pending ? (isEditing ? 'Saving…' : 'Creating…') : isEditing ? 'Save Changes' : 'Create'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      {state.success && (
+        <div className="mb-3 px-3 py-2 rounded-lg text-xs" style={{ backgroundColor: '#DBEAFE', border: '1px solid #93C5FD', color: '#0154FC', flexShrink: 0 }}>
+          <div className="flex items-center gap-2">
+            <MI name="check_circle" size={13} color="#0154FC" /><span>{state.message}</span>
+          </div>
+        </div>
+      )}
+
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      {initialContainerTypes.length === 0 ? (
+        <div className="bg-white rounded-xl flex flex-col items-center justify-center py-12" style={{ border: '1px solid #E8EAF2' }}>
+          <MI name="inventory_2" size={36} color="#D1D5DB" />
+          <p className="mt-2 text-sm font-medium" style={{ color: '#374151' }}>No container types yet</p>
+          <p className="text-xs mt-0.5" style={{ color: '#374151' }}>Create your first container type to get started</p>
+          <button onClick={openCreate} className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0154FC' }}>
+            <MI name="add" size={13} color="#fff" /> New Container Type
+          </button>
+        </div>
+      ) : (
+        <DataTable<Row>
+          data={rows}
+          columns={columns}
+          searchable
+          persistKey="container-types"
+          emptyMessage="No container types found."
+          rowActions={ct => (
+            <button onClick={() => openEdit(ct)} className="p-1 rounded hover:bg-gray-100" style={{ border: 'none', background: 'none', cursor: 'pointer' }} title="Edit">
+              <MI name="edit" size={14} color="#6B7280" />
+            </button>
+          )}
+        />
+      )}
+      </div>
+    </div>
+  )
+}
